@@ -151,6 +151,8 @@ static RegisterPass<LiveValues> RPLiveValues(
 
 bool LiveValues::includeVal(const llvm::Value *val) const
 {
+  IntegerType *IntTy;
+
   // TODO other values that should be filtered out?
   if(isa<BasicBlock>(val))
     return false;
@@ -163,6 +165,9 @@ bool LiveValues::includeVal(const llvm::Value *val) const
   else if(isa<Constant>(val) && !constants)
     return false;
   else if(isa<MetadataAsValue>(val) && !metadata)
+    return false;
+  else if((IntTy = dyn_cast<IntegerType>(val->getType())) &&
+          IntTy->getBitWidth() == 1)
     return false;
   else
     return true;
@@ -198,9 +203,10 @@ unsigned LiveValues::phiDefs(const BasicBlock *B,
 
   for(BasicBlock::const_iterator it = B->begin(); it != B->end(); it++)
   {
-    if((phi = dyn_cast<PHINode>(&*it)) && includeVal(phi)) {
-      if(uses.insert(&*it).second)
-        added++;
+    if((phi = dyn_cast<PHINode>(&*it))) {
+      if(includeVal(phi))
+        if(uses.insert(&*it).second)
+          added++;
     }
     else break; // phi-nodes are always at the start of the basic block
   }

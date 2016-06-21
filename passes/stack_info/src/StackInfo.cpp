@@ -169,7 +169,7 @@ bool StackInfo::runOnModule(Module &M)
   }
 
   DEBUG(
-    errs() << "StackInfo: finished module " << M.getName() << ", added"
+    errs() << "StackInfo: finished module " << M.getName() << ", added "
            << this->numInstrumented << " stackmaps\n\r";
   );
 
@@ -215,7 +215,7 @@ void StackInfo::createSMType(const Module &M)
  */
 bool StackInfo::addSMDeclaration(Module &M)
 {
-  if(!(this->SMFunc = M.getFunction(SMName)))
+  if(!(this->SMFunc = M.getFunction(this->SMName)))
   {
     DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n\r");
     this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
