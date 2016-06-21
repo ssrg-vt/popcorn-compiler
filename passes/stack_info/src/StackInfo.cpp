@@ -1,6 +1,8 @@
+#include <map>
 #include <set>
 #include <vector>
 #include "llvm/Pass.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Type.h"
@@ -50,15 +52,15 @@ void StackInfo::getAnalysisUsage(AnalysisUsage &AU) const
 bool StackInfo::runOnModule(Module &M)
 {
   bool modified = false;
-  std::set<const Value *> *live;
-  std::set<const Value *>::const_iterator v, ve;
+  Triple triple(M.getTargetTriple());
+  size_t maxLive = MaxLive[triple.getArch()];
 
   DEBUG(errs() << "StackInfo: entering module " << M.getName() << "\n\r");
 
   this->createSMType(M);
   if(this->addSMDeclaration(M)) modified = true;
 
-  /* Iterate over all (defined) functions/basic blocks/instructions. */
+  /* Iterate over all functions/basic blocks/instructions. */
   for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
   {
     if(f->isDeclaration()) continue;
@@ -66,17 +68,27 @@ bool StackInfo::runOnModule(Module &M)
     DEBUG(errs() << "StackInfo: entering function " << f->getName() << "\n\r");
 
     LiveValues &liveVals = getAnalysis<LiveValues>(*f);
+    std::set<const Value *>::const_iterator v, ve;
+    size_t numRecords;
 
     /* Put a stackmap at the beginning of the function to capture arguments. */
-    IRBuilder<> funcArgBuilder(&*f->getEntryBlock().getFirstInsertionPt());
+    std::set<const Value *> *liveIn = liveVals.getLiveIn(&f->getEntryBlock());
     std::vector<Value *> funcArgs(2);
-    Function::arg_iterator arg, arg_end;
     funcArgs[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
     funcArgs[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-    for(arg = f->arg_begin(), arg_end = f->arg_end(); arg != arg_end; arg++)
-      funcArgs.push_back(&*arg);
-    ArrayRef<Value *> llvmFuncArgs(funcArgs);
-    funcArgBuilder.CreateCall(this->SMFunc, llvmFuncArgs);
+    for(v = liveIn->begin(), ve = liveIn->end(), numRecords = 0;
+        v != ve && numRecords < maxLive;
+        v++, numRecords++)
+      funcArgs.push_back((Value *)*v);
+    IRBuilder<> funcArgBuilder(&*f->getEntryBlock().getFirstInsertionPt());
+    funcArgBuilder.CreateCall(this->SMFunc, ArrayRef<Value *>(funcArgs));
+
+    if(numRecords == maxLive)
+      errs() << "WARNING: reached maximum number of records for stackmap ("
+             << triple.getArchName() << ": " << maxLive << ")\n\r";
+
+    this->numInstrumented++;
+    delete liveIn;
 
     /* Find call sites in the function. */
     for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
@@ -94,7 +106,22 @@ bool StackInfo::runOnModule(Module &M)
            !CI->isInlineAsm() &&
            !isa<IntrinsicInst>(CI))
         {
-          live = liveVals.getLiveValues(&*i);
+          /*
+           * Avoid putting consecutive stackmaps if function's first
+           * instruction is a call (already added stackmap for args).
+           */
+          IntrinsicInst *PrevCI;
+          if(CI->getPrevNode() &&
+             (PrevCI = dyn_cast<IntrinsicInst>(CI->getPrevNode())))
+          {
+            const Function *called = PrevCI->getCalledFunction();
+            if(called &&
+               called->hasName() &&
+               called->getName() == this->SMName)
+              continue;
+          }
+
+          std::set<const Value *> *live = liveVals.getLiveValues(&*i);
 
           DEBUG(
             const Function *calledFunc;
@@ -123,10 +150,15 @@ bool StackInfo::runOnModule(Module &M)
           std::vector<Value *> args(2);
           args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
           args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-          for(v = live->begin(), ve = live->end(); v != ve; v++)
+          for(v = live->begin(), ve = live->end(), numRecords = 0;
+              v != ve && numRecords < maxLive;
+              v++, numRecords++)
             args.push_back((Value*)*v);
-          ArrayRef<Value *> llvmArgs(args);
-          builder.CreateCall(this->SMFunc, llvmArgs);
+          builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
+
+          if(numRecords == maxLive)
+            errs() << "WARNING: reached maximum number of records for stackmap ("
+                   << triple.getArchName() << ": " << maxLive << ")\n\r";
 
           this->numInstrumented++;
           delete live;
@@ -136,7 +168,10 @@ bool StackInfo::runOnModule(Module &M)
     this->callSiteID = 0;
   }
 
-  DEBUG(errs() << "StackInfo: finished module " << M.getName() << "\n\r");
+  DEBUG(
+    errs() << "StackInfo: finished module " << M.getName() << ", added"
+           << this->numInstrumented << " stackmaps\n\r";
+  );
 
   if(numInstrumented > 0) modified = true;
 
@@ -166,8 +201,9 @@ void StackInfo::createSMType(const Module &M)
   std::vector<Type*> params(2);
   params[0] = Type::getInt64Ty(M.getContext());
   params[1] = Type::getInt32Ty(M.getContext());
-  ArrayRef<Type*> llvmParams(params);
-  this->SMTy = FunctionType::get(Type::getVoidTy(M.getContext()), llvmParams, true);
+  this->SMTy = FunctionType::get(Type::getVoidTy(M.getContext()),
+                                                 ArrayRef<Type*>(params),
+                                                 true);
 }
 
 /**
