@@ -8,8 +8,24 @@
 
 #ifdef _NATIVE /* Safe for native execution/debugging */
 
-#define REWRITE_STACK 1
-#define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) {}
+#define REWRITE_STACK \
+  ({ \
+    int ret = 1; \
+    READ_REGS_AARCH64(regs_aarch64); \
+    if(st_userspace_rewrite_aarch64(regs_aarch64.sp, &regs_aarch64, &regs_aarch64)) \
+    { \
+      fprintf(stderr, "Could not rewrite stack!\n"); \
+      ret = 0; \
+    } \
+    ret; \
+  })
+
+#define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) \
+  { \
+    SET_REGS_AARCH64(regs_aarch64); \
+    SET_FRAME_AARCH64(regs_aarch64.x[29], regs_aarch64.sp); \
+    SET_PC_IMM(new_pc); \
+  }
 
 #else /* Heterogeneous migration */
 

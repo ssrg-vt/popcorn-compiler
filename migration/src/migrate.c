@@ -161,16 +161,25 @@ static inline int do_migrate()
 
 #endif /* _TEST_MIGRATE */
 
+/* Data needed post-migration. */
+struct shim_data {
+  void (*callback)(void *);
+  void *callback_data;
+};
+
 /* Check & invoke migration if requested. */
+// Note: arguments are saved to this stack frame, and a pointer to them is
+// saved by the pthread library.  Arguments can then be accessed post-migration
+// by reading this pointer.  This method for saving/restoring arguments is
+// necessary because saving argument locations in the LLVM backend is tricky.
 inline void migrate_shim(void (*callback)(void *), void *callback_data)
 {
-  int migrated;
-
-  migrated = (int)pthread_migrate_args();
-  if(migrated) // On the other side of a migration?
+  struct shim_data data;
+  struct shim_data *data_ptr = *pthread_migrate_args();
+  if(data_ptr) // Post-migration
   {
-    if(callback) callback(callback_data);
-    *pthread_migrate_args() = 0;
+    if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
+    *pthread_migrate_args() = NULL;
   }
   else // Check & do migration if requested
   { 
@@ -180,7 +189,9 @@ inline void migrate_shim(void (*callback)(void *), void *callback_data)
       struct regset_x86_64 regs_x86_64;
       cpu_set_t cpus;
 
-      *pthread_migrate_args() = (void *)1;
+      data.callback = callback;
+      data.callback_data = callback_data;
+      *pthread_migrate_args() = &data;
       cpus = select_arch();
       if(REWRITE_STACK)
         MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus, (void *)migrate_shim);

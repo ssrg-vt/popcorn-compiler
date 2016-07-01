@@ -3,10 +3,13 @@ POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 
 CC         := clang
-CFLAGS     := -O3 -Wall -Werror -c -g -D_GNU_SOURCE -ffunction-sections \
-              -fdata-sections
-ifeq ($(type),test)
+CFLAGS     := -O3 -Wall -Werror -c -g -gdwarf-aranges -D_GNU_SOURCE \
+              -ffunction-sections -fdata-sections -Wno-unused-variable
+ifneq ($(findstring test,$(type)),)
 CFLAGS     += -D_TEST_MIGRATE
+endif
+ifneq ($(findstring native,$(type)),)
+CFLAGS     += -D_NATIVE
 endif
 CFLAGS_ARM := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_X86 := $(CFLAGS) -target x86_64-linux-gnu
