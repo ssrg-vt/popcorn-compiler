@@ -1,0 +1,543 @@
+--- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/AsmPrinter.h	2016-05-25 11:33:02.184960318 -0400
++++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/AsmPrinter.h	2016-06-30 14:31:02.615205799 -0400
+@@ -202,9 +202,10 @@
+ 
+   /// Emit the specified function out to the OutStreamer.
+   bool runOnMachineFunction(MachineFunction &MF) override {
++    bool modified = TagCallSites(MF);
+     SetupMachineFunction(MF);
+     EmitFunctionBody();
+-    return false;
++    return modified;
+   }
+ 
+   //===------------------------------------------------------------------===//
+@@ -403,6 +404,14 @@
+     EmitLabelPlusOffset(Label, 0, Size, IsSectionRelative);
+   }
+ 
++  /// Find the stackmap intrinsic associated with a function call
++  MachineInstr *FindStackMap(MachineBasicBlock &MBB,
++                             MachineInstr *MI) const;
++
++  /// Move stackmap intrinsics directly after calls to correctly capture
++  /// return addresses
++  bool TagCallSites(MachineFunction &MF);
++
+   //===------------------------------------------------------------------===//
+   // Dwarf Emission Helper Routines
+   //===------------------------------------------------------------------===//
+--- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/MachineFunction.h	2016-05-25 11:33:01.792960322 -0400
++++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/MachineFunction.h	2016-07-01 10:34:19.994552042 -0400
+@@ -86,6 +86,16 @@
+ };
+ 
+ class MachineFunction {
++public:
++  // Typedefs for mappings between IR values and virtual registers
++  typedef DenseMap<const Value*, unsigned> ValVregMap;
++  typedef std::pair<const Value*, unsigned> ValVregPair;
++
++  // Typedefs for mappings between IR values and stack slots
++  typedef DenseMap<const Value*, int> ValStackSlotMap;
++  typedef std::pair<const Value*, int> ValStackSlotPair;
++
++private:
+   const Function *Fn;
+   const TargetMachine &Target;
+   const TargetSubtargetInfo *STI;
+@@ -154,6 +164,12 @@
+   // Allocation management for pseudo source values.
+   std::unique_ptr<PseudoSourceValueManager> PSVManager;
+ 
++  /// Map from stackmap IR values to virtual registers
++  ValVregMap SMVal2Vreg;
++
++  /// Map from stackmap IR values to spilled stack slots
++  ValStackSlotMap SMVal2StackSlot;
++
+   MachineFunction(const MachineFunction &) = delete;
+   void operator=(const MachineFunction&) = delete;
+ public:
+@@ -519,6 +535,26 @@
+   /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
+   /// base.
+   MCSymbol *getPICBaseSymbol() const;
++
++  //===--------------------------------------------------------------------===//
++  // StackMap IR/physical location mappings
++  //
++
++  /// Add an IR/virtual register mapping for a stackmap operand
++  void addSMValVregMapping(const Value *Val, unsigned Vreg);
++
++  /// Iterators for the stackmap IR -> Vreg map
++  ValVregMap::const_iterator SMValVreg_begin() { return SMVal2Vreg.begin(); }
++  ValVregMap::const_iterator SMValVreg_end() { return SMVal2Vreg.end(); }
++
++  /// Return the virtual register mapped to a stackmap operand
++  unsigned getSMVreg(const Value *Val) const;
++
++  /// Add an IR/stack slot mapping for a stackmap operand
++  void addSMValStackSlotMapping(const Value *Val, int SS);
++
++  /// Return the stack slot mapped to a stackmap operand
++  int getSMStackSlot(const Value *Val) const;
+ };
+ 
+ //===--------------------------------------------------------------------===//
+--- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/StackMaps.h	2016-05-25 11:33:02.176960318 -0400
++++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/StackMaps.h	2016-06-09 11:36:13.644820497 -0400
+@@ -143,9 +143,15 @@
+     unsigned Size;
+     unsigned Reg;
+     int64_t Offset;
+-    Location() : Type(Unprocessed), Size(0), Reg(0), Offset(0) {}
+-    Location(LocationType Type, unsigned Size, unsigned Reg, int64_t Offset)
+-        : Type(Type), Size(Size), Reg(Reg), Offset(Offset) {}
++    bool Ptr;
++    bool Alloca;
++    unsigned PtrDataSize;
++    Location() : Type(Unprocessed), Size(0), Reg(0), Offset(0),
++                 Ptr(false), Alloca(false), PtrDataSize(0) {}
++    Location(LocationType Type, unsigned Size, unsigned Reg, int64_t Offset,
++             bool Ptr = false, bool Alloca = false, unsigned PtrDataSize = 0)
++        : Type(Type), Size(Size), Reg(Reg), Offset(Offset),
++          Ptr(Ptr), Alloca(Alloca), PtrDataSize(PtrDataSize) {}
+   };
+ 
+   struct LiveOutReg {
+@@ -196,15 +202,17 @@
+   typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
+ 
+   struct CallsiteInfo {
++    const MCSymbol *Func;
+     const MCExpr *CSOffsetExpr;
+     uint64_t ID;
+     LocationVec Locations;
+     LiveOutVec LiveOuts;
+-    CallsiteInfo() : CSOffsetExpr(nullptr), ID(0) {}
+-    CallsiteInfo(const MCExpr *CSOffsetExpr, uint64_t ID,
+-                 LocationVec &&Locations, LiveOutVec &&LiveOuts)
+-        : CSOffsetExpr(CSOffsetExpr), ID(ID), Locations(std::move(Locations)),
+-          LiveOuts(std::move(LiveOuts)) {}
++    CallsiteInfo() : Func(nullptr), CSOffsetExpr(nullptr), ID(0) {}
++    CallsiteInfo(const MCSymbol *Func, const MCExpr *CSOffsetExpr,
++                 uint64_t ID, LocationVec &&Locations,
++                 LiveOutVec &&LiveOuts)
++        : Func(Func), CSOffsetExpr(CSOffsetExpr), ID(ID),
++          Locations(std::move(Locations)), LiveOuts(std::move(LiveOuts)) {}
+   };
+ 
+   typedef std::vector<CallsiteInfo> CallsiteInfoList;
+@@ -214,10 +222,14 @@
+   ConstantPool ConstPool;
+   FnStackSizeMap FnStackSize;
+ 
++  /// Get pointer information for stackmap operand
++  void getPointerInfo(User::const_op_iterator &Op, const DataLayout &DL,
++                      bool &isPtr, bool &isAlloca, unsigned &PtrDataSize) const;
++
+   MachineInstr::const_mop_iterator
+   parseOperand(MachineInstr::const_mop_iterator MOI,
+                MachineInstr::const_mop_iterator MOE, LocationVec &Locs,
+-               LiveOutVec &LiveOuts) const;
++               LiveOutVec &LiveOuts, User::const_op_iterator &Op) const;
+ 
+   /// \brief Create a live-out register record for the given register @p Reg.
+   LiveOutReg createLiveOutReg(unsigned Reg,
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-05-25 11:33:09.072960256 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-06-28 14:34:38.236541449 -0400
+@@ -1292,6 +1292,39 @@
+   return CurExceptionSym;
+ }
+ 
++MachineInstr *AsmPrinter::FindStackMap(MachineBasicBlock &MBB,
++                                       MachineInstr *MI) const {
++  MachineBasicBlock::instr_iterator i, ie;
++  for(i = ++MI->getIterator(), ie = MBB.instr_end(); i != ie; i++) {
++    if(i->getOpcode() == TargetOpcode::STACKMAP)
++      return &*i;
++    else if(i->isCall())
++      break;
++  }
++
++  // Call site without a stackmap implies that either the call was generated by
++  // the backend or the LLVM bitcode was never instrumented by the StackInfo
++  // pass.  This is not necessarily an error!
++  return nullptr;
++}
++
++bool AsmPrinter::TagCallSites(MachineFunction &MF) {
++  bool tagged = false;
++  for(auto MBB = MF.begin(), MBBE = MF.end(); MBB != MBBE; MBB++) {
++    for(auto MI = MBB->instr_begin(), MIE = MBB->instr_end(); MI != MIE; MI++) {
++      if(MI->isCall() && !MI->isPseudo()) {
++        MachineInstr *SMI = FindStackMap(*MBB, &*MI);
++        if(SMI != nullptr) {
++          MBB->remove(SMI);
++          MI = MBB->insert(++MI, SMI);
++          tagged = true;
++        }
++      }
++    }
++  }
++  return tagged;
++}
++
+ void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
+   this->MF = &MF;
+   // Get the function symbol.
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/MachineFunction.cpp	2016-05-25 11:33:10.048960247 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/MachineFunction.cpp	2016-07-01 10:22:14.574558611 -0400
+@@ -517,6 +517,34 @@
+                                Twine(getFunctionNumber()) + "$pb");
+ }
+ 
++/// Add an IR/virtual register mapping for a stackmap operand
++void MachineFunction::addSMValVregMapping(const Value *Val, unsigned Vreg) {
++  assert(Val && "Invalid IR value");
++  SMVal2Vreg.insert(std::move(ValVregPair(Val, Vreg)));
++}
++
++/// Return the virtual register mapped to a stackmap operand
++unsigned MachineFunction::getSMVreg(const Value *Val) const {
++  assert(Val && "Invalid IR value");
++  ValVregMap::const_iterator it = SMVal2Vreg.find(Val);
++  if(it != SMVal2Vreg.end()) return it->second;
++  else return UINT_MAX;
++}
++
++/// Add an IR/stack slot mapping for a stackmap operand
++void MachineFunction::addSMValStackSlotMapping(const Value *Val, int SS) {
++  assert(Val && "Invalid IR value");
++  SMVal2StackSlot.insert(std::move(ValStackSlotPair(Val, SS)));
++}
++
++/// Return the stack slot mapped to a stackmap operand
++int MachineFunction::getSMStackSlot(const Value *Val) const {
++  assert(Val && "Invalid IR value");
++  ValStackSlotMap::const_iterator it = SMVal2StackSlot.find(Val);
++  if(it != SMVal2StackSlot.end()) return it->second;
++  else return INT_MAX;
++}
++
+ //===----------------------------------------------------------------------===//
+ //  MachineFrameInfo implementation
+ //===----------------------------------------------------------------------===//
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-01 10:24:10.174557564 -0400
+@@ -152,4 +152,11 @@
+       ++NumNewQueued;
+     }
+   }
++
++  // Add mapping between stackmap operands in virtual registers and spilled
++  // stack slots (only if spilling is required, e.g., around call sites)
++  MachineFunction &MF = VRM->getMachineFunction();
++  for(auto i = MF.SMValVreg_begin(), ie = MF.SMValVreg_end(); i != ie; i++)
++    if(!VRM->hasPhys(i->second))
++      MF.addSMValStackSlotMapping(i->first, VRM->getStackSlot(i->second));
+ }
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-05-25 11:33:09.548960252 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-01 10:24:39.218557301 -0400
+@@ -6782,8 +6782,16 @@
+       const TargetLowering &TLI = Builder.DAG.getTargetLoweringInfo();
+       Ops.push_back(Builder.DAG.getTargetFrameIndex(
+           FI->getIndex(), TLI.getPointerTy(Builder.DAG.getDataLayout())));
+-    } else
++    } else {
++      // We only care about stackmap operands that are in virtual registers,
++      // as these are the ones that can be mapped to caller-saved registers
++      // which must be converted to spilled stack slots when emitting the
++      // stackmap section.
++      RegisterSDNode *vreg = cast<RegisterSDNode>(OpVal.getOperand(1));
+       Ops.push_back(OpVal);
++      Builder.FuncInfo.MF->addSMValVregMapping(CS.getArgument(i),
++                                               vreg->getReg());
++    }
+   }
+ }
+ 
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-01 10:33:43.794552370 -0400
+@@ -9,10 +9,12 @@
+ 
+ #include "llvm/CodeGen/StackMaps.h"
+ #include "llvm/CodeGen/AsmPrinter.h"
++#include "llvm/CodeGen/MachineModuleInfo.h"
+ #include "llvm/CodeGen/MachineFrameInfo.h"
+ #include "llvm/CodeGen/MachineFunction.h"
+ #include "llvm/CodeGen/MachineInstr.h"
+ #include "llvm/IR/DataLayout.h"
++#include "llvm/IR/IntrinsicInst.h"
+ #include "llvm/MC/MCContext.h"
+ #include "llvm/MC/MCExpr.h"
+ #include "llvm/MC/MCObjectFileInfo.h"
+@@ -84,25 +86,65 @@
+   return (unsigned)RegNum;
+ }
+ 
++void StackMaps::getPointerInfo(User::const_op_iterator &Op,
++                               const DataLayout &DL,
++                               bool &isPtr, bool &isAlloca,
++                               unsigned &PtrDataSize) const {
++  isPtr = false;
++  isAlloca = false;
++  PtrDataSize = 0;
++
++  assert(Op != nullptr && "Invalid stackmap operand");
++  //if(Op != nullptr)
++  {
++    Type *Ty = Op->get()->getType();
++    if(Ty->isPointerTy())
++    {
++      PointerType *PTy = cast<PointerType>(Ty);
++      if(PTy->getElementType()->isSized())
++      {
++        isPtr = true;
++        PtrDataSize = DL.getTypeAllocSize(PTy->getElementType());
++        if(isa<AllocaInst>(Op)) isAlloca = true;
++      }
++    }
++  }
++}
++
++/// Return whether or not the specified register is caller-saved
++static bool isCallerSaved(const TargetRegisterInfo *TRI,
++                          MachineInstr::const_mop_iterator MOI)
++{
++  const MachineFunction *MF = MOI->getParent()->getParent()->getParent();
++  unsigned Reg = MOI->getReg();
++  CallingConv::ID CC = MF->getFunction()->getCallingConv();
++  const uint32_t *Mask = TRI->getCallPreservedMask(*MF, CC);
++  return !((Mask[Reg / 32] >> Reg % 32) & 1);
++}
++
+ MachineInstr::const_mop_iterator
+ StackMaps::parseOperand(MachineInstr::const_mop_iterator MOI,
+                         MachineInstr::const_mop_iterator MOE, LocationVec &Locs,
+-                        LiveOutVec &LiveOuts) const {
++                        LiveOutVec &LiveOuts, User::const_op_iterator &Op) const {
++  bool isPtr, isAlloca;
++  unsigned PtrDataSize;
++  auto &DL = AP.MF->getDataLayout();
+   const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
++
+   if (MOI->isImm()) {
++    getPointerInfo(Op, DL, isPtr, isAlloca, PtrDataSize);
+     switch (MOI->getImm()) {
+     default:
+       llvm_unreachable("Unrecognized operand type.");
+     case StackMaps::DirectMemRefOp: {
+-      auto &DL = AP.MF->getDataLayout();
+-
+       unsigned Size = DL.getPointerSizeInBits();
+       assert((Size % 8) == 0 && "Need pointer size in bytes.");
+       Size /= 8;
+       unsigned Reg = (++MOI)->getReg();
+       int64_t Imm = (++MOI)->getImm();
+       Locs.emplace_back(StackMaps::Location::Direct, Size,
+-                        getDwarfRegNum(Reg, TRI), Imm);
++                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca,
++                        PtrDataSize);
+       break;
+     }
+     case StackMaps::IndirectMemRefOp: {
+@@ -111,17 +153,20 @@
+       unsigned Reg = (++MOI)->getReg();
+       int64_t Imm = (++MOI)->getImm();
+       Locs.emplace_back(StackMaps::Location::Indirect, Size,
+-                        getDwarfRegNum(Reg, TRI), Imm);
++                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca,
++                        PtrDataSize);
+       break;
+     }
+     case StackMaps::ConstantOp: {
+       ++MOI;
+       assert(MOI->isImm() && "Expected constant operand.");
+       int64_t Imm = MOI->getImm();
+-      Locs.emplace_back(Location::Constant, sizeof(int64_t), 0, Imm);
++      Locs.emplace_back(Location::Constant, sizeof(int64_t), 0, Imm,
++                        isPtr, isAlloca, PtrDataSize);
+       break;
+     }
+     }
++    ++Op;
+     return ++MOI;
+   }
+ 
+@@ -136,17 +181,37 @@
+ 
+     assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
+            "Virtreg operands should have been rewritten before now.");
+-    const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(MOI->getReg());
+     assert(!MOI->getSubReg() && "Physical subreg still around.");
+ 
+-    unsigned Offset = 0;
+-    unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
+-    unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
+-    unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
+-    if (SubRegIdx)
+-      Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++    size_t valSize = DL.getTypeAllocSize(Op->get()->getType());
++    getPointerInfo(Op, DL, isPtr, isAlloca, PtrDataSize);
++    const MachineFunction *MF = MOI->getParent()->getParent()->getParent();
++    const MachineFrameInfo *MFI = MF->getFrameInfo();
++
++    // If the value is in a caller-saved register, record the spilled location
++    if (isCallerSaved(TRI, MOI) &&
++        MF->getSMStackSlot(Op->get()) < (int)MFI->getNumObjects())
++    {
++      int StackSlot = MF->getSMStackSlot(Op->get());
++      int64_t Offset = MFI->getObjectOffset(StackSlot) + 16; // RA + old FBP
++
++      Locs.emplace_back(StackMaps::Location::Indirect, valSize,
++                        getDwarfRegNum(TRI->getFrameRegister(*MF), TRI),
++                        Offset, isPtr, isAlloca, PtrDataSize);
++    }
++    else
++    {
++      unsigned Offset = 0;
++      unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
++      unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
++      unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
++      if (SubRegIdx)
++        Offset = TRI->getSubRegIdxOffset(SubRegIdx);
+ 
+-    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
++      Locs.emplace_back(Location::Register, valSize, DwarfRegNum, Offset,
++                        isPtr, isAlloca, PtrDataSize);
++    }
++    ++Op;
+     return ++MOI;
+   }
+ 
+@@ -287,6 +352,7 @@
+   MCContext &OutContext = AP.OutStreamer->getContext();
+   MCSymbol *MILabel = OutContext.createTempSymbol();
+   AP.OutStreamer->EmitLabel(MILabel);
++  User::const_op_iterator Op = nullptr;
+ 
+   LocationVec Locations;
+   LiveOutVec LiveOuts;
+@@ -294,13 +360,32 @@
+   if (recordResult) {
+     assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
+     parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
+-                 LiveOuts);
++                 LiveOuts, Op);
++  }
++
++  // Find the IR stackmap instruction which corresponds to MI so we can emit
++  // type information along with the value's location
++  const BasicBlock *BB = MI.getParent()->getBasicBlock();
++  const IntrinsicInst *II = nullptr;
++  const std::string SMName("llvm.experimental.stackmap");
++  for(auto BBI = BB->begin(), BBE = BB->end(); BBI != BBE; BBI++)
++  {
++    if(isa<IntrinsicInst>(&*BBI) &&
++       cast<IntrinsicInst>(&*BBI)->getCalledFunction()->getName() == SMName &&
++       cast<ConstantInt>(cast<IntrinsicInst>(&*BBI)->getArgOperand(0))->getZExtValue() == ID)
++    {
++      II = cast<IntrinsicInst>(&*BBI);
++      break;
++    }
+   }
++  assert(II && "Could not find associated stackmap instruction");
++  Op = std::next(II->arg_begin(), 2);
+ 
+   // Parse operands.
+   while (MOI != MOE) {
+-    MOI = parseOperand(MOI, MOE, Locations, LiveOuts);
++    MOI = parseOperand(MOI, MOE, Locations, LiveOuts, Op);
+   }
++  assert(Op == II->arg_end() && "did not lower all stackmap operands");
+ 
+   // Move large constants into the constant pool.
+   for (auto &Loc : Locations) {
+@@ -329,8 +414,8 @@
+       MCSymbolRefExpr::create(MILabel, OutContext),
+       MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
+ 
+-  CSInfos.emplace_back(CSOffsetExpr, ID, std::move(Locations),
+-                       std::move(LiveOuts));
++  CSInfos.emplace_back(AP.CurrentFnSym, CSOffsetExpr, ID,
++                       std::move(Locations), std::move(LiveOuts));
+ 
+   // Record the stack size of the current function.
+   const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
+@@ -441,6 +526,8 @@
+ ///
+ /// StkMapRecord[NumRecords] {
+ ///   uint64 : PatchPoint ID
++///   uint32 : Index of Function Stack Size Record
++///   uint32 : Padding
+ ///   uint32 : Instruction Offset
+ ///   uint16 : Reserved (record flags)
+ ///   uint16 : NumLocations
+@@ -449,6 +536,10 @@
+ ///     uint8  : Size in Bytes
+ ///     uint16 : Dwarf RegNum
+ ///     int32  : Offset
++///     uint8  : Is it a pointer?
++///     uint8  : Is it an alloca?
++///     uint16 : Padding
++///     uint32 : Size of pointed-to data
+ ///   }
+ ///   uint16 : Padding
+ ///   uint16 : NumLiveOuts
+@@ -489,6 +580,8 @@
+     }
+ 
+     OS.EmitIntValue(CSI.ID, 8);
++    OS.EmitIntValue(FnStackSize.find(CSI.Func) - FnStackSize.begin(), 4);
++    OS.EmitIntValue(0, 4);
+     OS.EmitValue(CSI.CSOffsetExpr, 4);
+ 
+     // Reserved for flags.
+@@ -500,6 +593,10 @@
+       OS.EmitIntValue(Loc.Size, 1);
+       OS.EmitIntValue(Loc.Reg, 2);
+       OS.EmitIntValue(Loc.Offset, 4);
++      OS.EmitIntValue(Loc.Ptr, 1);
++      OS.EmitIntValue(Loc.Alloca, 1);
++      OS.EmitIntValue(0, 2);
++      OS.EmitIntValue(Loc.PtrDataSize, 4);
+     }
+ 
+     // Num live-out registers and padding to align to 4 byte.
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/Target/AArch64/AArch64AsmPrinter.cpp	2016-05-25 11:33:05.876960285 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/Target/AArch64/AArch64AsmPrinter.cpp	2016-05-26 17:29:36.100063984 -0400
+@@ -129,8 +129,8 @@
+     // linker can safely perform dead code stripping.  Since LLVM never
+     // generates code that does this, it is always safe to set.
+     OutStreamer->EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
+-    SM.serializeToStackMapSection();
+   }
++  SM.serializeToStackMapSection();
+ }
+ 
+ MachineLocation
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/Target/X86/X86AsmPrinter.cpp	2016-05-25 11:33:05.560960288 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/Target/X86/X86AsmPrinter.cpp	2016-06-30 11:42:55.391297140 -0400
+@@ -49,6 +49,8 @@
+ bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+   Subtarget = &MF.getSubtarget<X86Subtarget>();
+ 
++  bool modified = TagCallSites(MF);
++
+   SMShadowTracker.startFunction(MF);
+ 
+   SetupMachineFunction(MF);
+@@ -66,8 +68,8 @@
+   // Emit the rest of the function body.
+   EmitFunctionBody();
+ 
+-  // We didn't modify anything.
+-  return false;
++  // We may have modified where stack map intrinsics are located.
++  return modified;
+ }
+ 
+ /// printSymbolOperand - Print a raw symbol reference operand.  This handles
