@@ -166,11 +166,12 @@ bool LiveValues::includeVal(const llvm::Value *val) const
     return false;
   else if(isa<MetadataAsValue>(val) && !metadata)
     return false;
-  else if((IntTy = dyn_cast<IntegerType>(val->getType())) &&
-          IntTy->getBitWidth() == 1)
-    return false;
-  else
-    return true;
+  else if((IntTy = dyn_cast<IntegerType>(val->getType())))
+  {
+    if(IntTy->getBitWidth() == 1 || IntTy->getBitWidth() == 8)
+      return false;
+  }
+  return true;
 }
 
 unsigned LiveValues::phiUses(const BasicBlock *B,

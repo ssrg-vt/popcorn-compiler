@@ -71,7 +71,10 @@ bool StackInfo::runOnModule(Module &M)
     std::set<const Value *>::const_iterator v, ve;
     size_t numRecords;
 
-    /* Put a stackmap at the beginning of the function to capture arguments. */
+    /*
+     * Put a stackmap at the beginning of the function to capture arguments. This
+     * should *always* have an ID of 0.
+     */
     std::set<const Value *> *liveIn = liveVals.getLiveIn(&f->getEntryBlock());
     std::vector<Value *> funcArgs(2);
     funcArgs[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
@@ -106,21 +109,6 @@ bool StackInfo::runOnModule(Module &M)
            !CI->isInlineAsm() &&
            !isa<IntrinsicInst>(CI))
         {
-          /*
-           * Avoid putting consecutive stackmaps if function's first
-           * instruction is a call (already added stackmap for args).
-           */
-          IntrinsicInst *PrevCI;
-          if(CI->getPrevNode() &&
-             (PrevCI = dyn_cast<IntrinsicInst>(CI->getPrevNode())))
-          {
-            const Function *called = PrevCI->getCalledFunction();
-            if(called &&
-               called->hasName() &&
-               called->getName() == this->SMName)
-              continue;
-          }
-
           std::set<const Value *> *live = liveVals.getLiveValues(&*i);
 
           DEBUG(
@@ -146,7 +134,7 @@ bool StackInfo::runOnModule(Module &M)
             errs() << "\n\r";
           );
 
-          IRBuilder<> builder(CI);
+          IRBuilder<> builder(CI->getNextNode());
           std::vector<Value *> args(2);
           args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
           args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);

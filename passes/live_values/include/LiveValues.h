@@ -96,8 +96,9 @@ public:
   std::set<const llvm::Value *> *getLiveOut(const llvm::BasicBlock *BB) const;
 
   /**
-   * Get the live values at a given instruction, i.e., the values live right
-   * before the invocation of the instruction.
+   * Get the live values across a given instruction, i.e., values live right
+   * after the invocation of the instruction (excluding the value defined by
+   * the instruction itself).
    * @param inst an instruction
    * @return the set of values live directly before the instruction; this set
    *         must be freed by the user.
