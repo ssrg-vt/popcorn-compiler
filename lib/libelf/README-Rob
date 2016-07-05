@@ -1,0 +1,22 @@
+NOTE: you *must* have musl built & installed for both architectures before you
+can build libELF!  This guide expects musl to be installed at:
+/usr/local/popcorn/<arch>
+
+We need to build against musl-libc, otherwise glibc-specific symbols creep into
+the binaries.  To build:
+
+NOTE: do a "make distclean" in-between building for different architectures!
+
+AArch64 (you may need to supply your own cross-compiler by setting CC):
+$ export CC=<AArch64 compiler> # Optional, default is "aarch64-linux-gnu-gcc"
+$ CFLAGS="-O3 -specs /usr/local/popcorn/aarch64/lib/musl-gcc.specs" ./configure --host=aarch64-linux-gnu --prefix=/usr/local/popcorn/aarch64 --enable-elf64 --disable-shared --enable-extended-format
+$ make
+$ make install
+
+x86-64:
+$ CFLAGS="-O3 -specs /usr/local/popcorn/x86_64/lib/musl-gcc.specs" ./configure --prefix=/usr/local/popcorn/x86_64 --enable-elf64 --disable-shared --enable-extended-format
+$ make
+$ make install
+
+Then do a make & make install and the library's files should live in:
+/usr/local/popcorn/<arch>

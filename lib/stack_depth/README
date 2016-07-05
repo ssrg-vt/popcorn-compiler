@@ -1,0 +1,65 @@
+--------
+Overview
+--------
+
+The stack depth library can be used to generate simple statistics about stack
+depth and the functions called during an application run.  Upon each function
+entry, the library records the function called, the call site and the current
+stack depth.  A script is then used to parse the raw data (optionally with the
+executed binary) to print information about the application's stack behavior.
+
+--------------------------------
+Buliding the stack depth library
+--------------------------------
+
+Do a make & make install to build and install the library.  The installation
+directory defaults to "/usr/local/popcorn/lib" but can be changed by setting
+the POPCORN environment variable:
+
+$ make install POPCORN=/my/install/dir
+
+---------------------------------------
+Preparing your application for analysis
+---------------------------------------
+
+Compile your applications using the "-finstrument-functions" parameter and link
+against the "libstack-depth.a" library.
+
+-----------------------------
+Generating the stack analysis
+-----------------------------
+
+Run your application with a representative input to capture application
+behavior.  The instrumented binary will produce a data file named
+"stack_depth.dat" (the filename can be changed by setting the
+STACK_DATA_FILENAME environment variable).  This data includes the
+application's function call behavior and stack sizes.
+
+------------------
+Parsing the output
+------------------
+
+Use the script in "utils/scripts" to parse the data and print statistics about
+stack depth and which functions were called most frequently (and by whom):
+
+$ stack-depth-info.py -d stack_depth.dat
+
+With '-v', you can see the most frequent callers of each the called functions:
+
+$ stack-depth-info.py -d stack_depth.dat -v
+
+The library saves the function addresses that it sees, which can be hard to
+understand.  You can optionally pass the the binary to the script, which will
+read the symbol table and print the names of the functions (this also works
+with '-v'):
+
+$ ./stack-depth-info.py -d stack_depth.dat -b <executable>
+
+With '-f', the tool will only print the names of called functions (note that
+this requires '-b'):
+
+$ ./stack-depth-info.py -d stack_depth.dat -b <executable> -f
+
+This is useful for generating a list of instrumented functions that are "hit"
+in a run of the executable, e.g., for testing migration at different functions.
+
