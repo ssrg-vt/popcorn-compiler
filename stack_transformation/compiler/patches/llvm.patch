@@ -226,8 +226,8 @@
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-01 10:24:10.174557564 -0400
-@@ -152,4 +152,11 @@
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-01 17:00:44.810342100 -0400
+@@ -152,4 +152,18 @@
        ++NumNewQueued;
      }
    }
@@ -235,32 +235,51 @@
 +  // Add mapping between stackmap operands in virtual registers and spilled
 +  // stack slots (only if spilling is required, e.g., around call sites)
 +  MachineFunction &MF = VRM->getMachineFunction();
-+  for(auto i = MF.SMValVreg_begin(), ie = MF.SMValVreg_end(); i != ie; i++)
-+    if(!VRM->hasPhys(i->second))
++  for(auto i = MF.SMValVreg_begin(), ie = MF.SMValVreg_end(); i != ie; i++) {
++    if(TargetRegisterInfo::isVirtualRegister(i->second) &&
++       !VRM->hasPhys(i->second)) {
++      DEBUG (dbgs() << "Vreg " << i->second
++                    << " is in spill slot "
++                    << VRM->getStackSlot(i->second)
++                    << "\n"; );
 +      MF.addSMValStackSlotMapping(i->first, VRM->getStackSlot(i->second));
++    }
++  }
  }
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-05-25 11:33:09.548960252 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-01 10:24:39.218557301 -0400
-@@ -6782,8 +6782,16 @@
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-03 18:27:15.972730366 -0400
+@@ -6782,8 +6782,28 @@
        const TargetLowering &TLI = Builder.DAG.getTargetLoweringInfo();
        Ops.push_back(Builder.DAG.getTargetFrameIndex(
            FI->getIndex(), TLI.getPointerTy(Builder.DAG.getDataLayout())));
 -    } else
 +    } else {
-+      // We only care about stackmap operands that are in virtual registers,
-+      // as these are the ones that can be mapped to caller-saved registers
-+      // which must be converted to spilled stack slots when emitting the
-+      // stackmap section.
-+      RegisterSDNode *vreg = cast<RegisterSDNode>(OpVal.getOperand(1));
        Ops.push_back(OpVal);
-+      Builder.FuncInfo.MF->addSMValVregMapping(CS.getArgument(i),
-+                                               vreg->getReg());
++
++      // We only care about stackmap operands that are in (virtual or physical)
++      // registers, as these can be caller-saved registers which must be
++      // converted to spilled stack slots when emitting the stackmap section.
++      // TODO We're not handling all possible types here, although CopyFromReg
++      // seems to be the majority case.  Need to investigate how the register
++      // allocator is lowering non-CopyFromReg nodes...
++      RegisterSDNode *Reg;
++      switch(OpVal.getOpcode()) {
++      case ISD::CopyFromReg: {
++        for(unsigned i = 0, ie = OpVal.getNumOperands(); i < ie; i++) {
++          if((Reg = dyn_cast<RegisterSDNode>(OpVal.getOperand(i)))) {
++            Builder.FuncInfo.MF->addSMValVregMapping(CS.getArgument(i),
++                                                     Reg->getReg());
++            break;
++          }
++        }
++      }
++      }
 +    }
    }
  }
  
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-01 10:33:43.794552370 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-01 17:32:28.842324859 -0400
 @@ -9,10 +9,12 @@
  
  #include "llvm/CodeGen/StackMaps.h"
@@ -367,7 +386,7 @@
      return ++MOI;
    }
  
-@@ -136,17 +181,37 @@
+@@ -136,17 +181,54 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -384,28 +403,45 @@
 +    getPointerInfo(Op, DL, isPtr, isAlloca, PtrDataSize);
 +    const MachineFunction *MF = MOI->getParent()->getParent()->getParent();
 +    const MachineFrameInfo *MFI = MF->getFrameInfo();
++    int SS;
++    bool spilled = false;
 +
 +    // If the value is in a caller-saved register, record the spilled location
-+    if (isCallerSaved(TRI, MOI) &&
-+        MF->getSMStackSlot(Op->get()) < (int)MFI->getNumObjects())
-+    {
-+      int StackSlot = MF->getSMStackSlot(Op->get());
-+      int64_t Offset = MFI->getObjectOffset(StackSlot) + 16; // RA + old FBP
++    if (isCallerSaved(TRI, MOI)) {
++      SS = MF->getSMStackSlot(Op->get());
++      if(SS < (int)MFI->getNumObjects() && !MFI->isDeadObjectIndex(SS))
++        spilled = true;
++      else {
++        DEBUG(
++          dbgs() << WSMP;
++          cast<Instruction>(Op->getUser())->getParent()->printAsOperand(dbgs());
++          dbgs() << ", stackmap "
++                 << cast<ConstantInt>(Op->getUser()->getOperand(0))->getSExtValue()
++                 << ", value ";
++          Op->get()->printAsOperand(dbgs());
++          dbgs() << ": "
++                 << (SS < (int)MFI->getNumObjects() ? "dead object index"
++                                                    : "out of bounds")
++                 << "\n";
++        );
++      }
++    }
 +
++    if (spilled) {
++      int64_t Offset = MFI->getObjectOffset(SS) + 16; // RA + old FBP
+ 
+-    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
 +      Locs.emplace_back(StackMaps::Location::Indirect, valSize,
 +                        getDwarfRegNum(TRI->getFrameRegister(*MF), TRI),
 +                        Offset, isPtr, isAlloca, PtrDataSize);
-+    }
-+    else
-+    {
++    } else {
 +      unsigned Offset = 0;
 +      unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
 +      unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
 +      unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
 +      if (SubRegIdx)
 +        Offset = TRI->getSubRegIdxOffset(SubRegIdx);
- 
--    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
++
 +      Locs.emplace_back(Location::Register, valSize, DwarfRegNum, Offset,
 +                        isPtr, isAlloca, PtrDataSize);
 +    }
@@ -413,7 +449,7 @@
      return ++MOI;
    }
  
-@@ -287,6 +352,7 @@
+@@ -287,6 +369,7 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -421,7 +457,7 @@
  
    LocationVec Locations;
    LiveOutVec LiveOuts;
-@@ -294,13 +360,32 @@
+@@ -294,13 +377,32 @@
    if (recordResult) {
      assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
      parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
@@ -456,7 +492,7 @@
  
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
-@@ -329,8 +414,8 @@
+@@ -329,8 +431,8 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -467,7 +503,7 @@
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -441,6 +526,8 @@
+@@ -441,6 +543,8 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -476,7 +512,7 @@
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -449,6 +536,10 @@
+@@ -449,6 +553,10 @@
  ///     uint8  : Size in Bytes
  ///     uint16 : Dwarf RegNum
  ///     int32  : Offset
@@ -487,7 +523,7 @@
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -489,6 +580,8 @@
+@@ -489,6 +597,8 @@
      }
  
      OS.EmitIntValue(CSI.ID, 8);
@@ -496,7 +532,7 @@
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -500,6 +593,10 @@
+@@ -500,6 +610,10 @@
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
