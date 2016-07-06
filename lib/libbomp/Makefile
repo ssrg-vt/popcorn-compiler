@@ -59,6 +59,8 @@ install: libbomp_aarch64.a libbomp_x86-64.a
 	cp omp.h $(POPCORN)/aarch64/include
 	cp libbomp_x86-64.a $(POPCORN)/x86_64/lib/libbomp.a
 	cp omp.h $(POPCORN)/x86_64/include
+	cp libbomp_x86-64.a $(POPCORN)/lib/libbomp.a
+	cp omp.h $(POPCORN)/include
 
 clean:
 	rm -rf libbomp_aarch64.a libbomp_x86-64.a $(BUILD_AARCH64) $(BUILD_X86_64)
