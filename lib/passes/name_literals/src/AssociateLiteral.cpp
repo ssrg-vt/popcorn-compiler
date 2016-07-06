@@ -1,16 +1,9 @@
-#include <vector>
-
 #include "llvm/Pass.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Type.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "AssociateLiteral.h"
 
@@ -25,8 +18,7 @@ using namespace llvm;
 /**
  * Default constructor.
  */
-AssociateLiteral::AssociateLiteral()
-  : ModulePass(ID), strID(0), numInstrumented(0) {}
+AssociateLiteral::AssociateLiteral() : ModulePass(ID), numInstrumented(0) {}
 
 /**
  * Default destructor.

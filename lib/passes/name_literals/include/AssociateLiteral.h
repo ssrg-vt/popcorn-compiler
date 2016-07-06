@@ -10,8 +10,6 @@ class AssociateLiteral : public llvm::ModulePass
 {
 public:
 	static char ID;
-	size_t strID;
-	static string value;
 	size_t numInstrumented;
 
 	AssociateLiteral();
