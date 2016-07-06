@@ -1,0 +1,7 @@
+Note: the stack transformation library has been tested with GCC v4.8 and
+libdwarf v4, which can be downloaded from:
+
+	http://www.prevanders.net/dwarf.html
+
+As of Ubuntu 14.04, Ubuntu only includes libdwarf v3 in the official
+repositories which is incompatible (GCC 4.8 emits DWARF v4 debugging info).

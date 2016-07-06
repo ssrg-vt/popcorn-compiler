@@ -1,0 +1,24 @@
+--------------
+Implementation
+--------------
+
+1. How do we find pointers to the stack for pointers in arrays or structs?
+
+2. Values should be 128-bits.
+
+3. Handle variable-sized stack objects
+
+4. Detect and handle when tail-call elimination only only happens on one
+   architecture. Note: is this actually a problem?
+
+5. Add constructor/destructor attributes to __st_userspace_ctr,
+   __st_userspace_dtor & __st_destroy, make them static
+
+------------
+Optimization
+------------
+
+1. Instead of storing complete copy of register operations in each regset,
+   store only a pointer (like C++ vtable)
+
+2. Don't read FDE's CIE when getting FDE via PC
