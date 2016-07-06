@@ -255,7 +255,7 @@ $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 # Stack-depth builds
 $(X86_64_SD_BUILD)/%.o: %.c
 	@echo " [CC (x86-64)] $< (stack depth)"
-	@$(CC) -target $(X86_64_TARGET) $(CFLAGS) -finstrument-functions -o $@ $<
+	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) $(X86_64_INC) -o $@ $<
 
 $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"

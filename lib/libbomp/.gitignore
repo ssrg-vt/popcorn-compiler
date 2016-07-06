@@ -1,0 +1,4 @@
+build_aarch64
+build_x86_64
+libbomp_aarch64.a
+libbomp_x86-64.a
