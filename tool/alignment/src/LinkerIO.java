@@ -56,36 +56,49 @@ public class LinkerIO {
 	static List<String> x86_64_rodata_alignment = new ArrayList<String>();
 	static List<String> x86_64_data_alignment = new ArrayList<String>();
 	static List<String> x86_64_bss_alignment = new ArrayList<String>();
+	static List<String> x86_64_tls_data_alignment = new ArrayList<String>();
+	static List<String> x86_64_tls_bss_alignment = new ArrayList<String>();
 	
 	static List<String> aarch64_text_alignment = new ArrayList<String>();
 	static List<String> aarch64_rodata_alignment = new ArrayList<String>();
 	static List<String> aarch64_data_alignment = new ArrayList<String>();
 	static List<String> aarch64_bss_alignment = new ArrayList<String>();
-	
+	static List<String> aarch64_tls_data_alignment = new ArrayList<String>();
+	static List<String> aarch64_tls_bss_alignment = new ArrayList<String>();
 	
 	
 	static List<String> COPY_linkerScript_ByLine_x86_64;
 	static List<String> COPY_linkerScript_ByLine_aarch64;
 	
 	static int x86_textLineOffset = 54;
-	static int x86_rodataLineOffset = 73;
-	static int x86_dataLineOffset = 80;
-	static int x86_bssLineOffset = 91;
+	static int x86_rodataLineOffset = 72+1;
+	static int x86_dataLineOffset = 78+2;
+	static int x86_bssLineOffset = 88+3;
+	static int x86_tlsdataLineOffset = 134+4;
+	static int x86_tlsbssLineOffset = 138+5;
 	
 	static int aarch64_textLineOffset = 45;
 	static int aarch64_rodataLineOffset = 63+1;
 	static int aarch64_dataLineOffset = 70+2; 
-	static int aarch64_bssLineOffset = 81+3; 
+	static int aarch64_bssLineOffset = 81+3;
+	static int aarch64_tlsdataLineOffset = 114+4;
+	static int aarch64_tlsbssLineOffset = 118+5;
 
+	/**TODO UM IS THIS USED???!*/
 	static int x86_textendLine_Offset = 63;
-	static int x86_rodataendLine_Offset = 77;
-	static int x86_dataendLine_Offset = 156;
-	static int x86_bssendLine_Offset = 173;
+	static int x86_rodataendLine_Offset = 75+1;
+	static int x86_dataendLine_Offset = 82+2;
+	static int x86_bssendLine_Offset = 99+3;
+	static int x86_tlsdataendLine_Offset = 136+4;
+	static int x86_tlsbssendLine_Offset = 140+5;
 	
 	static int aarch64_textendLine_Offset = 54;
 	static int aarch64_rodataendLine_Offset = 68;
 	static int aarch64_dataendLine_Offset = 153;
 	static int aarch64_bssendLine_Offset = 173;
+	/**NOT SURE*/
+	static int aarch64_tlsdataendLine_Offset = 0;
+	static int aarch64_tlsbssendLine_Offset = 0; 
 	
 	static void resetLinkerScript(){
 		linkerScript_ByLine_x86_64.clear();
@@ -153,7 +166,7 @@ public class LinkerIO {
 				incrementLinkerNewLines_x86();
 			}
 			linkerScript_ByLine_x86_64.add(x86_fileLineOffset, element);
-			System.out.println("added: "+nlines+" new lines of x86 linker script.");
+			if(globalVars.DEBUG) System.out.println("added: "+nlines+" new lines of x86 linker script.");
 		}
 		if(aarch64_alignment != null){
 			element="";
@@ -163,7 +176,7 @@ public class LinkerIO {
 				incrementLinkerNewLines_aRM();
 			}
 			linkerScript_ByLine_aarch64.add(aarch64_fileLineOffset, element);
-			System.out.println("added: "+nlines+" new lines of ARM linker script.");
+			if(globalVars.DEBUG) System.out.println("added: "+nlines+" new lines of ARM linker script.");
 		}
 	}
 	
@@ -187,6 +200,12 @@ public class LinkerIO {
 		
 		replaceLineInLinkerScript("\\p{Blank}*(\\.bss)\\p{Blank}*:.*","  .bss\t: ALIGN(0x1000)",1);
 		replaceLineInLinkerScript("\\p{Blank}*(\\.bss)\\p{Blank}*:.*","  .bss\t: ALIGN(0x1000)",0);
+		
+		replaceLineInLinkerScript("\\p{Blank}*(\\.tdata)\\p{Blank}*:.*","  .tdata\t: ALIGN(0x1000)",1);
+		replaceLineInLinkerScript("\\p{Blank}*(\\.tdata)\\p{Blank}*:.*","  .tdata\t: ALIGN(0x1000)",0);
+		
+		replaceLineInLinkerScript("\\p{Blank}*(\\.tbss)\\p{Blank}*:.*","  .tbss\t: ALIGN(0x1000)",1);
+		replaceLineInLinkerScript("\\p{Blank}*(\\.tbss)\\p{Blank}*:.*","  .tbss\t: ALIGN(0x1000)",0);
 	}
 	
 	static void replaceLineInLinkerScript(String findPatern,String replacePatern, int x86_OR_aarch){

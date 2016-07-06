@@ -12,11 +12,15 @@ public class AlignmentLogic {
 	 * 1 x86 rodata
 	 * 2 x86 data
 	 * 3 x86 bss
+	 * 4 x86 TDATA
+	 * 5 x86 TBSS
 	 * 
-	 * 4 arm text
-	 * 5 arm rodata
-	 * 6 arm data
-	 * 7 arm bss
+	 * 6 arm text
+	 * 7 arm rodata
+	 * 8 arm data
+	 * 9 arm bss
+	 * 10 arm TDATA
+	 * 11 arm TBSS
 	 */
 	public static List<Section<String,Long,Long>> RangesInfo = new ArrayList<Section<String,Long,Long>>();
 	
@@ -47,7 +51,6 @@ public class AlignmentLogic {
 		}
 		else if(option ==1){
 			fr1 = new FileReader(new File(Runtime.TARGET_DIR+"/"+"readelf_aRMn.txt"));
-			//System.out.println("\n");
 		}else{
 			System.out.println("Invalid option selected");
 			throw new IllegalArgumentException();
@@ -68,40 +71,40 @@ public class AlignmentLogic {
 				//TEXT
 		        if(m.group(1).compareTo(".text")==0){
 		        	RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
-		        	//System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3)  );
+		        	if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3)  );
 		        }
 		        //RODATA
 		        else if(m.group(1).compareTo(".rodata")==0){
 		        	RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
-		        	//System.out.println("Name: "+m.group(1) +"    Adeed" +"  0x"+m.group(2) +"    0x"+m.group(3)  );
+		        	if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed" +"  0x"+m.group(2) +"    0x"+m.group(3)  );
 		        }
 		        //DATA
 		        else if(m.group(1).compareTo(".data")==0){
 		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
-		           //System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
 		        }
 		        //BSS
 		        else if(m.group(1).compareTo(".bss")==0){
 		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
-		           //System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
 		        }
-		           //WEIRD CASES
-		           //else if(m.group(1).compareTo(".data.rel.ro.local")==0){
-	        	   //data.rel.ro
-	        	   //RangesInfo.add(new Tuple<String,Long,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16),(long) 0 ,0,0));
-	        	   //	System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
-		           //}
-		           //else if(m.group(1).compareTo(".data.rel.ro")==0){
-		           //rel.ro
-		           //RangesInfo.add(new Tuple<String,Long,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16),(long) 0 ,0,0));
-		           //System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
-		           //}*/
+		        //TDATA (TLS)
+		        else if(m.group(1).compareTo(".tdata")==0){
+		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
+		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		        }
+		        //TBSS (TLS)
+		        else if(m.group(1).compareTo(".tbss")==0){
+		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
+		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		        }
 			} //END while(m.find())
 		} //END FOR readelf file
 		if(RangesInfo.isEmpty()){
 			System.out.println("Could not obtain Ranges Info. Did Program Successfully compile?");
 			throw new IOException();
-		}	
+		}
+		if(globalVars.DEBUG) System.out.println("");
 	}//END recordRanges
 	
 	/**
@@ -115,14 +118,14 @@ public class AlignmentLogic {
 		//TEXT
 		for(p=0; p < globalVars.A_text.size(); ++p){
 			if( globalVars.A_text.get(p).getSize_x86_64() == 0 || globalVars.A_text.get(p).getSize_aarch64() == 0 ){
-				System.out.println("Removed Text<<"+globalVars.A_text.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_text.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_text.get(p).getSize_aarch64()));
+				if(globalVars.DEBUG) System.out.println("Removed Text<<"+globalVars.A_text.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_text.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_text.get(p).getSize_aarch64()));
 				if(globalVars.A_text.get(p).getSize_x86_64() != 0 && globalVars.A_text.get(p).getSize_aarch64() == 0){
 					A_x86only.add(globalVars.A_text.get(p));
 				}
 				else if(globalVars.A_text.get(p).getSize_x86_64() == 0 && globalVars.A_text.get(p).getSize_aarch64() != 0){
 					A_aRMonly.add(globalVars.A_text.get(p));
 				}else{
-					System.out.println("Double NULL!!: "+globalVars.A_text.get(p).getName());
+					if(globalVars.DEBUG) System.out.println("Double NULL!!: "+globalVars.A_text.get(p).getName());
 				}
 				globalVars.A_text.remove(p);
 				--p;
@@ -131,14 +134,14 @@ public class AlignmentLogic {
 		//RODATA
 		for(p=0;p<globalVars.A_rodata.size();p++){
 			if( globalVars.A_rodata.get(p).getSize_x86_64() == 0 || globalVars.A_rodata.get(p).getSize_aarch64() == 0 ||globalVars.A_rodata.get(p).getAddr() ==0){
-				System.out.println("Removed Rodata<<"+globalVars.A_rodata.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_rodata.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_rodata.get(p).getSize_aarch64()));
+				if(globalVars.DEBUG) System.out.println("Removed Rodata<<"+globalVars.A_rodata.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_rodata.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_rodata.get(p).getSize_aarch64()));
 				if(globalVars.A_rodata.get(p).getSize_x86_64() != 0 && globalVars.A_rodata.get(p).getSize_aarch64() == 0){
 					A_x86only.add(globalVars.A_rodata.get(p));
 				}
 				else if(globalVars.A_rodata.get(p).getSize_x86_64() == 0 && globalVars.A_rodata.get(p).getSize_aarch64() != 0){
 					A_aRMonly.add(globalVars.A_rodata.get(p));
 				}else{
-					System.out.println("Double NULL!!: "+globalVars.A_rodata.get(p).getName());
+					if(globalVars.DEBUG) System.out.println("Double NULL!!: "+globalVars.A_rodata.get(p).getName());
 				}
 				globalVars.A_rodata.remove(p);
 				--p;
@@ -147,14 +150,14 @@ public class AlignmentLogic {
 		//DATA
 		for(p=0;p<globalVars.A_data.size();p++){
 			if( globalVars.A_data.get(p).getSize_x86_64() == 0 ||globalVars.A_data.get(p).getSize_aarch64() == 0){
-				System.out.println("Removed Data<<"+globalVars.A_data.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_data.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_data.get(p).getSize_aarch64()));
+				if(globalVars.DEBUG) System.out.println("Removed Data<<"+globalVars.A_data.get(p).getName()+">> x86Sz:0x"+Long.toHexString(globalVars.A_data.get(p).getSize_x86_64())+"\taRMSz:0x"+Long.toHexString(globalVars.A_data.get(p).getSize_aarch64()));
 				if(globalVars.A_data.get(p).getSize_x86_64() != 0 && globalVars.A_data.get(p).getSize_aarch64() == 0){
 					A_x86only.add(globalVars.A_data.get(p));
 				}
 				else if(globalVars.A_data.get(p).getSize_x86_64() == 0 && globalVars.A_data.get(p).getSize_aarch64() != 0){
 					A_aRMonly.add(globalVars.A_data.get(p));
 				}else{
-					System.out.println("Double NULL!!: "+globalVars.A_data.get(p).getName());
+					if(globalVars.DEBUG) System.out.println("Double NULL!!: "+globalVars.A_data.get(p).getName());
 				}
 				globalVars.A_data.remove(p);
 				--p;
@@ -176,7 +179,7 @@ public class AlignmentLogic {
 				--p;
 			}
 		}
-		System.out.println("\nA_text SIZE CLEAN: "+globalVars.A_text.size());
+		if(globalVars.DEBUG) System.out.println("\nA_text SIZE CLEAN: "+globalVars.A_text.size());
 	}//END cleanIntersection
 	
 	static void set_symbol_Alignment(List<Tuple<String,Long,Long,Long>> A_sectionList, List<String> A_x86_alignment,List<String> A_aarch64_alignment, boolean defaultAlign) throws InterruptedException, IOException{
@@ -249,7 +252,7 @@ public class AlignmentLogic {
 		if(currList.size()>1){
 			if(currList.get(currList.size()-1).getAddr() == addr ){
 				currList.get(currList.size()-1).setFlag(1);
-				System.out.println("######### !!!sameAddr_MultipleSymbol: "+currList.get(currList.size()-1).getName());
+				if(globalVars.DEBUG) System.out.println("######### !!!sameAddr_MultipleSymbol: "+currList.get(currList.size()-1).getName());
 			}
 		}
 	}
@@ -274,47 +277,57 @@ public class AlignmentLogic {
 		switch(section){
 			case "text":
 				s_x86 = 0;
-				s_arm = 4;
+				s_arm = 6;
 				x86_insertPT = LinkerIO.x86_textendLine_Offset+LinkerIO.getLinkerNewLines_x86();
 				arm_insertPT = LinkerIO.aarch64_textendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
 				break;
 			case "rodata":
 				s_x86 = 1;
-				s_arm = 5;
+				s_arm = 7;
 				x86_insertPT = LinkerIO.x86_rodataendLine_Offset+LinkerIO.getLinkerNewLines_x86();
 				arm_insertPT = LinkerIO.aarch64_rodataendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
 				break;
 			case "data":
 				s_x86 = 2;
-				s_arm = 6;
+				s_arm = 8;
 				x86_insertPT = LinkerIO.x86_dataendLine_Offset+LinkerIO.getLinkerNewLines_x86();
 				arm_insertPT = LinkerIO.aarch64_dataendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
 				break;
 			case "bss":
 				s_x86 = 3;
-				s_arm = 7;
+				s_arm = 9;
 				x86_insertPT = LinkerIO.x86_bssendLine_Offset+LinkerIO.getLinkerNewLines_x86();
 				arm_insertPT = LinkerIO.aarch64_bssendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
 				break;
+			case "tdata":
+				s_x86 = 4;
+				s_arm = 10;
+				x86_insertPT = LinkerIO.x86_tlsdataendLine_Offset+LinkerIO.getLinkerNewLines_x86();
+				arm_insertPT = LinkerIO.aarch64_tlsdataendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
+			case "tbss":
+				s_x86 = 5;
+				s_arm = 11;
+				x86_insertPT = LinkerIO.x86_tlsbssendLine_Offset+LinkerIO.getLinkerNewLines_x86();
+				arm_insertPT = LinkerIO.aarch64_tlsbssendLine_Offset+LinkerIO.getLinkerNewLines_aRM();
 			default:
 				throw new IllegalArgumentException("Invalid Section: " + section);
 		}
 
 		long sectMax_x86 = RangesInfo.get(s_x86).getAddr() + RangesInfo.get(s_x86).getSize();
 		long sectMax_arm = RangesInfo.get(s_arm).getAddr() + RangesInfo.get(s_arm).getSize();
-		System.out.println("\n------------------------ Add_end of section Alignment<<"+section+">>: Max x86: "+sectMax_x86+" Max arm: "+sectMax_arm);
+		if(globalVars.DEBUG) System.out.println("\n------------------------ Add_end of section Alignment<<"+section+">>: Max x86: "+sectMax_x86+" Max arm: "+sectMax_arm);
 		//System.out.println("@@@@size:"+AlignmentLogic.RangesInfo.get(0).getSize_x86_64() + "++"+AlignmentLogic.RangesInfo.get(0).getSize_aarch64());
 		//System.out.println("@@@@size:"+AlignmentLogic.RangesInfo.get(4).getSize_x86_64() + "++"+AlignmentLogic.RangesInfo.get(4).getSize_aarch64());
 		long sizeDif = sectMax_x86 - sectMax_arm;
-		System.out.println(section+" DIFF: "+sizeDif);
+		if(globalVars.DEBUG) System.out.println(section+" DIFF: "+sizeDif);
 		if (sizeDif < 0){
 			//ARM LARGER add padding to x86
-			System.out.println("<<Padding x86>>");
+			if(globalVars.DEBUG) System.out.println("<<Padding x86>>");
 			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif))+ "; /*END OF SECTION "+section +" SZ ALIGN*/");
 			LinkerIO.addAlignmentToLinkerScripts(LinkerIO.sectionSize_alignment, null,x86_insertPT,0);
 		}else if(sizeDif > 0){
 			//x86 LARGER add padding to ARM
-			System.out.println("<<Padding ARM>>");
+			if(globalVars.DEBUG) System.out.println("<<Padding ARM>>");
 			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif)) + "; /*END OF SECTION "+section +" SZ ALIGN*/");
 			LinkerIO.addAlignmentToLinkerScripts(null, LinkerIO.sectionSize_alignment,0,arm_insertPT);
 		}else{ //Have a nice day!
@@ -327,7 +340,7 @@ public class AlignmentLogic {
 			return;
 		
 		String temp;		
-		System.out.println("\n\ninside CAS "+symbols.get(0));
+		if(globalVars.DEBUG) System.out.println("\n\ninside CAS "+symbols.get(0));
 		// find where first rodata symbol is in both x86-64/aarch64
 		if(!symbols.isEmpty()){
 			//open and grab x86 address of first symbol
@@ -337,7 +350,7 @@ public class AlignmentLogic {
 				//System.out.println(temp);
 				if(temp.substring(19).equals(symbols.get(0).getName())){
 					symbols.get(0).setSize_x86_64(Long.parseLong(temp.substring(0, 16), 16));
-					System.out.println(symbols.get(0).getSize_x86_64());
+					if(globalVars.DEBUG) System.out.println(symbols.get(0).getSize_x86_64());
 					break;
 				}
 			}
@@ -347,7 +360,7 @@ public class AlignmentLogic {
 			while((temp = br1.readLine()) != null){
 				if(temp.substring(19).equals(symbols.get(0).getName())){
 					symbols.get(0).setSize_aarch64(Long.parseLong(temp.substring(0, 16), 16));
-					System.out.println(symbols.get(0).getSize_aarch64());
+					if(globalVars.DEBUG) System.out.println(symbols.get(0).getSize_aarch64());
 					break;
 				}
 			}
@@ -358,15 +371,15 @@ public class AlignmentLogic {
 			if(diff > 0){
 				//x86_64 has larger address, need to offset aarch64
 				String align_aarch64="\t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";";
-				System.out.println("CAS \t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";");
+				if(globalVars.DEBUG) System.out.println("CAS \t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";");
 				LinkerIO.addLineToLinkerScript(align_aarch64,aarch64_offset+1, 1);
-				System.out.println("ARM:::: imserted in line: "+ aarch64_offset );
+				if(globalVars.DEBUG) System.out.println("ARM:::: imserted in line: "+ aarch64_offset );
 			}else if(diff < 0 ){
 				//aarch64 has larger address, need to offset x86_64
 				String align_x86_64="\t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";";
-				System.out.println("CAS RODATA\t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";");
+				if(globalVars.DEBUG) System.out.println("CAS RODATA\t"+" . = . + 0x"+ Long.toHexString(Math.abs(diff))+ ";");
 				LinkerIO.addLineToLinkerScript(align_x86_64,x86_offset+1,0);
-				System.out.println("x86:::: imserted in line: "+ x86_offset);
+				if(globalVars.DEBUG) System.out.println("x86:::: imserted in line: "+ x86_offset);
 			}
 			//else do nothing: they are at the same address
 		}
@@ -429,7 +442,7 @@ public class AlignmentLogic {
 			}else{
 				//aarch64 function version is smaller than x86-64 function version
 				//need to offset aarch64
-				System.out.println("Need offset aarch64 for function: "+A_sectionList.get(a).getName()+" from fn:"+A_sectionList.get(a-1).getName()+"    x86sz:0x"+Long.toHexString(A_sectionList.get(a-1).getSize_x86_64())+"   aRMsz:0x"+Long.toHexString(A_sectionList.get(a-1).getSize_aarch64())+"    diff: "+difference);
+				if(globalVars.DEBUG) System.out.println("Need offset aarch64 for function: "+A_sectionList.get(a).getName()+" from fn:"+A_sectionList.get(a-1).getName()+"    x86sz:0x"+Long.toHexString(A_sectionList.get(a-1).getSize_x86_64())+"   aRMsz:0x"+Long.toHexString(A_sectionList.get(a-1).getSize_aarch64())+"    diff: "+difference);
 				A_aarch64_alignment.add("\t"+" . = . + "+ Math.abs(difference)+ ";" );
 				if(A_sectionList.get(a).getAlignment_x86() > A_sectionList.get(a).getAlignment_aRM()){
 					//use x86 alignment
@@ -449,7 +462,7 @@ public class AlignmentLogic {
 	static void resetRangesInfo(){
 		RangesInfo.clear();
 		if(!RangesInfo.isEmpty()){
-			System.out.println("RANGES NOT CLEARED!!!");
+			System.out.println("ERROR: RANGES NOT CLEARED!!!");
 			System.exit(0);
 		}
 	}
@@ -468,15 +481,17 @@ public class AlignmentLogic {
 		/** TODO: grabsymbolInRange */
 		long textMin=0,textMax=0;
 		long rodataMin=0,rodataMax=0;
-		long datarelrolocalMin=0, datarelrolocalMax=0;
+		//long datarelrolocalMin=0, datarelrolocalMax=0;
 		long dataMin=0,dataMax=0;
 		long bssMin=0,bssMax=0;
+		long TdataMin=0,TdataMax=0;
+		long TbssMin=0,TbssMax=0;
 		FileReader fr1 =null;
 		String temp;
 		
 		if(option == 0){
 			//x86
-			System.out.println("\nx86 SECTION RANGES");
+			if(globalVars.DEBUG) System.out.println("\nx86 SECTION RANGES");
 			if(binary.compareTo("exe")==0){
 				fr1 = new FileReader(new File(Runtime.TARGET_DIR+"/map_x86.txt"));
 			}else if(binary.compareTo("gold")==0){
@@ -497,10 +512,16 @@ public class AlignmentLogic {
 			//Calc bss Max Addr
 			bssMin =RangesInfo.get(3).getAddr();
 			bssMax = RangesInfo.get(3).getAddr() + RangesInfo.get(3).getSize();
+			//Calc tdata (TLS) Max Addr
+			TdataMin =RangesInfo.get(4).getAddr();
+			TdataMax = RangesInfo.get(4).getAddr() + RangesInfo.get(4).getSize();
+			//Calc tbss (TLS) Max Addr
+			TbssMin =RangesInfo.get(5).getAddr();
+			TbssMax = RangesInfo.get(5).getAddr() + RangesInfo.get(5).getSize();
 		}//end option 0
 		else if(option == 1){
 			//ARM
-			System.out.println("\nARM SECTION RANGES\n");
+			if(globalVars.DEBUG) System.out.println("\nARM SECTION RANGES\n");
 			if(binary.compareTo("exe")==0){
 				fr1 = new FileReader(new File(Runtime.TARGET_DIR+"/map_aarch.txt"));
 			}else if(binary.compareTo("gold")==0){
@@ -510,32 +531,47 @@ public class AlignmentLogic {
 				System.exit(0);
 			}
 			//Calculate Text Max Addr
-			textMin =RangesInfo.get(4).getAddr();
-			textMax = RangesInfo.get(4).getAddr() + RangesInfo.get(4).getSize();
+			textMin =RangesInfo.get(6).getAddr();
+			textMax = RangesInfo.get(6).getAddr() + RangesInfo.get(6).getSize();
 			//Calculate rodata Max Addr
-			rodataMin =RangesInfo.get(5).getAddr();
-			rodataMax = RangesInfo.get(5).getAddr() + RangesInfo.get(5).getSize();
+			rodataMin =RangesInfo.get(7).getAddr();
+			rodataMax = RangesInfo.get(7).getAddr() + RangesInfo.get(7).getSize();
 			//Calc data Max Addr
-			dataMin =RangesInfo.get(6).getAddr();
-			dataMax = RangesInfo.get(6).getAddr() + RangesInfo.get(6).getSize();
+			dataMin =RangesInfo.get(8).getAddr();
+			dataMax = RangesInfo.get(8).getAddr() + RangesInfo.get(8).getSize();
 			//Calc bss Max Addr
-			bssMin =RangesInfo.get(7).getAddr();
-			bssMax = RangesInfo.get(7).getAddr() + RangesInfo.get(7).getSize();
+			bssMin =RangesInfo.get(9).getAddr();
+			bssMax = RangesInfo.get(9).getAddr() + RangesInfo.get(9).getSize();
+			//Calc tdata (TLS) Max Addr
+			TdataMin =RangesInfo.get(10).getAddr();
+			TdataMax = RangesInfo.get(10).getAddr() + RangesInfo.get(10).getSize();
+			//Calc tbss (TLS) Max Addr
+			TbssMin =RangesInfo.get(11).getAddr();
+			TbssMax = RangesInfo.get(11).getAddr() + RangesInfo.get(11).getSize();
 		}//end option 1
-		System.out.println("Ranges text:");
-		System.out.println("0x"+Long.toHexString(textMin));
-		System.out.println("0x"+Long.toHexString(textMax));
-		System.out.println("Ranges rodata:");
-		System.out.println("0x"+Long.toHexString(rodataMin));
-		System.out.println("0x"+Long.toHexString(rodataMax));
-		System.out.println("Ranges data:");
-		System.out.println("0x"+Long.toHexString(dataMin));
-		System.out.println("0x"+Long.toHexString(dataMax));
-		System.out.println("Ranges bss:");
-		System.out.println("0x"+Long.toHexString(bssMin));
-		System.out.println("0x"+Long.toHexString(bssMax));
-		System.out.println("\n");
-	
+		
+		if(globalVars.DEBUG){
+			System.out.println("Ranges text:");
+			System.out.println("0x"+Long.toHexString(textMin));
+			System.out.println("0x"+Long.toHexString(textMax));
+			System.out.println("Ranges rodata:");
+			System.out.println("0x"+Long.toHexString(rodataMin));
+			System.out.println("0x"+Long.toHexString(rodataMax));
+			System.out.println("Ranges data:");
+			System.out.println("0x"+Long.toHexString(dataMin));
+			System.out.println("0x"+Long.toHexString(dataMax));
+			System.out.println("Ranges bss:");
+			System.out.println("0x"+Long.toHexString(bssMin));
+			System.out.println("0x"+Long.toHexString(bssMax));
+			System.out.println("Ranges TLS tdata:");
+			System.out.println("0x"+Long.toHexString(TdataMin));
+			System.out.println("0x"+Long.toHexString(TdataMax));
+			System.out.println("Ranges TLS tbss:");
+			System.out.println("0x"+Long.toHexString(TbssMin));
+			System.out.println("0x"+Long.toHexString(TbssMax));
+			System.out.println("\n");
+		}
+		
 		BufferedReader br1 = new BufferedReader(fr1);
 		int count =0;
 		long size=0,addr=0;
@@ -558,9 +594,9 @@ public class AlignmentLogic {
 			Matcher m = p.matcher(temp);
 			if(m.find()){
 				if( (!m.group(1).isEmpty()) && m.group(3).isEmpty() && m.group(4).isEmpty()){
-					//if(m.group(2).compareTo("text")==0){
-					//	System.out.println(">>>>>>>>>>>What regex finds: m1:"+m.group(1)+"#    m2:"+m.group(2)+"#    m3:"+m.group(3)+"#    m4:"+m.group(4));
-					//}
+					/*if(m.group(2).compareTo("tbss")==0){
+						System.out.println(">>>>>>>>>>>What regex finds: m1:"+m.group(1)+"#    m2:"+m.group(2)+"#    m3:"+m.group(3)+"#    m4:"+m.group(4));
+					}*/
 					//means we probably hit a long symbol name and important stuff is on the next line
 					//save the name at least
 					name = m.group(1);
@@ -588,7 +624,9 @@ public class AlignmentLogic {
 							alignment = Long.parseLong(m2.group(3).replaceFirst("0x", ""),16); 
 							//System.out.println(name+"ALIGNMENT:"+m2.group(3));
 						}
-						//	System.out.println("#########LONG SYMBOL NAME: "+name+"    addr:"+addr+"    size:0x"+m2.group(2));
+						if(m.group(2).compareTo("tbss")==0){
+							if(globalVars.DEBUG) System.out.println("#########LONG SYMBOL NAME: "+name+"    addr:"+addr+"    size:0x"+m2.group(2));
+						}
 						flag_foundsymbol =1;
 					}	
 				}//end if evil format
@@ -620,9 +658,11 @@ public class AlignmentLogic {
 				/**NEW STREAMLINED INTO 1 function**/
 				populateSections("text", option, globalVars.A_text, name, addr, size,textMin, textMax,alignment,count);
 				populateSections("rodata", option, globalVars.A_rodata, name, addr, size, rodataMin, rodataMax,alignment,count);
-				populateSections("data_Relrolocal", option, globalVars.A_data_Relrolocal, name, addr, size, datarelrolocalMin, datarelrolocalMax,alignment,count);
+				//populateSections("data_Relrolocal", option, globalVars.A_data_Relrolocal, name, addr, size, datarelrolocalMin, datarelrolocalMax,alignment,count);
 				populateSections("data", option, globalVars.A_data, name, addr, size, dataMin, dataMax,alignment,count);
 				populateSections("bss", option, globalVars.A_bss, name, addr, size, bssMin, bssMax,alignment,count);
+				populateSections("tdata", option, globalVars.A_data_TLS, name, addr, size, TdataMin, TdataMax,alignment,count);
+				populateSections("tbss", option, globalVars.A_bss_TLS, name, addr, size, TbssMin, TbssMax,alignment,count);
 			}//end if flag_foundsymbol
 		}//end while readline
 	}
@@ -631,7 +671,9 @@ public class AlignmentLogic {
 		long default_size=0;
 		long init_align=1;
 		int c=0;
-		if(addr <= sectionMax && addr >= sectionMin){
+		
+		if(addr < sectionMax && addr >= sectionMin){
+			//System.out.println("WARNING: "+sectionMin+"  "+sectionMax+"   adr:"+addr);
 			//check if the symbol already exists
 			for(int t=0;t<currList.size();t++){
 				if(currList.get(t).getName().compareTo(name)==0){
@@ -639,7 +681,7 @@ public class AlignmentLogic {
 						//add to size x86
 						currList.get(t).updateBy1_MultAddressFlag();
 						if(currList.get(t).getMultAddressFlag()>1){
-							System.out.println("x86$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
+							if(globalVars.DEBUG) System.out.println("x86$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
 							//same symbol section different address
 							//NEED TO SIMULATE ARCH RELATIVE ALIGNMENT
 							long simulatedAlignmentPadding = alignCustom_getVal(currList.get(t).getSize_x86_64(),currList.get(t).getAlignment_x86());
@@ -657,7 +699,7 @@ public class AlignmentLogic {
 	
 							if(alignment > currList.get(t).getAlignment_x86()){
 								if((alignment % currList.get(t).getAlignment_x86()) !=0 ){
-									System.out.println("WARNING:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
+									System.out.println("ERROR:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
 									System.exit(0);
 								}
 								currList.get(t).setAlignment_x86(alignment);
@@ -669,7 +711,7 @@ public class AlignmentLogic {
 						//add to size arm
 						currList.get(t).updateBy1_MultAddressFlag();
 						if(currList.get(t).getMultAddressFlag()>2){
-							System.out.println("ARM$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
+							if(globalVars.DEBUG) System.out.println("ARM$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
 							//same symbol section different address
 							//NEED TO SIMULATE ARCH RELATIVE ALIGNMENT
 							long simulatedAlignmentPadding = alignCustom_getVal(currList.get(t).getSize_aarch64(), currList.get(t).getAlignment_aRM());
@@ -686,7 +728,7 @@ public class AlignmentLogic {
 							currList.get(t).setSize_aarch64(currList.get(t).getSize_aarch64()+size);
 							if(alignment > currList.get(t).getAlignment_aRM()){
 								if((alignment % currList.get(t).getAlignment_aRM()) !=0 ){
-									System.out.println("WARNING:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
+									System.out.println("ERROR:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
 									System.exit(0);
 								}
 								currList.get(t).setAlignment_aRM(alignment);
@@ -702,18 +744,18 @@ public class AlignmentLogic {
 			if(c!=1){	
 				//Add NEW SYMBOL!!
 				if(option==0){
-					System.out.println("NEW X86 Sym:"+name+"     addr:0x"+Long.toHexString(addr)+"      size:0x"+Long.toHexString(size));
+					if(globalVars.DEBUG) System.out.println(" "+region+" NEW X86 Sym:"+name+"     addr:0x"+Long.toHexString(addr)+"      size:0x"+Long.toHexString(size));
 					checkSameAddr_MultipleSymbol(currList, addr);
 					if(currList.size()!=0 && (currList.get(currList.size()-1).getFlag()==1) ){
 						//same addr multipleSymbol is true!
 						//A_text.add(new Tuple<String,Long,Long,Long>( m.group(3), size ,(long)0,addr ) );
-						System.out.println(region+"   NEW x86:"+name+"  sz: 0x"+Long.toHexString(size));
+						if(globalVars.DEBUG) System.out.println(region+"   NEW x86:"+name+"  sz: 0x"+Long.toHexString(size));
 						currList.add(new Tuple<String,Long,Long,Long>( name, size , default_size, addr, alignment, init_align ) );
 					}else{
 						currList.add(new Tuple<String,Long,Long,Long>( name, size , default_size, addr, alignment, init_align ) );
 					}
 				}else if(option==1){
-					System.out.println("NEW ARM Sym:"+name+"     addr:0x"+Long.toHexString(addr)+"      size:0x"+Long.toHexString(size));
+					if(globalVars.DEBUG) System.out.println("NEW ARM Sym:"+name+"     addr:0x"+Long.toHexString(addr)+"      size:0x"+Long.toHexString(size));
 					currList.add(new Tuple<String,Long,Long,Long>( name, default_size, size, addr, init_align, alignment) );
 				}//end if option
 				c=0;
@@ -758,6 +800,14 @@ public class AlignmentLogic {
 				x86_insertPT = LinkerIO.x86_bssLineOffset+LinkerIO.getLinkerNewLines_x86()+1;
 				arm_insertPT = LinkerIO.aarch64_bssLineOffset+LinkerIO.getLinkerNewLines_aRM()+1;
 				break;
+			case "tdata":
+				x86_insertPT = LinkerIO.x86_tlsdataLineOffset+LinkerIO.getLinkerNewLines_x86()+1;
+				arm_insertPT = LinkerIO.aarch64_tlsdataLineOffset+LinkerIO.getLinkerNewLines_aRM()+1;
+				break;
+			case "tbss":
+				x86_insertPT = LinkerIO.x86_tlsbssLineOffset+LinkerIO.getLinkerNewLines_x86()+1;
+				arm_insertPT = LinkerIO.aarch64_tlsbssLineOffset+LinkerIO.getLinkerNewLines_aRM()+1;
+				break;
 			default:
 				throw new IllegalArgumentException("Invalid Section: " + section);
 		}
@@ -785,13 +835,13 @@ public class AlignmentLogic {
 						//System.out.println("regex line2 finds: m1:"+m2.group(1)+"#    m2:"+m2.group(2));
 						name = m2.group(2);
 					}	
-					System.out.println("found sneaky: "+name+"  addr:"+m.group(2)+"  sz:"+m.group(3));
+					if(globalVars.DEBUG) System.out.println("found sneaky: "+name+"  addr:"+m.group(2)+"  sz:"+m.group(3));
 				}
 			}
 		}//end while m.find()
 		fr1.close();
 		br1.close();
-		System.out.println("Total shadow symbol size for x86:0x"+Long.toHexString(totalsneakyoffset));
+		if(globalVars.DEBUG) System.out.println("Total shadow symbol size for x86:0x"+Long.toHexString(totalsneakyoffset));
 		//Add this much to "next" architecture linker script
 		LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(totalsneakyoffset) + "; /*ANTONIO SNEAKY "+section+" NonOverlapping Offset*/");
 		LinkerIO.addAlignmentToLinkerScripts(null, LinkerIO.sectionSize_alignment,0,arm_insertPT);

@@ -9,7 +9,7 @@ INPUT=$(<$2)
 
 if [ $MODE -eq 0 ] ; then
   OUTPUT="--output armexe_musl"
-  LINKER=""
+  LINKER="--script aarch64linux.x"
   MAP="-Map map_aarch.txt"
 elif [ $MODE -eq 1 ] ; then
   OUTPUT="--output armBinGold_musl"

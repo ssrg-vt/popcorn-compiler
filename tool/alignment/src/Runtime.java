@@ -29,11 +29,11 @@ public class Runtime {
 		if(Args != null){
 			commands.addAll(Args);
 		}			
-		System.out.println("DEBUG: "+ commands);
+		if(globalVars.DEBUG) System.out.println("DEBUG: "+ commands);
 		
 		//running the command
 		ProcessBuilder pb = new ProcessBuilder(commands);
-		pb.directory(new File(TARGET_DIR));
+		pb.directory(new File(TARGET_DIR+"/align"));
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 	
@@ -50,38 +50,40 @@ public class Runtime {
 	public static void main(String[] args) throws IOException, InterruptedException {
 		LinkerIO.resetLinkerNewLines();
 		
-		System.out.println("MODULAR GENERIC ALIGNMENT");
+		if(globalVars.DEBUG) System.out.println("MODULAR GENERIC ALIGNMENT");
 		COMPILE_OPT = args[0];
 		TARGET_DIR = args[1];
-		boolean COMPILE_VAN = true;
+		boolean COMPILE_VAN = false;
 		for(int len = 0 ; len < args.length; ++len){
 			if(args[len].compareTo("-skip-vanilla") == 0){
 				COMPILE_VAN = false;
 				break;
 			}
 		}
-		System.out.println("Source: "+SOURCE_DIR);
-		System.out.println("Target: "+TARGET_DIR);
-		if(COMPILE_OPT.equals("0")){
-			System.out.println("Compilation: "+COMPILE_OPT+" HOMO-GENEOUS");
-		}else if(COMPILE_OPT.equals("1")){
-			System.out.println("Compilation: "+COMPILE_OPT+" HETERO-GENEOUS");
+		if(globalVars.DEBUG){
+			System.out.println("Source: "+SOURCE_DIR);
+			System.out.println("Target: "+TARGET_DIR);
+			if(COMPILE_OPT.equals("0")){
+				System.out.println("Compilation: "+COMPILE_OPT+" HOMO-GENEOUS");
+			}else if(COMPILE_OPT.equals("1")){
+				System.out.println("Compilation: "+COMPILE_OPT+" HETERO-GENEOUS");
+			}
 		}
 		
 		if(COMPILE_VAN){
 			/************************ Begin VANILLA RUN ********************************************/
-			System.out.println("----------------------- Clean Directory! --------------------------------");
+			if(globalVars.DEBUG) System.out.println("----------------------- Clean Directory! --------------------------------");
 			//clean everything
-			//cleanTargetDIR("4");
+			cleanTargetDIR("4");
 		
-			System.out.println("----------------------- Copy scripts to target Directory --------------------");
-			//copyToolToTargetDIR();
-			System.out.println("----------------------- Generate Obj files! ---------------------------------");
+			if(globalVars.DEBUG) System.out.println("----------------------- Copy scripts to target Directory --------------------");
+			copyToolToTargetDIR();
+			if(globalVars.DEBUG) System.out.println("----------------------- Generate Obj files! ---------------------------------");
 			utilityARG_list.add(COMPILE_OPT);
 			runScript("generateObjs_clang.sh",utilityARG_list);
 			utilityARG_list.clear();
 		
-			System.out.println("----------------------- ^ Link 1: No Alignment, No custom LinkerScript ---");
+			if(globalVars.DEBUG) System.out.println("----------------------- ^ Link 1: No Alignment, No custom LinkerScript ---");
 			List<String> vanillaARGSx86 = new ArrayList<String>();
 			vanillaARGSx86.add("0");
 			vanillaARGSx86.add("obj_x86.txt");
@@ -91,38 +93,46 @@ public class Runtime {
 			vanillaARGSarm.add("0");
 			vanillaARGSarm.add("obj_arm.txt");
 			runScript("mlink_armObjs.sh",vanillaARGSarm);
-		
-			System.out.println("----------------------- Vanilla Phase Complete! -----------------------------");
-			System.out.println("----------------------- ^^^^^^^^^^^^^^^^^^^^^^^------------------------------");
-			System.out.println("\n");
+			if(globalVars.DEBUG){
+				System.out.println("----------------------- Vanilla Phase Complete! -----------------------------");
+				System.out.println("----------------------- ^^^^^^^^^^^^^^^^^^^^^^^------------------------------");
+				System.out.println("\n");
+			}
 		}//END IF COMPILE_VANILLA
+
 		
-		System.out.println("-1--------------------- Gather & Sort Symbols Begin! ----------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- Gather & Sort Symbols Begin! ----------------------------------");
 		//find unique for each architecture
 		gatherANDsort();
-		System.out.println("-1--------------------- Gather & Sort Symbols Complete --------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- Gather & Sort Symbols Complete --------------------------------");
 		LinkerIO.readInLinkerScripts();	
-		System.out.println("----------------------- ReadInLinkerScripts Complete! ---------------------------------");
+		if(globalVars.DEBUG) System.out.println("----------------------- ReadInLinkerScripts Complete! ---------------------------------");
 		
-		System.out.println("\n--------------------- Rerunning with added Nuances ----------------------------------");
+		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added Nuances ----------------------------------");
 		LinkerIO.alignSectionHeaders();
 		
 		//add initial movement of text symbols
 		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_text, LinkerIO.x86_64_text_alignment,LinkerIO.aarch64_text_alignment,0,0,0,true);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_text_alignment, LinkerIO.aarch64_text_alignment,LinkerIO.x86_textLineOffset,LinkerIO.aarch64_textLineOffset);
-		
 		//add initial movement of rodata symbols
 		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_rodata, LinkerIO.x86_64_rodata_alignment,LinkerIO.aarch64_rodata_alignment,0,0,0,true);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_rodata_alignment, LinkerIO.aarch64_rodata_alignment,LinkerIO.x86_rodataLineOffset,LinkerIO.aarch64_rodataLineOffset);
-		
 		//add initial movement of data symbols
 		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_data, LinkerIO.x86_64_data_alignment, LinkerIO.aarch64_data_alignment,0,0,0,true);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_data_alignment, LinkerIO.aarch64_data_alignment,LinkerIO.x86_dataLineOffset,LinkerIO.aarch64_dataLineOffset);
-		
 		//add initial movement of bss symbols
 		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_bss, LinkerIO.x86_64_bss_alignment, LinkerIO.aarch64_bss_alignment,0,0,0,true);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_bss_alignment, LinkerIO.aarch64_bss_alignment,LinkerIO.x86_bssLineOffset,LinkerIO.aarch64_bssLineOffset);
-		System.out.println("----------------------- Initial Alignments Added!----------------------------------------");
+		
+		/************** TLS */
+		//add initial movement of TLS data symbols
+		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_data_TLS, LinkerIO.x86_64_tls_data_alignment, LinkerIO.aarch64_tls_data_alignment,0,0,0,true);
+		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_tls_data_alignment, LinkerIO.aarch64_tls_data_alignment,LinkerIO.x86_tlsdataLineOffset,LinkerIO.aarch64_tlsdataLineOffset);	
+		//add initial movement of TLSbss symbols
+		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_bss_TLS, LinkerIO.x86_64_tls_bss_alignment, LinkerIO.aarch64_tls_bss_alignment,0,0,0,true);
+		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_tls_bss_alignment, LinkerIO.aarch64_tls_bss_alignment,LinkerIO.x86_tlsbssLineOffset,LinkerIO.aarch64_tlsbssLineOffset);
+		
+		if(globalVars.DEBUG) System.out.println("----------------------- Initial Alignments Added!----------------------------------------");
 		
 		List<String> x86withChanges = new ArrayList<String>();
 		x86withChanges.add("1");
@@ -132,11 +142,11 @@ public class Runtime {
 		armwithChanges.add("obj_arm.txt");
 		LinkerIO.writeOutLinkerScripts();
 		
-		System.out.println("\n--------------------- Rerunning with modified linker aligned script");
+		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with modified linker aligned script");
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
 		
-		System.out.println("----------------------- End of Section SHIT -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("----------------------- End of Section **** -------------------------------------------");
 		LinkerIO.resetLinkerNewLines();
 		utilityARG_list.add("4");
 		runScript("readMyElfToFile.sh",utilityARG_list);
@@ -148,10 +158,10 @@ public class Runtime {
 		AlignmentLogic.AntonioOffsetAdditional("text");
 		AlignmentLogic.add_sectionAligment("text");
 		LinkerIO.writeOutLinkerScripts();
-		System.out.println("\n--------------------- Rerunning with added SHIT ----------------------------------");
+		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
-		System.out.println("-Text-------------------- Add SHIT Complete! -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-Text-------------------- Add **** Complete! -------------------------------------------");
 		
 		/*
 		//next align rodata
@@ -165,7 +175,7 @@ public class Runtime {
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
 		*/
-		System.out.println("----------------------- End of Section SHIT -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("----------------------- End of Section **** -------------------------------------------");
 		AlignmentLogic.resetRangesInfo();
 		utilityARG_list.add("4");
 		runScript("readMyElfToFile.sh",utilityARG_list);
@@ -177,10 +187,10 @@ public class Runtime {
 		AlignmentLogic.AntonioOffsetAdditional("rodata");
 		AlignmentLogic.add_sectionAligment("rodata");
 		LinkerIO.writeOutLinkerScripts();
-		System.out.println("\n--------------------- Rerunning with added SHIT ----------------------------------");
+		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
-		System.out.println("-Rodata-------------------- Add SHIT Complete! -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-Rodata-------------------- Add **** Complete! -------------------------------------------");
 		
 		/*
 		//next align data
@@ -193,7 +203,7 @@ public class Runtime {
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
 		*/
-		System.out.println("----------------------- End of Section SHIT -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("----------------------- End of Section **** -------------------------------------------");
 		AlignmentLogic.resetRangesInfo();
 		utilityARG_list.add("4");
 		runScript("readMyElfToFile.sh",utilityARG_list);
@@ -205,10 +215,10 @@ public class Runtime {
 		AlignmentLogic.AntonioOffsetAdditional("data");
 		AlignmentLogic.add_sectionAligment("data");
 		LinkerIO.writeOutLinkerScripts();
-		System.out.println("\n--------------------- Rerunning with added SHIT ----------------------------------");
+		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
-		System.out.println("-Data-------------------- Add SHIT Complete! -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-Data-------------------- Add **** Complete! -------------------------------------------");
 		
 		/*
 		//next align bss
@@ -223,7 +233,7 @@ public class Runtime {
 		*/
 		
 		/*
-		System.out.println("----------------------- End of Section SHIT -------------------------------------------");
+		System.out.println("----------------------- End of Section **** -------------------------------------------");
 		AlignmentLogic.resetRangesInfo();
 		utilityARG_list.add("4");
 		//option 1 to read musl binarys
@@ -236,17 +246,17 @@ public class Runtime {
 		//AlignmentLogic.add_sectionAligment("bss");
 		AlignmentLogic.AntonioOffsetAdditional("bss");
 		LinkerIO.writeOutLinkerScripts();
-		System.out.println("\n--------------------- Rerunning with added SHIT ----------------------------------");
+		System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
-		System.out.println("-BSS-------------------- Add SHIT Complete! -------------------------------------------");
+		System.out.println("-BSS-------------------- Add **** Complete! -------------------------------------------");
 		LinkerIO.writeOutLinkerScripts();
-		//END END OF SECTION SHIT
+		//END END OF SECTION ****
 		*/
 		if(!globalVars.DEBUG){
 			cleanTargetDIR("3");
 		}
-		System.out.println("END!");	
+		System.out.println("<success> END!");	
 	}//end MAIN!!
 	
 	/** TODO: gatherANDsort **/
@@ -256,71 +266,63 @@ public class Runtime {
 		runScript("readMyElfToFile.sh",utilityARG_list);
 		utilityARG_list.clear();
 		
-		System.out.println("-1---------------------- recordRanges -------------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1---------------------- recordRanges -------------------------------------------");
 		//save section ranges x86
 		AlignmentLogic.recordRanges(0);
 		//save section ranges ARM
 		AlignmentLogic.recordRanges(1);
-		System.out.println("-1--------------------- recordRanges Complete! ----------------------------------");
-		
-		//PRINT NM Files
-		utilityARG_list.add("0");
-		runScript("nmScript.sh",utilityARG_list);
-		utilityARG_list.clear();
+		if(globalVars.DEBUG) System.out.println("-1--------------------- recordRanges Complete! ----------------------------------");
+
+		if(globalVars.DEBUG){
+			//PRINT NM Files
+			utilityARG_list.add("0");
+			runScript("nmScript.sh",utilityARG_list);
+			utilityARG_list.clear();
+		}
 		
 		/** SCOUT for symbols and layout**/
 		/***************************************************************************************************************************************/
 		/***************************************************************************************************************************************/
 		/***************************************************************************************************************************************/
-		System.out.println("-1---------------------- grabSymbolsInRange --------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1---------------------- grabSymbolsInRange --------------------------------------");
 		AlignmentLogic.grabSymbolsInRange(0,"exe");
 		globalVars.resetMultipleAddress();
 		AlignmentLogic.grabSymbolsInRange(1,"exe");
 		globalVars.resetMultipleAddress();
-		System.out.println("-1---------------------- grabSymbolsInRange Complete!-----------------------------");
-		//SANITY write to File
-		//PrintWriter writer = new PrintWriter(TARGET_DIR+"/v1113sizetext.txt", "UTF-8");
-		//for(int w =0; w < globalVars.A_text.size(); w++){
-		//	writer.println(globalVars.A_text.get(w).getName()+"\t\taddr:0x"+Long.toHexString(globalVars.A_text.get(w).getAddr())+"\t\tx86size:0x"+Long.toHexString(globalVars.A_text.get(w).getSize_x86_64())+"\t\t\taRMsize:0x"+Long.toHexString(globalVars.A_text.get(w).getSize_aarch64()));			
-		//}
-		//writer.close();
-		//PrintWriter writer2 = new PrintWriter(TARGET_DIR+"/v3size_bss.txt", "UTF-8");
-		//for(int w =0; w < globalVars.A_bss.size(); w++){
-		//	writer2.println(globalVars.A_bss.get(w).getName()+"\t\t\taddr:0x"+Long.toHexString(globalVars.A_bss.get(w).getAddr())+"\t\t\tx86size:0x"+Long.toHexString(globalVars.A_bss.get(w).getSize_x86_64())+"\t\t\taRMsize:0x"+Long.toHexString(globalVars.A_bss.get(w).getSize_aarch64()));
-		//}
-		//writer2.close();
-		/*PrintWriter writer3 = new PrintWriter(TARGET_DIR+"/v3sizerodata.txt", "UTF-8");
-		for(int w =0; w < A_rodata.size(); w++){
-			writer3.println(A_rodata.get(w).getName()+"\t\taddr:0x"+Long.toHexString(A_rodata.get(w).getAddr())+"\tx86size:0x"+Long.toHexString(A_rodata.get(w).getSize_x86_64())+"\t\t\taRMsize:0x"+Long.toHexString(A_rodata.get(w).getSize_aarch64()));
-		}
-		writer3.close();*/
-		System.out.println("-1---------------------- Clean Intersection --------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1---------------------- grabSymbolsInRange Complete!-----------------------------");
+		
+		if(globalVars.DEBUG) System.out.println("-1---------------------- Clean Intersection --------------------------------------");
 		AlignmentLogic.cleanIntersection();
-		System.out.println("-1---------------------- Clean Intersection Complete!-----------------------------");
+		if(globalVars.DEBUG) System.out.println("-1---------------------- Clean Intersection Complete!-----------------------------");
 		
-		System.out.println("-1--------------------- ^^ Compile 2: No Alignment, Custom Linker Script Order----");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ Compile 2: No Alignment, Custom Linker Script Order----");
 		//do scout compilation
-		System.out.println("-1--------------------- ^^ ReadInLinkerScripts -----------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ ReadInLinkerScripts -----------------------------------");
 		LinkerIO.readInLinkerScripts();
-		System.out.println("-1--------------------- ^^ ReadInLinkerScripts Complete!--------------------------");
-		
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ ReadInLinkerScripts Complete!--------------------------");
 		
 		//add initial movement of text
 		AlignmentLogic.set_symbol_Alignment(globalVars.A_text, LinkerIO.x86_64_text_alignment, LinkerIO.aarch64_text_alignment,false);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_text_alignment, LinkerIO.aarch64_text_alignment, LinkerIO.x86_textLineOffset, LinkerIO.aarch64_textLineOffset);
 		LinkerIO.alignSectionHeaders();
-		
 		//add initial movement of rodata
 		AlignmentLogic.set_symbol_Alignment(globalVars.A_rodata, LinkerIO.x86_64_rodata_alignment, LinkerIO.aarch64_rodata_alignment,false);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_rodata_alignment, LinkerIO.aarch64_rodata_alignment, LinkerIO.x86_rodataLineOffset, LinkerIO.aarch64_rodataLineOffset);
-		
 		//add initial movement of data symbols
 		AlignmentLogic.set_symbol_Alignment(globalVars.A_data, LinkerIO.x86_64_data_alignment, LinkerIO.aarch64_data_alignment,false);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_data_alignment, LinkerIO.aarch64_data_alignment,LinkerIO.x86_dataLineOffset,LinkerIO.aarch64_dataLineOffset);
-		
 		//add initial movement of bss symbols
 		AlignmentLogic.set_symbol_Alignment(globalVars.A_bss, LinkerIO.x86_64_bss_alignment, LinkerIO.aarch64_bss_alignment,false);
 		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_bss_alignment, LinkerIO.aarch64_bss_alignment,LinkerIO.x86_bssLineOffset,LinkerIO.aarch64_bssLineOffset);
+		
+		/************** TLS */
+		//add initial movement of TLS data symbols
+		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_data_TLS, LinkerIO.x86_64_tls_data_alignment, LinkerIO.aarch64_tls_data_alignment,0,0,0,true);
+		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_tls_data_alignment, LinkerIO.aarch64_tls_data_alignment,LinkerIO.x86_tlsdataLineOffset,LinkerIO.aarch64_tlsdataLineOffset);		
+		//add initial movement of TLSbss symbols
+		AlignmentLogic.set_symbol_AlignmentN(globalVars.A_bss_TLS, LinkerIO.x86_64_tls_bss_alignment, LinkerIO.aarch64_tls_bss_alignment,0,0,0,true);
+		LinkerIO.addAlignmentToLinkerScripts(LinkerIO.x86_64_tls_bss_alignment, LinkerIO.aarch64_tls_bss_alignment,LinkerIO.x86_tlsbssLineOffset,LinkerIO.aarch64_tlsbssLineOffset);
+		
 		
 		List<String> x86withChanges = new ArrayList<String>();
 		x86withChanges.add("1");
@@ -332,14 +334,14 @@ public class Runtime {
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
 		/** END SCOUT for symbols and layout **/
-		System.out.println("-1--------------------- ^^ Compile 2: COMPLETE ---------------------------------\n");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ Compile 2: COMPLETE ---------------------------------\n");
 		
-		System.out.println("-1--------------------- ^^ Reseting Select Storages");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ Reseting Select Storages");
 		//reset ALMOST everything
 		globalVars.resetSectionsInfo();
 		LinkerIO.resetLinkerScript();
 		AlignmentLogic.resetRangesInfo();
-		System.out.println("-1--------------------- ^^ ########### Reset Complete ########### -----------");
+		if(globalVars.DEBUG) System.out.println("-1--------------------- ^^ ########### Reset Complete ########### -----------");
 		/** TODO: Final Compile Start **/
 		/***************************************************************************************************************************************/
 		/***************************************************************************************************************************************/
@@ -371,35 +373,9 @@ public class Runtime {
 		}
 		writer99.close();
 	
-		System.out.println("-1---------------------- Clean Intersection --------------------------------------");
+		if(globalVars.DEBUG) System.out.println("-1---------------------- Clean Intersection --------------------------------------");
 		AlignmentLogic.cleanIntersection();
 
-		//Sanity Check
-		//System.out.println("SANITY");
-		/*
-		System.out.println("\n\n********************************TEXT");
-		for(int a=0; a < globalVars.A_text.size(); a++){
-			System.out.println("A: "+globalVars.A_text.get(a).getName()+"\tB: "+globalVars.A_text.get(a).getSize_x86_64()+"\tC: "+globalVars.A_text.get(a).getSize_aarch64());
-		}
-		*
-		for(int a=0; a < globalVars.A_rodata.size(); a++){
-			System.out.println("A: "+globalVars.A_rodata.get(a).getName()+"\tB: "+globalVars.A_rodata.get(a).getSize_x86_64()+"\tC: "+globalVars.A_rodata.get(a).getSize_aarch64());
-		}
-		System.out.println("\n\nINTER SECTION********************************RODATA");
-		for(int a=0; a < globalVars.A_rodata.size(); a++){
-			System.out.println("A: "+globalVars.A_rodata.get(a).getName()+"\tB: "+globalVars.A_rodata.get(a).getSize_x86_64()+"\tC: "+globalVars.A_rodata.get(a).getSize_aarch64());
-		}
-		/*
-		System.out.println("DATA");
-		for(int a=0; a < 10; a++){
-			System.out.println("A: "+A_data.get(a).getName()+"\tB: "+A_data.get(a).getSize_x86_64()+"\tC: "+A_data.get(a).getSize_aarch64());
-		}
-		
-		System.out.println("BSS");
-		for(int a=0; a < globalVars.A_bss.size(); a++){
-			System.out.println("A: "+globalVars.A_bss.get(a).getName()+"\tB: "+globalVars.A_bss.get(a).getSize_x86_64()+"\tC: "+globalVars.A_bss.get(a).getSize_aarch64());
-		}
-		*/
 	}//END gatherANDsort
 	
 	/**
@@ -439,10 +415,9 @@ public class Runtime {
 		Process p;
 		
 		commands.add("cp");
-		
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/clean.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/clean.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -455,9 +430,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/.gitignore");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/.gitignore");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -470,9 +445,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/mlink_armObjs.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/mlink_armObjs.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -485,9 +460,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/mlink_x86Objs.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/mlink_x86Objs.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG)  System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -500,9 +475,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/generateObjs_clang.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/generateObjs_clang.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -515,9 +490,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/getSymbols.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/getSymbols.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -530,9 +505,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/nmScript.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/nmScript.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -545,9 +520,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/readMyElfToFile.sh");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/readMyElfToFile.sh");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -560,9 +535,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/elf_x86_64.x");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/elf_x86_64.x");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -575,9 +550,9 @@ public class Runtime {
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
 		commands.add("cp");
-		commands.add(SOURCE_DIR+"/../../scriptsMaster/aarch64linux.x");
+		commands.add(SOURCE_DIR+"/../scriptsMaster/aarch64linux.x");
 		commands.add(TARGET_DIR+"/");
-		//System.out.println("cpyTool: "+commands);
+		if(globalVars.DEBUG) System.out.println("cpyTool: "+commands);
 		
 		//running the command
 		pb = new ProcessBuilder(commands);
@@ -589,6 +564,6 @@ public class Runtime {
 		checkProcess(p, "copyTool");
 		commands.clear();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////
-		System.out.println("Copy To TARGET DIR complete!");
+		if(globalVars.DEBUG) System.out.println("Copy To TARGET DIR complete!");
 	}	
 }

@@ -9,7 +9,7 @@ TARGET=x86_64-linux-gnu
 
 if [ $MODE -eq 0 ] ; then
   OUTPUT="--output x86exe_musl"
-  LINKER=""
+  LINKER="--script elf_x86_64.x"
   MAP="-Map map_x86.txt"
 elif [ $MODE -eq 1 ] ; then
   OUTPUT="--output x86BinGold_musl"

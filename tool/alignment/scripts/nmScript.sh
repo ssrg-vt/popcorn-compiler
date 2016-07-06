@@ -11,7 +11,7 @@ NM_X86=nm
 
 if [ $MODE -eq 0 ] ; then
         echo -e "MODE $MODE exe_musl selected \n"
-        $NM_X86 nm --numeric-sort -S x86exe_musl > nm_x86_64_musl.txt
+        $NM_X86 --numeric-sort -S x86exe_musl > nm_x86_64_musl.txt
         $NM_AARCH64 --numeric-sort -S armexe_musl > nm_aarch64_musl.txt
 elif [ $MODE -eq 4 ] ; then
         echo -e "MODE $MODE BinGold_musl selected \n"
