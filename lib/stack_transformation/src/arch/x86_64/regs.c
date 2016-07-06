@@ -196,7 +196,7 @@ static uint64_t reg_x86_64(const_regset_t regset, dwarf_reg reg)
      *   66: fsw
      */
     default:
-      ASSERT(false, "regx (%d) not yet supported (x86-64)\n", reg.x);
+      ASSERT(false, "regx (%llu) not yet supported (x86-64)\n", reg.x);
       return 0;
     }
   default:

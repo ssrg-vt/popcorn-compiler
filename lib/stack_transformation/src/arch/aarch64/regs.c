@@ -195,7 +195,7 @@ static uint64_t reg_aarch64(const_regset_t regset, dwarf_reg reg)
      *   33: ELR_mode
      */
     default:
-      ASSERT(false, "regx (%d) not yet supported (aarch64)\n", reg.x);
+      ASSERT(false, "regx (%llu) not yet supported (aarch64)\n", reg.x);
       return 0;
     }
   default:
@@ -359,7 +359,7 @@ static void set_reg_aarch64(regset_t regset, dwarf_reg reg, uint64_t val)
      *   64-95: v[0] - v[31]
      */
     default:
-      ASSERT(false, "invalid regx register %d (aarch64)\n", reg.x);
+      ASSERT(false, "invalid regx register %llu (aarch64)\n", reg.x);
       break;
     }
     break;

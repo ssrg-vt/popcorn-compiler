@@ -37,9 +37,9 @@ const char* arch_name(uint16_t arch)
 {
   switch(arch)
   {
-  case EM_X86_64: return ROSTR("x86-64");
-  case EM_AARCH64: return ROSTR("aarch64");
-  default: return ROSTR("unknown/unsupported architecture");
+  case EM_X86_64: return "x86-64";
+  case EM_AARCH64: return "aarch64";
+  default: return "unknown/unsupported architecture";
   }
 }
 

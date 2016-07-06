@@ -19,8 +19,6 @@
 #include <dwarf.h>
 #include <libdwarf.h>
 
-#include <rodata.h>
-
 #include "config.h"
 #include "retvals.h"
 #include "bitmap.h"
@@ -35,17 +33,19 @@
 
 #define STRINGIFY( x ) #x
 #define STR( x ) STRINGIFY( x )
+
 #ifdef _LOG
 # define ST_ERR( code, str, ... ) \
   { \
-    fprintf(stderr, ROSTR("[" __FILE__ ":" STR(__LINE__) "] ERROR: " str), ##__VA_ARGS__); \
+    fprintf(stderr, "[" __FILE__ ":" STR(__LINE__) "] ERROR: " str, ##__VA_ARGS__); \
+    fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] ERROR: " str, ##__VA_ARGS__); \
     fflush(__log); \
     exit(code); \
   }
 #else
 # define ST_ERR( code, str, ... ) \
   { \
-    fprintf(stderr, ROSTR("[" __FILE__ ":" STR(__LINE__) "] ERROR: " str), ##__VA_ARGS__); \
+    fprintf(stderr, "[" __FILE__ ":" STR(__LINE__) "] ERROR: " str, ##__VA_ARGS__); \
     exit(code); \
   }
 #endif
@@ -57,19 +57,19 @@
 /* Log file descriptor.  Defined in src/init.c. */
 extern FILE* __log;
 
-#  define ST_RAW_INFO( str, ... ) fprintf(__log, ROSTR(str), ##__VA_ARGS__)
+#  define ST_RAW_INFO( str, ... ) fprintf(__log, str, ##__VA_ARGS__)
 #  define ST_INFO( str, ... ) \
-      fprintf(__log, ROSTR("[" __FILE__ ":" STR(__LINE__) "] " str), ##__VA_ARGS__)
+      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__)
 #  define ST_WARN( str, ... ) \
-      fprintf(__log, ROSTR("[" __FILE__ ":" STR(__LINE__) "] WARNING: " str), ##__VA_ARGS__)
+      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__)
 
 # else
 
-#  define ST_RAW_INFO( str, ... ) printf(ROSTR(str), ##__VA_ARGS__)
+#  define ST_RAW_INFO( str, ... ) printf(str, ##__VA_ARGS__)
 #  define ST_INFO( str, ... ) \
-      printf(ROSTR("[" __FILE__ ":" STR(__LINE__) "] " str), ##__VA_ARGS__)
+      printf("[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__)
 #  define ST_WARN( str, ... ) \
-      fprintf(stderr, ROSTR("[" __FILE__ ":" STR(__LINE__) "] WARNING: " str), ##__VA_ARGS__)
+      fprintf(stderr, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__)
 
 # endif /* _LOG */
 
@@ -97,7 +97,7 @@ extern FILE* __log;
 ({ \
   int _ret = func; \
   if(_ret == DW_DLV_ERROR) \
-    ST_ERR(DW_DLV_ERROR, "DWARF error in %s: %s\n", ROSTR(msg), dwarf_errmsg(err)); \
+    ST_ERR(DW_DLV_ERROR, "DWARF error in %s: %s\n", msg, dwarf_errmsg(err)); \
   _ret; \
 })
 
@@ -110,7 +110,7 @@ extern FILE* __log;
 ({ \
   int _ret = func; \
   if(_ret != DW_DLV_OK) \
-    ST_ERR(DW_DLV_ERROR, "DWARF error in %s: %s\n", ROSTR(msg), dwarf_errmsg(err)); \
+    ST_ERR(DW_DLV_ERROR, "DWARF error in %s: %s\n", msg, dwarf_errmsg(err)); \
   _ret; \
 })
 
@@ -121,11 +121,6 @@ extern FILE* __log;
 # define DWARF_OK( func, msg ) func
 
 #endif /* _CHECKS */
-
-/* Macros to access activation information. */
-#define ACT( ctx ) ctx->acts[ctx->act]
-#define PREV_ACT( ctx ) ctx->acts[ctx->act - 1]
-#define NEXT_ACT( ctx ) ctx->acts[ctx->act + 1]
 
 ///////////////////////////////////////////////////////////////////////////////
 // Data access structures
@@ -291,8 +286,8 @@ struct rewrite_context
   void* regs;
 
   /* Meta-data for stack activations. */
-  size_t num_acts; /* number of activations */
-  size_t act; /* current activation */
+  int num_acts; /* number of activations */
+  int act; /* current activation */
   activation acts[MAX_FRAMES]; /* all activations currently processed */
   list_t(fixup) stack_pointers; /* stack pointers to be resolved */
 
@@ -302,6 +297,11 @@ struct rewrite_context
 };
 
 typedef struct rewrite_context* rewrite_context;
+
+/* Macros to access activation information. */
+#define ACT( ctx ) ctx->acts[ctx->act]
+#define PREV_ACT( ctx ) ctx->acts[ctx->act - 1]
+#define NEXT_ACT( ctx ) ctx->acts[ctx->act + 1]
 
 #endif /* _DEFINITIONS_H */
 

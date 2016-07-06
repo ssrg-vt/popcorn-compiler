@@ -443,7 +443,7 @@ static void unwind_and_size(rewrite_context src,
   ASSERT(stack_size < MAX_STACK_SIZE, "invalid stack size\n");
 
   ST_INFO("Stack initial function: '%s'\n", get_func_name(ACT(src).function));
-  ST_INFO("Number of live activations: %lu\n", src->num_acts);
+  ST_INFO("Number of live activations: %d\n", src->num_acts);
   ST_INFO("Destination stack size: %lu\n", stack_size);
 
   // TODO this could be cleaner
@@ -519,7 +519,7 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 
   ASSERT(var_src->size == var_dest->size,
         "variable has different size (%llu vs. %llu)\n",
-        var_src->size, var_dest->size);
+        (long long unsigned)var_src->size, (long long unsigned)var_dest->size);
   ASSERT(!(var_src->is_ptr ^ var_dest->is_ptr),
         "variable does not have same type (%d vs. %d)\n",
         var_src->is_ptr, var_dest->is_ptr);
@@ -639,7 +639,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   }
 #else
   ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
-        "call sites have different numbers of live values (%lu vs. %lu)\n",
+        "call sites have different numbers of live values (%u vs. %u)\n",
         ACT(src).site.num_live, ACT(dest).site.num_live);
 
   /* Copy live values */
@@ -725,7 +725,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         // pointing to garbage data (e.g. uninitialized local variables)
         if(fixup_node->act != src->act)
         {
-          ST_WARN("unresolved fixup for '%s' (frame %d)\n");
+          ST_WARN("unresolved fixup for '%p' (frame %d)\n",
+                  fixup_node->data.src_addr, fixup_node->act);
           continue;
         }
 
@@ -797,7 +798,8 @@ static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
 #else /* STACKMAP_LIVE_VALS */
   ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
         "call sites have different numbers of live values (%lu vs. %lu)\n",
-        ACT(src).site.num_live, ACT(dest).site.num_live);
+        (long unsigned)ACT(src).site.num_live,
+        (long unsigned)ACT(dest).site.num_live);
 
   /* Copy live values */
   src_offset = ACT(src).site.live_offset;

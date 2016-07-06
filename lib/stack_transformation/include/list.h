@@ -26,7 +26,7 @@
 node_t(type) { \
   node_t(type)* prev; \
   node_t(type)* next; \
-  size_t act; \
+  int act; \
   type data; \
 };
 

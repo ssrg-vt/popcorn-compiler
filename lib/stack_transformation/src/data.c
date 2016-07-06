@@ -892,7 +892,8 @@ static value_loc eval_expr_sm(rewrite_context ctx, const variable* var)
     loc.num_bytes = var->size;
     if(ctx->handle->props->is_ext_reg(OP_REG(var->regnum)))
     {
-      loc.addr = (Dwarf_Unsigned)ACT(ctx).regs->ext_reg(ACT(ctx).regs, OP_REG(var->regnum));
+      loc.addr = (Dwarf_Unsigned)ACT(ctx).regs->ext_reg(ACT(ctx).regs,
+                                                        OP_REG(var->regnum));
       ST_INFO("Value is in extended register %d\n", var->regnum);
     }
     else
@@ -907,14 +908,14 @@ static value_loc eval_expr_sm(rewrite_context ctx, const variable* var)
     reg = OP_REG(var->regnum);
     loc.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg) +
                var->offset_or_constant;
-    ST_INFO("Value is at %p\n", loc.addr);
+    ST_INFO("Value is at %p\n", (void*)loc.addr);
     break;
   case SM_INDIRECT: // Value is in register, but spilled to the stack
     loc.num_bytes = var->size;
     reg = OP_REG(var->regnum);
     loc.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg) +
                var->offset_or_constant;
-    ST_INFO("Value is at %p\n", loc.addr);
+    ST_INFO("Value is at %p\n", (void*)loc.addr);
     break;
   case SM_CONSTANT: // Value is constant
     loc.num_bytes = sizeof(var->offset_or_constant);
@@ -960,7 +961,7 @@ static void propagate_reg(rewrite_context ctx,
                            false);
       ASSERT(loc.type == ADDRESS, "invalid callee-saved slot\n");
       *(uint64_t*)loc.addr = val.val;
-      ST_INFO("Saving callee-saved register %s at %p (frame %lu)\n",
+      ST_INFO("Saving callee-saved register %s at %p (frame %d)\n",
               reg_name, (void*)loc.addr, act);
       saved = true;
       break;
