@@ -86,12 +86,12 @@ public class Runtime {
 			if(globalVars.DEBUG) System.out.println("----------------------- ^ Link 1: No Alignment, No custom LinkerScript ---");
 			List<String> vanillaARGSx86 = new ArrayList<String>();
 			vanillaARGSx86.add("0");
-			vanillaARGSx86.add("align/obj_x86.txt");
+			vanillaARGSx86.add("obj_x86.txt");
 			runScript("mlink_x86Objs.sh",vanillaARGSx86);
 		
 			List<String> vanillaARGSarm = new ArrayList<String>();
 			vanillaARGSarm.add("0");
-			vanillaARGSarm.add("align/obj_arm.txt");
+			vanillaARGSarm.add("obj_arm.txt");
 			runScript("mlink_armObjs.sh",vanillaARGSarm);
 			if(globalVars.DEBUG){
 				System.out.println("----------------------- Vanilla Phase Complete! -----------------------------");
@@ -136,10 +136,10 @@ public class Runtime {
 		
 		List<String> x86withChanges = new ArrayList<String>();
 		x86withChanges.add("1");
-		x86withChanges.add("align/obj_x86.txt");
+		x86withChanges.add("obj_x86.txt");
 		List<String> armwithChanges = new ArrayList<String>();
 		armwithChanges.add("1");
-		armwithChanges.add("align/obj_arm.txt");
+		armwithChanges.add("obj_arm.txt");
 		LinkerIO.writeOutLinkerScripts();
 		
 		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with modified linker aligned script");
@@ -326,10 +326,10 @@ public class Runtime {
 		
 		List<String> x86withChanges = new ArrayList<String>();
 		x86withChanges.add("1");
-		x86withChanges.add("align/obj_x86.txt");
+		x86withChanges.add("obj_x86.txt");
 		List<String> armwithChanges = new ArrayList<String>();
 		armwithChanges.add("1");
-		armwithChanges.add("align/obj_arm.txt");
+		armwithChanges.add("obj_arm.txt");
 		LinkerIO.writeOutLinkerScripts();
 		runScript("mlink_x86Objs.sh",x86withChanges);
 		runScript("mlink_armObjs.sh",armwithChanges);
