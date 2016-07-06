@@ -30,7 +30,7 @@ SRC := $(shell ls *.c)
 ###############################################################################
 
 APP_DIR        := $(shell pwd)
-ALIGN_CHECK    := $(POPCORN_REPO)/utils/scripts/check-align.py
+ALIGN_CHECK    := $(POPCORN_REPO)/util/scripts/check-align.py
 ALIGNMENT      := $(POPCORN_REPO)/alignment
 ALIGN_TOOL     := $(ALIGNMENT)/driver/src
 SCRIPTS_MASTER := $(ALIGNMENT)/scripts
