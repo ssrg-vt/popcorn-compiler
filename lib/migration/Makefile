@@ -71,7 +71,7 @@ $(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
 	@rm -f $(LIB_X86)
 	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
 
-install: $(LIB_X86) $(LIB_ARM)
+install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
 	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
 	@cp $(HDR) $(POPCORN_ARM)/include

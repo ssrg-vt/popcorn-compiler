@@ -29,11 +29,9 @@ SRC := $(shell ls *.c)
 #                                 Locations                                   #
 ###############################################################################
 
-APP_DIR        := $(shell pwd)
-ALIGN_CHECK    := $(POPCORN_REPO)/utils/scripts/check-align.py
-ALIGNMENT      := $(POPCORN_REPO)/alignment
-ALIGN_TOOL     := $(ALIGNMENT)/driver/src
-SCRIPTS_MASTER := $(ALIGNMENT)/scripts
+APP_DIR     := $(shell pwd)
+ALIGN_CHECK := $(POPCORN_REPO)/utils/scripts/check-align.py
+SCRIPTS     := $(POPCORN)/lib/scripts
 
 ###############################################################################
 #                  Compiler toolchain & command-line flags                    #
@@ -54,23 +52,23 @@ OPT_FLAGS := -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
              -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 # Linker
-LD         := $(POPCORN)/bin/ld.gold
-LDFLAGS    := -z relro --hash-style=gnu --build-id -static
-LIBS       := /lib/crt1.o \
-              /lib/libc.a \
-              /lib/libmigrate.a \
-              /lib/libstack-transform.a \
-              /lib/libdwarf.a \
-              /lib/libelf.a \
-              /lib/libpthread.a \
-              /lib/libbomp.a \
-              /lib/libc.a \
-              /lib/libm.a
+LD       := $(POPCORN)/bin/ld.gold
+LDFLAGS  := -z relro --hash-style=gnu --build-id -static
+LIBS     := /lib/crt1.o \
+            /lib/libc.a \
+            /lib/libmigrate.a \
+            /lib/libstack-transform.a \
+            /lib/libdwarf.a \
+            /lib/libelf.a \
+            /lib/libpthread.a \
+            /lib/libbomp.a \
+            /lib/libc.a \
+            /lib/libm.a
 LD_EXTRA := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 # TODO remove dependencies on external scripting
-ALIGN         := java Runtime
+ALIGN         := align
 ALIGN_BUILD   := align
 ALIGN_SCRIPTS := $(ALIGN_BUILD)/readMyElfToFile.sh \
                  $(ALIGN_BUILD)/nmScript.sh \
@@ -140,7 +138,7 @@ all: post_process
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
-	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED) -c
+	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 
 post_process: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
@@ -167,17 +165,17 @@ clean:
 	@touch $@
 
 # TODO remove dependencies on external scripting
-$(ALIGN_BUILD)/readMyElfToFile.sh: $(SCRIPTS_MASTER)/readMyElfToFile.sh $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/readMyElfToFile.sh: $(SCRIPTS)/readMyElfToFile.sh $(ALIGN_BUILD)/.dir
 	@cp $< $@
-$(ALIGN_BUILD)/nmScript.sh: $(SCRIPTS_MASTER)/nmScript.sh $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/nmScript.sh: $(SCRIPTS)/nmScript.sh $(ALIGN_BUILD)/.dir
 	@cp $< $@
-$(ALIGN_BUILD)/mlink_armObjs.sh: $(SCRIPTS_MASTER)/mlink_armObjs.sh $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/mlink_armObjs.sh: $(SCRIPTS)/mlink_armObjs.sh $(ALIGN_BUILD)/.dir
 	@cp $< $@
-$(ALIGN_BUILD)/mlink_x86Objs.sh: $(SCRIPTS_MASTER)/mlink_x86Objs.sh $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/mlink_x86Objs.sh: $(SCRIPTS)/mlink_x86Objs.sh $(ALIGN_BUILD)/.dir
 	@cp $< $@
-$(ALIGN_BUILD)/aarch64linux.x: $(SCRIPTS_MASTER)/aarch64linux.x $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/aarch64linux.x: $(SCRIPTS)/aarch64linux.x $(ALIGN_BUILD)/.dir
 	@cp $< $@
-$(ALIGN_BUILD)/elf_x86_64.x: $(SCRIPTS_MASTER)/elf_x86_64.x $(ALIGN_BUILD)/.dir
+$(ALIGN_BUILD)/elf_x86_64.x: $(SCRIPTS)/elf_x86_64.x $(ALIGN_BUILD)/.dir
 	@cp $< $@
 $(ALIGN_BUILD)/armexe_musl: $(ARM64_VANILLA) $(ALIGN_BUILD)/.dir
 	@cp $< $@
@@ -217,7 +215,7 @@ $(ARM64_LD_SCRIPT): $(ALIGN_BUILD)/.dir \
                     $(ALIGN_OBJ) \
                     $(ALIGN_SYMBOLS)
 	@echo " [ALIGN] $@"
-	@cd $(ALIGN_TOOL) && $(ALIGN) 1 $(APP_DIR)/$(ALIGN_BUILD) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
+	@$(ALIGN) 1 $(APP_DIR)/$(ALIGN_BUILD) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
 	@if [ "`grep 'FAILURE' $(APP_DIR)/$(ALIGN_BUILD)/align.txt`" != "" ]; then \
 		echo "Align failed -- see $(ALIGN_BUILD)/align.txt"; \
 		false; \
