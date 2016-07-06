@@ -12,7 +12,9 @@ public class globalVars {
 	public static int symbol_offset =100;  // 0x500
 	public static int offset =1000;  // 0x50
 	
-	public static boolean DEBUG = false;
+	public static boolean DEBUG = true;
+	public static boolean hasTLS_DATA = false;
+	public static boolean hasTLS_BSS = false;
 
 	//format is :   Name, X86 SIZE, ARM SIZE
 	public static List<Tuple<String,Long,Long,Long>> A_text = new ArrayList<Tuple<String,Long,Long,Long>>();

@@ -92,11 +92,13 @@ public class AlignmentLogic {
 		        else if(m.group(1).compareTo(".tdata")==0){
 		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
 		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		           globalVars.hasTLS_DATA = true;
 		        }
 		        //TBSS (TLS)
 		        else if(m.group(1).compareTo(".tbss")==0){
 		           RangesInfo.add(new Section<String,Long,Long>( m.group(1), Long.parseLong(m.group(2),16), Long.parseLong(m.group(3),16)) );
 		           if(globalVars.DEBUG) System.out.println("Name: "+m.group(1) +"    Adeed"+"  0x"+m.group(2) +"    0x"+m.group(3) );
+		           globalVars.hasTLS_BSS = true;
 		        }
 			} //END while(m.find())
 		} //END FOR readelf file
@@ -104,6 +106,8 @@ public class AlignmentLogic {
 			System.out.println("Could not obtain Ranges Info. Did Program Successfully compile?");
 			throw new IOException();
 		}
+		if(!globalVars.hasTLS_DATA) RangesInfo.add(new Section<String,Long,Long>( "TOTALLY NULL DATA",(long)0,(long)0));
+		if(!globalVars.hasTLS_BSS) RangesInfo.add(new Section<String,Long,Long>( "TOTALLY NULL BSS",(long)0,(long)0));
 		if(globalVars.DEBUG) System.out.println("");
 	}//END recordRanges
 	
@@ -661,8 +665,8 @@ public class AlignmentLogic {
 				//populateSections("data_Relrolocal", option, globalVars.A_data_Relrolocal, name, addr, size, datarelrolocalMin, datarelrolocalMax,alignment,count);
 				populateSections("data", option, globalVars.A_data, name, addr, size, dataMin, dataMax,alignment,count);
 				populateSections("bss", option, globalVars.A_bss, name, addr, size, bssMin, bssMax,alignment,count);
-				populateSections("tdata", option, globalVars.A_data_TLS, name, addr, size, TdataMin, TdataMax,alignment,count);
-				populateSections("tbss", option, globalVars.A_bss_TLS, name, addr, size, TbssMin, TbssMax,alignment,count);
+				if(globalVars.hasTLS_DATA) populateSections("tdata", option, globalVars.A_data_TLS, name, addr, size, TdataMin, TdataMax,alignment,count);
+				if(globalVars.hasTLS_BSS) populateSections("tbss", option, globalVars.A_bss_TLS, name, addr, size, TbssMin, TbssMax,alignment,count);
 			}//end if flag_foundsymbol
 		}//end while readline
 	}

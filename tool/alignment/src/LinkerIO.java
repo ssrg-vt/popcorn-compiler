@@ -115,6 +115,12 @@ public class LinkerIO {
 		//clear bss
 		x86_64_bss_alignment.clear();
 		aarch64_bss_alignment.clear();
+		//clear TLS data
+		x86_64_tls_bss_alignment.clear();
+		aarch64_tls_bss_alignment.clear();
+		//clear TLS bss
+		x86_64_tls_bss_alignment.clear();
+		aarch64_tls_bss_alignment.clear();	
 	}
 	
 	static void readInLinkerScripts() throws IOException{
