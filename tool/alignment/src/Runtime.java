@@ -33,7 +33,7 @@ public class Runtime {
 		
 		//running the command
 		ProcessBuilder pb = new ProcessBuilder(commands);
-		pb.directory(new File(TARGET_DIR+"/align"));
+		pb.directory(new File(TARGET_DIR));
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 	
@@ -52,7 +52,7 @@ public class Runtime {
 		
 		if(globalVars.DEBUG) System.out.println("MODULAR GENERIC ALIGNMENT");
 		COMPILE_OPT = args[0];
-		TARGET_DIR = args[1];
+		TARGET_DIR = args[1]+"/align";
 		boolean COMPILE_VAN = false;
 		for(int len = 0 ; len < args.length; ++len){
 			if(args[len].compareTo("-skip-vanilla") == 0){
