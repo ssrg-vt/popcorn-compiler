@@ -101,7 +101,7 @@ def getMigrationSites(binary, instrumented):
 			sites[function] = symbols[function]
 		instrFile.close()
 	else:
-		sites = symbols[site]
+		sites = symbols
 
 	print(binary + ": found " + str(len(sites)) + " migration site(s)")
 	if verbose:
