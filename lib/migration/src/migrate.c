@@ -102,10 +102,9 @@ __init_migrate_testing(void)
  * Check environment variables to see if this call site is the function at
  * which we should migrate.
  */
-static inline int do_migrate()
+static inline int do_migrate(void *addr)
 {
   int retval = 0;
-  void *addr = __builtin_return_address(0);
 # ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
@@ -145,7 +144,7 @@ __init_migrate_vdso(void)
  * 0 -> process should be on x86
  * 1 -> process should be on aarch64
  */
-static inline int do_migrate()
+static inline int do_migrate(void *addr)
 {
   int ret = 0;
   if(popcorn_vdso)
@@ -172,7 +171,9 @@ struct shim_data {
 // saved by the pthread library.  Arguments can then be accessed post-migration
 // by reading this pointer.  This method for saving/restoring arguments is
 // necessary because saving argument locations in the LLVM backend is tricky.
-inline void migrate_shim(void (*callback)(void *), void *callback_data)
+static void __migrate_shim_internal(void (*callback)(void *),
+                                    void *callback_data,
+                                    void *pc)
 {
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
@@ -183,7 +184,7 @@ inline void migrate_shim(void (*callback)(void *), void *callback_data)
   }
   else // Check & do migration if requested
   { 
-    if(do_migrate())
+    if(do_migrate(pc))
     {
       struct regset_aarch64 regs_aarch64;
       struct regset_x86_64 regs_x86_64;
@@ -197,6 +198,14 @@ inline void migrate_shim(void (*callback)(void *), void *callback_data)
         MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus, (void *)migrate_shim);
     }
   }
+}
+
+/* Externally visible shim, funnel to internal function to do dirty work. */
+void migrate_shim(void (*callback)(void *), void *callback_data)
+{
+  __migrate_shim_internal(callback,
+                          callback_data,
+                          __builtin_return_address(0));
 }
 
 /* Callback function & data for migration points inserted via compiler. */
@@ -213,12 +222,16 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 /* Hook inserted by compiler at the beginning of a function. */
 void __cyg_profile_func_enter(void *this_fn, void *call_site)
 {
-  migrate_shim(migrate_callback, migrate_callback_data);
+  __migrate_shim_internal(migrate_callback,
+                          migrate_callback_data,
+                          __builtin_return_address(0));
 }
 
 /* Hook inserted by compiler at the end of a function. */
 void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
-  migrate_shim(migrate_callback, migrate_callback_data);
+  __migrate_shim_internal(migrate_callback,
+                          migrate_callback_data,
+                          __builtin_return_address(0));
 }
 

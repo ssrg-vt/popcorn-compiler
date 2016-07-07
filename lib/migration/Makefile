@@ -19,7 +19,9 @@ INC_ARM := $(INC) -I$(POPCORN_ARM)/include
 INC_X86 := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := opt
-OPT_FLAGS := -load $(POPCORN)/lib/libStackInfo.so -stack-info
+OPT_FLAGS := -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
+             -load $(POPCORN)/lib/libSectionStatic.so -section-static \
+             -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 AR := ar
 ARFLAGS := -cq

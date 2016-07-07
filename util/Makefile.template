@@ -215,7 +215,7 @@ $(ARM64_LD_SCRIPT): $(ALIGN_BUILD)/.dir \
                     $(ALIGN_OBJ) \
                     $(ALIGN_SYMBOLS)
 	@echo " [ALIGN] $@"
-	@$(ALIGN) 1 $(APP_DIR)/$(ALIGN_BUILD) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
+	@$(ALIGN) 1 $(APP_DIR) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
 	@if [ "`grep 'FAILURE' $(APP_DIR)/$(ALIGN_BUILD)/align.txt`" != "" ]; then \
 		echo "Align failed -- see $(ALIGN_BUILD)/align.txt"; \
 		false; \
