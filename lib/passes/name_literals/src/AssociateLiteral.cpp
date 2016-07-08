@@ -30,6 +30,7 @@ AssociateLiteral::~AssociateLiteral() {}
  */
 bool AssociateLiteral::runOnModule(Module &M) {
   bool modified = false;
+  string root, newName;
   Module::iterator it, ite;
   Module::global_iterator gl, gle; //for global variables?
   //could also handle by just iterating through .str - .str.1 - .str.2 ....
@@ -47,7 +48,16 @@ bool AssociateLiteral::runOnModule(Module &M) {
       //FROM private unnamed_addr constant [21 x i8]
       //TO global [59 x i8]
       gl->setLinkage(GlobalValue::ExternalLinkage);
-      //Also REMOVE unnamed_addr value
+
+      // Make the global's name unique so we don't clash when linking with
+      // other files
+      string::size_type pos = M.getName().find_first_of('.');
+      root = M.getName().substr(0, pos);
+      newName = root + "_" + gl->getName().str();
+      gl->setName(newName);
+      DEBUG(errs() << "New anonymous string name: " << newName << "\n";);
+
+      // Also REMOVE unnamed_addr value
       if(gl->hasUnnamedAddr()) {
         gl->setUnnamedAddr(false);
       }
