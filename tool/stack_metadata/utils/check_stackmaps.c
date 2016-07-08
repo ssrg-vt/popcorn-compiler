@@ -114,7 +114,7 @@ void check_stackmaps(stack_map *sm_a, size_t num_sm_a,
     if(sm_a[i].num_records != sm_b[i].num_records)
     {
       snprintf(buf, BUF_SIZE,
-               "number of records for stackmap %lu doesn't match (%u vs. %u)",
+               "number of records for stackmap section %lu doesn't match (%u vs. %u)",
                i, sm_a[i].num_records, sm_b[i].num_records);
       warn(buf);
     }
