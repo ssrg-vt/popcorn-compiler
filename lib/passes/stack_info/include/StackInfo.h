@@ -21,6 +21,12 @@ private:
   llvm::Function *SMFunc;
   llvm::FunctionType *SMTy; // Used for creating function declaration
 
+  /* Sort values based on name */
+  struct ValueComp {
+    bool operator() (const llvm::Value *lhs, const llvm::Value *rhs) const
+    { return lhs->getName().compare(rhs->getName()) < 0; }
+  };
+
   /*
    * Maximum per-architecture number of live values (necessary due to LLVM
    * bug, see https://llvm.org/bugs/show_bug.cgi?id=23306).
