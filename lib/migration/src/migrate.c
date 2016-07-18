@@ -222,16 +222,12 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 /* Hook inserted by compiler at the beginning of a function. */
 void __cyg_profile_func_enter(void *this_fn, void *call_site)
 {
-  __migrate_shim_internal(migrate_callback,
-                          migrate_callback_data,
-                          __builtin_return_address(0));
+  __migrate_shim_internal(migrate_callback, migrate_callback_data, this_fn);
 }
 
 /* Hook inserted by compiler at the end of a function. */
 void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
-  __migrate_shim_internal(migrate_callback,
-                          migrate_callback_data,
-                          __builtin_return_address(0));
+  __migrate_shim_internal(migrate_callback, migrate_callback_data, this_fn);
 }
 
