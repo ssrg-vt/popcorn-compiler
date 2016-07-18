@@ -163,12 +163,29 @@ size_t get_num_data_blocks(Elf_Scn *s);
 Elf_Scn *get_sym_tab(Elf *e);
 
 /**
- * Get a symbol from the symbol table.
+ * Get a symbol from the symbol table by name.
  * @param e an ELF object
  * @param name name of the symbol
  * @return the symbol if found, or an empty symbol otherwise
  */
-GElf_Sym get_sym(Elf *e, const char *name);
+GElf_Sym get_sym_by_name(Elf *e, const char *name);
+
+/**
+ * Get a symbol from the symbol table by address.
+ * @param e an ELF object
+ * @param addr the address of the symbol
+ * @param type the type of the symbol (or UINT8_MAX if any type)
+ * @return the symbol if found, or an empty symbol otherwise
+ */
+GElf_Sym get_sym_by_addr(Elf *e, uint64_t addr, uint8_t type);
+
+/**
+ * Get a symbol's name.
+ * @param e an ELF object
+ * @param sym a symbol
+ * @return the name of the symbol, or a NULL pointer if it doesn't exist
+ */
+const char *get_sym_name(Elf *e, GElf_Sym sym);
 
 /**
  * Add new section name to section header string table.

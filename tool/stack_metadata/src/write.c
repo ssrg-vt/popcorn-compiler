@@ -155,9 +155,9 @@ static bool create_call_site_metadata(bin *b,
 
   if(!num_sites || !cs || !num_live || !live) return false;
 
-  mainthr = get_sym(b->e, START_MAIN);
+  mainthr = get_sym_by_name(b->e, START_MAIN);
   if(!mainthr.st_size) return false;
-  thread = get_sym(b->e, START_THREAD);
+  thread = get_sym_by_name(b->e, START_THREAD);
 
   /* Calculate number of stackmap & location records */
   for(i = 0; i < num_sm; i++)

@@ -82,7 +82,7 @@ Elf_Scn *get_sym_tab(Elf *e)
   return scn; // NULL if not found
 }
 
-GElf_Sym get_sym(Elf *e, const char *name)
+GElf_Sym get_sym_by_name(Elf *e, const char *name)
 {
   size_t num_syms, i;
   const char *sym_name;
@@ -115,6 +115,55 @@ GElf_Sym get_sym(Elf *e, const char *name)
   }
 
   return ret;
+}
+
+GElf_Sym get_sym_by_addr(Elf *e, uint64_t addr, uint8_t type)
+{
+  size_t num_syms, i;
+  GElf_Sym sym, ret = {
+    .st_name = 0,
+    .st_info = 0,
+    .st_other = 0,
+    .st_shndx = 0,
+    .st_value = 0,
+    .st_size = 0
+  };
+  GElf_Shdr shdr;
+  Elf_Scn *symtab = NULL;
+  Elf_Data *data = NULL;
+
+  if(!(symtab = get_sym_tab(e))) return ret;
+  if(gelf_getshdr(symtab, &shdr) != &shdr) return ret;
+  if(!(data = elf_getdata(symtab, data))) return ret;
+
+  num_syms = shdr.sh_size / shdr.sh_entsize;
+  for(i = 0; i < num_syms; i++)
+  {
+    if(gelf_getsym(data, i, &sym) != &sym) return ret;
+    if(sym.st_value == addr)
+    {
+      if(type == UINT8_MAX || GELF_ST_TYPE(sym.st_info) == type)
+      {
+        ret = sym;
+        break;
+      }
+    }
+  }
+
+  return ret;
+}
+
+const char *get_sym_name(Elf *e, GElf_Sym sym)
+{
+  const char *sym_name;
+  GElf_Shdr shdr;
+  Elf_Scn *symtab = NULL;
+
+  if(!(symtab = get_sym_tab(e))) return NULL;
+  if(gelf_getshdr(symtab, &shdr) != &shdr) return NULL;
+  sym_name = elf_strptr(e, shdr.sh_link, sym.st_name);
+
+  return sym_name;
 }
 
 uint64_t add_section_name(Elf *e, const char *name)

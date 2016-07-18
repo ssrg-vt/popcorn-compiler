@@ -20,11 +20,11 @@
 
 static const char *args = "hf:s:i:v";
 static const char *help =
-"gen_st_metadata -- post-process object files (and their LLVM-generated stack \
+"gen-stackinfo -- post-process object files (and their LLVM-generated stack \
 maps) to tag call-sites with globally-unique identifiers & generate stack \
 transformation meta-data\n\n\
 \
-Usage: ./gen_st_metadata [ OPTIONS ]\n\
+Usage: ./gen-stackinfo [ OPTIONS ]\n\
 Options:\n\
 \t-h      : print help & exit\n\
 \t-f name : object file or executable to post-process\n\

@@ -14,6 +14,8 @@
 #include "util.h"
 #include "het_bin.h"
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 ///////////////////////////////////////////////////////////////////////////////
 // Configuration
 ///////////////////////////////////////////////////////////////////////////////
@@ -23,14 +25,14 @@ static const char *help =
 "check-stackmaps - check LLVM stackmap sections for matching metadata across "
 "binaries\n\n\
 \
-Usage: ./dump_metadata [ OPTIONS ]\n\
+Usage: ./check-stackmaps [ OPTIONS ]\n\
 Options:\n\
 \t-h      : print help & exit\n\
 \t-a file : name of AArch64 executable\n\
 \t-x file : name of x86-64 executable\n\n\
 \
 Note: this tool assumes binaries have been through the alignment tool, as it \
-stackmap checking based on function virtual address";
+checks stackmaps based on function addresses";
 
 static const char *bin_aarch64_fn = NULL;
 static const char *bin_x86_64_fn = NULL;
@@ -83,18 +85,22 @@ static void parse_args(int argc, char **argv)
  * possible rather than to die on errors.  So, we'll iterate over everything
  * and print out where we find inconsistencies.
  */
-void check_stackmaps(stack_map *sm_a, size_t num_sm_a,
-                     stack_map *sm_b, size_t num_sm_b)
+void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
+                     bin *b, stack_map *sm_b, size_t num_sm_b)
 {
   char buf[BUF_SIZE];
-  size_t i, j, num_sm, num_records;
+  size_t i, j, k, num_sm, num_records, num_locs;
   uint64_t func_a, func_b;
+  uint8_t flag_a, flag_b;
+  uint32_t size_a, size_b;
+  GElf_Sym sym_a, sym_b;
+  const char *sym_a_name, *sym_b_name;
 
   /*
-   * Errors here indicate there's probably a file compiled without the
-   * stackmap-insertion pass, i.e., there's no stackmap section.
+   * Errors here indicate there's probably an object file that didn't have the
+   * stackmap-insertion pass run over its IR, i.e., there's no stackmap section
+   * for one of the object files included in the binary.
    */
-  num_sm = (num_sm_a > num_sm_b ? num_sm_b : num_sm_a);
   if(num_sm_a != num_sm_b)
   {
     snprintf(buf, BUF_SIZE, "number of stackmaps doesn't match (%lu vs. %lu)",
@@ -103,14 +109,13 @@ void check_stackmaps(stack_map *sm_a, size_t num_sm_a,
   }
 
   /* Iterate over all accumulated stackmap sections (one per .o file) */
+  num_sm = MIN(num_sm_a, num_sm_b);
   for(i = 0; i < num_sm; i++)
   {
     /*
      * Errors here indicate different numbers of stackmap intrinsics inserted
      * into the IR.
      */
-    num_records = (sm_a[i].num_records > sm_b[i].num_records ?
-                   sm_b[i].num_records : sm_a[i].num_records);
     if(sm_a[i].num_records != sm_b[i].num_records)
     {
       snprintf(buf, BUF_SIZE,
@@ -123,10 +128,15 @@ void check_stackmaps(stack_map *sm_a, size_t num_sm_a,
      * Iterate over all records in the stackmap, i.e., all
      * llvm.experimental.stackmap intrinsics
      */
+    num_records = MIN(sm_a[i].num_records, sm_b[i].num_records);
     for(j = 0; j < num_records; j++)
     {
       func_a = sm_a[i].stack_sizes[sm_a[i].stack_maps[j].func_idx].func_addr;
+      sym_a = get_sym_by_addr(a->e, func_a, STT_FUNC);
+      sym_a_name = get_sym_name(a->e, sym_a);
       func_b = sm_b[i].stack_sizes[sm_b[i].stack_maps[j].func_idx].func_addr;
+      sym_b = get_sym_by_addr(b->e, func_b, STT_FUNC);
+      sym_b_name = get_sym_name(b->e, sym_b);
 
       /*
        * Errors here indicate stackmaps inside of different functions.
@@ -134,22 +144,80 @@ void check_stackmaps(stack_map *sm_a, size_t num_sm_a,
       if(func_a != func_b)
       {
         snprintf(buf, BUF_SIZE,
-                 "stackmap %lu corresponds to different functions (%lx vs. %lx)",
-                 j, func_a, func_b);
+                 "stackmap %lu corresponds to different functions "
+                 "(%s/%lx vs. %s/%lx)",
+                 j, sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
       }
-
-      /*
-       * Errors here indicate different numbers of live values at the stackmap
-       * intrinsic call site.
-       */
-      if(sm_a[i].stack_maps[j].locations->num !=
-         sm_b[i].stack_maps[j].locations->num)
+      else
       {
-        snprintf(buf, BUF_SIZE,
-                 "stackmap %lu has different numbers of location records (%u vs. %u)",
-                 j, sm_a[i].stack_maps[j].locations->num,
-                 sm_b[i].stack_maps[j].locations->num);
+        /*
+         * Errors here indicate different numbers of live values at the stackmap
+         * intrinsic call site.
+         */
+        if(sm_a[i].stack_maps[j].locations->num !=
+           sm_b[i].stack_maps[j].locations->num)
+        {
+          snprintf(buf, BUF_SIZE,
+                   "stackmap %lu has different numbers of location records "
+                   "(%u vs. %u)",
+                   j, sm_a[i].stack_maps[j].locations->num,
+                   sm_b[i].stack_maps[j].locations->num);
+          warn(buf);
+        }
+
+        /*
+         * Iterate over all location records (i.e., all live values) at a call
+         * site.  Errors point to different live values/different orderings of
+         * live values at the site.
+         */
+        num_locs = MIN(sm_a[i].stack_maps[j].locations->num,
+                       sm_b[i].stack_maps[j].locations->num);
+        for(k = 0; k < num_locs; k++)
+        {
+          flag_a = sm_a[i].stack_maps[j].locations->record[k].size;
+          flag_b = sm_b[i].stack_maps[j].locations->record[k].size;
+          if(flag_a != flag_b)
+          {
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+                                    "different size (%u vs. %u)",
+                     sym_a_name, j, k, flag_a, flag_b);
+            warn(buf);
+          }
+
+          flag_a = sm_a[i].stack_maps[j].locations->record[k].is_ptr;
+          flag_b = sm_b[i].stack_maps[j].locations->record[k].is_ptr;
+          if(flag_a != flag_b)
+          {
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+                                    "mismatched pointer flag (%u vs. %u)",
+                     sym_a_name, j, k, flag_a, flag_b);
+            warn(buf);
+          }
+
+          flag_a = sm_a[i].stack_maps[j].locations->record[k].is_alloca;
+          flag_b = sm_b[i].stack_maps[j].locations->record[k].is_alloca;
+          if(flag_a != flag_b)
+          {
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+                                    "mismatched alloca flag (%u vs. %u)",
+                     sym_a_name, j, k, flag_a, flag_b);
+            warn(buf);
+          }
+
+          if(flag_a && flag_b)
+          {
+            size_a = sm_a[i].stack_maps[j].locations->record[k].pointed_size;
+            size_b = sm_b[i].stack_maps[j].locations->record[k].pointed_size;
+            if(size_a != size_b)
+            {
+              snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+                                      "different size (%u vs. %u)",
+                       sym_a_name, j, k, size_a, size_b);
+              warn(buf);
+            }
+          }
+        }
       }
     }
   }
@@ -181,7 +249,8 @@ int main(int argc, char **argv)
   if((ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64)) != SUCCESS)
     die("could not read stackmaps (x86-64)", ret);
 
-  check_stackmaps(sm_aarch64, num_sm_aarch64, sm_x86_64, num_sm_x86_64);
+  check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
+                  bin_x86_64, sm_x86_64, num_sm_x86_64);
 
   free_stackmaps(sm_aarch64, num_sm_aarch64);
   free_stackmaps(sm_x86_64, num_sm_x86_64);
