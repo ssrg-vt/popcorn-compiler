@@ -53,7 +53,9 @@ bool StackInfo::runOnModule(Module &M)
   std::set<const Value *> *live;
   std::set<const Value *, ValueComp> sortedLive;
   Triple triple(M.getTargetTriple());
-  size_t maxLive = MaxLive[triple.getArch()];
+  // TODO default to x86, need to get arch via triple.getArch()
+  size_t maxLive = MaxLive[llvm::Triple::ArchType::x86_64];
+  //size_t maxLive = MaxLive[triple.getArch()];
 
   DEBUG(errs() << "StackInfo: entering module " << M.getName() << "\n\r");
 
@@ -152,7 +154,9 @@ bool StackInfo::runOnModule(Module &M)
           this->numInstrumented++;
 
           if(numRecords == maxLive)
-            errs() << "WARNING: reached maximum number of records for stackmap ("
+            errs() << "WARNING: in " << f->getName()
+                   << ", reached maximum number of records for stackmap "
+                   << (this->callSiteID - 1) << " ("
                    << triple.getArchName() << ": " << maxLive << ")\n\r";
         }
       }
