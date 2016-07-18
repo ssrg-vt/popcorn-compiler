@@ -543,19 +543,21 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 
       if(src->stack_base > stack_addr && stack_addr >= src->stack)
       {
-        if(src->act > 0) ASSERT(PREV_ACT(src).cfa <= stack_addr,
-                                "pointing to variable in callee function\n");
+        if(src->act > 0 && stack_addr <= PREV_ACT(src).cfa)
+          ST_WARN("pointing to variable in called function (%p)\n", stack_addr);
+        else
+        {
+          val_dest = get_var_loc(dest, var_dest);
+          ASSERT(val_dest.is_valid, "invalid stack pointer\n");
+          fixup_data.src_addr = stack_addr;
+          fixup_data.dest_loc = val_dest;
+          list_add(fixup, &dest->stack_pointers, dest->act, fixup_data);
 
-        val_dest = get_var_loc(dest, var_dest);
-        ASSERT(val_dest.is_valid, "invalid stack pointer\n");
-        fixup_data.src_addr = stack_addr;
-        fixup_data.dest_loc = val_dest;
-        list_add(fixup, &dest->stack_pointers, dest->act, fixup_data);
+          ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
 
-        ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
-
-        /* Are we pointing to a variable within the same frame? */
-        if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
+          /* Are we pointing to a variable within the same frame? */
+          if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
+        }
       }
       else val_dest = put_var_val(dest, var_dest, val_src);
     }
