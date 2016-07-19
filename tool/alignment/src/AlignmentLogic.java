@@ -269,7 +269,7 @@ public class AlignmentLogic {
 	 * ADD in PADDING AT END OF SECTION IF NEEDED.
 	 * @param section
 	 */
-	static void add_sectionAligment(String section)throws IOException, InterruptedException{
+	static void add_sectionAligment(String section,long additionalsneaky)throws IOException, InterruptedException{
 		//Clear RangesInfo
 		resetRangesInfo();
 		//get current ELF info
@@ -323,16 +323,16 @@ public class AlignmentLogic {
 		//System.out.println("@@@@size:"+AlignmentLogic.RangesInfo.get(0).getSize_x86_64() + "++"+AlignmentLogic.RangesInfo.get(0).getSize_aarch64());
 		//System.out.println("@@@@size:"+AlignmentLogic.RangesInfo.get(4).getSize_x86_64() + "++"+AlignmentLogic.RangesInfo.get(4).getSize_aarch64());
 		long sizeDif = sectMax_x86 - sectMax_arm;
-		if(globalVars.DEBUG) System.out.println(section+" DIFF: "+sizeDif);
+		if(globalVars.DEBUG) System.out.println(section+" DIFF: "+sizeDif+ "plus sneaky: "+additionalsneaky);
 		if (sizeDif < 0){
 			//ARM LARGER add padding to x86
 			if(globalVars.DEBUG) System.out.println("<<Padding x86>>");
-			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif))+ "; /*END OF SECTION "+section +" SZ ALIGN*/");
+			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif)+additionalsneaky)+ "; /*END OF SECTION "+section +" SZ ALIGN*/");
 			LinkerIO.addAlignmentToLinkerScripts(LinkerIO.sectionSize_alignment, null,x86_insertPT,0);
 		}else if(sizeDif > 0){
 			//x86 LARGER add padding to ARM
 			if(globalVars.DEBUG) System.out.println("<<Padding ARM>>");
-			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif)) + "; /*END OF SECTION "+section +" SZ ALIGN*/");
+			LinkerIO.sectionSize_alignment.add("\t"+" . = . + 0x"+ Long.toHexString(Math.abs(sizeDif)+additionalsneaky) + "; /*END OF SECTION "+section +" SZ ALIGN*/");
 			LinkerIO.addAlignmentToLinkerScripts(null, LinkerIO.sectionSize_alignment,0,arm_insertPT);
 		}else{ //Have a nice day!
 		}
@@ -675,7 +675,7 @@ public class AlignmentLogic {
 		long default_size=0;
 		long init_align=1;
 		int c=0;
-		
+		if(region.compareTo("rodata") != 0)
 		if(addr < sectionMax && addr >= sectionMin){
 			//System.out.println("WARNING: "+sectionMin+"  "+sectionMax+"   adr:"+addr);
 			//check if the symbol already exists
@@ -692,13 +692,14 @@ public class AlignmentLogic {
 							if((currList.get(t).getSize_x86_64()+size) % currList.get(t).getAlignment_x86() ==0){
 								//dont need simulatedd padding
 								currList.get(t).setSize_x86_64(size+currList.get(t).getSize_x86_64());
-								//System.out.println("%%% DONT NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));		
+								System.out.println("%%% DONT NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));		
 							}else{
 								//need simulated padding
 								currList.get(t).setSize_x86_64(simulatedAlignmentPadding+size+currList.get(t).getSize_x86_64());
-								//System.out.println("%%% NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));
+								System.out.println("%%% NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));
 							}
-						}else{
+            
+						} else{
 							currList.get(t).setSize_x86_64(currList.get(t).getSize_x86_64()+size);
 	
 							if(alignment > currList.get(t).getAlignment_x86()){
@@ -780,7 +781,7 @@ public class AlignmentLogic {
 	 * @throws IOException 
 	 * Should make more generic to cascade for N additional architecture linker scripts
 	 */
-	static void AntonioOffsetAdditional(String section) throws IOException{
+	static long AntonioOffsetAdditional(String section) throws IOException{
 		String temp;
 		String name = null;
 		long size=0;
@@ -879,6 +880,7 @@ public class AlignmentLogic {
 		br2.close();
 		*/
 		LinkerIO.sectionSize_alignment.clear();
+    return totalsneakyoffset;
 	}
 
 static void anomolyARMSizeChecker() throws InterruptedException, IOException{
