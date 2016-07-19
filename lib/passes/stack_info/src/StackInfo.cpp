@@ -2,7 +2,6 @@
 #include <set>
 #include <vector>
 #include "llvm/Pass.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Type.h"
@@ -52,10 +51,6 @@ bool StackInfo::runOnModule(Module &M)
   bool modified = false;
   std::set<const Value *> *live;
   std::set<const Value *, ValueComp> sortedLive;
-  Triple triple(M.getTargetTriple());
-  // TODO default to x86, need to get arch via triple.getArch()
-  size_t maxLive = MaxLive[llvm::Triple::ArchType::x86_64];
-  //size_t maxLive = MaxLive[triple.getArch()];
 
   DEBUG(errs() << "StackInfo: entering module " << M.getName() << "\n\r");
 
@@ -71,7 +66,6 @@ bool StackInfo::runOnModule(Module &M)
 
     LiveValues &liveVals = getAnalysis<LiveValues>(*f);
     std::set<const Value *>::const_iterator v, ve;
-    size_t numRecords;
 
     /*
      * Put a stackmap at the beginning of the function to capture arguments. This
@@ -85,18 +79,11 @@ bool StackInfo::runOnModule(Module &M)
     std::vector<Value *> funcArgs(2);
     funcArgs[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
     funcArgs[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-    for(v = sortedLive.begin(), ve = sortedLive.end(), numRecords = 0;
-        v != ve && numRecords < maxLive;
-        v++, numRecords++)
+    for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
       funcArgs.push_back((Value *)*v);
     IRBuilder<> funcArgBuilder(&*f->getEntryBlock().getFirstInsertionPt());
     funcArgBuilder.CreateCall(this->SMFunc, ArrayRef<Value *>(funcArgs));
     this->numInstrumented++;
-
-    if(numRecords == maxLive)
-      errs() << "WARNING: reached maximum number of records for stackmap ("
-             << triple.getArchName() << ": " << maxLive << ")\n\r";
-
 
     /* Find call sites in the function. */
     for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
@@ -146,18 +133,10 @@ bool StackInfo::runOnModule(Module &M)
           std::vector<Value *> args(2);
           args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
           args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-          for(v = sortedLive.begin(), ve = sortedLive.end(), numRecords = 0;
-              v != ve && numRecords < maxLive;
-              v++, numRecords++)
+          for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
             args.push_back((Value*)*v);
           builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
           this->numInstrumented++;
-
-          if(numRecords == maxLive)
-            errs() << "WARNING: in " << f->getName()
-                   << ", reached maximum number of records for stackmap "
-                   << (this->callSiteID - 1) << " ("
-                   << triple.getArchName() << ": " << maxLive << ")\n\r";
         }
       }
     }

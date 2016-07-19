@@ -27,20 +27,9 @@ private:
     { return lhs->getName().compare(rhs->getName()) < 0; }
   };
 
-  /*
-   * Maximum per-architecture number of live values (necessary due to LLVM
-   * bug, see https://llvm.org/bugs/show_bug.cgi?id=23306).
-   */
-  static std::map<llvm::Triple::ArchType, size_t> MaxLive;
-
   /* Utility functions */
   void createSMType(const llvm::Module &M);
   bool addSMDeclaration(llvm::Module &M);
-};
-
-std::map<llvm::Triple::ArchType, size_t> StackInfo::MaxLive = {
-  {llvm::Triple::ArchType::aarch64, (size_t) - 1},
-  {llvm::Triple::ArchType::x86_64, 13}
 };
 
 #endif /* _STACK_INFO_H */

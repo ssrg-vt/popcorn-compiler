@@ -43,7 +43,7 @@ CXX        := clang++
 CFLAGS     := -O0 -Wall -g -gdwarf-aranges -c -fopenmp=libomp -DPOSIX -DBOMP
 HET_CFLAGS := $(CFLAGS) -nostdinc -ffunction-sections -fdata-sections \
               -finstrument-functions -fno-common -ftls-model=initial-exec \
-              -fno-vectorize -Wno-override-module
+              -fno-vectorize -Wno-override-module -mllvm -optimize-regalloc
 
 # Optimization Middle-End
 OPT       := opt
