@@ -105,7 +105,14 @@ public class Runtime {
 		//find unique for each architecture
 		gatherANDsort();
 		if(globalVars.DEBUG) System.out.println("-1--------------------- Gather & Sort Symbols Complete --------------------------------");
-		LinkerIO.readInLinkerScripts();	
+		LinkerIO.readInLinkerScripts();
+   
+PrintWriter writer = new PrintWriter(TARGET_DIR+"/v1113sizetext.txt", "UTF-8");
+for(int w =0; w < globalVars.A_rodata.size(); w++){
+writer.println(globalVars.A_rodata.get(w).getName()+"\t\taddr:0x"+Long.toHexString(globalVars.A_text.get(w).getAddr())+"\t\tx86size:0x"+Long.toHexString(globalVars.A_text.get(w).getSize_x86_64())+"\t\t\taRMsize:0x"+Long.toHexString(globalVars.A_text.get(w).getSize_aarch64()));
+}
+writer.close();
+
 		if(globalVars.DEBUG) System.out.println("----------------------- ReadInLinkerScripts Complete! ---------------------------------");
 		
 		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added Nuances ----------------------------------");
@@ -155,8 +162,8 @@ public class Runtime {
 		AlignmentLogic.recordRanges(0);
 		AlignmentLogic.recordRanges(1);
 
-		AlignmentLogic.AntonioOffsetAdditional("text");
-		AlignmentLogic.add_sectionAligment("text");
+		long sneaky = AlignmentLogic.AntonioOffsetAdditional("text");
+		AlignmentLogic.add_sectionAligment("text",sneaky);
 		LinkerIO.writeOutLinkerScripts();
 		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
@@ -184,8 +191,8 @@ public class Runtime {
 		AlignmentLogic.recordRanges(0);
 		AlignmentLogic.recordRanges(1);
 		
-		AlignmentLogic.AntonioOffsetAdditional("rodata");
-		AlignmentLogic.add_sectionAligment("rodata");
+		sneaky = AlignmentLogic.AntonioOffsetAdditional("rodata");
+		AlignmentLogic.add_sectionAligment("rodata",sneaky);
 		LinkerIO.writeOutLinkerScripts();
 		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);
@@ -212,8 +219,8 @@ public class Runtime {
 		AlignmentLogic.recordRanges(0);
 		AlignmentLogic.recordRanges(1);
 
-		AlignmentLogic.AntonioOffsetAdditional("data");
-		AlignmentLogic.add_sectionAligment("data");
+		sneaky =AlignmentLogic.AntonioOffsetAdditional("data");
+		AlignmentLogic.add_sectionAligment("data", sneaky);
 		LinkerIO.writeOutLinkerScripts();
 		if(globalVars.DEBUG) System.out.println("\n--------------------- Rerunning with added **** ----------------------------------");
 		runScript("mlink_x86Objs.sh",x86withChanges);

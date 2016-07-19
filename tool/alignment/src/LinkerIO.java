@@ -93,12 +93,12 @@ public class LinkerIO {
 	static int x86_tlsbssendLine_Offset = 140+5;
 	
 	static int aarch64_textendLine_Offset = 54;
-	static int aarch64_rodataendLine_Offset = 68;
-	static int aarch64_dataendLine_Offset = 153;
-	static int aarch64_bssendLine_Offset = 173;
+	static int aarch64_rodataendLine_Offset = 66+1;
+	static int aarch64_dataendLine_Offset = 74+2;
+	static int aarch64_bssendLine_Offset = 92+3;
 	/**NOT SURE*/
-	static int aarch64_tlsdataendLine_Offset = 0;
-	static int aarch64_tlsbssendLine_Offset = 0; 
+	static int aarch64_tlsdataendLine_Offset = 117+4;
+	static int aarch64_tlsbssendLine_Offset = 121+5; 
 	
 	static void resetLinkerScript(){
 		linkerScript_ByLine_x86_64.clear();
