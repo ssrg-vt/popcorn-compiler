@@ -40,14 +40,15 @@ SCRIPTS     := $(POPCORN)/lib/scripts
 # Compiler
 CC         := clang
 CXX        := clang++
-CFLAGS     := -O3 -Wall -g -gdwarf-aranges -c -fopenmp=libomp \
-              -DPOSIX -DBOMP -DNUM_T_USED=$(TUSED)
+CFLAGS     := -O0 -Wall -g -gdwarf-aranges -c -fopenmp=libomp -DPOSIX -DBOMP
 HET_CFLAGS := $(CFLAGS) -nostdinc -ffunction-sections -fdata-sections \
-              -finstrument-functions -fno-common -ftls-model=initial-exec
+              -finstrument-functions -fno-common -ftls-model=initial-exec \
+              -fno-vectorize -Wno-override-module
 
 # Optimization Middle-End
 OPT       := opt
-OPT_FLAGS := -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
+OPT_FLAGS := -O3 \
+             -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
              -load $(POPCORN)/lib/libSectionStatic.so -section-static \
              -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
@@ -85,6 +86,13 @@ ALIGN_SYMBOLS := $(ALIGN_BUILD)/nm_symbols_aarch64.txt \
 # Post-processing
 POST_PROCESS := $(POPCORN)/bin/gen-stackinfo
 
+##########
+# Common #
+##########
+
+IR_BUILD := ir
+IR       := $(addprefix ir/,$(SRC:.c=.bc))
+
 ###########
 # AArch64 #
 ###########
@@ -96,7 +104,7 @@ ARM64_BUILD   := build_aarch64
 # Generated files
 ARM64_ALIGNED   := $(BIN)_aarch64
 ARM64_VANILLA   := $(ARM64_BUILD)/$(ARM64_ALIGNED)
-ARM64_OBJ       := $(addprefix $(ARM64_BUILD)/,$(SRC:.c=.o))
+ARM64_OBJ       := $(subst $(IR_BUILD),$(ARM64_BUILD),$(IR:.bc=.o))
 ARM64_MAP       := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT := $(ALIGN_BUILD)/modified__aarch64.x
 
@@ -118,7 +126,7 @@ X86_64_SD_BUILD := sd_x86-64
 # Generated files
 X86_64_ALIGNED   := $(BIN)_x86-64
 X86_64_VANILLA   := $(X86_64_BUILD)/$(X86_64_ALIGNED)
-X86_64_OBJ       := $(addprefix $(X86_64_BUILD)/,$(SRC:.c=.o))
+X86_64_OBJ       := $(subst $(IR_BUILD),$(X86_64_BUILD),$(IR:.bc=.o))
 X86_64_MAP       := $(X86_64_BUILD)/map.txt
 X86_64_LD_SCRIPT := $(ALIGN_BUILD)/modified__elf_x86_64.x
 X86_64_SD        := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
@@ -156,8 +164,8 @@ vanilla-aarch64: $(ARM64_VANILLA)
 vanilla-x86-64: $(X86_64_VANILLA)
 
 clean:
-	@echo " [CLEAN] $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD)"
-	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD)
+	@echo " [CLEAN] $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD) $(IR_BUILD)"
+	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD) $(IR_BUILD)
 
 %.dir:
 	@echo " [MKDIR] $*"
@@ -194,17 +202,24 @@ $(ALIGN_BUILD)/nm_symbols_aarch64.txt: $(ARM64_OBJ) $(ALIGN_BUILD)/.dir
 $(ALIGN_BUILD)/nm_symbols_x86.txt: $(X86_64_OBJ) $(ALIGN_BUILD)/.dir
 	@for f in $(X86_64_OBJ); do nm --numeric-sort $$f >> $@; done
 
+##########
+# Common #
+##########
+
+$(IR_BUILD)/%.bc: %.c
+	@echo " [CC] $<"
+	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -emit-llvm $(ARM64_INC) -o $@ $<
+	@$(OPT) $(OPT_FLAGS) $@ -o $@
+
 ###########
 # AArch64 #
 ###########
 
-$(ARM64_BUILD)/%.o: %.c
+$(ARM64_BUILD)/%.o: $(IR_BUILD)/%.bc
 	@echo " [CC (aarch64)] $<"
-	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -emit-llvm $(ARM64_INC) -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) $@.bc -o $@.bc
-	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -o $@ $@.bc
+	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -o $@ $<
 
-$(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
+$(ARM64_VANILLA): $(IR_BUILD)/.dir $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
 
@@ -229,13 +244,11 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 # x86-64 #
 ##########
 
-$(X86_64_BUILD)/%.o: %.c
+$(X86_64_BUILD)/%.o: $(IR_BUILD)/%.bc
 	@echo " [CC (x86-64)] $<"
-	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) -emit-llvm $(X86_64_INC) -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) $@.bc -o $@.bc
-	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) -o $@ $@.bc
+	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) -o $@ $<
 
-$(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
+$(X86_64_VANILLA): $(IR_BUILD)/.dir $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
 
@@ -264,3 +277,4 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 .PHONY: all post_process stack-depth clean \
         aligned aligned-aarch64 aligned-x86-64 \
         vanilla vanilla-aarch64 vanilla-x86-64
+.SECONDARY: $(IR)
