@@ -10,6 +10,7 @@ public class Tuple<X, Y, Z, W> {
   public long alignment_aRM;
   public int numCounter;
   public int sameSymbolname_diffAddr;
+  public int sameSymbolname_diffAddr_ARM;
   
   
   public Tuple(X x, Y y, Z z,W w,long u, long v) { 
@@ -22,6 +23,7 @@ public class Tuple<X, Y, Z, W> {
     this.alignment_aRM = v;
     this.numCounter=0;
     this.sameSymbolname_diffAddr=0;
+    this.sameSymbolname_diffAddr_ARM=0;
   }
   
   @Override
@@ -63,6 +65,9 @@ public class Tuple<X, Y, Z, W> {
   public int getMultAddressFlag(){
 	  return sameSymbolname_diffAddr;
   }
+  public int getMultAddressFlag_ARM(){
+	  return sameSymbolname_diffAddr_ARM;
+  }
     
   /************* Set ************************/
   public void setName(X name){
@@ -101,6 +106,9 @@ public class Tuple<X, Y, Z, W> {
   
   public void updateBy1_MultAddressFlag(){
 	  this.sameSymbolname_diffAddr +=1;
+  }
+  public void updateBy1_MultAddressFlag_ARM(){
+	  this.sameSymbolname_diffAddr_ARM +=1;
   }
   
   /************AddTo Size**************************/

@@ -30,12 +30,13 @@ AssociateLiteral::~AssociateLiteral() {}
  */
 bool AssociateLiteral::runOnModule(Module &M) {
   bool modified = false;
-  string root, newName;
+  string root1,root2, newName;
   Module::iterator it, ite;
   Module::global_iterator gl, gle; //for global variables?
   //could also handle by just iterating through .str - .str.1 - .str.2 ....
 
-  DEBUG(errs() << "AssociateLiteral: entering module " << M.getName() << "\n");
+  //DEBUG(outs() << "AssociateLiteral: entering module " << M.getName() << "\n");
+  //outs() << "AssociateLiteral: entering module " << M.getName() << "\n";
 
   // Iterate over all globals and transform to associate symbol to strings for
   // each module
@@ -43,7 +44,8 @@ bool AssociateLiteral::runOnModule(Module &M) {
     // DONT NEED TO CHANGE NAME PER-SAY just change type
     // PrivateLinkage does NOT show up in any symbol table in the object file!
     if(gl->getLinkage() == GlobalValue::PrivateLinkage) {
-      DEBUG(errs() << "\nPRIVATE: " <<  *gl << "\n");
+      //DEBUG(outs() << "\nPRIVATE: " <<  *gl << "\n");
+      //outs() << "\nPRIVATE: " <<  *gl << "\n";
       //change Linkage
       //FROM private unnamed_addr constant [21 x i8]
       //TO global [59 x i8]
@@ -51,21 +53,31 @@ bool AssociateLiteral::runOnModule(Module &M) {
 
       // Make the global's name unique so we don't clash when linking with
       // other files
-      string::size_type pos = M.getName().find_first_of('.');
-      root = M.getName().substr(0, pos);
-      newName = root + "_" + gl->getName().str();
+      string::size_type minusPath = M.getName().find_last_of('/'); 
+      //root = M.getName().substr(minusPath+1, pos);
+      root1 = M.getName().substr(minusPath+1);
+      //outs() << "Old string name: " << M.getName() << "\n";
+      //outs() << "Root: " << root1 << "\n";
+      string::size_type pos = root1.find_first_of('.'); 
+      root2 = root1.substr(0,pos);
+      //outs() << "Root: " << root2 << "\n";
+      newName = root2 + "_" + gl->getName().str();
       gl->setName(newName);
-      DEBUG(errs() << "New anonymous string name: " << newName << "\n";);
+      //DEBUG(outs() << "New anonymous string name: " << newName << "\n";);
+      //outs() << "New anonymous string name: " << newName << "\n";
 
       // Also REMOVE unnamed_addr value
       if(gl->hasUnnamedAddr()) {
         gl->setUnnamedAddr(false);
       }
-      DEBUG(errs() << "New: " <<  *gl << "\n");
+      //DEBUG(errs() << "New: " <<  *gl << "\n");
+      //outs() << "New: " <<  *gl << "\n";
       this->numInstrumented++;
     } else {
-      DEBUG(errs() << "> " <<  *gl << "\n");
-      DEBUG(errs() << "Linkage: " <<  gl->getLinkage() << "\n");
+      //DEBUG(errs() << "> " <<  *gl << "\n");
+      //DEBUG(errs() << "Linkage: " <<  gl->getLinkage() << "\n");
+      //outs() << "> " <<  *gl << "\n";
+      //outs() << "Linkage: " <<  gl->getLinkage() << "\n";
       continue;
     }
   }

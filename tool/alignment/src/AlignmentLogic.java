@@ -675,7 +675,6 @@ public class AlignmentLogic {
 		long default_size=0;
 		long init_align=1;
 		int c=0;
-		if(region.compareTo("rodata") != 0)
 		if(addr < sectionMax && addr >= sectionMin){
 			//System.out.println("WARNING: "+sectionMin+"  "+sectionMax+"   adr:"+addr);
 			//check if the symbol already exists
@@ -684,19 +683,19 @@ public class AlignmentLogic {
 					if(option==0){
 						//add to size x86
 						currList.get(t).updateBy1_MultAddressFlag();
-						if(currList.get(t).getMultAddressFlag()>1){
+						if(currList.get(t).getMultAddressFlag() > 1){
 							if(globalVars.DEBUG) System.out.println("x86$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
 							//same symbol section different address
 							//NEED TO SIMULATE ARCH RELATIVE ALIGNMENT
 							long simulatedAlignmentPadding = alignCustom_getVal(currList.get(t).getSize_x86_64(),currList.get(t).getAlignment_x86());
-							if((currList.get(t).getSize_x86_64()+size) % currList.get(t).getAlignment_x86() ==0){
+							if((currList.get(t).getSize_x86_64()+size) % currList.get(t).getAlignment_x86() ==0 ){
 								//dont need simulatedd padding
 								currList.get(t).setSize_x86_64(size+currList.get(t).getSize_x86_64());
-								System.out.println("%%% DONT NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));		
+								System.out.println("%%% DONT NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_x86_64()));		
 							}else{
 								//need simulated padding
 								currList.get(t).setSize_x86_64(simulatedAlignmentPadding+size+currList.get(t).getSize_x86_64());
-								System.out.println("%%% NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));
+								System.out.println("%%% NEED MultAddressFlag>1 for "+currList.get(t).getName()+"\tPAD:0x"+Long.toHexString(simulatedAlignmentPadding)+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_x86_64()));
 							}
             
 						} else{
@@ -714,8 +713,8 @@ public class AlignmentLogic {
 					}
 					if(option==1){
 						//add to size arm
-						currList.get(t).updateBy1_MultAddressFlag();
-						if(currList.get(t).getMultAddressFlag()>2){
+						currList.get(t).updateBy1_MultAddressFlag_ARM();
+						if(currList.get(t).getMultAddressFlag_ARM()>1){
 							if(globalVars.DEBUG) System.out.println("ARM$$$$$$$$$ "+currList.get(t).getName()+" MULTIPLE ADDRESS!!! "+currList.get(t).getMultAddressFlag() );
 							//same symbol section different address
 							//NEED TO SIMULATE ARCH RELATIVE ALIGNMENT
@@ -731,6 +730,7 @@ public class AlignmentLogic {
 							}
 						}else{
 							currList.get(t).setSize_aarch64(currList.get(t).getSize_aarch64()+size);
+							System.out.println("ARM UPDATE "+currList.get(t).getName()+"\tNew Size:0x"+Long.toHexString(currList.get(t).getSize_aarch64()));
 							if(alignment > currList.get(t).getAlignment_aRM()){
 								if((alignment % currList.get(t).getAlignment_aRM()) !=0 ){
 									System.out.println("ERROR:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
