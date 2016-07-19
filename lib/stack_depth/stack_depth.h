@@ -15,30 +15,30 @@
 class FuncInfo
 {
 public:
-	uint64_t numCalls;
-	uint64_t avgStackDepth;
-	std::pair<void*, uint64_t> maxDepth;
-	std::unordered_map<void*, uint64_t> caller;
+  uint64_t numCalls;
+  uint64_t avgStackDepth;
+  std::pair<void*, uint64_t> maxDepth;
+  std::unordered_map<void*, uint64_t> caller;
 
-	FuncInfo() : numCalls(0), avgStackDepth(0), maxDepth(0, 0) {};
+  FuncInfo() : numCalls(0), avgStackDepth(0), maxDepth(0, 0) {};
 
-	std::string toStr(void) const
-	{
-		double avgDepth;
-		std::stringstream ss;
-		std::unordered_map<void*, uint64_t>::const_iterator it;
+  std::string toStr(void) const
+  {
+    double avgDepth;
+    std::stringstream ss;
+    std::unordered_map<void*, uint64_t>::const_iterator it;
 
-		avgDepth = (double)avgStackDepth / (double)numCalls;
-		ss << numCalls << ", "
-			 << avgDepth << ", "
-			 << "(" << maxDepth.first << ", " << maxDepth.second << "), [";
-		it = caller.begin();
-		ss << "(" << it->first << ", " << it->second << ")";
-		for(it++; it != caller.end(); it++)
-			ss << ", (" << it->first << ", " << it->second << ")";
-		ss << "]";
-		
-		return ss.str();
-	}
+    avgDepth = (double)avgStackDepth / (double)numCalls;
+    ss << numCalls << ", "
+       << avgDepth << ", "
+       << "(" << maxDepth.first << ", " << maxDepth.second << "), [";
+    it = caller.begin();
+    ss << "(" << it->first << ", " << it->second << ")";
+    for(it++; it != caller.end(); it++)
+      ss << ", (" << it->first << ", " << it->second << ")";
+    ss << "]";
+
+    return ss.str();
+  }
 };
 
