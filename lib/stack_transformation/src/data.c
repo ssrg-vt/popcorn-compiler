@@ -112,7 +112,7 @@ inline static Dwarf_Unsigned stack_rot(stack* st)
 }
 
 /* Arithmetic and logical operations */
-STACK_UN_CALL( abs, Signed, abs )
+STACK_UN_CALL( abs, Signed, llabs )
 STACK_BIN_OP( and, Unsigned, & )
 STACK_BIN_OP( div, Signed, / )
 STACK_BIN_OP( minus, Unsigned, - )

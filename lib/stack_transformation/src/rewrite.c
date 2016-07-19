@@ -494,26 +494,27 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
   bool needs_local_fixup = false;
   fixup fixup_data;
   node_t(fixup)* fixup_node;
+  bool skip = false;
 
   ASSERT(var_src && var_dest, "invalid variables\n");
 
-  // TODO hack -- LLVM puts debug information for regs_aarch64 & regs_x86_64 in
-  // a different order for the two binaries. We *know* these don't need to be
-  // copied, hence we'll ignore them.  Note that this problem goes away if we
-  // use -finstrument-functions rather than wrapping individual functions.
-  if((var_src->size == 784 && var_dest->size == 624) ||
-     (var_src->size == 624 && var_dest->size == 784))
-  {
-    ST_INFO("Skipping regset_aarch64/regset_x86_64\n");
-    return false;
-  }
-
   // TODO hack -- va_list is implemented as a different type for aarch64 &
   // x86-64, and thus has a different size.  Need to handle more gracefully.
+#if _LIVE_VALS == DWARF_LIVE_VALS
   if((var_src->size == 24 && var_dest->size == 32) ||
      (var_src->size == 32 && var_dest->size == 24))
+    skip = true;
+#else /* STACKMAP_LIVE_VALS */
+  if(var_src->is_alloca && var_src->pointed_size == 24 &&
+     var_dest->is_alloca && var_dest->pointed_size == 32)
+    skip = true;
+  else if(var_src->is_alloca && var_src->pointed_size == 32 &&
+          var_dest->is_alloca && var_dest->pointed_size == 24)
+    skip = true;
+#endif
+  if(skip)
   {
-    ST_INFO("Skipping va_list (different size for aarch64/x86-64\n");
+    ST_INFO("Skipping va_list (different size for aarch64/x86-64)\n");
     return false;
   }
 
