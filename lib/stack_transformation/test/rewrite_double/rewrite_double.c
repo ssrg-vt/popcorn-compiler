@@ -17,7 +17,7 @@ double outer_frame()
     TIME_AND_TEST_REWRITE("./rewrite_double_x86-64", outer_frame);
 #endif
   }
-  return (double)(rand() % 128) / 1.0;
+  return 1.0;
 }
 
 double recurse(int depth, double val)
@@ -30,6 +30,7 @@ int main(int argc, char** argv)
 {
   if(argc > 1)
     max_depth = atoi(argv[1]);
+  srand(10);
 
   double ret = recurse(1, 1.0);
   printf("Calculated %f\n", ret);

@@ -110,6 +110,7 @@ int st_rewrite_stack(st_handle handle_src,
   }
 
   TIMER_START(st_rewrite_stack);
+
   ST_INFO("--> Initializing rewrite (%s -> %s) <--\n",
           arch_name(handle_src->arch), arch_name(handle_dest->arch));
 
@@ -358,7 +359,7 @@ static void free_context(rewrite_context ctx)
   while(node)
   {
     ST_WARN("could not find stack pointer fixup for %p (in activation %d)\n",
-            node->data.src_addr, node->act);
+            node->data.src_addr, node->data.dest_loc.act);
     node = list_remove(fixup, &ctx->stack_pointers, node);
   }
 
@@ -477,7 +478,8 @@ static void unwind_and_size(rewrite_context src,
    * pointer at all function PCs, including the ones where the frame hasn't
    * been set up.  Hard-code outer frame's FBP for this situation.
    */
-  ACT(dest).regs->set_fbp(ACT(dest).regs, ACT(dest).cfa - 0x10);
+  ACT(dest).regs->set_fbp(ACT(dest).regs,
+                          ACT(dest).cfa - fp_offset(dest->handle->arch));
 
   TIMER_FG_STOP(unwind_and_size);
 }
@@ -488,13 +490,8 @@ static void unwind_and_size(rewrite_context src,
 static bool rewrite_var(rewrite_context src, const variable* var_src,
                         rewrite_context dest, const variable* var_dest)
 {
-  value val_src, fixup_val;
-  value_loc val_dest;
-  void* stack_addr;
-  bool needs_local_fixup = false;
-  fixup fixup_data;
-  node_t(fixup)* fixup_node;
-  bool skip = false;
+  value val_src, val_dest, fixup_val;
+  bool skip = false, needs_fixup = false, needs_local_fixup = false;
 
   ASSERT(var_src && var_dest, "invalid variables\n");
 
@@ -518,17 +515,30 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
     return false;
   }
 
-  ASSERT(var_src->size == var_dest->size,
+  ASSERT(VAR_SIZE(var_src) == VAR_SIZE(var_dest),
         "variable has different size (%llu vs. %llu)\n",
-        (long long unsigned)var_src->size, (long long unsigned)var_dest->size);
+        (long long unsigned)VAR_SIZE(var_src),
+        (long long unsigned)VAR_SIZE(var_dest));
   ASSERT(!(var_src->is_ptr ^ var_dest->is_ptr),
-        "variable does not have same type (%d vs. %d)\n",
-        var_src->is_ptr, var_dest->is_ptr);
+        "variable does not have same type (%s vs. %s)\n",
+        (var_src->is_ptr ? "pointer" : "non-pointer"),
+        (var_dest->is_ptr ? "pointer" : "non-pointer"));
+#if _LIVE_VALS == STACKMAP_LIVE_VALS
+  ASSERT(!(var_src->is_alloca ^ var_dest->is_alloca),
+        "variable does not have same type (%s vs. %s)\n",
+        (var_src->is_alloca ? "alloca" : "non-alloca"),
+        (var_dest->is_alloca ? "alloca" : "non-alloca"));
+#endif
 
   /* Read variable's source value & perform appropriate action. */
   val_src = get_var_val(src, var_src);
-  if(val_src.is_valid)
+  val_dest = get_var_val(dest, var_dest);
+  if(val_src.is_valid && val_dest.is_valid)
   {
+    fixup fixup_data;
+    node_t(fixup)* fixup_node;
+    void* stack_addr;
+
     /*
      * If variable is a pointer to the stack, record a fixup.  Otherwise, copy
      * the variable into the destination frame.
@@ -539,33 +549,52 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
     if(!var_src->is_alloca && var_src->is_ptr)
 #endif
     {
-      if(val_src.is_addr) stack_addr = *(void**)val_src.addr;
-      else stack_addr = (void*)val_src.val;
+      /* Read the pointer's value */
+      switch(val_src.type)
+      {
+      case ADDRESS: stack_addr = *(void**)val_src.addr; break;
+      case REGISTER:
+        // Note: we assume that we're doing offsets from 64-bit registers 
+        ASSERT(src->handle->props->reg_size(val_src.reg) == 8,
+               "invalid register size for pointer\n");
+        stack_addr = *(void**)ACT(src).regs->reg(ACT(src).regs, val_src.reg);
+        break;
+      case CONSTANT: stack_addr = (void*)val_src.cnst; break;
+      }
 
+      /* Check if it points to a value on the stack */
       if(src->stack_base > stack_addr && stack_addr >= src->stack)
       {
         if(src->act > 0 && stack_addr <= PREV_ACT(src).cfa)
+        {
+          // Note: it is an error for a pointer to point to frames down the
+          // call chain.  This is probably something like uninitialized data,
+          // so we'll let it slide.
           ST_WARN("pointing to variable in called function (%p)\n", stack_addr);
+          skip = true;
+        }
         else
         {
-          val_dest = get_var_loc(dest, var_dest);
-          ASSERT(val_dest.is_valid, "invalid stack pointer\n");
+          ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
+          needs_fixup = true;
           fixup_data.src_addr = stack_addr;
           fixup_data.dest_loc = val_dest;
-          list_add(fixup, &dest->stack_pointers, dest->act, fixup_data);
-
-          ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
+          list_add(fixup, &dest->stack_pointers, fixup_data);
 
           /* Are we pointing to a variable within the same frame? */
           if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
         }
       }
-      else val_dest = put_var_val(dest, var_dest, val_src);
     }
-    else val_dest = put_var_val(dest, var_dest, val_src);
+
+    /* If we don't point to the stack, do the copy. */
+    if(!skip && !needs_fixup)
+      put_val(src, val_src, dest, val_dest, VAR_SIZE(var_src));
 
     /* Check if variable is pointed to by other variables & fix up if so. */
-    if(val_src.is_addr && val_dest.type == ADDRESS)
+    // Note: can only be pointed to if value is in memory, so optimize by
+    // filtering out illegal types
+    if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
     {
       fixup_node = list_begin(fixup, &dest->stack_pointers);
       while(fixup_node)
@@ -574,17 +603,17 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
            fixup_node->data.src_addr < val_src.addr + var_src->size)
         {
           ST_INFO("Found fixup for %p (in frame %d)\n",
-                  fixup_node->data.src_addr, fixup_node->act);
+                  fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
 
           fixup_val.is_valid = true;
-          fixup_val.is_addr = false;
-          fixup_val.val = (uint64_t)(val_dest.addr +
-                          (fixup_node->data.src_addr - val_src.addr));
-          put_val_loc(dest,
-                      fixup_val,
-                      dest->handle->ptr_size,
-                      fixup_node->data.dest_loc,
-                      fixup_node->act);
+          fixup_val.type = CONSTANT;
+          fixup_val.cnst = (uint64_t)(val_dest.addr +
+                           (fixup_node->data.src_addr - val_src.addr));
+          put_val(src,
+                  fixup_val,
+                  dest,
+                  fixup_node->data.dest_loc,
+                  dest->handle->ptr_size);
           fixup_node = list_remove(fixup, &dest->stack_pointers, fixup_node);
         }
         else fixup_node = list_next(fixup, fixup_node);
@@ -601,12 +630,10 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 static void rewrite_frame(rewrite_context src, rewrite_context dest)
 {
   size_t i;
-#if _LIVE_VALS == DWARF_LIVE_VALS
-  const variable* arg_src, *arg_dest;
-#else /* STACKMAP_LIVE_VALS */
+  const variable* var_src, *var_dest;
+#if _LIVE_VALS == STACKMAP_LIVE_VALS
   size_t src_offset, dest_offset;
 #endif
-  const variable* var_src, *var_dest;
   bool needs_local_fixup = false;
   list_t(varval) var_list;
   node_t(varval)* varval_node;
@@ -628,9 +655,9 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   /* Copy arguments */
   for(i = 0; i < num_args(ACT(src).function); i++)
   {
-    arg_src = get_arg_by_pos(ACT(src).function, i);
-    arg_dest = get_arg_by_pos(ACT(dest).function, i);
-    needs_local_fixup |= rewrite_var(src, arg_src, dest, arg_dest);
+    var_src = get_arg_by_pos(ACT(src).function, i);
+    var_dest = get_arg_by_pos(ACT(dest).function, i);
+    needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
   }
 
   /* Copy variables */
@@ -640,7 +667,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     var_dest = get_var_by_pos(ACT(dest).function, i);
     needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
   }
-#else
+#else /* STACKMAP_LIVE_VALS */
   ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
         "call sites have different numbers of live values (%u vs. %u)\n",
         ACT(src).site.num_live, ACT(dest).site.num_live);
@@ -657,10 +684,10 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     var_dest = &dest->handle->live_vals[i + dest_offset];
     needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
   }
-#endif /* STACKMAP_LIVE_VALS */
+#endif
 
   /*
-   * Fixup pointers to arguments or local variables. This is assumed to *not*
+   * Fix up pointers to arguments or local variables. This is assumed to *not*
    * be the common case, so we don't save the rewriting metadata from above &
    * must regenerate it here.
    */
@@ -673,15 +700,15 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 #if _LIVE_VALS == DWARF_LIVE_VALS
     for(i = 0; i < num_args(ACT(src).function); i++)
     {
-      arg_src = get_arg_by_pos(ACT(src).function, i);
-      val_src = get_var_val(src, arg_src);
+      var_src = get_arg_by_pos(ACT(src).function, i);
+      val_src = get_var_val(src, var_src);
       val_dest = get_var_val(dest, get_arg_by_pos(ACT(dest).function, i));
-      if(val_src.is_addr && val_dest.is_addr)
+      if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
       {
-        varval_data.var = arg_src;
+        varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, src->act, varval_data);
+        varval_node = list_add(varval, &var_list, varval_data);
       }
     }
 
@@ -690,12 +717,12 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
       var_src = get_var_by_pos(ACT(src).function, i);
       val_src = get_var_val(src, var_src);
       val_dest = get_var_val(dest, get_var_by_pos(ACT(dest).function, i));
-      if(val_src.is_addr && val_dest.is_addr)
+      if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
       {
         varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, src->act, varval_data);
+        varval_node = list_add(varval, &var_list, varval_data);
       }
     }
 #else /* STACKMAP_LIVE_VALS */
@@ -707,12 +734,12 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
       var_dest = &dest->handle->live_vals[i + dest_offset];
       val_src = get_var_val(src, var_src);
       val_dest = get_var_val(dest, var_dest);
-      if(val_src.is_addr && val_dest.is_addr)
+      if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
       {
         varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, src->act, varval_data);
+        varval_node = list_add(varval, &var_list, varval_data);
       }
     }
 #endif /* STACKMAP_LIVE_VALS */
@@ -726,10 +753,10 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         // Note: we should have resolved all fixups for this frame from frames
         // down the call chain by this point.  If not, the fixup may be
         // pointing to garbage data (e.g. uninitialized local variables)
-        if(fixup_node->act != src->act)
+        if(fixup_node->data.dest_loc.act != src->act)
         {
           ST_WARN("unresolved fixup for '%p' (frame %d)\n",
-                  fixup_node->data.src_addr, fixup_node->act);
+                  fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
           continue;
         }
 
@@ -743,19 +770,20 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
           varval_node = list_next(varval, varval_node);
         }
         ASSERT(varval_node, "could not resolve same-frame/local fixup (%p in %d)\n",
-              fixup_node->data.src_addr, fixup_node->act);
+              fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
 
         ST_INFO("Found local fixup for %p\n", fixup_node->data.src_addr);
 
         fixup_val.is_valid = true;
-        fixup_val.is_addr = false;
-        fixup_val.val = (uint64_t)(varval_node->data.val_dest.addr +
-                        (fixup_node->data.src_addr - varval_node->data.val_src.addr));
-        put_val_loc(dest,
-                    fixup_val,
-                    dest->handle->ptr_size,
-                    fixup_node->data.dest_loc,
-                    dest->act);
+        fixup_val.type = CONSTANT;
+        fixup_val.cnst = (uint64_t)(varval_node->data.val_dest.addr +
+                         (fixup_node->data.src_addr - varval_node->data.val_src.addr));
+        put_val(src,
+                fixup_val,
+                dest,
+                fixup_node->data.dest_loc,
+                dest->handle->ptr_size);
+
         fixup_node = list_remove(fixup, &dest->stack_pointers, fixup_node);
       }
       else fixup_node = list_next(fixup, fixup_node);
@@ -777,10 +805,10 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
 {
   size_t i;
+  const variable* arg_src, *arg_dest;
 #if _LIVE_VALS == STACKMAP_LIVE_VALS
   size_t src_offset, dest_offset;
 #endif
-  const variable* arg_src, *arg_dest;
   bool needs_local_fixup = false;
 
   TIMER_START(rewrite_frame);
