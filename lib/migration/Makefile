@@ -5,11 +5,14 @@ POPCORN_X86 := $(POPCORN)/x86_64
 CC         := clang
 CFLAGS     := -O3 -Wall -Werror -c -g -gdwarf-aranges -D_GNU_SOURCE \
               -ffunction-sections -fdata-sections -Wno-unused-variable
-ifneq ($(findstring test,$(type)),)
-CFLAGS     += -D_TEST_MIGRATE
+ifneq ($(findstring env_select,$(type)),)
+CFLAGS     += -D_ENV_SELECT_MIGRATE
 endif
 ifneq ($(findstring native,$(type)),)
 CFLAGS     += -D_NATIVE
+endif
+ifneq ($(findstring debug,$(type)),)
+CFLAGS     += -D_DEBUG
 endif
 CFLAGS_ARM := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_X86 := $(CFLAGS) -target x86_64-linux-gnu

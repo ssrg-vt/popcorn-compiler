@@ -47,7 +47,7 @@ cpu_set_t select_arch()
 #endif
 }
 
-#ifdef _TEST_MIGRATE
+#ifdef _ENV_SELECT_MIGRATE
 
 /*
  * The user can specify at which point a thread should migrate by specifying
@@ -158,13 +158,18 @@ static inline int do_migrate(void *addr)
   return ret;
 }
 
-#endif /* _TEST_MIGRATE */
+#endif /* _ENV_SELECT_MIGRATE */
 
 /* Data needed post-migration. */
 struct shim_data {
   void (*callback)(void *);
   void *callback_data;
 };
+
+#ifdef _DEBUG
+/* Flag indicating we should hold post-migration */
+static volatile int __hold = 1;
+#endif
 
 /* Check & invoke migration if requested. */
 // Note: arguments are saved to this stack frame, and a pointer to them is
@@ -181,6 +186,10 @@ static void __migrate_shim_internal(void (*callback)(void *),
   {
     if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
     *pthread_migrate_args() = NULL;
+#ifdef _DEBUG
+    // Hold until we can attach post-migration
+    while(__hold);
+#endif
   }
   else // Check & do migration if requested
   { 
