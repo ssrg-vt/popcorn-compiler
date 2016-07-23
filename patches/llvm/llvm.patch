@@ -147,7 +147,7 @@
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-05-25 11:33:09.072960256 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-06-28 14:34:38.236541449 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-07-08 18:01:24.484832595 -0400
 @@ -1292,6 +1292,39 @@
    return CurExceptionSym;
  }
@@ -226,7 +226,7 @@
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-01 17:00:44.810342100 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-23 16:09:00.942270932 -0400
 @@ -152,4 +152,18 @@
        ++NumNewQueued;
      }
@@ -246,9 +246,23 @@
 +    }
 +  }
  }
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/FastISel.cpp	2016-05-25 11:33:09.544960252 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/FastISel.cpp	2016-07-23 16:06:51.434272105 -0400
+@@ -594,6 +594,11 @@
+       if (!Reg)
+         return false;
+       Ops.push_back(MachineOperand::CreateReg(Reg, /*IsDef=*/false));
++
++      // We only care about stackmap operands that are in (virtual or physical)
++      // registers, as these can be caller-saved registers which must be
++      // converted to spilled stack slots when emitting the stackmap section.
++      MF->addSMValVregMapping(Val, Reg);
+     }
+   }
+   return true;
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-05-25 11:33:09.548960252 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-03 18:27:15.972730366 -0400
-@@ -6782,8 +6782,28 @@
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-23 16:07:38.894271675 -0400
+@@ -6782,8 +6782,26 @@
        const TargetLowering &TLI = Builder.DAG.getTargetLoweringInfo();
        Ops.push_back(Builder.DAG.getTargetFrameIndex(
            FI->getIndex(), TLI.getPointerTy(Builder.DAG.getDataLayout())));
@@ -259,14 +273,12 @@
 +      // We only care about stackmap operands that are in (virtual or physical)
 +      // registers, as these can be caller-saved registers which must be
 +      // converted to spilled stack slots when emitting the stackmap section.
-+      // TODO We're not handling all possible types here, although CopyFromReg
-+      // seems to be the majority case.  Need to investigate how the register
-+      // allocator is lowering non-CopyFromReg nodes...
++      // TODO how do we handle non-CopyFromReg types?
 +      RegisterSDNode *Reg;
 +      switch(OpVal.getOpcode()) {
 +      case ISD::CopyFromReg: {
-+        for(unsigned i = 0, ie = OpVal.getNumOperands(); i < ie; i++) {
-+          if((Reg = dyn_cast<RegisterSDNode>(OpVal.getOperand(i)))) {
++        for(unsigned j = 0, je = OpVal.getNumOperands(); j < je; j++) {
++          if((Reg = dyn_cast<RegisterSDNode>(OpVal.getOperand(j)))) {
 +            Builder.FuncInfo.MF->addSMValVregMapping(CS.getArgument(i),
 +                                                     Reg->getReg());
 +            break;
@@ -279,7 +291,7 @@
  }
  
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-01 17:32:28.842324859 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-23 16:21:14.718264288 -0400
 @@ -9,10 +9,12 @@
  
  #include "llvm/CodeGen/StackMaps.h"
@@ -293,7 +305,7 @@
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
-@@ -84,25 +86,65 @@
+@@ -84,25 +86,62 @@
    return (unsigned)RegNum;
  }
  
@@ -306,18 +318,15 @@
 +  PtrDataSize = 0;
 +
 +  assert(Op != nullptr && "Invalid stackmap operand");
-+  //if(Op != nullptr)
++  Type *Ty = Op->get()->getType();
++  if(Ty->isPointerTy())
 +  {
-+    Type *Ty = Op->get()->getType();
-+    if(Ty->isPointerTy())
++    PointerType *PTy = cast<PointerType>(Ty);
++    if(PTy->getElementType()->isSized())
 +    {
-+      PointerType *PTy = cast<PointerType>(Ty);
-+      if(PTy->getElementType()->isSized())
-+      {
-+        isPtr = true;
-+        PtrDataSize = DL.getTypeAllocSize(PTy->getElementType());
-+        if(isa<AllocaInst>(Op)) isAlloca = true;
-+      }
++      isPtr = true;
++      PtrDataSize = DL.getTypeAllocSize(PTy->getElementType());
++      if(isa<AllocaInst>(Op)) isAlloca = true;
 +    }
 +  }
 +}
@@ -363,7 +372,7 @@
        break;
      }
      case StackMaps::IndirectMemRefOp: {
-@@ -111,17 +153,20 @@
+@@ -111,17 +150,20 @@
        unsigned Reg = (++MOI)->getReg();
        int64_t Imm = (++MOI)->getImm();
        Locs.emplace_back(StackMaps::Location::Indirect, Size,
@@ -386,7 +395,7 @@
      return ++MOI;
    }
  
-@@ -136,17 +181,54 @@
+@@ -136,17 +178,59 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -413,16 +422,21 @@
 +        spilled = true;
 +      else {
 +        DEBUG(
++          int numObjects = (int)MFI->getNumObjects();
++          const Instruction *User = cast<Instruction>(Op->getUser());
++
 +          dbgs() << WSMP;
-+          cast<Instruction>(Op->getUser())->getParent()->printAsOperand(dbgs());
++          User->getParent()->printAsOperand(dbgs());
 +          dbgs() << ", stackmap "
-+                 << cast<ConstantInt>(Op->getUser()->getOperand(0))->getSExtValue()
++                 << cast<ConstantInt>(User->getOperand(0))->getSExtValue()
 +                 << ", value ";
 +          Op->get()->printAsOperand(dbgs());
-+          dbgs() << ": "
-+                 << (SS < (int)MFI->getNumObjects() ? "dead object index"
-+                                                    : "out of bounds")
-+                 << "\n";
++          dbgs() << ": ";
++          if(SS < numObjects)
++            dbgs() << "dead object index (" << SS << ")";
++          else
++            dbgs() << "out of bounds (" << SS << " vs. " << numObjects << ")";
++          dbgs() << "\n";
 +        );
 +      }
 +    }
@@ -449,7 +463,7 @@
      return ++MOI;
    }
  
-@@ -287,6 +369,7 @@
+@@ -287,6 +371,7 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -457,7 +471,7 @@
  
    LocationVec Locations;
    LiveOutVec LiveOuts;
-@@ -294,13 +377,32 @@
+@@ -294,13 +379,32 @@
    if (recordResult) {
      assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
      parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
@@ -492,7 +506,7 @@
  
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
-@@ -329,8 +431,8 @@
+@@ -329,8 +433,8 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -503,7 +517,16 @@
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -441,6 +543,8 @@
+@@ -419,7 +523,7 @@
+   DEBUG(dbgs() << WSMP << "functions:\n");
+   for (auto const &FR : FnStackSize) {
+     DEBUG(dbgs() << WSMP << "function addr: " << FR.first
+-                 << " frame size: " << FR.second);
++                 << " frame size: " << FR.second << "\n");
+     OS.EmitSymbolValue(FR.first, 8);
+     OS.EmitIntValue(FR.second, 8);
+   }
+@@ -441,6 +545,8 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -512,7 +535,7 @@
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -449,6 +553,10 @@
+@@ -449,6 +555,10 @@
  ///     uint8  : Size in Bytes
  ///     uint16 : Dwarf RegNum
  ///     int32  : Offset
@@ -523,7 +546,7 @@
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -489,6 +597,8 @@
+@@ -489,6 +599,8 @@
      }
  
      OS.EmitIntValue(CSI.ID, 8);
@@ -532,7 +555,7 @@
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -500,6 +610,10 @@
+@@ -500,6 +612,10 @@
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
