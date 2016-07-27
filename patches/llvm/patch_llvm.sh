@@ -11,9 +11,11 @@ include/llvm/CodeGen/StackMaps.h
 lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 lib/CodeGen/MachineFunction.cpp
 lib/CodeGen/RegAllocBase.cpp
+lib/CodeGen/RegAllocBase.h
 lib/CodeGen/SelectionDAG/FastISel.cpp
 lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 lib/CodeGen/StackMaps.cpp
+lib/CodeGen/StackSlotColoring.cpp
 lib/Target/AArch64/AArch64AsmPrinter.cpp
 lib/Target/X86/X86AsmPrinter.cpp
 "
