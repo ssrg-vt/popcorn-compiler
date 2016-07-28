@@ -498,8 +498,8 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
   // TODO hack -- va_list is implemented as a different type for aarch64 &
   // x86-64, and thus has a different size.  Need to handle more gracefully.
 #if _LIVE_VALS == DWARF_LIVE_VALS
-  if((var_src->size == 24 && var_dest->size == 32) ||
-     (var_src->size == 32 && var_dest->size == 24))
+  if((VAR_SIZE(var_src) == 24 && VAR_SIZE(var_dest) == 32) ||
+     (VAR_SIZE(var_src) == 32 && VAR_SIZE(var_dest) == 24))
     skip = true;
 #else /* STACKMAP_LIVE_VALS */
   if(var_src->is_alloca && var_src->pointed_size == 24 &&
@@ -600,7 +600,7 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
       while(fixup_node)
       {
         if(val_src.addr <= fixup_node->data.src_addr &&
-           fixup_node->data.src_addr < val_src.addr + var_src->size)
+           fixup_node->data.src_addr < val_src.addr + VAR_SIZE(var_src))
         {
           ST_INFO("Found fixup for %p (in frame %d)\n",
                   fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
@@ -708,7 +708,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, varval_data);
+        list_add(varval, &var_list, varval_data);
       }
     }
 
@@ -722,7 +722,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, varval_data);
+        list_add(varval, &var_list, varval_data);
       }
     }
 #else /* STACKMAP_LIVE_VALS */
@@ -739,7 +739,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         varval_data.var = var_src;
         varval_data.val_src = val_src;
         varval_data.val_dest = val_dest;
-        varval_node = list_add(varval, &var_list, varval_data);
+        list_add(varval, &var_list, varval_data);
       }
     }
 #endif /* STACKMAP_LIVE_VALS */
@@ -757,6 +757,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         {
           ST_WARN("unresolved fixup for '%p' (frame %d)\n",
                   fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
+          fixup_node = list_next(fixup, fixup_node);
           continue;
         }
 
@@ -765,7 +766,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         {
           if(varval_node->data.val_src.addr <= fixup_node->data.src_addr &&
              fixup_node->data.src_addr <
-               (varval_node->data.val_src.addr + varval_node->data.var->size))
+               (varval_node->data.val_src.addr + VAR_SIZE(varval_node->data.var)))
             break;
           varval_node = list_next(varval, varval_node);
         }
