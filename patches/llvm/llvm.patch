@@ -28,7 +28,7 @@
    // Dwarf Emission Helper Routines
    //===------------------------------------------------------------------===//
 --- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/MachineFunction.h	2016-05-25 11:33:01.792960322 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/MachineFunction.h	2016-07-27 14:26:11.047197346 -0400
++++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/MachineFunction.h	2016-07-29 13:05:11.281676624 -0400
 @@ -86,6 +86,20 @@
  };
  
@@ -63,7 +63,7 @@
    MachineFunction(const MachineFunction &) = delete;
    void operator=(const MachineFunction&) = delete;
  public:
-@@ -519,6 +539,36 @@
+@@ -519,6 +539,39 @@
    /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
    /// base.
    MCSymbol *getPICBaseSymbol() const;
@@ -79,9 +79,12 @@
 +  void addSMOpVregMapping(const CallInst *SM, const Value *Val, unsigned Vreg);
 +  void addSMOpVregMapping(const CallInst *SM, unsigned Op, unsigned Vreg);
 +
++  /// Update vreg references after register coalescing
++  void updateSMVregRefs(SmallDenseMap<unsigned, unsigned, 16> &Changes);
++
 +  /// Iterators for the stackmap operand -> vreg map
-+  ValVregMap::const_iterator SMOpVreg_begin(const CallInst *SM);
-+  ValVregMap::const_iterator SMOpVreg_end(const CallInst *SM);
++  ValVregMap::const_iterator SMOpVreg_begin(const CallInst *SM) const;
++  ValVregMap::const_iterator SMOpVreg_end(const CallInst *SM) const;
 +
 +  /// Return the virtual register mapped to a stackmap operand
 +  unsigned getSMVreg(const CallInst *SM, const Value *Val) const;
@@ -203,7 +206,7 @@
    this->MF = &MF;
    // Get the function symbol.
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/MachineFunction.cpp	2016-05-25 11:33:10.048960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/MachineFunction.cpp	2016-07-27 14:27:50.739196443 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/MachineFunction.cpp	2016-07-29 13:52:16.149651045 -0400
 @@ -145,6 +145,11 @@
      WinEHInfo->~WinEHFuncInfo();
      Allocator.Deallocate(WinEHInfo);
@@ -216,15 +219,14 @@
  }
  
  const DataLayout &MachineFunction::getDataLayout() const {
-@@ -517,6 +522,148 @@
+@@ -517,6 +522,180 @@
                                 Twine(getFunctionNumber()) + "$pb");
  }
  
 +/// Does a stackmap have any vreg mappings?
 +bool MachineFunction::hasVregMapping(const CallInst *SM)
 +{
-+  if(SMOp2Vreg.find(SM) != SMOp2Vreg.end()) return true;
-+  else return false;
++  return SMOp2Vreg.find(SM) != SMOp2Vreg.end();
 +}
 +
 +/// Add an IR/virtual register mapping for a stackmap operand
@@ -254,19 +256,49 @@
 +  addSMOpVregMapping(SM, SM->getArgOperand(Op), Vreg);
 +}
 +
++/// Update vreg references after register coalescing
++void
++MachineFunction::updateSMVregRefs(SmallDenseMap<unsigned, unsigned, 16> &Changes)
++{
++  InstOpVregMap::iterator i, ie;
++  if(Changes.size()) {
++    // Iterate over all stackmaps
++    DEBUG(dbgs() << "Updating stackmap operand vreg references\n";);
++    for(i = SMOp2Vreg.begin(), ie = SMOp2Vreg.end(); i != ie; i++) {
++      // Iterate over all operand/vreg mappings
++      ValVregMap *Map = i->second;
++      ValVregMap::iterator j, je;
++      for(j = Map->begin(), je = Map->end(); j != je; j++) {
++        // There may be multiple coalescings, so loop until all changes have
++        // been applied
++        SmallDenseMap<unsigned, unsigned, 16>::iterator it;
++        while((it = Changes.find(j->second)) != Changes.end()) {
++          DEBUG(
++            j->first->printAsOperand(dbgs());
++            dbgs() << ": from " << TargetRegisterInfo::virtReg2Index(j->second)
++                   << " to " << TargetRegisterInfo::virtReg2Index(it->second)
++                   << "\n";
++          );
++          j->second = it->second;
++        }
++      }
++    }
++  }
++}
++
 +/// Iterators for the stackmap operand -> vreg map
 +MachineFunction::ValVregMap::const_iterator
-+MachineFunction::SMOpVreg_begin(const CallInst *SM) {
++MachineFunction::SMOpVreg_begin(const CallInst *SM) const {
 +  assert(SM && "Invalid stackmap");
-+  InstOpVregMap::iterator it = SMOp2Vreg.find(SM);
++  InstOpVregMap::const_iterator it = SMOp2Vreg.find(SM);
 +  assert(it != SMOp2Vreg.end() && "Stackmap not present in location mappings");
 +  return it->second->begin();
 +}
 +
 +MachineFunction::ValVregMap::const_iterator
-+MachineFunction::SMOpVreg_end(const CallInst *SM) {
++MachineFunction::SMOpVreg_end(const CallInst *SM) const {
 +  assert(SM && "Invalid stackmap");
-+  InstOpVregMap::iterator it = SMOp2Vreg.find(SM);
++  InstOpVregMap::const_iterator it = SMOp2Vreg.find(SM);
 +  assert(it != SMOp2Vreg.end() && "Stackmap not present in location mappings");
 +  return it->second->end();
 +}
@@ -322,20 +354,23 @@
 +/// Update stack slot references to new indexes after stack slot coloring
 +void
 +MachineFunction::updateSMStackSlotRefs(SmallDenseMap<int, int, 16> &Changes) {
-+  // Iterate over all stackmaps
 +  InstOpStackSlotMap::iterator i, ie;
-+  for(i = SMOp2StackSlot.begin(), ie = SMOp2StackSlot.end(); i != ie; i++) {
-+    // Iterate over all operand/stack slot mappings
-+    ValStackSlotMap *Map = i->second;
-+    ValStackSlotMap::iterator j, je;
-+    for(j = Map->begin(), je = Map->end(); j != je; j++) {
-+      SmallDenseMap<int, int, 16>::iterator it;
-+      if((it = Changes.find(j->second)) != Changes.end()) {
-+        DEBUG(
-+          j->first->printAsOperand(dbgs());
-+          dbgs() << ": from " << j->second << " to " << it->second << "\n";
-+        );
-+        j->second = it->second;
++  if(Changes.size()) {
++    // Iterate over all stackmaps
++    DEBUG(dbgs() << "Updating stackmap operand stack slot references\n";);
++    for(i = SMOp2StackSlot.begin(), ie = SMOp2StackSlot.end(); i != ie; i++) {
++      // Iterate over all operand/stack slot mappings
++      ValStackSlotMap *Map = i->second;
++      ValStackSlotMap::iterator j, je;
++      for(j = Map->begin(), je = Map->end(); j != je; j++) {
++        SmallDenseMap<int, int, 16>::iterator it;
++        if((it = Changes.find(j->second)) != Changes.end()) {
++          DEBUG(
++            j->first->printAsOperand(dbgs());
++            dbgs() << ": from " << j->second << " to " << it->second << "\n";
++          );
++          j->second = it->second;
++        }
 +      }
 +    }
 +  }
@@ -366,7 +401,7 @@
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-27 14:28:57.631195838 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-07-29 13:45:01.721654978 -0400
 @@ -14,12 +14,14 @@
  
  #include "RegAllocBase.h"
@@ -382,7 +417,7 @@
  #include "llvm/CodeGen/VirtRegMap.h"
  #include "llvm/Target/TargetRegisterInfo.h"
  #ifndef NDEBUG
-@@ -152,4 +154,126 @@
+@@ -152,4 +154,150 @@
        ++NumNewQueued;
      }
    }
@@ -432,7 +467,16 @@
 +          if(MCI->isCall()) break;
 +          MCI = MCI->getPrevNode();
 +        }
-+        assert(MCI && "Could not find associated call instruction");
++        if(!MCI) {
++          DEBUG(
++            dbgs() << "WARNING: ";
++            SMIR->printAsOperand(dbgs());
++            dbgs() << ": could not find associated call instruction "
++                      "(has it been lowered to a native instruction?)\n";
++          );
++          continue;
++        }
++
 +        SM.push_back(SMInstr(SMIR, &*MI, MCI));
 +      }
 +    }
@@ -461,12 +505,12 @@
 +           !MFI->isDeadObjectIndex(SS))
 +          MF.addSMOpStackSlotMapping(std::get<0>(*S), Val, SS);
 +        else {
-+          split.insert(*i);
 +          DEBUG(
 +            Val->printAsOperand(dbgs());
 +            dbgs() << ": " << TargetRegisterInfo::virtReg2Index(Reg)
 +                   << " (" << Reg << ") is spilled\n";
 +          );
++          split.insert(*i);
 +        }
 +      }
 +    }
@@ -476,7 +520,8 @@
 +    const MachineInstr *Cur = std::get<2>(*S)->getNextNode(),
 +                       *End = std::get<1>(*S);
 +    while(Cur != End && split.size()) {
-+      if(Cur->mayLoad() && Cur->hasOneMemOperand()) {
++      if(Cur->mayLoad()) {
++        // Find the defined vreg & stack slot being loaded
 +        unsigned Vreg = 0;
 +        int SS = VirtRegMap::NO_STACK_SLOT;
 +        for(unsigned i = 0, e = Cur->getNumOperands(); i != e; i++) {
@@ -484,28 +529,42 @@
 +          if(MO.isFI()) SS = MO.getIndex();
 +          else if(MO.isReg() && MO.isDef()) Vreg = MO.getReg();
 +        }
-+        assert(Vreg != 0 && SS != VirtRegMap::NO_STACK_SLOT &&
-+               "Invalid stack load instruction");
 +
-+        for(auto splitIt = split.begin(), splitEnd = split.end();
-+            splitIt != splitEnd;
-+            splitIt++) {
-+          if(splitIt->second == VRM->getOriginal(Vreg)) {
-+            MF.addSMOpStackSlotMapping(std::get<0>(*S), splitIt->first, SS);
-+            split.erase(*splitIt);
-+            DEBUG(
-+              splitIt->first->printAsOperand(dbgs());
-+              dbgs() << ": spilled to stack slot " << SS << "\n";
-+            );
-+            break;
++        // Search for stackmap operand vregs who are ancestors of defined vreg
++        if(Vreg != 0 && SS != VirtRegMap::NO_STACK_SLOT) {
++          for(auto splitIt = split.begin(), splitEnd = split.end();
++              splitIt != splitEnd;
++              splitIt++) {
++            if(splitIt->second == VRM->getOriginal(Vreg)) {
++              DEBUG(
++                splitIt->first->printAsOperand(dbgs());
++                dbgs() << ": spilled to stack slot " << SS << "\n";
++              );
++              MF.addSMOpStackSlotMapping(std::get<0>(*S), splitIt->first, SS);
++              split.erase(*splitIt);
++              // TODO break? Are there ever other spilled vregs (i.e., elements
++              // of split) that are resolved by this machine instruction?
++            }
 +          }
++        }
++        else {
++          DEBUG(
++            dbgs() << "WARNING: ignoring machine instruction:\n";
++            Cur->dump();
++          );
 +        }
 +      }
 +      Cur = Cur->getNextNode();
 +    }
 +
-+    if(split.size())
-+      DEBUG(dbgs() << "WARNING: could not resolve all split registers\n");
++    if(split.size()) {
++      DEBUG(
++        dbgs() << "WARNING: could not resolve all split registers:";
++        for(auto it = split.begin(), end = split.end(); it != end; it++)
++          dbgs() << " " << TargetRegisterInfo::virtReg2Index(it->second);
++        dbgs() << "\n";
++      );
++    }
 +    split.clear();
 +  }
  }
@@ -520,9 +579,54 @@
  };
  
  } // end namespace llvm
+--- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegisterCoalescer.cpp	2016-05-25 11:33:09.536960252 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegisterCoalescer.cpp	2016-07-29 13:47:25.377653678 -0400
+@@ -89,6 +89,7 @@
+     const MachineLoopInfo* Loops;
+     AliasAnalysis *AA;
+     RegisterClassInfo RegClassInfo;
++    SmallDenseMap<unsigned, unsigned, 16> Changes;
+ 
+     /// A LaneMask to remember on which subregister live ranges we need to call
+     /// shrinkToUses() later.
+@@ -234,6 +235,13 @@
+       }
+     }
+ 
++    /// Record coalesced registers so we can update the stackmap operand/vreg
++    /// mappings post-register coalescing
++    void recordCoalescing(unsigned Vreg, unsigned NewVreg) {
++      assert(Changes.find(Vreg) == Changes.end() && "Unhandled coalescing");
++      Changes.insert(std::pair<unsigned, unsigned>(Vreg, NewVreg));
++    }
++
+   public:
+     static char ID; ///< Class identification, replacement for typeinfo
+     RegisterCoalescer() : MachineFunctionPass(ID) {
+@@ -1453,6 +1461,9 @@
+   // Update regalloc hint.
+   TRI->updateRegAllocHint(CP.getSrcReg(), CP.getDstReg(), *MF);
+ 
++  // Record coalescing
++  recordCoalescing(CP.getSrcReg(), CP.getDstReg());
++
+   DEBUG({
+     dbgs() << "\tSuccess: " << PrintReg(CP.getSrcReg(), TRI, CP.getSrcIdx())
+            << " -> " << PrintReg(CP.getDstReg(), TRI, CP.getDstIdx()) << '\n';
+@@ -2974,6 +2985,10 @@
+     }
+   }
+ 
++  // Update stackmap operand/vreg mappings to reflect results of coalescing
++  fn.updateSMVregRefs(Changes);
++  Changes.clear();
++
+   DEBUG(dump());
+   if (VerifyCoalescing)
+     MF->verify(this, "After register coalescing");
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/FastISel.cpp	2016-05-25 11:33:09.544960252 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/FastISel.cpp	2016-07-25 15:25:22.372729916 -0400
-@@ -594,8 +594,15 @@
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/FastISel.cpp	2016-07-29 13:51:06.233651678 -0400
+@@ -594,8 +594,29 @@
        if (!Reg)
          return false;
        Ops.push_back(MachineOperand::CreateReg(Reg, /*IsDef=*/false));
@@ -530,8 +634,22 @@
 +      // Add mappings for stackmap operands that are in virtual registers, as
 +      // these can be allocated to caller-saved registers (in which case we
 +      // need to find the spill slots around call sites).
-+      if(TargetRegisterInfo::isVirtualRegister(Reg))
++      if(TargetRegisterInfo::isVirtualRegister(Reg)) {
++        DEBUG(
++          Val->printAsOperand(dbgs());
++          dbgs() << ": vreg "
++                 << TargetRegisterInfo::virtReg2Index(Reg)
++                 << "\n";
++        );
 +        MF->addSMOpVregMapping(CI, i, Reg);
++      }
++      else {
++        DEBUG(
++          dbgs() << "WARNING: skipping operand ";
++          Val->printAsOperand(dbgs());
++          dbgs() << ", which is not in a virtual register\n";
++        );
++      }
      }
    }
 +
@@ -539,8 +657,8 @@
  }
  
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-05-25 11:33:09.548960252 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-27 14:36:23.679191799 -0400
-@@ -6782,8 +6782,26 @@
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	2016-07-29 13:51:12.417651622 -0400
+@@ -6782,8 +6782,44 @@
        const TargetLowering &TLI = Builder.DAG.getTargetLoweringInfo();
        Ops.push_back(Builder.DAG.getTargetFrameIndex(
            FI->getIndex(), TLI.getPointerTy(Builder.DAG.getDataLayout())));
@@ -553,7 +671,7 @@
 +      // need to find the spill slots around call sites).
 +      // TODO how do we handle non-CopyFromReg types?
 +      const CallInst *CI = cast<CallInst>(CS.getInstruction());
-+      RegisterSDNode *Reg;
++      RegisterSDNode *Reg = nullptr;
 +      switch(OpVal.getOpcode()) {
 +      case ISD::CopyFromReg:
 +        for(unsigned j = 0, je = OpVal.getNumOperands(); j < je; j++)
@@ -561,15 +679,33 @@
 +             TargetRegisterInfo::isVirtualRegister(Reg->getReg()))
 +            break;
 +        break;
-+      default: llvm_unreachable("unhandled SDValue opcode"); break;
++      default:
++        DEBUG(dbgs() << "WARNING: unhandled operation type "
++                     << OpVal.getNode()->getOperationName() << "\n";);
++        break;
 +      }
-+      if(Reg) Builder.FuncInfo.MF->addSMOpVregMapping(CI, i, Reg->getReg());
++      if(Reg) {
++        DEBUG(
++          CS.getArgument(i)->printAsOperand(dbgs());
++          dbgs() << ": vreg "
++                 << TargetRegisterInfo::virtReg2Index(Reg->getReg())
++                 << "\n";
++        );
++        Builder.FuncInfo.MF->addSMOpVregMapping(CI, i, Reg->getReg());
++      }
++      else {
++        DEBUG(
++          dbgs() << "WARNING: skipping operand ";
++          CS.getArgument(i)->printAsOperand(dbgs());
++          dbgs() << ", which is not in a virtual register\n";
++        );
++      }
 +    }
    }
  }
  
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-27 14:40:01.899189823 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-07-29 13:56:02.077648999 -0400
 @@ -9,10 +9,12 @@
  
  #include "llvm/CodeGen/StackMaps.h"
@@ -583,7 +719,7 @@
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
-@@ -84,25 +86,62 @@
+@@ -84,44 +86,85 @@
    return (unsigned)RegNum;
  }
  
@@ -650,11 +786,14 @@
        break;
      }
      case StackMaps::IndirectMemRefOp: {
-@@ -111,17 +150,20 @@
+       int64_t Size = (++MOI)->getImm();
++      int64_t AllocSize = DL.getTypeAllocSize(Op->get()->getType());
+       assert(Size > 0 && "Need a valid size for indirect memory locations.");
        unsigned Reg = (++MOI)->getReg();
        int64_t Imm = (++MOI)->getImm();
-       Locs.emplace_back(StackMaps::Location::Indirect, Size,
+-      Locs.emplace_back(StackMaps::Location::Indirect, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
++      Locs.emplace_back(StackMaps::Location::Indirect, AllocSize,
 +                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca,
 +                        PtrDataSize);
        break;
@@ -673,7 +812,7 @@
      return ++MOI;
    }
  
-@@ -136,17 +178,35 @@
+@@ -136,17 +179,43 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -693,6 +832,7 @@
 +    if(isCallerSaved(TRI, MOI))
 +      SS = AP.MF->getSMStackSlot(cast<CallInst>(Op->getUser()), Op->get());
 +
++
 +    // If the value is in a caller-saved register, record the spilled location.
 +    // Otherwise, record the register number.
 +    if(MFI->getObjectIndexBegin() <= SS && SS < MFI->getObjectIndexEnd() &&
@@ -702,6 +842,13 @@
 +                        getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI),
 +                        Offset, isPtr, isAlloca, PtrDataSize);
 +    } else {
++      if(isCallerSaved(TRI, MOI)) {
++        DEBUG(
++          dbgs() << "WARNING: no spill slot for caller-saved register "
++                 << getDwarfRegNum(MOI->getReg(), TRI) << "\n";
++        );
++      }
++
 +      unsigned Offset = 0;
 +      unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
 +      unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
@@ -717,7 +864,7 @@
      return ++MOI;
    }
  
-@@ -287,6 +347,7 @@
+@@ -287,6 +356,7 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -725,7 +872,7 @@
  
    LocationVec Locations;
    LiveOutVec LiveOuts;
-@@ -294,13 +355,33 @@
+@@ -294,13 +364,33 @@
    if (recordResult) {
      assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
      parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
@@ -761,7 +908,7 @@
  
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
-@@ -329,8 +410,8 @@
+@@ -329,8 +419,8 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -772,7 +919,7 @@
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -419,7 +500,7 @@
+@@ -419,7 +509,7 @@
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
      DEBUG(dbgs() << WSMP << "function addr: " << FR.first
@@ -781,7 +928,7 @@
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
    }
-@@ -441,6 +522,8 @@
+@@ -441,6 +531,8 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -790,7 +937,7 @@
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -449,6 +532,10 @@
+@@ -449,6 +541,10 @@
  ///     uint8  : Size in Bytes
  ///     uint16 : Dwarf RegNum
  ///     int32  : Offset
@@ -801,7 +948,7 @@
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -489,6 +576,8 @@
+@@ -489,6 +585,8 @@
      }
  
      OS.EmitIntValue(CSI.ID, 8);
@@ -810,7 +957,7 @@
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -500,6 +589,10 @@
+@@ -500,6 +598,10 @@
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
