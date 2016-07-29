@@ -1,17 +1,8 @@
-/**
- * \file
- * \brief Implementation of backend functions on Linux
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
-
 
 #ifndef NUMA
 # ifndef _GNU_SOURCE
@@ -21,20 +12,21 @@
 #endif
 
 
-//#include <stdio.h>
 #include <pthread.h>
 #ifdef NUMA
 #include <numa.h>
 #endif
 
 #include <stdio.h>
-
-//chris added
 #include <assert.h>
 
 #include "backend.h"
+#include "libbomp.h"
 #include "omp.h"
+#include "popcorn_threadpool.h"
 
+//GLOBAL POOL VAR
+threadpool_t *pool = NULL;
 
 void backend_set_numa(unsigned id)
 {
@@ -53,14 +45,8 @@ void backend_set_numa(unsigned id)
 #endif
 }
 
-void backend_run_func_on(int core_id, void* cfunc, void *arg)
-{
-    pthread_t pthread;
-    int r = pthread_create(&pthread, NULL, cfunc, arg);
-    if (r != 0) {
-        printf("pthread_create fa1iled\n");
-        //printf("%s: r NOT 0\n",__func__);
-    }
+void backend_run_func_on(int core_id, void* cfunc, void *arg){
+	/* NOP */
 }
 
 static pthread_key_t pthread_key;
@@ -98,31 +84,55 @@ void backend_span_domain(int nos_threads, size_t stack_size)
 
 void backend_init(void)
 {
+  //create key for app
+  int r = pthread_key_create(&pthread_key, NULL);
+  if (r != 0) {
+    printf("pthread_key_create failed\n");
+  }
+  DEBUGPOOL("%s: key_create success!\n",__func__);
 
-    int r = pthread_key_create(&pthread_key, NULL);
-    if (r != 0) {
-        printf("pthread_key_create fa2iled\n");
-        //printf("%s:r PO PO 0\n",__func__);
+  char s[512];
+  FILE *fd;
+  int num_cores= 0;
+
+  fd = fopen("/proc/cpuinfo", "r");
+  if (fd == NULL) {
+    printf("ALERT: /proc/cpuinfo could not be read. DEFAULT being used (%d)\n",bomp_num_threads);
+    num_cores = 1;
+  } else {
+    while (fgets(s, 512, fd) != NULL) {
+      if (strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL){
+        num_cores++;
+      }
     }
-   printf("backend_init success!\n");
-}
+    int res = fclose(fd);
+    DEBUGPOOL("FCLOSE: result %d\n",res);
+  }
+
+  /* Initialize Threadpool HERE! */
+  pool = threadpool_create(num_cores-1,1024);
+  DEBUGPOOL("%s: Threadpool Initiated, %d cores detected\n",__func__,num_cores);    
+}//END backend_init
 
 void backend_exit(void)
 {
+  int res = threadpool_destroy(pool);
+  if(res == 0){
+    DEBUGPOOL("%s(): Success, Threadpool destroyed!\n",__func__);
+  }else{
+    printf("ERROR: %s| Threadpool Destroy Error %d\n",__func__,res);
+  }
 	/* nop */
 #ifdef SHOW_PROFILING	
 	dump_sched_self();
 #endif	
 }
 
-void backend_create_time(int cores)
-{
+void backend_create_time(int cores){
     /* nop */
 }
 
-void backend_thread_exit(void)
-{
-}
+void backend_thread_exit(void){ }
 
 struct thread *backend_thread_create_varstack(bomp_thread_func_t start_func,
                                               void *arg, size_t stacksize)

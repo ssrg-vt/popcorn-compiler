@@ -1,27 +1,19 @@
-/**
- * \file
- * \brief Spinning synchronizations
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, 2010, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
+ * File Desc: Spin Synchronization for mutexs and barriers
  */
 
 #ifndef BOMP_SPIN_H
 #define BOMP_SPIN_H
 
-/* #include <barrelfish/barrelfish.h> */
-/* #include <string.h> */
 #include "omp.h"
 
 /** \brief spinlock */
 // why 64-bit? this means we need an extra prefix on the lock ops... -AB
 typedef volatile unsigned long bomp_lock_t;
+uint64_t stuck[64];
 
 static inline void bomp_lock(bomp_lock_t *lock)
 {
@@ -81,7 +73,11 @@ static inline void bomp_clear_barrier(struct bomp_barrier *barrier)
     /* nop */
 }
 
-uint64_t stuck[64];
+static inline void bomp_barrier_updateMax(struct bomp_barrier *barrier, int new_max)
+{
+    barrier->max = new_max;
+    DEBUGPOOL("%s: NewMax # Threads:%d\n",__func__,barrier->max);
+}
 
 static inline void bomp_barrier_wait(struct bomp_barrier *barrier)
 {
@@ -94,11 +90,6 @@ static inline void bomp_barrier_wait(struct bomp_barrier *barrier)
 
         while (cycle == barrier->cycle) {
             waitcnt++;
-/*	    //CHRIS
-	    if(waitcnt > 10000000){
-		break;
-	    }
-	    //end CHRIS*/
         }
 
         if(waitcnt > 10000000) {
@@ -109,6 +100,6 @@ static inline void bomp_barrier_wait(struct bomp_barrier *barrier)
             /* sys_print(buf, strlen(buf)); */
         }
     }                                       
-}
+}//END bomp_barrier_wait
 
 #endif /* BOMP_SPIN_H */

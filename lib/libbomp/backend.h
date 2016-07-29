@@ -1,16 +1,7 @@
-/**
- * \file
- * \brief Declerations of functions that differ in
- *  implementation between linux and barrelfish
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
 
 #ifndef BOMP_BACKEND_H
@@ -28,5 +19,4 @@ void backend_exit(void);
 void backend_thread_exit(void);
 struct thread *backend_thread_create_varstack(bomp_thread_func_t start_func,
                                               void *arg, size_t stacksize);
-
 #endif /* BOMP_BACKEND_H */
