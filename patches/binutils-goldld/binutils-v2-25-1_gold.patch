@@ -1,0 +1,194 @@
+diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
+--- ../../binutils-2.25.1/gold/aarch64.cc	2014-10-14 03:32:04.000000000 -0400
++++ gold/aarch64.cc	2016-07-29 17:21:57.843529164 -0400
+@@ -44,6 +44,8 @@
+ #include "icf.h"
+ #include "aarch64-reloc-property.h"
+ 
++#define X86_TLS
++
+ // The first three .got.plt entries are reserved.
+ const int32_t AARCH64_GOTPLT_RESERVE_COUNT = 3;
+ 
+@@ -1888,10 +1890,33 @@
+ 
+     // Clear immediate fields.
+     val &= ~dst_mask;
++    //Comment out the following?? HETCOMPILE
++    elfcpp::Swap<valsize, big_endian>::writeval(wv,
++      static_cast<Valtype>(val | (immed << doffset)));
++  }
++
++
++  template<int valsize>
++  static inline void
++  update_viewN(unsigned char* view,
++              typename elfcpp::Swap<size, big_endian>::Valtype immed,
++              elfcpp::Elf_Xword doffset,
++              elfcpp::Elf_Xword dst_mask)
++  {
++    typedef typename elfcpp::Swap<valsize, big_endian>::Valtype Valtype;
++    Valtype* wv = reinterpret_cast<Valtype*>(view);
++    Valtype val = elfcpp::Swap<valsize, big_endian>::readval(wv);
++
++    // Clear immediate fields.
++	val |= 0xF0000000;
++	val &= ~0x20000000;
++	val &= ~dst_mask;
++
+     elfcpp::Swap<valsize, big_endian>::writeval(wv,
+       static_cast<Valtype>(val | (immed << doffset)));
+   }
+ 
++
+   // Update two parts of an instruction (pointed by view) with selected
+   // bits (immed1 and immed2).
+   // val = (val & ~dst_mask) | (immed1 << doffset1) | (immed2 << doffset2)
+@@ -2078,9 +2103,19 @@
+     // Calculate relocation.
+     Address x = s + addend;
+ 
++#ifdef X86_TLS
++    x = -5424 + x - 16; //0x1530
++
+     // Select bits from X.
++    Address immed;
++#else
+     Address immed = reloc_property->select_x_value(x);
++#endif
+ 
++#ifdef X86_TLS
++    if ( (static_cast<uint64_t>(x) >> 32) == 0 ) {
++    	immed = reloc_property->select_x_value(x);
++#endif
+     // Update view.
+     const AArch64_reloc_property::Reloc_inst inst =
+ 	reloc_property->reloc_inst();
+@@ -2091,11 +2126,27 @@
+     This::template update_view<valsize>(view, immed,
+ 					aarch64_howto[inst].doffset,
+ 					aarch64_howto[inst].dst_mask);
+-
++#ifdef X86_TLS
++} else {
++    immed = reloc_property->select_x_value((0 - x));
++    // Update view.
++    const AArch64_reloc_property::Reloc_inst inst =
++        reloc_property->reloc_inst();
++    // If it is a data relocation or instruction has 2 parts of immediate
++    // fields, you should not call rela_general.
++    gold_assert(aarch64_howto[inst].doffset2 == -1 &&
++                aarch64_howto[inst].doffset != -1);
++    This::template update_viewN<valsize>(view, immed,
++                                        aarch64_howto[inst].doffset,
++                                        aarch64_howto[inst].dst_mask);
++}
++	return This::STATUS_OKAY;
++#else
+     // Do check overflow or alignment if needed.
+     return (reloc_property->checkup_x_value(x)
+ 	    ? This::STATUS_OKAY
+ 	    : This::STATUS_OVERFLOW);
++#endif
+   }
+ 
+   // Do address relative relocate. Update selected bits in text.
+@@ -2128,10 +2179,14 @@
+ 					aarch64_howto[inst].doffset,
+ 					aarch64_howto[inst].dst_mask);
+ 
++#ifdef X86_TLS
++    return This::STATUS_OKAY;
++#else
+     // Do check overflow or alignment if needed.
+     return (reloc_property->checkup_x_value(x)
+ 	    ? This::STATUS_OKAY
+ 	    : This::STATUS_OVERFLOW);
++#endif
+   }
+ 
+   // Calculate PG(S+A) - PG(address), update adrp instruction.
+@@ -3851,14 +3906,24 @@
+   AArch64_address aligned_tcb_address =
+       align_address(target->tcb_size(), tls_segment->maximum_alignment());
+   const elfcpp::Elf_Xword addend = rela.get_r_addend();
++#ifdef X86_TLS
++  //Where does 5312 come from??? (0x14C0)
++  AArch64_address x = addend + aligned_tcb_address - value + 5312;
++#else
++  //ORIG
+   AArch64_address x = value + addend + aligned_tcb_address;
++#endif
+   // "x" is the offset to tp, we can only do this if x is within
+   // range [0, 2^32-1]
+   if (!(size == 32 || (size == 64 && (static_cast<uint64_t>(x) >> 32) == 0)))
+     {
++#ifdef X86_TLS
++
++#else
+       gold_error(_("TLS variable referred by reloc %u is too far from TP."),
+ 		 r_type);
+       return aarch64_reloc_funcs::STATUS_BAD_RELOC;
++#endif
+     }
+ 
+   Insntype* ip = reinterpret_cast<Insntype*>(view);
+@@ -3873,10 +3938,21 @@
+     }
+   else if (r_type == elfcpp::R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC)
+     {
++#ifdef X86_TLS
++  if ((static_cast<uint64_t>(x) >> 32) == 0){
++      // Generate movn (sub instead of add)
++      regno = (insn & 0x1f);
++      gold_assert(regno == ((insn >> 5) & 0x1f));
++      newinsn = (0x92800000 | regno) | (((~0 - static_cast<uint64_t>(x)) & 0xffff) << 5);
++  }else{
++#endif
+       // Generate movk.
+       regno = (insn & 0x1f);
+       gold_assert(regno == ((insn >> 5) & 0x1f));
+       newinsn = (0xf2800000 | regno) | ((x & 0xffff) << 5);
++#ifdef X86_TLS
++  }
++#endif
+     }
+   else
+     gold_assert(false);
+@@ -3945,9 +4021,19 @@
+       break;
+ 
+     case elfcpp::R_AARCH64_TLSDESC_LD64_LO12:
++#ifdef X86_TLS
++  if((static_cast<uint64_t>(x) >> 32) == 0){
++#endif
+       // Change to movk.
+       newinsn = 0xf2800000 | ((x & 0xffff) << 5);
+       break;
++#ifdef X86_TLS
++  }else{
++      // Generate movn (for sub instead of add)
++      newinsn = 0x92800000 | (((~0 - static_cast<uint64_t>(x)) & 0xffff) << 5);
++      break;
++  }
++#endif
+ 
+     default:
+       gold_error(_("unsupported tlsdesc gd_to_le optimization on reloc %u"),
+diff -Naur ../../binutils-2.25.1/gold/mapfile.cc gold/mapfile.cc
+--- ../../binutils-2.25.1/gold/mapfile.cc	2014-10-14 03:32:04.000000000 -0400
++++ gold/mapfile.cc	2016-07-29 17:21:57.843529164 -0400
+@@ -261,9 +261,11 @@
+   snprintf(sizebuf, sizeof sizebuf, "0x%llx",
+ 	   static_cast<unsigned long long>(relobj->section_size(shndx)));
+ 
+-  fprintf(this->map_file_, "0x%0*llx %10s %s\n",
++  fprintf(this->map_file_, "0x%0*llx %10s 0x%lx %s\n",
+ 	  parameters->target().get_size() / 4,
+-	  static_cast<unsigned long long>(addr), sizebuf,
++	  static_cast<unsigned long long>(addr), 
++	  sizebuf, 
++	  (unsigned long) relobj->section_addralign(shndx),
+ 	  relobj->name().c_str());
+ 
+   if (os != NULL)
