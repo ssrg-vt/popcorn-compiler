@@ -4,7 +4,8 @@
  *
  * Declarations & definitions are taken from the LLVM OpenMP runtime v3.8.0
  *
- * Copyright Rob Lyerly, SSRG, VT, 2016
+ * Copyright Rob Lyerly & bielsk1@vt.edu, SSRG, VT, 2016
+ * 
  */
 
 // TODO what's the difference between global & local/bound TID?
@@ -29,6 +30,11 @@
 # define DEBUG( ... )
 #endif
 
+#ifdef _DEBUG_POOL
+# define DEBUGPOOL( ... ) fprintf(stderr, __VA_ARGS__)
+#else
+# define DEBUGPOOL( ... )
+#endif
 ///////////////////////////////////////////////////////////////////////////////
 // Parallel region
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,28 +48,6 @@ typedef struct ident {
   char const *psource;
 } ident_t;
 
-/* 
- * Outlined functions comprising the OpenMP parallel code regions (kmp).
- * @param global_tid the global thread identity of the thread executing the function.
- * @param bound_tid the local identity of the thread executing the function.
- * @param ... pointers to shared variables accessed by the function
- */
-typedef void (*kmpc_micro) (int32_t *global_tid, int32_t *bound_tid, ...);
-typedef void (*kmpc_micro_bound) (int32_t *bound_tid, int32_t *bound_nth, ...);
-
-/*
- * Data passed to __kmp_wrapper_fn() to invoke microtask via Intel OpenMP runtime's
- * outline function API.
- */
-typedef struct __kmp_data {
-  union {
-    kmpc_micro task;
-    kmpc_micro_bound bound_task;
-  };
-  int32_t *mtid;
-  void *data;
-} __kmp_data_t;
-
 /*
  * Converts calls to GNU OpenMP runtime outlined regions to Intel OpenMP
  * runtime outlined regions (which includes the global & bound thread ID).
@@ -76,7 +60,7 @@ void __kmp_wrapper_fn(void *data)
   __kmp_data_t *wrapped = (__kmp_data_t *)data;
 
   DEBUG("__kmp_wrapper_fn: %p %p\n", wrapped->task, wrapped->data);
-
+  //printf("%s: %p %p\n",__func__,wrapped->task, wrapped->data);
   wrapped->task(&tid, &tid, wrapped->data);
 }
 
@@ -97,7 +81,7 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   DEBUG("__kmp_fork_call: %s calling %p\n", loc->psource, microtask);
 
   /* Marshal data for spawned microtask */
-  va_start(vl, microtask);
+  va_start(vl, argc);
   if(argc > 1)
   {
     void **args = malloc(sizeof(void*) * argc);
@@ -114,8 +98,12 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
 
   /* Start workers & run the task */
   GOMP_parallel_start(__kmp_wrapper_fn, &wrapper_data, bomp_num_threads);
+  DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
+  DEBUGPOOL("---------------- MASTER about to do task:%p Data:%p\n",microtask,shared_data);
   microtask(&mtid, &ltid, shared_data);
+  DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
+  DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
 
   if(argc > 1) free(shared_data);
 }
@@ -234,7 +222,6 @@ int __kmpc_dispatch_next_4(ident_t *loc,
 {
   // TODO
   assert(false && "Dynamically-scheduled loops not implemented");
-  return 0;
 }
 
 void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
@@ -249,7 +236,8 @@ void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
  */
 void __kmpc_ordered(ident_t *loc, int32_t gtid)
 {
-  DEBUG("__kmpc_ordered: %s %d\n", loc->psource, global_tid);
+  //DEBUG("__kmpc_ordered: %s %d\n", loc->psource, global_tid);
+  DEBUG("__kmpc_ordered: %s \n", loc->psource, gtid);
 
   GOMP_ordered_start();
 }
@@ -261,7 +249,7 @@ void __kmpc_ordered(ident_t *loc, int32_t gtid)
  */
 void __kmpc_end_ordered(ident_t *loc, int32_t gtid)
 {
-  DEBUG("__kmpc_end_ordered: %s %d\n", loc->psource, global_tid);
+  DEBUG("__kmpc_end_ordered: %s %d\n", loc->psource, gtid);
 
   GOMP_ordered_end();
 }
@@ -388,6 +376,8 @@ int32_t __kmpc_reduce(ident_t *loc,
 {
   DEBUG("__kmpc_reduce: %s %d %d %lu %p %p %p\n", loc->psource,
         global_tid, num_vars, reduce_size, reduce_data, func, lck);
+  //printf("__kmpc_reduce: %s %d %d %lu %p %p %p\n", loc->psource,
+  //      global_tid, num_vars, reduce_size, reduce_data, func, lck);
 
   // Note: Intel's runtime does some smart selection of reduction algorithms,
   // but we'll do just a basic "every thread reduces their own value" by
@@ -492,7 +482,7 @@ void *__kmpc_threadprivate_cached(ident_t *loc,
   void *ret;
 
   DEBUG("__kmpc_threadprivate_cached: %s %d %p %lu %p\n", loc->psource,
-        global_tid, data, size, cache);
+      global_tid, data, size, cache);
 
   /* Allocate a cache if not previously allocated for the variable. */
   if(*cache == NULL)

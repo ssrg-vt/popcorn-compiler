@@ -1,24 +1,16 @@
-/**
- * \file
- * \brief Decleration of functions that gcc pragmas calls
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, 2010, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
 
+#include "popcorn_threadpool.h"
 #include "libbomp.h"
-#include "backend.h"
 #include "omp.h"
 
 static volatile int nested = 0;
-
 static bomp_lock_t critical_lock;
+static bomp_lock_t atomic_lock;
 
 void GOMP_critical_start(void)
 {
@@ -48,9 +40,11 @@ void GOMP_parallel_start(void (*fn) (void *), void *data, unsigned nthreads)
             || (bomp_dynamic_behaviour && bomp_num_threads < nthreads)) {
             nthreads = bomp_num_threads;
         }
+	DEBUGPOOL("~~~~%s: about to start bomp_start_processing\n",__func__);
         bomp_start_processing(fn, data, nthreads);
     }
-    nested++;
+    __sync_fetch_and_add(&nested, 1);
+    DEBUGPOOL(">OPenMP nested Lvl:%d\n",nested);
 }
 
 void GOMP_parallel_end(void)
@@ -58,22 +52,15 @@ void GOMP_parallel_end(void)
     if(nested == 1) {
         bomp_end_processing();
     }
-    nested--;
+    __sync_fetch_and_sub(&nested, 1);
+    DEBUGPOOL(">eOPenMP nested Lvl:%d\n",nested);
 }
-
-void GOMP_parallel(void (*fn) (void *), void *data, unsigned num_threads, unsigned int flags){
-	GOMP_parallel_start(fn,data,num_threads);
-	fn(data);
-	GOMP_parallel_end();
-}//end GOMP_parallel
-
 
 /* This function should return true for just the first thread */
 bool GOMP_single_start(void)
 {
     struct bomp_thread_local_data *local = backend_get_tls();
-
-    if(local == NULL || local->work->thread_id == 0) {
+    if(local == NULL || local->work->thread_id == 0){
         return true;
     }
     return false;
@@ -85,8 +72,6 @@ void GOMP_barrier(void)
     assert(th_local_data != NULL);
     bomp_barrier_wait(th_local_data->work->barrier);
 }
-
-static bomp_lock_t atomic_lock;
 
 void GOMP_atomic_start (void)
 {
@@ -100,6 +85,6 @@ void GOMP_atomic_end (void)
 
 void parallel_init(void)
 {
-   bomp_lock_init(&atomic_lock);
-   bomp_lock_init(&critical_lock);
+   bomp_lock_init(&atomic_lock); // (NOP right now)
+   bomp_lock_init(&critical_lock); // (NOP right now)
 }

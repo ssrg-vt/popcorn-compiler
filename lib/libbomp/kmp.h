@@ -5,7 +5,7 @@
  * Declarations & definitions are taken/adapted from the LLVM OpenMP runtime
  * v3.8.0
  *
- * Copyright Rob Lyerly, SSRG, VT, 2016
+ * Copyright Rob Lyerly & bielsk1@vt.edu, SSRG, VT, 2016
  */
 
 #include <string.h>
@@ -35,3 +35,25 @@ enum reduction_method {
 /* Lock structure */
 typedef int32_t kmp_critical_name[8];
 
+/* 
+ * Outlined functions comprising the OpenMP parallel code regions (kmp).
+ * @param global_tid the global thread identity of the thread executing the function.
+ * @param bound_tid the local identity of the thread executing the function.
+ * @param ... pointers to shared variables accessed by the function
+ */
+typedef void (*kmpc_micro) (int32_t *global_tid, int32_t *bound_tid, ...);
+typedef void (*kmpc_micro_bound) (int32_t *bound_tid, int32_t *bound_nth, ...);
+void __kmp_wrapper_fn(void *data);
+
+/*
+ * Data passed to __kmp_wrapper_fn() to invoke microtask via Intel OpenMP runtime's
+ * outline function API.
+ */
+typedef struct __kmp_data {
+  union {
+    kmpc_micro task;
+    kmpc_micro_bound bound_task;
+  };
+  int32_t *mtid;
+  void *data;
+} __kmp_data_t;

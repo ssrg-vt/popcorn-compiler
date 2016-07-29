@@ -1,15 +1,7 @@
-/**
- * \file
- * \brief BOMP Standard include
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
 
 #ifndef _LIBBOMP_H
@@ -23,6 +15,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "spin.h"
+
+#ifdef _DEBUG_POOL
+# define DEBUGPOOL( ... ) fprintf(stderr, __VA_ARGS__)
+#else
+# define DEBUGPOOL( ... )
+#endif
 
 struct bomp_work {
     void (*fn)(void *);
@@ -40,8 +38,10 @@ extern volatile unsigned g_thread_numbers;
 extern unsigned bomp_num_threads;
 extern bool bomp_dynamic_behaviour;
 extern bool bomp_nested_behaviour;
+extern struct bomp_thread_local_data **g_array_thread_local_data;
 
 void parallel_init(void);
+int bomp_thread_fn(void *xdata);
 void bomp_start_processing(void (*fn) (void *), void *data, unsigned nthreads);
 void bomp_end_processing(void);
 
