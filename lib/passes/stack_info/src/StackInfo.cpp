@@ -51,6 +51,7 @@ bool StackInfo::runOnModule(Module &M)
   bool modified = false;
   std::set<const Value *> *live;
   std::set<const Value *, ValueComp> sortedLive;
+  std::set<const AllocaInst *> allocas;
 
   DEBUG(errs() << "StackInfo: entering module " << M.getName() << "\n\r");
 
@@ -68,10 +69,31 @@ bool StackInfo::runOnModule(Module &M)
     std::set<const Value *>::const_iterator v, ve;
 
     /*
+     * Gather all allocas because the stack transformation runtime must copy
+     * over all local data, and hence they should be recorded in the stackmaps.
+     * If we're not careful, allocas slip through the cracks in stackmaps e.g.:
+     *
+     *  %arr = alloca [4 x double], align 8
+     *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
+     *  call void (i64, i32, ...) @llvm.experimental.stackmap(i64 1, i32 0, %arrayidx)
+     *
+     * After getting an element pointer, all subsequent accesses to %arr happen
+     * through %arrayidx, hence %arr is not caught by liveness analysis and is
+     * not copied to the destination stack.
+     */
+    allocas.clear();
+    BasicBlock &entry = f->getEntryBlock();
+    for(BasicBlock::iterator i = entry.begin(), ie = entry.end(); i != ie; i++)
+    {
+      const AllocaInst *inst = dyn_cast<AllocaInst>(&*i);
+      if(inst) allocas.insert(inst);
+    }
+
+    /*
      * Put a stackmap at the beginning of the function to capture arguments. This
      * should *always* have an ID of 0.
      */
-    live = liveVals.getLiveIn(&f->getEntryBlock());
+    live = liveVals.getLiveIn(&entry);
     sortedLive.clear();
     for(const Value *val : *live) sortedLive.insert(val);
     delete live;
@@ -81,7 +103,7 @@ bool StackInfo::runOnModule(Module &M)
     funcArgs[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
     for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
       funcArgs.push_back((Value *)*v);
-    IRBuilder<> funcArgBuilder(&*f->getEntryBlock().getFirstInsertionPt());
+    IRBuilder<> funcArgBuilder(&*entry.getFirstInsertionPt());
     funcArgBuilder.CreateCall(this->SMFunc, ArrayRef<Value *>(funcArgs));
     this->numInstrumented++;
 
@@ -104,6 +126,9 @@ bool StackInfo::runOnModule(Module &M)
           live = liveVals.getLiveValues(&*i);
           sortedLive.clear();
           for(const Value *val : *live) sortedLive.insert(val);
+          for(const AllocaInst *val : allocas)
+            if(sortedLive.find(val) == sortedLive.end())
+              sortedLive.insert(val);
           delete live;
 
           DEBUG(
