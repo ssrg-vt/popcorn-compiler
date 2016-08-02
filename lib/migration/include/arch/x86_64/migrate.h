@@ -20,6 +20,10 @@
     ret; \
   })
 
+#define SET_FP_REGS // N/A
+
+#define SAVE_REGSET // N/A
+
 #define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) \
   { \
     SET_REGS_X86_64(regs_x86_64); \
@@ -40,6 +44,11 @@
     } \
     ret; \
   })
+
+#define SET_FP_REGS \
+  SET_FP_REGS_X86_64(*(struct regset_x86_64 *)data_ptr->regset)
+
+#define SAVE_REGSET { data.regset = &regs_aarch64; }
 
 #define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) \
   asm volatile ("movq %0, %%rdi;" \

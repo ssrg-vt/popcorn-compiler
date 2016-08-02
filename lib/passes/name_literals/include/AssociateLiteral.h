@@ -17,6 +17,9 @@ public:
 
 	/* ModulePass virtual methods */
 	virtual bool runOnModule(llvm::Module &M);
+
+private:
+  unsigned long long getTimestamp();
 };
 
 }

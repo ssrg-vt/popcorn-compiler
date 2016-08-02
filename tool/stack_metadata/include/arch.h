@@ -9,24 +9,7 @@
 #define _ARCH_H
 
 #include <elf.h>
-
-/* Per-architecture frame pointer offsets from CFA. */
-#define AARCH64_FP_OFFSET 16
-#define X86_64_FP_OFFSET 8
-
-/**
- * Frame pointer offset from canonical frame address (CFA).
- * @param arch the architecture
- * @return the offset (in bytes) from the CFA
- */
-static inline size_t fp_offset(uint16_t arch)
-{
-  switch(arch) {
-  case EM_X86_64: return X86_64_FP_OFFSET;
-  case EM_AARCH64: return AARCH64_FP_OFFSET;
-  default: return 0;
-  }
-}
+#include "arch_common.h"
 
 /*
  * Because we don't generate call site metadata for musl, we hardcode an offset

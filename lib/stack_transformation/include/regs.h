@@ -11,9 +11,9 @@
 #define _REGS_H
 
 /* Macros to convert between DW_OP_reg* and raw values */
-#define OP_REG( reg ) (reg < 32 ? (dwarf_reg){(reg + DW_OP_reg0), 0} : \
-                                  (dwarf_reg){DW_OP_regx, reg})
-#define RAW_REG( reg ) (reg.reg == DW_OP_regx ? reg.x : reg.reg - DW_OP_reg0)
+#define OP_REG( _reg ) (_reg < 32 ? (dwarf_reg){(_reg + DW_OP_reg0), 0} : \
+                                    (dwarf_reg){DW_OP_regx, _reg})
+#define RAW_REG( _reg ) (_reg.reg == DW_OP_regx ? _reg.x : _reg.reg - DW_OP_reg0)
 
 /* A DWARF register specification. */
 typedef struct dwarf_reg
@@ -42,7 +42,7 @@ struct regset_t
   const bool has_ra_reg;
 
   /////////////////////////////////////////////////////////////////////////////
-  // Functions
+  // Constructors/destructors
   /////////////////////////////////////////////////////////////////////////////
 
   /* Default constructor -- create an empty register set */
@@ -60,6 +60,10 @@ struct regset_t
   /* Free a register set */
   void (*free)(struct regset_t* regset); /* free a register set */
 
+  /////////////////////////////////////////////////////////////////////////////
+  // Special register access
+  /////////////////////////////////////////////////////////////////////////////
+
   /* Get the program counter value */
   void* (*pc)(const struct regset_t* regset);
 
@@ -69,14 +73,8 @@ struct regset_t
   /* Get the frame pointer value */
   void* (*fbp)(const struct regset_t* regset);
 
-  /* Get a register's value */
-  uint64_t (*reg)(const struct regset_t* regset, dwarf_reg reg);
-
   /* Get the return address-mapped register's value */
-  uint64_t (*ra_reg)(const struct regset_t* regset);
-
-  /* Get pointer to non-standard-sized register (size is handled externally) */
-  void* (*ext_reg)(struct regset_t* regset, dwarf_reg reg);
+  void* (*ra_reg)(const struct regset_t* regset);
 
   /* Set the program counter */
   void (*set_pc)(struct regset_t* regset, void* pc);
@@ -87,12 +85,20 @@ struct regset_t
   /* Set the frame pointer value */
   void (*set_fbp)(struct regset_t* regset, void* fp);
 
-  /* Set a register */
-  // Note: we assume that saved values are at max 64 bits
-  void (*set_reg)(struct regset_t* regset, dwarf_reg reg, uint64_t val);
-
   /* Set the return-address mapped register */
-  void (*set_ra_reg)(struct regset_t* regset, uint64_t val);
+  void (*set_ra_reg)(struct regset_t* regset, void* ra);
+
+  /////////////////////////////////////////////////////////////////////////////
+  // General-purpose register access
+  /////////////////////////////////////////////////////////////////////////////
+
+  /*
+   * Get pointer to register, used for both reading & writing. This allows
+   * a single API for registers of all sizes.
+   *
+   * Note: this does *NOT* return the registers contents!
+   */
+  void* (*reg)(struct regset_t* regset, dwarf_reg reg);
 };
 
 typedef struct regset_t* regset_t;

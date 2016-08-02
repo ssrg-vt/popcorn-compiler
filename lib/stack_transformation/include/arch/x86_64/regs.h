@@ -216,6 +216,27 @@ struct regset_x86_64
   GET_XMM15((regset_x86_64).xmm[15]); \
 }
 
+/* Set floating-point/SIMD registers from a register set. */
+#define SET_FP_REGS_X86_64( regset_x86_64 ) \
+{ \
+  SET_XMM0((regset_x86_64).xmm[0]); \
+  SET_XMM1((regset_x86_64).xmm[1]); \
+  SET_XMM2((regset_x86_64).xmm[2]); \
+  SET_XMM3((regset_x86_64).xmm[3]); \
+  SET_XMM4((regset_x86_64).xmm[4]); \
+  SET_XMM5((regset_x86_64).xmm[5]); \
+  SET_XMM6((regset_x86_64).xmm[6]); \
+  SET_XMM7((regset_x86_64).xmm[7]); \
+  SET_XMM8((regset_x86_64).xmm[8]); \
+  SET_XMM9((regset_x86_64).xmm[9]); \
+  SET_XMM10((regset_x86_64).xmm[10]); \
+  SET_XMM11((regset_x86_64).xmm[11]); \
+  SET_XMM12((regset_x86_64).xmm[12]); \
+  SET_XMM13((regset_x86_64).xmm[13]); \
+  SET_XMM14((regset_x86_64).xmm[14]); \
+  SET_XMM15((regset_x86_64).xmm[15]); \
+}
+
 /* Set all registers from a register set. */
 // Note: do not set RIP, RSP, RBP, and segment registers as they require
 // special handling
@@ -235,22 +256,7 @@ struct regset_x86_64
   SET_R13((regset_x86_64).r13); \
   SET_R14((regset_x86_64).r14); \
   SET_R15((regset_x86_64).r15); \
-  SET_XMM0((regset_x86_64).xmm[0]); \
-  SET_XMM1((regset_x86_64).xmm[1]); \
-  SET_XMM2((regset_x86_64).xmm[2]); \
-  SET_XMM3((regset_x86_64).xmm[3]); \
-  SET_XMM4((regset_x86_64).xmm[4]); \
-  SET_XMM5((regset_x86_64).xmm[5]); \
-  SET_XMM6((regset_x86_64).xmm[6]); \
-  SET_XMM7((regset_x86_64).xmm[7]); \
-  SET_XMM8((regset_x86_64).xmm[8]); \
-  SET_XMM9((regset_x86_64).xmm[9]); \
-  SET_XMM10((regset_x86_64).xmm[10]); \
-  SET_XMM11((regset_x86_64).xmm[11]); \
-  SET_XMM12((regset_x86_64).xmm[12]); \
-  SET_XMM13((regset_x86_64).xmm[13]); \
-  SET_XMM14((regset_x86_64).xmm[14]); \
-  SET_XMM15((regset_x86_64).xmm[15]); \
+  SET_FP_REGS_X86_64(regset_x86_64); \
 }
 
 /* Get frame information. */

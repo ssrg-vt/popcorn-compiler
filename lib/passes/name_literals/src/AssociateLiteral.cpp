@@ -1,3 +1,4 @@
+#include <ctime>
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -30,7 +31,7 @@ AssociateLiteral::~AssociateLiteral() {}
  */
 bool AssociateLiteral::runOnModule(Module &M) {
   bool modified = false;
-  string root1,root2, newName;
+  string root, newName;
   Module::iterator it, ite;
   Module::global_iterator gl, gle; //for global variables?
   //could also handle by just iterating through .str - .str.1 - .str.2 ....
@@ -44,25 +45,21 @@ bool AssociateLiteral::runOnModule(Module &M) {
     // DONT NEED TO CHANGE NAME PER-SAY just change type
     // PrivateLinkage does NOT show up in any symbol table in the object file!
     if(gl->getLinkage() == GlobalValue::PrivateLinkage) {
-      //DEBUG(outs() << "\nPRIVATE: " <<  *gl << "\n");
-      //outs() << "\nPRIVATE: " <<  *gl << "\n";
       //change Linkage
-      //FROM private unnamed_addr constant [21 x i8]
-      //TO global [59 x i8]
+      //FROM private unnamed_addr constant [num x i8]
+      //TO global [num x i8]
       gl->setLinkage(GlobalValue::ExternalLinkage);
 
       // Make the global's name unique so we don't clash when linking with
       // other files
-      string::size_type minusPath = M.getName().find_last_of('/'); 
-      //root = M.getName().substr(minusPath+1, pos);
-      root1 = M.getName().substr(minusPath+1);
-      //outs() << "Old string name: " << M.getName() << "\n";
-      //outs() << "Root: " << root1 << "\n";
-      string::size_type pos = root1.find_first_of('.'); 
-      root2 = root1.substr(0,pos);
-      //outs() << "Root: " << root2 << "\n";
-      newName = root2 + "_" + gl->getName().str();
+      string::size_type minusPath = M.getName().find_last_of('/');
+      root = M.getName().substr(minusPath + 1);
+      string::size_type pos = root.find_first_of('.');
+      root = root.substr(0,pos);
+      root += "_" + std::to_string(getTimestamp());
+      newName = root + "_" + gl->getName().str();
       gl->setName(newName);
+
       //DEBUG(outs() << "New anonymous string name: " << newName << "\n";);
       //outs() << "New anonymous string name: " << newName << "\n";
 
@@ -85,6 +82,13 @@ bool AssociateLiteral::runOnModule(Module &M) {
   if(numInstrumented > 0) modified = true;
   
   return modified;
+}
+
+unsigned long long AssociateLiteral::getTimestamp()
+{
+  struct timespec time;
+  clock_gettime(CLOCK_MONOTONIC, &time);
+  return (time.tv_sec * 1000000000UL) | time.tv_nsec;
 }
 
 char AssociateLiteral::ID = 0;

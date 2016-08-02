@@ -47,7 +47,7 @@ cpu_set_t select_arch()
 #endif
 }
 
-#ifdef _TEST_MIGRATE
+#ifdef _ENV_SELECT_MIGRATE
 
 /*
  * The user can specify at which point a thread should migrate by specifying
@@ -158,13 +158,22 @@ static inline int do_migrate(void *addr)
   return ret;
 }
 
-#endif /* _TEST_MIGRATE */
+#endif /* _ENV_SELECT_MIGRATE */
 
 /* Data needed post-migration. */
 struct shim_data {
   void (*callback)(void *);
   void *callback_data;
+  void *regset;
 };
+
+#ifdef _DEBUG
+/*
+ * Flag indicating we should spin post-migration in order to wait until a
+ * debugger can attach.
+ */
+static volatile int __hold = 1;
+#endif
 
 /* Check & invoke migration if requested. */
 // Note: arguments are saved to this stack frame, and a pointer to them is
@@ -179,8 +188,17 @@ static void __migrate_shim_internal(void (*callback)(void *),
   struct shim_data *data_ptr = *pthread_migrate_args();
   if(data_ptr) // Post-migration
   {
+#ifdef _DEBUG
+    // Hold until we can attach post-migration
+    while(__hold);
+#endif
+
     if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
     *pthread_migrate_args() = NULL;
+
+    // Hack: the kernel can't set floating-point registers, so we have to
+    // manually copy them over in userspace
+    SET_FP_REGS;
   }
   else // Check & do migration if requested
   { 
@@ -195,7 +213,10 @@ static void __migrate_shim_internal(void (*callback)(void *),
       *pthread_migrate_args() = &data;
       cpus = select_arch();
       if(REWRITE_STACK)
+      {
+        SAVE_REGSET;
         MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus, (void *)migrate_shim);
+      }
     }
   }
 }
