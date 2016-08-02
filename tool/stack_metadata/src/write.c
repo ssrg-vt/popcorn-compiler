@@ -180,19 +180,11 @@ static bool create_call_site_metadata(bin *b,
     for(j = 0; j < sm[i].num_records; j++, cur++)
     {
       sites[cur].id = start_id++;
-      if(sm[i].stack_maps[j].id == 0) // Function entry stack map
-      {
-        sites[cur].addr = sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].func_addr;
-        sites[cur].fbp_offset = 0; // TODO fp_offset(b->arch);
-      }
-      else // Call site
-      {
-        sites[cur].addr = sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].func_addr +
-                          sm[i].stack_maps[j].offset;
-        sites[cur].fbp_offset =
-          sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].stack_size -
-          fp_offset(b->arch);
-      }
+      sites[cur].addr = sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].func_addr +
+                        sm[i].stack_maps[j].offset;
+      sites[cur].fbp_offset =
+        sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].stack_size -
+        fp_offset(b->arch);
       sites[cur].num_live = sm[i].stack_maps[j].locations->num;
       sites[cur].live_offset = loc_num;
       memcpy(&locs[loc_num], &sm[i].stack_maps[j].locations->record,

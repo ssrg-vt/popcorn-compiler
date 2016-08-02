@@ -89,24 +89,6 @@ bool StackInfo::runOnModule(Module &M)
       if(inst) allocas.insert(inst);
     }
 
-    /*
-     * Put a stackmap at the beginning of the function to capture arguments. This
-     * should *always* have an ID of 0.
-     */
-    live = liveVals.getLiveIn(&entry);
-    sortedLive.clear();
-    for(const Value *val : *live) sortedLive.insert(val);
-    delete live;
-
-    std::vector<Value *> funcArgs(2);
-    funcArgs[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-    funcArgs[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-    for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
-      funcArgs.push_back((Value *)*v);
-    IRBuilder<> funcArgBuilder(&*entry.getFirstInsertionPt());
-    funcArgBuilder.CreateCall(this->SMFunc, ArrayRef<Value *>(funcArgs));
-    this->numInstrumented++;
-
     /* Find call sites in the function. */
     for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
     {

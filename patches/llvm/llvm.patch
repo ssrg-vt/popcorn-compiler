@@ -361,7 +361,7 @@
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-08-02 11:41:35.694592585 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-08-02 12:30:18.198566122 -0400
 @@ -14,12 +14,15 @@
  
  #include "RegAllocBase.h"
@@ -378,7 +378,7 @@
  #include "llvm/CodeGen/VirtRegMap.h"
  #include "llvm/Target/TargetRegisterInfo.h"
  #ifndef NDEBUG
-@@ -153,3 +156,275 @@
+@@ -153,3 +156,273 @@
      }
    }
  }
@@ -480,11 +480,9 @@
 +        MI != MIE;
 +        MI++) {
 +      if(MI->getOpcode() == TargetOpcode::STACKMAP) {
++        // Find the stackmap IR instruction
 +        assert(MI->getOperand(0).isImm() && "Invalid stackmap ID");
 +        int64_t ID = MI->getOperand(0).getImm();
-+        if(ID == 0) continue;
-+
-+        // Find the stackmap IR instruction
 +        const BasicBlock *BB = MI->getParent()->getBasicBlock();
 +        const CallInst *SMIR = nullptr;
 +        for(auto I = BB->begin(), IE = BB->end(); I != IE; I++)
@@ -761,7 +759,7 @@
    MachineBlockFrequencyInfo &MBFI =
      getAnalysis<MachineBlockFrequencyInfo>();
 --- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-08-01 18:37:32.867148959 -0400
++++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-08-02 12:26:30.050568188 -0400
 @@ -13,6 +13,7 @@
  #include "llvm/CodeGen/MachineFunction.h"
  #include "llvm/CodeGen/MachineInstr.h"
@@ -874,7 +872,7 @@
 +        dbgs() << "Stackmap " << ID << ": ";
 +        OpVal->printAsOperand(dbgs());
 +        dbgs() << ": in stack slot " << SS << "\n";
-+      ); 
++      );
 +      int64_t Offset = MFI->getObjectOffset(SS) + 16; // RA + old FBP
 +
 +      Locs.emplace_back(StackMaps::Location::Indirect, valSize,
@@ -907,7 +905,7 @@
 +    }
 +
 +    // Can't find the spilled location, so follow the normal register path
-+    if(AP.MF->isCallerSaved(MOI->getReg()) && ID != 0) {
++    if(AP.MF->isCallerSaved(MOI->getReg())) {
 +      DEBUG(
 +        dbgs() << "WARNING: ";
 +        OpVal->printAsOperand(dbgs());
