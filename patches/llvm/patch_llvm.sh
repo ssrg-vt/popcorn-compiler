@@ -12,9 +12,10 @@ lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 lib/CodeGen/MachineFunction.cpp
 lib/CodeGen/RegAllocBase.cpp
 lib/CodeGen/RegAllocBase.h
-lib/CodeGen/RegisterCoalescer.cpp
-lib/CodeGen/SelectionDAG/FastISel.cpp
-lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+lib/CodeGen/RegAllocBasic.cpp
+lib/CodeGen/RegAllocFast.cpp
+lib/CodeGen/RegAllocGreedy.cpp
+lib/CodeGen/RegAllocPBQP.cpp
 lib/CodeGen/StackMaps.cpp
 lib/CodeGen/StackSlotColoring.cpp
 lib/Target/AArch64/AArch64AsmPrinter.cpp
