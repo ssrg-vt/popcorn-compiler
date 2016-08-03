@@ -2,6 +2,7 @@
 #include <set>
 #include <vector>
 #include "llvm/Pass.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Type.h"
@@ -35,6 +36,7 @@ StackInfo::~StackInfo() {}
 void StackInfo::getAnalysisUsage(AnalysisUsage &AU) const
 {
   AU.addRequired<LiveValues>();
+  AU.addRequired<DominatorTreeWrapperPass>();
   AU.setPreservesCFG();
 }
 
@@ -66,6 +68,7 @@ bool StackInfo::runOnModule(Module &M)
     DEBUG(errs() << "StackInfo: entering function " << f->getName() << "\n\r");
 
     LiveValues &liveVals = getAnalysis<LiveValues>(*f);
+    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
     std::set<const Value *>::const_iterator v, ve;
 
     /*
@@ -109,7 +112,7 @@ bool StackInfo::runOnModule(Module &M)
           sortedLive.clear();
           for(const Value *val : *live) sortedLive.insert(val);
           for(const AllocaInst *val : allocas)
-            if(sortedLive.find(val) == sortedLive.end())
+            if(DT.dominates(val, CI))
               sortedLive.insert(val);
           delete live;
 
