@@ -14,6 +14,9 @@ endif
 ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG
 endif
+ifneq ($(findstring timing,$(type)),)
+CFLAGS     += -D_TIME_REWRITE
+endif
 CFLAGS_ARM := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_X86 := $(CFLAGS) -target x86_64-linux-gnu
 

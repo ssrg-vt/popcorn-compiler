@@ -1,13 +1,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 #include <sys/syscall.h>
 #include <pthread.h>
 #include <stack_transform.h>
 #include <sys/prctl.h>
 #include "migrate.h"
 
-#include <assert.h>
+#ifdef _TIME_REWRITE
+#include <time.h>
+#endif
 
 /* Architecture-specific macros for migrating between architectures. */
 #ifdef __aarch64__
@@ -208,18 +211,31 @@ static void __migrate_shim_internal(void (*callback)(void *),
     {
       struct regset_aarch64 regs_aarch64;
       struct regset_x86_64 regs_x86_64;
+#ifdef _TIME_REWRITE
+      struct timespec start, end;
+      unsigned long start_ns, end_ns;
+#endif
       cpu_set_t cpus;
 
       data.callback = callback;
       data.callback_data = callback_data;
       *pthread_migrate_args() = &data;
       cpus = select_arch();
+#ifdef _TIME_REWRITE
+      clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
       if(REWRITE_STACK)
       {
+#ifdef _TIME_REWRITE
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
+        end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
+        printf("Stack transformation time: %ldns\n", end_ns - start_ns);
+#endif
         SAVE_REGSET;
         MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus,
                 (void *)__migrate_shim_internal);
-        assert(-1 && "Couldn't migrate!");
+        assert(0 && "Couldn't migrate!");
       }
     }
   }
