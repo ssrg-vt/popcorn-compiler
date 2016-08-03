@@ -136,13 +136,13 @@ def runBinary(binary, binaryArgs, outfile, siteEnv):
 											 env=siteEnv, \
 											 stdout=PIPE, \
 											 stderr=STDOUT)
-
+	stdout = p.communicate()[0]
 	if outfile:
-		fp.write(p.stdout.read().decode("utf-8"))
+		fp.write(stdout.decode("utf-8", "replace"))
 		fp.write("\n---- end execution ----\n\n")
 		fp.close()
 	else:
-		print(p.stdout.read().decode("utf-8"))
+		print(stdout.decode("utf-8", "replace"))
 		print("---- end execution ----\n")
 
 # Note: doesn't make sense to only migrate from aarch64 -> x86-64, application
@@ -187,7 +187,7 @@ def doLinearCheck(binary, binaryArgs, outfile, sites, bothOnly, x86Only):
 		if not bothOnly:
 			runWithX86Migrating(binary, binaryArgs, outfile, function, sites[function])
 		if not x86Only:
-			runWithBothMigrating(binary, binaryArgs, outfile, function, sites[function], function, sites[site])
+			runWithBothMigrating(binary, binaryArgs, outfile, function, sites[function], function, sites[function])
 
 def doRandomCheck(binary, binaryArgs, outfile, sites, numChecks):
 	print("Not yet implemented")
