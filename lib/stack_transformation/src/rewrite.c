@@ -286,7 +286,12 @@ static rewrite_context init_src_context(st_handle handle,
   // correct register info
   ACT(ctx).regs->set_pc(ACT(ctx).regs, get_func_start_addr(ACT(ctx).function));
   if(!get_site_by_addr(handle, ACT(ctx).regs->pc(ACT(ctx).regs), &ACT(ctx).site))
-    ASSERT(false, "could not get function argument information\n");
+  {
+    // Note: in the migration shim we may not have a stackmap marking function
+    // entry, so bootstrap with an empty one
+    ACT(ctx).site = EMPTY_CALL_SITE;
+    ACT(ctx).site.addr = (uint64_t)ACT(ctx).regs->pc(ACT(ctx).regs);
+  }
 
   ASSERT(ctx->stack, "invalid stack pointer\n");
   ASSERT(ACT(ctx).function, "could not get starting function information\n");
@@ -321,7 +326,12 @@ static rewrite_context init_dest_context(st_handle handle,
   ACT(ctx).regs->set_pc(ACT(ctx).regs, pc);
   ACT(ctx).function = get_func_by_pc(handle, pc);
   if(!get_site_by_addr(handle, pc, &ACT(ctx).site))
-    ASSERT(false, "could not get function argument information\n");
+  {
+    // Note: in the migration shim we may not have a stackmap marking function
+    // entry, so bootstrap with an empty one
+    ACT(ctx).site = EMPTY_CALL_SITE;
+    ACT(ctx).site.addr = (uint64_t)pc;
+  }
   ctx->regs = regset;
   ctx->stack_base = sp_base;
   ctx->handle = handle;
