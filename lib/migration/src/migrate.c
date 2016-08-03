@@ -7,6 +7,8 @@
 #include <sys/prctl.h>
 #include "migrate.h"
 
+#include <assert.h>
+
 /* Architecture-specific macros for migrating between architectures. */
 #ifdef __aarch64__
 # include <arch/aarch64/migrate.h>
@@ -215,7 +217,9 @@ static void __migrate_shim_internal(void (*callback)(void *),
       if(REWRITE_STACK)
       {
         SAVE_REGSET;
-        MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus, (void *)migrate_shim);
+        MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus,
+                (void *)__migrate_shim_internal);
+        assert(-1 && "Couldn't migrate!");
       }
     }
   }
