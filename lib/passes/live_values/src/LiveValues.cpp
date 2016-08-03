@@ -168,7 +168,7 @@ bool LiveValues::includeVal(const llvm::Value *val) const
     return false;
   else if((IntTy = dyn_cast<IntegerType>(val->getType())))
   {
-    if(IntTy->getBitWidth() == 1 || IntTy->getBitWidth() == 8)
+    if(IntTy->getBitWidth() == 1)
       return false;
   }
   return true;

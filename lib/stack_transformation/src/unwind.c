@@ -10,18 +10,6 @@
 #include "query.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-// File-local API & definitions
-///////////////////////////////////////////////////////////////////////////////
-
-/*
- * Process & return the value indicated by the rule returned by libdwarf.
- */
-static bool process_rule(rewrite_context ctx,
-                         Dwarf_Regtable_Entry3* rule,
-                         bool is_cfa,
-                         Dwarf_Unsigned* retval);
-
-///////////////////////////////////////////////////////////////////////////////
 // Stack unwinding
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -42,7 +30,7 @@ void read_unwind_rules(rewrite_context ctx)
 {
   size_t num_regs;
   void* pc;
-  Dwarf_Unsigned cfa;
+  value cfa_loc;
   Dwarf_Addr row_pc;
   Dwarf_Cie cie;
   Dwarf_Fde fde;
@@ -66,16 +54,13 @@ void read_unwind_rules(rewrite_context ctx)
                                             &row_pc,
                                             &err),
            "dwarf_get_fde_info_for_all_regs3");
-  if(process_rule(ctx, &ACT(ctx).rules.rt3_cfa_rule, true, &cfa))
-    ACT(ctx).cfa = (void*)cfa;
-  else
-  {
-    // TODO is it possible for the CFA to be the same as the previous frame?
-    ASSERT(false, "could not calculate CFA\n");
-    ACT(ctx).cfa = NULL;
-  }
+  cfa_loc = get_stored_loc(ctx, &ACT(ctx), &ACT(ctx).rules.rt3_cfa_rule, true);
+  ASSERT(cfa_loc.is_valid, "could not calculate CFA\n");
+  ASSERT(cfa_loc.type == CONSTANT, "unhandled CFA location type\n");
+  ACT(ctx).cfa = cfa_loc.addr;
 
   ST_INFO("Read frame unwinding info (CFA = %p)\n", ACT(ctx).cfa);
+
   TIMER_FG_STOP(read_unwind_rules);
 }
 
@@ -96,11 +81,15 @@ func_info first_frame(st_handle handle, void* pc)
 void pop_frame(rewrite_context ctx)
 {
   size_t i, num_callee_saved;
-  uint64_t* saved_idx, cur;
+  uint64_t cur_idx;
+  const uint16_t* saved_idx;
+  const uint16_t* saved_size;
+  void* src_addr;
+  value saved_val;
   dwarf_reg reg;
-  Dwarf_Unsigned val;
 
   TIMER_FG_START(pop_frame);
+
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
   /* Initialize next activation's regset */
@@ -109,16 +98,31 @@ void pop_frame(rewrite_context ctx)
   /* Apply rules to unwind to previous frame */
   num_callee_saved = ctx->handle->props->num_callee_saved;
   saved_idx = ctx->handle->props->callee_saved;
+  saved_size = ctx->handle->props->callee_save_size;
   for(i = 0; i < num_callee_saved; i++)
   {
-    cur = saved_idx[i];
-    if(process_rule(ctx, &ACT(ctx).rules.rt3_rules[cur], false, &val))
+    cur_idx = saved_idx[i];
+    saved_val = get_stored_loc(ctx,
+                               &ACT(ctx),
+                               &ACT(ctx).rules.rt3_rules[cur_idx],
+                               false);
+    if(saved_val.is_valid)
     {
-      // TODO what if reg is an extended register?
-      reg = OP_REG(cur);
-      NEXT_ACT(ctx).regs->set_reg(NEXT_ACT(ctx).regs, reg, val);
-      ST_INFO("Callee-saved: %lu\n", cur);
-      bitmap_set(ACT(ctx).callee_saved, cur);
+      ST_INFO("Callee-saved: %lu\n", cur_idx);
+
+      switch(saved_val.type)
+      {
+      case ADDRESS: src_addr = saved_val.addr; break;
+      case REGISTER: src_addr = ACT(ctx).regs->reg(ACT(ctx).regs, saved_val.reg); break;
+      case CONSTANT: src_addr = &saved_val.cnst; break;
+      default: ASSERT(false, "invalid value\n"); src_addr = NULL; break;
+      }
+
+      reg = OP_REG(cur_idx);
+      memcpy(NEXT_ACT(ctx).regs->reg(NEXT_ACT(ctx).regs, reg),
+             src_addr,
+             saved_size[i]);
+      bitmap_set(ACT(ctx).callee_saved, cur_idx);
     }
   }
 
@@ -129,7 +133,7 @@ void pop_frame(rewrite_context ctx)
    */
   if(NEXT_ACT(ctx).regs->has_ra_reg)
     NEXT_ACT(ctx).regs->set_pc(NEXT_ACT(ctx).regs,
-                               (void*)NEXT_ACT(ctx).regs->ra_reg(NEXT_ACT(ctx).regs));
+                               NEXT_ACT(ctx).regs->ra_reg(NEXT_ACT(ctx).regs));
   ST_INFO("Return address: %p\n", NEXT_ACT(ctx).regs->pc(NEXT_ACT(ctx).regs));
 
   /*
@@ -149,18 +153,16 @@ void pop_frame(rewrite_context ctx)
  * Process unwinding rule to get the saved location for the register (or the
  * constant value).
  */
-value_loc get_stored_loc(rewrite_context ctx,
-                         activation* act,
-                         Dwarf_Regtable_Entry3* rule,
-                         bool is_cfa)
+value get_stored_loc(rewrite_context ctx,
+                     activation* act,
+                     Dwarf_Regtable_Entry3* rule,
+                     bool is_cfa)
 {
-  value_loc loc = {
+  value loc = {
     .is_valid = true,
-    .num_bytes = 8,
-    .type = ADDRESS,
-    .addr = 0
+    .act = ctx->act,
+    .addr = NULL
   };
-  value val;
   dwarf_reg reg;
   Dwarf_Locdesc* loc_desc;
   Dwarf_Signed loc_len;
@@ -178,71 +180,79 @@ value_loc get_stored_loc(rewrite_context ctx,
       {
         if(is_cfa)
         {
+          // Note: we assume that this is a 64-bit register
+          ASSERT(rule->dw_regnum != DW_FRAME_CFA_COL3,
+                 "invalid register for CFA calculation\n");
           reg = OP_REG(rule->dw_regnum);
+          ASSERT(ctx->handle->props->reg_size(reg) == sizeof(uint64_t),
+                 "invalid register size for CFA calculation\n");
           loc.type = CONSTANT;
-          // Note: we assume that this is not an extended register
-          loc.val = act->regs->reg(act->regs, reg) +
-                    (Dwarf_Signed)rule->dw_offset_or_block_len;
+          loc.cnst = *(uint64_t*)act->regs->reg(act->regs, reg) +
+                     (Dwarf_Signed)rule->dw_offset_or_block_len;
+          loc.num_bytes = sizeof(uint64_t);
         }
         else
-          loc.addr = (Dwarf_Addr)act->cfa +
-                     (Dwarf_Signed)rule->dw_offset_or_block_len;
+        {
+          ASSERT(rule->dw_regnum == DW_FRAME_CFA_COL3,
+                 "invalid register for callee-saved storage offset\n");
+          loc.type = ADDRESS;
+          loc.addr = act->cfa + (Dwarf_Signed)rule->dw_offset_or_block_len;
+          loc.num_bytes = ctx->handle->ptr_size;
+        }
       }
       else
       {
+        ASSERT(rule->dw_regnum != DW_FRAME_CFA_COL3,
+               "invalid register for storing callee-saved register\n");
         loc.type = REGISTER;
         loc.reg = OP_REG(rule->dw_regnum);
+        loc.num_bytes = ctx->handle->props->reg_size(loc.reg);
       }
       break;
     case DW_EXPR_VAL_OFFSET:
-      // Note: the libdwarf documentation is a little ambiguous -- it doesn't
-      // say if this value type can encode the register(R) rule, i.e. is
-      // dw_offset_relevant != 0 always true?
-      if(rule->dw_offset_relevant)
-      {
-        loc.type = CONSTANT;
-        loc.val = (Dwarf_Addr)act->cfa + (Dwarf_Signed)rule->dw_offset_or_block_len;
-      }
-      else
-      {
-        loc.type = REGISTER;
-        loc.reg = OP_REG(rule->dw_regnum);
-      }
+      loc.type = CONSTANT;
+      loc.addr = act->cfa + (Dwarf_Signed)rule->dw_offset_or_block_len;
+      loc.num_bytes = sizeof(uint64_t);
       break;
     case DW_EXPR_EXPRESSION:
       DWARF_OK(dwarf_loclist_from_expr_b(ctx->handle->dbg,
                                          rule->dw_block_ptr,
                                          rule->dw_offset_or_block_len,
-                                         sizeof(Dwarf_Addr), /* Assumed to be 8 bytes */
+                                         ctx->handle->ptr_size,
                                          sizeof(Dwarf_Off), /* Assumed to be 8 bytes */
                                          4, /* CU version = 4 per DWARF4 standard */
                                          &loc_desc,
                                          &loc_len, /* Should always be set to 1 */
                                          &err), "dwarf_loclist_from_expr_b");
+      ASSERT(loc_len == 1, "invalid location description from expression\n");
 
-      // This should never be a register (i.e. val.is_addr should always be
-      // true) because the register rule is handled by previous cases.
-      val = get_val_from_desc(ctx, loc_desc);
-      ASSERT(val.is_valid, "could not evaluate expression for unwind rule\n");
-      loc.addr = (Dwarf_Addr)val.addr;
+      // Note: this should always be an address because the register rule is
+      // handled by previous cases and the constant rule is handled below
+      loc = get_val_from_desc(ctx, loc_desc);
+      ASSERT(loc.is_valid, "could not evaluate expression for unwind rule\n");
+      ASSERT(loc.type == ADDRESS, "invalid location for callee-saved register\n");
+      dwarf_dealloc(ctx->handle->dbg, loc_desc->ld_s, DW_DLA_LOC_BLOCK);
+      dwarf_dealloc(ctx->handle->dbg, loc_desc, DW_DLA_LOCDESC);
       break;
     case DW_EXPR_VAL_EXPRESSION:
       DWARF_OK(dwarf_loclist_from_expr_b(ctx->handle->dbg,
                                          rule->dw_block_ptr,
                                          rule->dw_offset_or_block_len,
-                                         sizeof(Dwarf_Addr), /* Assumed to be 8 bytes */
+                                         ctx->handle->ptr_size,
                                          sizeof(Dwarf_Off), /* Assumed to be 8 bytes */
                                          4, /* CU version = 4 per DWARF4 standard */
                                          &loc_desc,
                                          &loc_len, /* Should always be set to 1 */
                                          &err), "dwarf_loclist_from_expr_b");
+      ASSERT(loc_len == 1, "invalid location description from expression\n");
 
-      // This should never be a register (i.e. val.is_addr should always be
-      // true) because the register rule is handled by previous cases.
-      val = get_val_from_desc(ctx, loc_desc);
-      ASSERT(val.is_valid, "could not evaluate expression for unwind rule\n");
-      loc.type = CONSTANT;
-      loc.val = (Dwarf_Addr)val.addr;
+      // Note: this should always be a constant because the register rule is
+      // handled by previous cases and the address rule is handle above
+      loc = get_val_from_desc(ctx, loc_desc);
+      ASSERT(loc.is_valid, "could not evaluate expression for unwind rule\n");
+      ASSERT(loc.type == CONSTANT, "invalid value for callee-saved register\n");
+      dwarf_dealloc(ctx->handle->dbg, loc_desc->ld_s, DW_DLA_LOC_BLOCK);
+      dwarf_dealloc(ctx->handle->dbg, loc_desc, DW_DLA_LOCDESC);
       break;
     default:
       ASSERT(false, "cannot process unwind rule\n");
@@ -279,33 +289,5 @@ void free_activation(st_handle handle, activation* act)
 #else
     free_func_info(handle, act->function);
 #endif
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// File-local API (implementation)
-///////////////////////////////////////////////////////////////////////////////
-
-static bool process_rule(rewrite_context ctx,
-                         Dwarf_Regtable_Entry3* rule,
-                         bool is_cfa,
-                         Dwarf_Unsigned* retval)
-{
-  value_loc loc;
-
-  ASSERT(rule && retval, "invalid arguments to process_rule()\n");
-
-  loc = get_stored_loc(ctx, &ACT(ctx), rule, is_cfa);
-  if(loc.is_valid)
-  {
-    switch(loc.type)
-    {
-    case ADDRESS: *retval = *(Dwarf_Unsigned*)loc.addr; break;
-    case REGISTER: *retval = ACT(ctx).regs->reg(ACT(ctx).regs, loc.reg); break;
-    case CONSTANT: *retval = loc.val; break;
-    default: ASSERT(false, "invalid value location\n"); break;
-    }
-    return true;
-  }
-  else return false;
 }
 

@@ -35,8 +35,8 @@ void read_unwind_rules(rewrite_context ctx);
  *
  * @param handle a stack transformation handle
  * @param pc a program counter
- * @return the first function's information handle if the first frame, or NULL
- *         otherwise
+ * @return the first function's information handle if PC is in the first frame,
+ *         or NULL otherwise
  */
 func_info first_frame(st_handle handle, void* pc);
 
@@ -56,10 +56,10 @@ void pop_frame(rewrite_context ctx);
  * @param is_cfa is the rule for the CFA?
  * @return the location of the saved register
  */
-value_loc get_stored_loc(rewrite_context ctx,
-                         activation* act,
-                         Dwarf_Regtable_Entry3* rule,
-                         bool is_cfa);
+value get_stored_loc(rewrite_context ctx,
+                     activation* act,
+                     Dwarf_Regtable_Entry3* rule,
+                     bool is_cfa);
 
 /*
  * Free the information describing the specified stack activation.

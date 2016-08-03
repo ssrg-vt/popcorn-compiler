@@ -1,24 +1,18 @@
-/**
- * \file
- * \brief API to use the bomp library
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
 
 #include <time.h>
 
+#include "popcorn_threadpool.h"
 #include "libbomp.h"
 #include "omp.h"
-#include "backend.h"
+#include "kmp.h"
+#include "spin.h"
 
-unsigned bomp_num_threads = 1;
+unsigned bomp_num_threads =1;
 bool bomp_dynamic_behaviour = false;
 bool bomp_nested_behaviour = false;
 
@@ -29,30 +23,105 @@ bomp_custom_init(void)
     backend_init();
 }
 
-void /*__attribute__((destructor))*/
+void __attribute__((destructor))
 bomp_custom_exit(void)
 {
     backend_exit();
 }
 
-void omp_set_num_threads(int num_threads)
-{
-    if ( num_threads > 0 ) {
+void omp_kill_thread(int pop, int corn, void* args){
+  int newThreadNum = args;
+  int me_id = omp_get_thread_num();
+  DEBUGPOOL("##TH:%d####entered %s NEWNum:%d.\n",omp_get_thread_num(),__func__,newThreadNum);
+  if( omp_get_thread_num() < newThreadNum ){
+        DEBUGPOOL(">>%s: Thread Legal %d New Max %d\n",__func__,omp_get_thread_num(),newThreadNum);
+        return;
+  }else{
+        DEBUGPOOL(">>>%s: new NumThreads:%d . Terminating myself! ID:%d\n",__func__,newThreadNum,omp_get_thread_num());
+        int ret;
+        pthread_exit(&ret);
+  }
+}//end omp_kill_thread
+
+void omp_set_num_threads(int num_threads){
+  int numThreadsNow = omp_get_num_threads();
+  DEBUGPOOL("Currently %d threads exist in pool. New num requested: %d\n",numThreadsNow,num_threads);
+
+  //Add more threads to "pool"
+  if(numThreadsNow < num_threads){
+    //Figure out how many additional needed
+    int diff = num_threads - numThreadsNow;
+    int i;
+
+    //Need to re-ALLOC pool->threads
+    pool->threads = realloc(pool->threads, sizeof(pthread_t) * num_threads);
+
+    for(i = 0 ; i < diff ; i++){
+        perThread_info* my_data = malloc(sizeof(perThread_info));
+        my_data->pool = pool;
+        my_data->thread_id = numThreadsNow + i;
+        DEBUGPOOL("%s: loop %d new Thread_ID:%d\n",__func__,i,numThreadsNow+i);
+
+        if(pthread_create(&(pool->threads[numThreadsNow+i-1]), NULL, threadpool_run, (void*)my_data) != 0){
+          //something messed up
+          DEBUGPOOL("%s: Creation of thread %d failed!\n",__func__,numThreadsNow+i);
+	  threadpool_destroy(pool);
+          return;
+        }
+        //success and increment counters
+        DEBUGPOOL("%s: Started ADDITIONAL worker thread %d!\n", __func__, numThreadsNow + i );
+        pool->thread_count++;
+        pool->started++;
+    }//end for
+        //Update Global bomp_num_threads
+	bomp_barrier_updateMax(pool->global_barrier,num_threads);
         bomp_num_threads = num_threads;
-//	g_thread_numbers = num_threads; //chris
-    }
-}
+        return;
+  }
+
+  //Essentially get rid of "threadpool" (only Master remains)
+  if( num_threads == 1){
+    //Update Global bomp_num_threads
+    bomp_barrier_updateMax(pool->global_barrier,num_threads);
+    bomp_num_threads = num_threads;
+    return;
+  }
+
+  //Less number of threads now
+  if(numThreadsNow > num_threads){
+    //Figure out how many need to be shutdown
+    int diff = numThreadsNow - num_threads;
+    int i,res;
+
+    //Update Global bomp_num_threads
+    bomp_barrier_updateMax(pool->global_barrier,num_threads);
+    bomp_num_threads = num_threads;
+    DEBUGPOOL("Less NOW bomp_num_threads:%d\n",bomp_num_threads);
+    return;
+  }//end else if
+
+  //No Changes
+  if(num_threads == numThreadsNow){
+    DEBUGPOOL("<<<<<<< No Changes to Num Threads >>>>>>>\n");
+    return;
+  }
+
+  //INVALID 
+  if(num_threads < 0){
+    DEBUGPOOL("%s: Please use number greater than 0! Input:%d\n",__func__,num_threads);
+    DEBUGPOOL("Num Threads being used: %d\n",numThreadsNow);
+    return;
+  }
+}//END omp_set_num_threads
 
 int omp_get_num_threads(void)
 {
-//    return g_thread_numbers;
-	return bomp_num_threads; ///CHRIS
+  return bomp_num_threads;
 }
 
 int omp_get_max_threads(void)
 {
-//    return 1;
-	return bomp_num_threads; //CHRIS
+  return bomp_num_threads;
 }
 
 int omp_get_thread_num(void)

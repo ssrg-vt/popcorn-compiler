@@ -26,7 +26,6 @@
 node_t(type) { \
   node_t(type)* prev; \
   node_t(type)* next; \
-  int act; \
   type data; \
 };
 
@@ -131,20 +130,16 @@ static inline node_t(type)* list_prev_##type(const node_t(type)* node) \
  * Append a new node to the end of the list with the specified values.
  *
  * @param list a list object
- * @param act the activation in the destination stack for the fixup
  * @param name the name of the variable that needs the fixup (debug only)
  * @return node the newly created node
  */
-#define list_add( type, list, act, data ) list_add_##type(list, act, data)
+#define list_add( type, list, data ) list_add_##type(list, data)
 #define _LIST_ADD( type ) \
-static inline node_t(type)* list_add_##type(list_t(type)* list, \
-                                            size_t act, \
-                                            type data) \
+static inline node_t(type)* list_add_##type(list_t(type)* list, type data) \
 { \
   node_t(type)* node; \
   ASSERT(list, "invalid arguments to list_add()\n"); \
   node = (node_t(type)*)malloc(sizeof(node_t(type))); \
-  node->act = act; \
   node->data = data; \
   node->next = NULL; \
 \
@@ -241,12 +236,12 @@ _LIST_NEXT(type) \
 _LIST_PREV(type) \
 _LIST_ADD(type) \
 _LIST_REMOVE(type) \
-_LIST_CLEAR(type) \
+_LIST_CLEAR(type)
 
 /* A fixup record. */
 typedef struct fixup {
   void* src_addr;
-  value_loc dest_loc;
+  value dest_loc;
 } fixup;
 
 /* Variable location & values. */

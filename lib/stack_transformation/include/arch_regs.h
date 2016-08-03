@@ -1,7 +1,5 @@
 /*
- * Shim to include architecture-specific class definitions, only needed when
- * constructing new register set objects, as the functions can then be accessed
- * via the newly created object's function pointers.
+ * Shim to include architecture-specific class definitions.
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 1/26/2016

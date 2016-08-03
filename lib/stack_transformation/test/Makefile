@@ -11,8 +11,9 @@ ARM64_LIBGCC := /usr/local/gcc-cross/aarch64-linux-gnu/4.8
 
 # Compiler
 CC     := clang
-CFLAGS := -O3 -Wall -Wno-unused-variable -g -gdwarf-aranges \
-          -nostdinc -nostdlib -static -I../../utils -DPOSIX
+CFLAGS := -O0 -Wall -Wno-unused-variable -g -gdwarf-aranges \
+          -nostdinc -nostdlib -static -I../../utils -DPOSIX \
+          -mllvm -optimize-regalloc
 LIBS   := /lib/crt1.o \
           /lib/libc.a \
           /lib/libstack-transform.a \
@@ -21,7 +22,7 @@ LIBS   := /lib/crt1.o \
           /lib/libc.a
 
 OPT       := opt
-OPT_FLAGS := -load $(POPCORN)/lib/libStackInfo.so -stack-info
+OPT_FLAGS := -O3 -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 # Post-processing
 POST_PROCESS_TOOL := $(POPCORN)/bin/gen-stackinfo

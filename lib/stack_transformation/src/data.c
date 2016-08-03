@@ -1,6 +1,6 @@
 /*
  * APIs for accessing frame-specific data, i.e. arguments/local variables/live
- * values, return address, and saved frame pointer location.
+ * values, return address, and saved frame pointer.
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 11/12/2015
@@ -13,7 +13,7 @@
 #include "util.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-// DWARF stack handling
+// DWARF stack machine
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
@@ -137,34 +137,11 @@ STACK_BIN_OP( ne, Signed, != )
 // File-local API
 ///////////////////////////////////////////////////////////////////////////////
 
-/* Extract a value from the location described by LOC in CTX. */
-static value get_value_from_loc(rewrite_context ctx, value_loc loc);
-
 /*
- * Evaluate a DWARF expression list defined by LOC and return a location
- * describing how to read/write the value.
+ * Get pointer to the stack save slot or the register in the outer-most
+ * activation in which a callee-saved register is saved.
  */
-static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc);
-
-#if _LIVE_VALS == STACKMAP_LIVE_VALS
-
-/*
- * Evaluate a stack map location record and return a location describing how to
- * read/write the value.
- */
-static value_loc eval_expr_sm(rewrite_context ctx, const variable* var);
-
-#endif /* STACKMAP_LIVE_VALS */
-
-/*
- * Forward-propagate value in callee-saved register (in the specified
- * activation) to the stack frame in which it is saved, or the appropriate
- * register of the outer-most activation.
- */
-static void propagate_reg(rewrite_context ctx,
-                          value val,
-                          dwarf_reg reg,
-                          int act);
+static void* callee_saved_loc(rewrite_context ctx, value val);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Data access
@@ -173,167 +150,150 @@ static void propagate_reg(rewrite_context ctx,
 #if _LIVE_VALS == DWARF_LIVE_VALS
 
 /*
- * Read VAR's value from HANDLE.
+ * Get VAR's value from CTX.
  */
 value get_var_val(rewrite_context ctx, const variable* var)
 {
   void* pc;
   Dwarf_Locdesc* loc;
-  value val = { .is_valid = false, .is_addr = false, .val = 0 };
 
   ST_INFO("Getting variable '%s' (%s)\n",
           var->name, arch_name(ctx->handle->arch));
 
   pc = ACT(ctx).regs->pc(ACT(ctx).regs);
   loc = get_loc_desc(var->num_locs, var->locs, pc);
-  if(loc) val = get_val_from_desc(ctx, loc);
-  else ST_INFO("Value not defined @ PC=%p\n", pc);
-
-  return val;
-}
-
-/*
- * Read VAR's location from HANDLE.
- */
-value_loc get_var_loc(rewrite_context ctx, const variable* var)
-{
-  void* pc;
-  Dwarf_Locdesc* loc;
-  value_loc val_loc = {.is_valid = false};
-
-  ST_INFO("Getting variable location for '%s' (%s)\n",
-          var->name, arch_name(ctx->handle->arch));
-
-  pc = ACT(ctx).regs->pc(ACT(ctx).regs);
-  loc = get_loc_desc(var->num_locs, var->locs, pc);
-  if(loc) val_loc = eval_expr_desc(ctx, loc);
-  else ST_INFO("Value's location not defined @ PC=%p\n", pc);
-
-  return val_loc;
-}
-
-/*
- * Put VAL into VAR in HANDLE.
- */
-value_loc put_var_val(rewrite_context ctx, const variable* var, value val)
-{
-  void* pc;
-  Dwarf_Locdesc* loc;
-  value_loc val_loc = {.is_valid = false};
-
-  ST_INFO("Putting variable '%s' (%s)\n",
-          var->name, arch_name(ctx->handle->arch));
-
-  pc = ACT(ctx).regs->pc(ACT(ctx).regs);
-  loc = get_loc_desc(var->num_locs, var->locs, pc);
-  if(loc) val_loc = put_val_from_desc(ctx, loc, var->size, val);
-  else ST_INFO("Value not defined @ PC=%p\n", pc);
-
-  return val_loc;
+  if(loc) return get_val_from_desc(ctx, loc);
+  else
+  {
+    ST_INFO("Variable not defined @ PC=%p\n", pc);
+    return VAL_NOT_DEFINED;
+  }
 }
 
 #else /* STACKMAP_LIVE_VALS */
 
 /*
- * Read VAR's value from HANDLE.
+ * Evaluate stack map location record VAR and return a value location.
  */
 value get_var_val(rewrite_context ctx, const variable* var)
 {
-  value_loc loc = eval_expr_sm(ctx, var);
-  return get_value_from_loc(ctx, loc);
-}
+  dwarf_reg reg;
+  value loc = {
+    .is_valid = true,
+    .act = ctx->act,
+    .num_bytes = var->size,
+  };
 
-/*
- * Read VAR's location from HANDLE.
- */
-value_loc get_var_loc(rewrite_context ctx, const variable* var)
-{
-  return eval_expr_sm(ctx, var);
-}
+  TIMER_FG_START(eval_location);
 
-/*
- * Put VAL into VAR in HANDLE.
- */
-value_loc put_var_val(rewrite_context ctx, const variable* var, value val)
-{
-  value_loc loc = eval_expr_sm(ctx, var);
-  put_val_loc(ctx, val, var->size, loc, ctx->act);
+  switch(var->type)
+  {
+  case SM_REGISTER: // Value is in register
+    loc.type = REGISTER;
+    loc.reg = OP_REG(var->regnum);
+    break;
+  // Note: these value types are fundamentally different, but their values are
+  // generated in an identical manner
+  case SM_DIRECT: // Value is allocated on stack
+  case SM_INDIRECT: // Value is in register, but spilled to the stack
+    loc.type = ADDRESS;
+    reg = OP_REG(var->regnum);
+    loc.addr = *(void**)ACT(ctx).regs->reg(ACT(ctx).regs, reg) +
+               var->offset_or_constant;
+    break;
+  case SM_CONSTANT: // Value is constant
+    loc.type = CONSTANT;
+    loc.cnst = var->offset_or_constant;
+    break;
+  case SM_CONST_IDX:
+    ASSERT(false, "constants in constant pool not supported\n");
+    loc.is_valid = false;
+    break;
+  }
+
+  TIMER_FG_STOP(eval_location);
+
   return loc;
 }
 
 #endif /* STACKMAP_LIVE_VALS */
 
 /*
- * Put VAL at LOC in ACT from CTX.
+ * Put SRC_VAL from SRC at DEST_VAL from DEST.
  */
-void put_val_loc(rewrite_context ctx,
-                 value val,
-                 uint64_t size,
-                 value_loc loc,
-                 size_t act)
+void put_val(rewrite_context src,
+             value src_val,
+             rewrite_context dest,
+             value dest_val,
+             uint64_t size)
 {
-  ASSERT(val.is_valid && loc.is_valid, "invalid value and/or location\n");
+  void* src_addr, *dest_addr, *callee_addr = NULL;
+
+  ASSERT(src_val.is_valid && dest_val.is_valid, "invalid value(s)\n");
 
   TIMER_FG_START(put_val);
 
-  if(val.is_addr) ST_INFO("Value stored at %p (size=%lu)\n", val.addr, size);
-  else ST_INFO("Value: %ld / %lu / %lx\n", val.val, val.val, val.val);
+  ST_INFO("Putting value (size=%lu)\n", size);
 
-  switch(loc.type)
+  switch(src_val.type)
   {
   case ADDRESS:
-    ST_INFO("Storing to %p\n", (void*)loc.addr);
-    if(val.is_addr) memcpy((void*)loc.addr, val.addr, size);
-    else *(uint64_t*)loc.addr = val.val;
+    ST_INFO("Source value at %p\n", src_val.addr);
+    src_addr = src_val.addr;
+    break;
+  case REGISTER:
+    ST_INFO("Source value in register %llu\n", RAW_REG(src_val.reg));
+    src_addr = src->acts[src_val.act].regs->reg(src->acts[src_val.act].regs,
+                                                src_val.reg);
+    break;
+  case CONSTANT:
+    ST_INFO("Source value: %ld / %lu / %lx\n",
+            src_val.cnst, src_val.cnst, src_val.cnst);
+    src_addr = &src_val.cnst;
+    break;
+  default:
+    ASSERT(false, "unknown value location type\n");
+    break;
+  }
+
+  switch(dest_val.type)
+  {
+  case ADDRESS:
+    ST_INFO("Destination value at %p\n", dest_val.addr);
+    dest_addr = dest_val.addr;
     break;
   case REGISTER:
     // Note: we're copying callee-saved registers into the current frame's
     // register set & the activation where it is saved (or is still alive).
     // This is cheap & should support both eager & on-demand rewriting.
-    if(ctx->act > 0 && ctx->handle->props->is_callee_saved(loc.reg))
-      propagate_reg(ctx, val, loc.reg, act);
-    ctx->acts[act].regs->set_reg(ctx->acts[act].regs, loc.reg, val.val);
+    ST_INFO("Destination value in register %llu\n", RAW_REG(dest_val.reg));
+    dest_addr = dest->acts[dest_val.act].regs->reg(dest->acts[dest_val.act].regs,
+                                                   dest_val.reg);
+    if(dest->handle->props->is_callee_saved(dest_val.reg))
+      callee_addr = callee_saved_loc(dest, dest_val);
     break;
-  case CONSTANT: break; // Nothing to do, value is not stored anywhere
-  default: ASSERT(false, "unknown value location type\n"); break;
+  case CONSTANT:
+    dest_addr = &dest_val.cnst;
+    break;
+  default:
+    ASSERT(false, "unknown value location type\n");
+    break;
   }
+
+  memcpy(dest_addr, src_addr, size);
+  if(callee_addr) memcpy(callee_addr, src_addr, size);
 
   TIMER_FG_STOP(put_val);
 }
 
 /*
- * Using the specified handle, apply the operations described in a location
- * description to extract a value from the current execution state.
- */
-value get_val_from_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
-{
-  value_loc val_loc = eval_expr_desc(ctx, loc);
-  return get_value_from_loc(ctx, val_loc);
-}
-
-/*
- * Using the specified handle, apply the operations described in a location
- * description to obtain a value's location and store the specified value
- * there.
- */
-value_loc put_val_from_desc(rewrite_context ctx,
-                            const Dwarf_Locdesc* loc,
-                            uint64_t size,
-                            value val)
-{
-  value_loc val_loc = eval_expr_desc(ctx, loc);
-  ASSERT(val_loc.is_valid, "unhandled DWARF location expression\n");
-  put_val_loc(ctx, val, size, val_loc, ctx->act);
-  return val_loc;
-}
-
-/*
- * Set return address of outermost frame in HANDLE to RETADDR.
+ * Set return address of current frame in CTX to RETADDR.
  */
 void set_return_address(rewrite_context ctx, void* retaddr)
 {
   size_t rule;
-  value_loc loc;
+  value loc;
+  void* retaddr_slot;
 #ifdef _DEBUG
   const char* op_name;
 #endif
@@ -347,23 +307,24 @@ void set_return_address(rewrite_context ctx, void* retaddr)
     switch(loc.type)
     {
     case ADDRESS:
-      ST_INFO("Saving return address %p to %p\n", retaddr, (void*)loc.addr);
-
-      *(uint64_t*)loc.addr = (uint64_t)retaddr;
+      ST_INFO("Saving return address %p to %p\n", retaddr, loc.addr);
+      retaddr_slot = loc.addr;
       break;
     case REGISTER:
 #ifdef _DEBUG
       dwarf_get_OP_name(loc.reg.reg, &op_name);
       ST_INFO("Saving return address %p to register %s\n", retaddr, op_name);
 #endif
-      ACT(ctx).regs->set_reg(ACT(ctx).regs, loc.reg, (uint64_t)retaddr);
+      retaddr_slot = ACT(ctx).regs->reg(ACT(ctx).regs, loc.reg);
       break;
     default:
       ASSERT(false, "invalid return address location\n");
+      retaddr_slot = NULL;
       break;
     }
+    *(void**)retaddr_slot = retaddr;
   }
-  else ACT(ctx).regs->set_ra_reg(ACT(ctx).regs, (uint64_t)retaddr);
+  else ACT(ctx).regs->set_ra_reg(ACT(ctx).regs, retaddr);
 }
 
 /*
@@ -372,7 +333,7 @@ void set_return_address(rewrite_context ctx, void* retaddr)
 uint64_t* get_savedfbp_loc(rewrite_context ctx)
 {
   size_t rule;
-  value_loc loc;
+  value loc;
 
   rule = ACT(ctx).regs->fbp_rule;
   loc = get_stored_loc(ctx, &ACT(ctx), &ACT(ctx).rules.rt3_rules[rule], false);
@@ -381,67 +342,25 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx)
   return (uint64_t*)loc.addr;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// File-local API (implementation)
-///////////////////////////////////////////////////////////////////////////////
-
-/*
- * Extract a value from the location described by LOC in CTX.
- */
-static value get_value_from_loc(rewrite_context ctx, value_loc val_loc)
-{
-  value ret = { .is_valid = true, .is_addr = false, .val = 0 };
-
-  TIMER_FG_START(get_val);
-
-  ASSERT(val_loc.is_valid, "unhandled DWARF location expression\n");
-  ret.is_addr = (val_loc.type == ADDRESS ? true : false);
-  switch(val_loc.type)
-  {
-  case ADDRESS: ret.addr = (void*)val_loc.addr; break;
-  case REGISTER: ret.val = ACT(ctx).regs->reg(ACT(ctx).regs, val_loc.reg); break;
-  case CONSTANT: ret.val = val_loc.val; break;
-  default: ST_ERR(1, "unknown value location type\n"); break;
-  }
-
-  if(val_loc.type == REGISTER || val_loc.type == CONSTANT)
-  {
-    /* TODO use this when switching to a byte-mask
-    for(i = 0; i < sizeof(ret.val); i++)
-      if(!(val_loc.num_bytes & (1 << i)))
-        ret.val &= ~(0xff << (i * 8));*/
-    switch(val_loc.num_bytes)
-    {
-    case 0: ret.val &= 0; break;
-    case 1: ret.val &= 0xff; break;
-    case 2: ret.val &= 0xffff; break;
-    case 3: ret.val &= 0xffffff; break;
-    case 4: ret.val &= 0xffffffff; break;
-    case 5: ret.val &= 0xffffffffff; break;
-    case 6: ret.val &= 0xffffffffffff; break;
-    case 7: ret.val &= 0xffffffffffffff; break;
-    case 8: ret.val &= 0xffffffffffffffff; break;
-    default: break;
-    }
-  }
-
-  TIMER_FG_STOP(get_val);
-
-  return ret;
-}
-
 /*
  * Evaluate an expression list contained in LOC using CTX.
  */
-static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
+value get_val_from_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
 {
   bool finished = false;
+  uint64_t regval;
   Dwarf_Unsigned i;
   dwarf_reg reg;
   stack stack;
-  value_loc ret;
+  value ret = {
+    .is_valid = true,
+    .act = ctx->act,
+    .type = ADDRESS,
+    .num_bytes = ctx->handle->ptr_size,
+    .addr = NULL
+  };
 #if _LIVE_VALS == DWARF_LIVE_VALS
-  value_loc fb;
+  value fb;
 #endif
 #ifdef _DEBUG
   const char* op_name;
@@ -451,14 +370,9 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
 
   TIMER_FG_START(eval_location);
 
-  ret.is_valid = true;
-  ret.type = ADDRESS;
-  ret.num_bytes = 8;
-  ret.addr = 0;
-  stack_init(&stack);
-
   ST_INFO("Number of ops: %d\n", loc->ld_cents);
 
+  stack_init(&stack);
   for(i = 0; i < loc->ld_cents && !finished; i++)
   {
 #ifdef _DEBUG
@@ -468,80 +382,79 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
     switch(loc->ld_s[i].lr_atom)
     {
     /* Literals */
-    case DW_OP_lit0: ret.addr = stack_push(&stack, 0); break;
-    case DW_OP_lit1: ret.addr = stack_push(&stack, 1); break;
-    case DW_OP_lit2: ret.addr = stack_push(&stack, 2); break;
-    case DW_OP_lit3: ret.addr = stack_push(&stack, 3); break;
-    case DW_OP_lit4: ret.addr = stack_push(&stack, 4); break;
-    case DW_OP_lit5: ret.addr = stack_push(&stack, 5); break;
-    case DW_OP_lit6: ret.addr = stack_push(&stack, 6); break;
-    case DW_OP_lit7: ret.addr = stack_push(&stack, 7); break;
-    case DW_OP_lit8: ret.addr = stack_push(&stack, 8); break;
-    case DW_OP_lit9: ret.addr = stack_push(&stack, 9); break;
-    case DW_OP_lit10: ret.addr = stack_push(&stack, 10); break;
-    case DW_OP_lit11: ret.addr = stack_push(&stack, 11); break;
-    case DW_OP_lit12: ret.addr = stack_push(&stack, 12); break;
-    case DW_OP_lit13: ret.addr = stack_push(&stack, 13); break;
-    case DW_OP_lit14: ret.addr = stack_push(&stack, 14); break;
-    case DW_OP_lit15: ret.addr = stack_push(&stack, 15); break;
-    case DW_OP_lit16: ret.addr = stack_push(&stack, 16); break;
-    case DW_OP_lit17: ret.addr = stack_push(&stack, 17); break;
-    case DW_OP_lit18: ret.addr = stack_push(&stack, 18); break;
-    case DW_OP_lit19: ret.addr = stack_push(&stack, 19); break;
-    case DW_OP_lit20: ret.addr = stack_push(&stack, 20); break;
-    case DW_OP_lit21: ret.addr = stack_push(&stack, 21); break;
-    case DW_OP_lit22: ret.addr = stack_push(&stack, 22); break;
-    case DW_OP_lit23: ret.addr = stack_push(&stack, 23); break;
-    case DW_OP_lit24: ret.addr = stack_push(&stack, 24); break;
-    case DW_OP_lit25: ret.addr = stack_push(&stack, 25); break;
-    case DW_OP_lit26: ret.addr = stack_push(&stack, 26); break;
-    case DW_OP_lit27: ret.addr = stack_push(&stack, 27); break;
-    case DW_OP_lit28: ret.addr = stack_push(&stack, 28); break;
-    case DW_OP_lit29: ret.addr = stack_push(&stack, 29); break;
-    case DW_OP_lit30: ret.addr = stack_push(&stack, 30); break;
-    case DW_OP_lit31: ret.addr = stack_push(&stack, 31); break;
+    case DW_OP_lit0: ret.addr = (void*)stack_push(&stack, 0); break;
+    case DW_OP_lit1: ret.addr = (void*)stack_push(&stack, 1); break;
+    case DW_OP_lit2: ret.addr = (void*)stack_push(&stack, 2); break;
+    case DW_OP_lit3: ret.addr = (void*)stack_push(&stack, 3); break;
+    case DW_OP_lit4: ret.addr = (void*)stack_push(&stack, 4); break;
+    case DW_OP_lit5: ret.addr = (void*)stack_push(&stack, 5); break;
+    case DW_OP_lit6: ret.addr = (void*)stack_push(&stack, 6); break;
+    case DW_OP_lit7: ret.addr = (void*)stack_push(&stack, 7); break;
+    case DW_OP_lit8: ret.addr = (void*)stack_push(&stack, 8); break;
+    case DW_OP_lit9: ret.addr = (void*)stack_push(&stack, 9); break;
+    case DW_OP_lit10: ret.addr = (void*)stack_push(&stack, 10); break;
+    case DW_OP_lit11: ret.addr = (void*)stack_push(&stack, 11); break;
+    case DW_OP_lit12: ret.addr = (void*)stack_push(&stack, 12); break;
+    case DW_OP_lit13: ret.addr = (void*)stack_push(&stack, 13); break;
+    case DW_OP_lit14: ret.addr = (void*)stack_push(&stack, 14); break;
+    case DW_OP_lit15: ret.addr = (void*)stack_push(&stack, 15); break;
+    case DW_OP_lit16: ret.addr = (void*)stack_push(&stack, 16); break;
+    case DW_OP_lit17: ret.addr = (void*)stack_push(&stack, 17); break;
+    case DW_OP_lit18: ret.addr = (void*)stack_push(&stack, 18); break;
+    case DW_OP_lit19: ret.addr = (void*)stack_push(&stack, 19); break;
+    case DW_OP_lit20: ret.addr = (void*)stack_push(&stack, 20); break;
+    case DW_OP_lit21: ret.addr = (void*)stack_push(&stack, 21); break;
+    case DW_OP_lit22: ret.addr = (void*)stack_push(&stack, 22); break;
+    case DW_OP_lit23: ret.addr = (void*)stack_push(&stack, 23); break;
+    case DW_OP_lit24: ret.addr = (void*)stack_push(&stack, 24); break;
+    case DW_OP_lit25: ret.addr = (void*)stack_push(&stack, 25); break;
+    case DW_OP_lit26: ret.addr = (void*)stack_push(&stack, 26); break;
+    case DW_OP_lit27: ret.addr = (void*)stack_push(&stack, 27); break;
+    case DW_OP_lit28: ret.addr = (void*)stack_push(&stack, 28); break;
+    case DW_OP_lit29: ret.addr = (void*)stack_push(&stack, 29); break;
+    case DW_OP_lit30: ret.addr = (void*)stack_push(&stack, 30); break;
+    case DW_OP_lit31: ret.addr = (void*)stack_push(&stack, 31); break;
 
-    case DW_OP_addr: ret.addr = stack_push(&stack, loc->ld_s[i].lr_number); break;
+    case DW_OP_addr: ret.addr = (void*)stack_push(&stack, loc->ld_s[i].lr_number); break;
 
     case DW_OP_const1u:
-      ret.addr = stack_push(&stack, (uint8_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (uint8_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const2u:
-      ret.addr = stack_push(&stack, (uint16_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (uint16_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const4u:
-      ret.addr = stack_push(&stack, (uint32_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (uint32_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const8u:
-      ret.addr = stack_push(&stack, (uint64_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (uint64_t)loc->ld_s[i].lr_number); break;
 
     case DW_OP_const1s:
-      ret.addr = stack_push(&stack, (int8_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (int8_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const2s:
-      ret.addr = stack_push(&stack, (int16_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (int16_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const4s:
-      ret.addr = stack_push(&stack, (int32_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (int32_t)loc->ld_s[i].lr_number); break;
     case DW_OP_const8s:
-      ret.addr = stack_push(&stack, (int64_t)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (int64_t)loc->ld_s[i].lr_number); break;
 
     case DW_OP_constu:
-      ret.addr = stack_push(&stack, loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, loc->ld_s[i].lr_number); break;
     case DW_OP_consts:
-      ret.addr = stack_push(&stack, (Dwarf_Signed)loc->ld_s[i].lr_number); break;
+      ret.addr = (void*)stack_push(&stack, (Dwarf_Signed)loc->ld_s[i].lr_number); break;
 
     /* Register-based addressing */
-    // Note: we assume that these are not extended registers, i.e. we aren't
-    // doing offsets from non-64-bit registers
+    // Note: we assume that we're doing offsets from 64-bit registers
 #if _LIVE_VALS == DWARF_LIVE_VALS
     case DW_OP_fbreg:
       TIMER_FG_STOP(eval_location);
-      fb = eval_expr_desc(ctx, get_func_fb(ACT(ctx).function));
+      fb = get_val_from_desc(ctx, get_func_fb(ACT(ctx).function));
       TIMER_FG_START(eval_location);
       switch(fb.type)
       {
       case ADDRESS:
-        ret.addr = stack_push(&stack, fb.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+        ret.addr = (void*)stack_push(&stack, fb.cnst + ((Dwarf_Signed)loc->ld_s[i].lr_number));
         break;
       case REGISTER:
-        ret.addr = stack_push(&stack, ACT(ctx).regs->reg(ACT(ctx).regs, fb.reg) +
-                                      (Dwarf_Signed)loc->ld_s[i].lr_number);
+        regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, fb.reg);
+        ret.addr = (void*)stack_push(&stack, regval + (Dwarf_Signed)loc->ld_s[i].lr_number);
         break;
       default:
         ST_ERR(1, "invalid value location type (must be address or register\n");
@@ -550,201 +463,203 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
 #endif /* DWARF_LIVE_VALS */
     case DW_OP_breg0:
       reg.reg = DW_OP_reg0;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg1:
       reg.reg = DW_OP_reg1;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg2:
       reg.reg = DW_OP_reg2;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg3:
       reg.reg = DW_OP_reg3;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg4:
       reg.reg = DW_OP_reg4;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg5:
       reg.reg = DW_OP_reg5;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg6:
       reg.reg = DW_OP_reg6;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg7:
       reg.reg = DW_OP_reg7;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg8:
       reg.reg = DW_OP_reg8;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg9:
       reg.reg = DW_OP_reg9;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg10:
       reg.reg = DW_OP_reg10;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg11:
       reg.reg = DW_OP_reg11;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg12:
       reg.reg = DW_OP_reg12;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg13:
       reg.reg = DW_OP_reg13;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg14:
       reg.reg = DW_OP_reg14;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg15:
       reg.reg = DW_OP_reg15;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg16:
       reg.reg = DW_OP_reg16;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg17:
       reg.reg = DW_OP_reg17;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg18:
       reg.reg = DW_OP_reg18;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg19:
       reg.reg = DW_OP_reg19;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg20:
       reg.reg = DW_OP_reg20;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg21:
       reg.reg = DW_OP_reg21;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg22:
       reg.reg = DW_OP_reg22;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg23:
       reg.reg = DW_OP_reg23;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg24:
       reg.reg = DW_OP_reg24;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg25:
       reg.reg = DW_OP_reg25;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg26:
       reg.reg = DW_OP_reg26;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg27:
       reg.reg = DW_OP_reg27;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg28:
       reg.reg = DW_OP_reg28;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg29:
       reg.reg = DW_OP_reg29;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg30:
       reg.reg = DW_OP_reg30;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_breg31:
       reg.reg = DW_OP_reg31;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number));
       break;
     case DW_OP_bregx:
       reg.reg = DW_OP_regx;
       reg.x = loc->ld_s[i].lr_number;
-      ret.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg);
-      ret.addr = stack_push(&stack, ret.addr + ((Dwarf_Signed)loc->ld_s[i].lr_number2));
+      regval = *(uint64_t*)ACT(ctx).regs->reg(ACT(ctx).regs, reg);
+      ret.addr = (void*)stack_push(&stack, regval + ((Dwarf_Signed)loc->ld_s[i].lr_number2));
       break;
 
     case DW_OP_piece: ret.num_bytes = (uint8_t)loc->ld_s[i].lr_number; break;
 
     /* Stack operations */
-    case DW_OP_dup: ret.addr = stack_dup(&stack); break;
-    case DW_OP_drop: ret.addr = stack_drop(&stack); break;
-    case DW_OP_pick: ret.addr = stack_pick(&stack, loc->ld_s[i].lr_number); break;
-    case DW_OP_over: ret.addr = stack_over(&stack); break;
-    case DW_OP_swap: ret.addr = stack_swap(&stack); break;
-    case DW_OP_rot: ret.addr = stack_rot(&stack); break;
+    case DW_OP_dup: ret.addr = (void*)stack_dup(&stack); break;
+    case DW_OP_drop: ret.addr = (void*)stack_drop(&stack); break;
+    case DW_OP_pick: ret.addr = (void*)stack_pick(&stack, loc->ld_s[i].lr_number); break;
+    case DW_OP_over: ret.addr = (void*)stack_over(&stack); break;
+    case DW_OP_swap: ret.addr = (void*)stack_swap(&stack); break;
+    case DW_OP_rot: ret.addr = (void*)stack_rot(&stack); break;
     case DW_OP_deref:
-      ret.addr = stack_drop(&stack);
-      ret.addr = stack_push(&stack, *(Dwarf_Unsigned*)ret.addr);
+      ret.addr = (void*)stack_drop(&stack);
+      ret.addr = (void*)stack_push(&stack, *(Dwarf_Unsigned*)ret.addr);
       break;
     case DW_OP_deref_size:
-      ret.addr = *(Dwarf_Unsigned*)stack_drop(&stack);
+      // Note: manipulating value using cnst field to avoid type issues when
+      // masking void*
+      ret.cnst = *(Dwarf_Unsigned*)stack_drop(&stack);
       switch(loc->ld_s[i].lr_number)
       {
-      case 0: ret.addr = 0; break;
-      case 1: ret.addr &= 0xff; break;
-      case 2: ret.addr &= 0xffff; break;
-      case 3: ret.addr &= 0xffffff; break;
-      case 4: ret.addr &= 0xffffffff; break;
-      case 5: ret.addr &= 0xffffffffff; break;
-      case 6: ret.addr &= 0xffffffffffff; break;
-      case 7: ret.addr &= 0xffffffffffffff; break;
+      case 0: ret.cnst = 0; break;
+      case 1: ret.cnst &= 0xff; break;
+      case 2: ret.cnst &= 0xffff; break;
+      case 3: ret.cnst &= 0xffffff; break;
+      case 4: ret.cnst &= 0xffffffff; break;
+      case 5: ret.cnst &= 0xffffffffff; break;
+      case 6: ret.cnst &= 0xffffffffffff; break;
+      case 7: ret.cnst &= 0xffffffffffffff; break;
       case 8: break;
       default:
         ST_WARN("error in DWARF operation encoding\n"); break;
       }
-      ret.addr = stack_push(&stack, ret.addr);
+      ret.addr = (void*)stack_push(&stack, ret.cnst);
       break;
 
     case DW_OP_xderef: // TODO
@@ -767,33 +682,33 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
       break;
 
     case DW_OP_call_frame_cfa:
-      ret.addr = stack_push(&stack, (Dwarf_Unsigned)ACT(ctx).cfa); break;
+      ret.addr = (void*)stack_push(&stack, (Dwarf_Unsigned)ACT(ctx).cfa); break;
 
     /* Arithmetic and logical operations */
-    case DW_OP_abs: ret.addr = stack_abs(&stack); break;
-    case DW_OP_and: ret.addr = stack_and(&stack); break;
-    case DW_OP_div: ret.addr = stack_div(&stack); break;
-    case DW_OP_minus: ret.addr = stack_minus(&stack); break;
-    case DW_OP_mod: ret.addr = stack_mod(&stack); break;
-    case DW_OP_mul: ret.addr = stack_mul(&stack); break;
-    case DW_OP_neg: ret.addr = stack_neg(&stack); break;
-    case DW_OP_not: ret.addr = stack_not(&stack); break;
-    case DW_OP_or: ret.addr = stack_or(&stack); break;
-    case DW_OP_plus: ret.addr = stack_plus(&stack); break;
+    case DW_OP_abs: ret.addr = (void*)stack_abs(&stack); break;
+    case DW_OP_and: ret.addr = (void*)stack_and(&stack); break;
+    case DW_OP_div: ret.addr = (void*)stack_div(&stack); break;
+    case DW_OP_minus: ret.addr = (void*)stack_minus(&stack); break;
+    case DW_OP_mod: ret.addr = (void*)stack_mod(&stack); break;
+    case DW_OP_mul: ret.addr = (void*)stack_mul(&stack); break;
+    case DW_OP_neg: ret.addr = (void*)stack_neg(&stack); break;
+    case DW_OP_not: ret.addr = (void*)stack_not(&stack); break;
+    case DW_OP_or: ret.addr = (void*)stack_or(&stack); break;
+    case DW_OP_plus: ret.addr = (void*)stack_plus(&stack); break;
     case DW_OP_plus_uconst:
-      ret.addr = stack_drop(&stack);
-      ret.addr = stack_push(&stack, ret.addr + loc->ld_s[i].lr_number);
+      ret.addr = (void*)stack_drop(&stack);
+      ret.addr = (void*)stack_push(&stack, ret.cnst + loc->ld_s[i].lr_number);
       break;
-    case DW_OP_shl: ret.addr = stack_shl(&stack); break;
-    case DW_OP_shr: ret.addr = stack_shr(&stack); break;
-    case DW_OP_shra: ret.addr = stack_shra(&stack); break;
-    case DW_OP_xor: ret.addr = stack_xor(&stack); break;
-    case DW_OP_le: ret.addr = stack_le(&stack); break;
-    case DW_OP_ge: ret.addr = stack_ge(&stack); break;
-    case DW_OP_eq: ret.addr = stack_eq(&stack); break;
-    case DW_OP_lt: ret.addr = stack_lt(&stack); break;
-    case DW_OP_gt: ret.addr = stack_gt(&stack); break;
-    case DW_OP_ne: ret.addr = stack_ne(&stack); break;
+    case DW_OP_shl: ret.addr = (void*)stack_shl(&stack); break;
+    case DW_OP_shr: ret.addr = (void*)stack_shr(&stack); break;
+    case DW_OP_shra: ret.addr = (void*)stack_shra(&stack); break;
+    case DW_OP_xor: ret.addr = (void*)stack_xor(&stack); break;
+    case DW_OP_le: ret.addr = (void*)stack_le(&stack); break;
+    case DW_OP_ge: ret.addr = (void*)stack_ge(&stack); break;
+    case DW_OP_eq: ret.addr = (void*)stack_eq(&stack); break;
+    case DW_OP_lt: ret.addr = (void*)stack_lt(&stack); break;
+    case DW_OP_gt: ret.addr = (void*)stack_gt(&stack); break;
+    case DW_OP_ne: ret.addr = (void*)stack_ne(&stack); break;
 
     case DW_OP_skip: // TODO
     case DW_OP_bra: // TODO
@@ -831,26 +746,22 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
     case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
     case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
     case DW_OP_regx:
-      reg.reg = loc->ld_s[i].lr_atom;
-      reg.x = loc->ld_s[i].lr_number;
-      if(ctx->handle->props->is_ext_reg(reg))
-        ret.addr = (Dwarf_Unsigned)ACT(ctx).regs->ext_reg(ACT(ctx).regs, reg);
-      else
-      {
-        ret.type = REGISTER;
-        ret.reg.reg = loc->ld_s[i].lr_atom;
-        ret.reg.x = loc->ld_s[i].lr_number;
-      }
+      ret.type = REGISTER;
+      ret.reg.reg = loc->ld_s[i].lr_atom;
+      ret.reg.x = loc->ld_s[i].lr_number;
+      ret.num_bytes = ctx->handle->props->reg_size(ret.reg);
       break;
 
     /* Implicit location descriptions */
     case DW_OP_implicit_value:
       ret.type = CONSTANT;
-      ret.val = loc->ld_s[i].lr_number;
+      ret.num_bytes = 8;
+      ret.cnst = loc->ld_s[i].lr_number;
       break;
     case DW_OP_stack_value:
       ret.type = CONSTANT;
-      ret.val = stack_drop(&stack);
+      ret.num_bytes = 8;
+      ret.cnst = stack_drop(&stack);
       break;
 
     default:
@@ -869,109 +780,44 @@ static value_loc eval_expr_desc(rewrite_context ctx, const Dwarf_Locdesc* loc)
   return ret;
 }
 
-#if _LIVE_VALS == STACKMAP_LIVE_VALS
+///////////////////////////////////////////////////////////////////////////////
+// File-local API (implementation)
+///////////////////////////////////////////////////////////////////////////////
 
-/*
- * Evaluate stack map location record VAR and return a value location.
- */
-static value_loc eval_expr_sm(rewrite_context ctx, const variable* var)
+static void* callee_saved_loc(rewrite_context ctx, value val)
 {
-  dwarf_reg reg;
-  value_loc loc = {
-    .is_valid = true,
-    .num_bytes = var->size,
-    .type = ADDRESS,
-    .addr = 0
-  };
-
-  TIMER_FG_START(eval_location);
-
-  switch(var->type)
-  {
-  case SM_REGISTER: // Value is in register
-    loc.num_bytes = var->size;
-    if(ctx->handle->props->is_ext_reg(OP_REG(var->regnum)))
-    {
-      loc.addr = (Dwarf_Unsigned)ACT(ctx).regs->ext_reg(ACT(ctx).regs,
-                                                        OP_REG(var->regnum));
-      ST_INFO("Value is in extended register %d\n", var->regnum);
-    }
-    else
-    {
-      loc.type = REGISTER;
-      loc.reg = OP_REG(var->regnum);
-      ST_INFO("Value is in register %d\n", var->regnum);
-    }
-    break;
-  case SM_DIRECT: // Value is allocated on stack
-    loc.num_bytes = ctx->handle->ptr_size;
-    reg = OP_REG(var->regnum);
-    loc.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg) +
-               var->offset_or_constant;
-    ST_INFO("Value is at %p\n", (void*)loc.addr);
-    break;
-  case SM_INDIRECT: // Value is in register, but spilled to the stack
-    loc.num_bytes = var->size;
-    reg = OP_REG(var->regnum);
-    loc.addr = ACT(ctx).regs->reg(ACT(ctx).regs, reg) +
-               var->offset_or_constant;
-    ST_INFO("Value is at %p\n", (void*)loc.addr);
-    break;
-  case SM_CONSTANT: // Value is constant
-    loc.num_bytes = sizeof(var->offset_or_constant);
-    loc.type = CONSTANT;
-    loc.val = var->offset_or_constant;
-    ST_INFO("Value is %lu\n", loc.val);
-    break;
-  case SM_CONST_IDX:
-    ASSERT(false, "constants in constant pool not supported\n");
-    loc.is_valid = false;
-    break;
-  }
-
-  TIMER_FG_STOP(eval_location);
-
-  return loc;
-}
-
-#endif /* STACKMAP_LIVE_VALS */
-
-static void propagate_reg(rewrite_context ctx,
-                          value val,
-                          dwarf_reg reg,
-                          int act)
-{
-  bool saved = false;
-  value_loc loc;
+  int act = val.act;
+  value loc;
 #ifdef _DEBUG
   const char* reg_name;
-  dwarf_get_OP_name(reg.reg, &reg_name);
+  dwarf_get_OP_name(val.reg.reg, &reg_name);
 #endif
 
-  ASSERT(val.is_valid, "cannot propagate invalid value\n");
-  ASSERT(act > 0, "cannot propagate value from outermost frame\n");
+  ASSERT(val.is_valid, "cannot get callee-saved location for invalid value\n");
+  ASSERT(val.type == REGISTER,
+         "cannot get callee-saved location for non-register value type\n");
 
+  /* Nothing to propagate from outermost frame */
+  if(act <= 0) return NULL;
+
+  /* Walk call chain to check if register has been saved. */
   for(act--; act >= 0; act--)
   {
-    if(bitmap_is_set(ctx->acts[act].callee_saved, RAW_REG(reg)))
+    if(bitmap_is_set(ctx->acts[act].callee_saved, RAW_REG(val.reg)))
     {
       loc = get_stored_loc(ctx,
                            &ctx->acts[act],
-                           &ctx->acts[act].rules.rt3_rules[RAW_REG(reg)],
+                           &ctx->acts[act].rules.rt3_rules[RAW_REG(val.reg)],
                            false);
       ASSERT(loc.type == ADDRESS, "invalid callee-saved slot\n");
-      *(uint64_t*)loc.addr = val.val;
       ST_INFO("Saving callee-saved register %s at %p (frame %d)\n",
-              reg_name, (void*)loc.addr, act);
-      saved = true;
-      break;
+              reg_name, loc.addr, act);
+      return loc.addr;
     }
   }
 
-  if(!saved)
-  {
-    ctx->acts[0].regs->set_reg(ctx->acts[0].regs, reg, val.val);
-    ST_INFO("Callee-saved register %s live in outer-most frame\n", reg_name);
-  }
+  /* Register is still live in outermost frame. */
+  ST_INFO("Callee-saved register %s live in outer-most frame\n", reg_name);
+  return ctx->acts[0].regs->reg(ctx->acts[0].regs, val.reg);
 }
 

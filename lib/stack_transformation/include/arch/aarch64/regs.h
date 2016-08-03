@@ -118,7 +118,7 @@ struct regset_aarch64
  * saved in memory.
  */
 #define GET_SP( var ) asm volatile("mov x15, sp; str x15, %0" : "=m" (var) : : "x15")
-#define SET_SP( var ) asm volatile("ldr x15, %0; mov sp, x15" : "=m" (var) : : "x15")
+#define SET_SP( var ) asm volatile("ldr x15, %0; mov sp, x15" : : "m" (var) : "x15")
 
 /*
  * The program counter also can't be read directly.  The assembler replaces
@@ -273,6 +273,42 @@ struct regset_aarch64
   GET_V31((regset_aarch64).v[31]); \
 }
 
+#define SET_FP_REGS_AARCH64( regset_aarch64 ) \
+{ \
+  SET_V0((regset_aarch64).v[0]); \
+  SET_V1((regset_aarch64).v[1]); \
+  SET_V2((regset_aarch64).v[2]); \
+  SET_V3((regset_aarch64).v[3]); \
+  SET_V4((regset_aarch64).v[4]); \
+  SET_V5((regset_aarch64).v[5]); \
+  SET_V6((regset_aarch64).v[6]); \
+  SET_V7((regset_aarch64).v[7]); \
+  SET_V8((regset_aarch64).v[8]); \
+  SET_V9((regset_aarch64).v[9]); \
+  SET_V10((regset_aarch64).v[10]); \
+  SET_V11((regset_aarch64).v[11]); \
+  SET_V12((regset_aarch64).v[12]); \
+  SET_V13((regset_aarch64).v[13]); \
+  SET_V14((regset_aarch64).v[14]); \
+  SET_V15((regset_aarch64).v[15]); \
+  SET_V16((regset_aarch64).v[16]); \
+  SET_V17((regset_aarch64).v[17]); \
+  SET_V18((regset_aarch64).v[18]); \
+  SET_V19((regset_aarch64).v[19]); \
+  SET_V20((regset_aarch64).v[20]); \
+  SET_V21((regset_aarch64).v[21]); \
+  SET_V22((regset_aarch64).v[22]); \
+  SET_V23((regset_aarch64).v[23]); \
+  SET_V24((regset_aarch64).v[24]); \
+  SET_V25((regset_aarch64).v[25]); \
+  SET_V26((regset_aarch64).v[26]); \
+  SET_V27((regset_aarch64).v[27]); \
+  SET_V28((regset_aarch64).v[28]); \
+  SET_V29((regset_aarch64).v[29]); \
+  SET_V30((regset_aarch64).v[30]); \
+  SET_V31((regset_aarch64).v[31]); \
+}
+
 /* Set all registers from a register set. */
 // Note: do not set PC, SP & x29 (FBP) as they require special handling
 #define SET_REGS_AARCH64( regset_aarch64 ) \
@@ -307,38 +343,7 @@ struct regset_aarch64
   SET_X27((regset_aarch64).x[27]); \
   SET_X28((regset_aarch64).x[28]); \
   SET_X30((regset_aarch64).x[30]); \
-  SET_V0((regset_aarch64).v[0]); \
-  SET_V1((regset_aarch64).v[1]); \
-  SET_V2((regset_aarch64).v[2]); \
-  SET_V3((regset_aarch64).v[3]); \
-  SET_V4((regset_aarch64).v[4]); \
-  SET_V5((regset_aarch64).v[5]); \
-  SET_V6((regset_aarch64).v[6]); \
-  SET_V7((regset_aarch64).v[7]); \
-  SET_V8((regset_aarch64).v[8]); \
-  SET_V9((regset_aarch64).v[9]); \
-  SET_V10((regset_aarch64).v[10]); \
-  SET_V11((regset_aarch64).v[11]); \
-  SET_V12((regset_aarch64).v[12]); \
-  SET_V13((regset_aarch64).v[13]); \
-  SET_V14((regset_aarch64).v[14]); \
-  SET_V15((regset_aarch64).v[15]); \
-  SET_V16((regset_aarch64).v[16]); \
-  SET_V17((regset_aarch64).v[17]); \
-  SET_V18((regset_aarch64).v[18]); \
-  SET_V19((regset_aarch64).v[19]); \
-  SET_V20((regset_aarch64).v[20]); \
-  SET_V21((regset_aarch64).v[21]); \
-  SET_V22((regset_aarch64).v[22]); \
-  SET_V23((regset_aarch64).v[23]); \
-  SET_V24((regset_aarch64).v[24]); \
-  SET_V25((regset_aarch64).v[25]); \
-  SET_V26((regset_aarch64).v[26]); \
-  SET_V27((regset_aarch64).v[27]); \
-  SET_V28((regset_aarch64).v[28]); \
-  SET_V29((regset_aarch64).v[29]); \
-  SET_V30((regset_aarch64).v[30]); \
-  SET_V31((regset_aarch64).v[31]); \
+  SET_FP_REGS_AARCH64(regset_aarch64); \
 }
 
 /* Get frame information. */

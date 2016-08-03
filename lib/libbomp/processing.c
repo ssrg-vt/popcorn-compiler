@@ -1,25 +1,22 @@
-/**
- * \file
- * \brief
- */
-
 /*
- * Copyright (c) 2007, 2008, 2009, ETH Zurich.
+ * Copyright (c) 2016 Virginia Tech,
+ * Author: bielsk1@vt.edu
  * All rights reserved.
- *
- * This file is distributed under the terms in the attached LICENSE file.
- * If you do not find this file, copies can be found by writing to:
- * ETH Zurich D-INFK, Haldeneggsteig 4, CH-8092 Zurich. Attn: Systems Group.
  */
 
 #include "libbomp.h"
 #include "backend.h"
+#include "linux_backend.c"
+#include "kmp.h"
 
 static int count = 0;
 volatile unsigned g_thread_numbers = 1;
-static struct bomp_thread_local_data **g_array_thread_local_data;
+struct bomp_thread_local_data **g_array_thread_local_data;
 
-static void bomp_set_tls(void *xdata)
+#define THREAD_OFFSET   0
+/* #define THREAD_OFFSET   12 */
+
+void bomp_set_tls(void *xdata)
 {
     struct bomp_thread_local_data *local;
     struct bomp_work *work_data = (struct bomp_work*)xdata;
@@ -33,46 +30,40 @@ static void bomp_set_tls(void *xdata)
     backend_set_tls(local);
 }
 
-static int bomp_thread_fn(void *xdata)
+int bomp_thread_fn(void *xdata)
 {
     struct bomp_work *work_data = xdata;
 
+    DEBUGPOOL("%s: start thread:%d\n",__func__,work_data->thread_id);
     backend_set_numa(work_data->thread_id);
+    DEBUGPOOL("bomp_thread_fn: 0x%lx\n",work_data->fn);
 
     bomp_set_tls(work_data);
     work_data->fn(work_data->data);
 
+    DEBUGPOOL("tid %d, finished work, entering barrier\n", omp_get_thread_num());
     /* Wait for the Barrier */
     bomp_barrier_wait(work_data->barrier);
     return 0;
 }
 
-#define THREAD_OFFSET   0
-/* #define THREAD_OFFSET   12 */
-
-void bomp_start_processing(void (*fn) (void *), void *data, unsigned nthreads)
-{
-    /* Create Threads and ask them to process the function specified */
-    /* Let them die as soon as they are done */
+void bomp_start_processing(void (*fn) (void *), void *data, unsigned nthreads){
     unsigned i;
-    struct bomp_work *xdata;
-    struct bomp_barrier *barrier;
-
     g_thread_numbers = nthreads;
 
+    /* Alllocate and initialize TLS!>!? (from bomp structures) */
+    struct bomp_work *generic_xdata, *xdata;
+//Data size should be the same for parallel regions
+//we are just passing pointers to omp regions and related omp args to the threads
+//    struct bomp_barrier *generic_barrier; 
+//do I have to make a new barrier for each parallel region?? I think so. Maybe.
+
     char *memory = calloc(1, nthreads * sizeof(struct bomp_thread_local_data *)
-                            + sizeof(struct bomp_barrier)
                             + nthreads * sizeof(struct bomp_work));
     assert(memory != NULL);
 
     g_array_thread_local_data = (struct bomp_thread_local_data **)memory;
     memory += nthreads * sizeof(struct bomp_thread_local_data *);
-
-
-    /* Create a barier for the work that will be carried out by the threads */
-    barrier = (struct bomp_barrier *)memory;
-    memory += sizeof(struct bomp_barrier);
-    bomp_barrier_init(barrier, nthreads);
 
     /* For main thread */
     xdata = (struct bomp_work * )memory;
@@ -81,20 +72,23 @@ void bomp_start_processing(void (*fn) (void *), void *data, unsigned nthreads)
     xdata->fn = fn;
     xdata->data = data;
     xdata->thread_id = 0;
-    xdata->barrier = barrier;
-    bomp_set_tls(xdata);
+    xdata->barrier = pool->global_barrier;
 
-    for (i = 1; i < nthreads; i++) {
-        xdata = (struct bomp_work *)memory;
+    //setting up master threads TLS
+    bomp_set_tls(xdata);
+  
+    for(i= 1 ; i < nthreads; i++){
+	xdata = (struct bomp_work *)memory;
         memory += sizeof(struct bomp_work);
 
         xdata->fn = fn;
         xdata->data = data;
         xdata->thread_id = i;
-        xdata->barrier = barrier;
+        xdata->barrier = pool->global_barrier;
 
-        /* Create threads */
-        backend_run_func_on(i + THREAD_OFFSET, bomp_thread_fn, xdata);
+	    DEBUGPOOL("%s: Adding task %p\n",__func__,bomp_thread_fn);
+	    threadpool_add( pool, bomp_thread_fn, xdata );
+	    DEBUGPOOL("%s: !!Success %d Adding task %p\n",__func__,i,bomp_thread_fn);
     }
 }
 
@@ -106,10 +100,12 @@ void bomp_end_processing(void)
 
     bomp_barrier_wait(g_array_thread_local_data[i]->work->barrier);
 
-    /* Clear the barrier created */
+    //  Clear the barrier created
     bomp_clear_barrier(g_array_thread_local_data[i]->work->barrier);
 
     // XXX: free(g_array_thread_local_data); why not? -AB
     g_array_thread_local_data = NULL;
     g_thread_numbers = 1;
+   
+    DEBUGPOOL("returning from:%s, tID:%d\n", __func__,  omp_get_thread_num());
 }

@@ -18,8 +18,14 @@ struct properties_t
   const bool sp_needs_align;
 
   /* Callee-saved registers, only need to check these for frame unwinding. */
-  size_t num_callee_saved;
-  uint64_t* callee_saved;
+  const size_t num_callee_saved;
+  const uint16_t* callee_saved;
+
+  /*
+   * Size of stored register contents -- the ABI may specify that only a subset
+   * of register contents are to be saved (e.g. FP regs on aarch64).
+   */
+  const uint16_t* callee_save_size;
 
   /////////////////////////////////////////////////////////////////////////////
   // Functions
@@ -31,8 +37,8 @@ struct properties_t
   /* Is the register callee-saved? */
   bool (*is_callee_saved)(dwarf_reg reg);
 
-  /* Is the register a non-standard-sized register? */
-  bool (*is_ext_reg)(dwarf_reg reg);
+  /* Size of a register in bytes. */
+  uint16_t (*reg_size)(dwarf_reg reg);
 };
 
 typedef struct properties_t* properties_t;
