@@ -91,7 +91,7 @@ POST_PROCESS := $(POPCORN)/bin/gen-stackinfo
 ##########
 
 IR_BUILD := ir
-IR       := $(addprefix ir/,$(SRC:.c=.bc))
+IR       := $(addprefix $(IR_BUILD)/,$(SRC:.c=.bc))
 
 ###########
 # AArch64 #

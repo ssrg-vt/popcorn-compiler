@@ -3,7 +3,7 @@
 ###############################################################################
 
 VER_MAJ := 0
-VER_MIN := 5
+VER_MIN := 6
 
 POPCORN := /usr/local/popcorn
 COMMON  := $(shell readlink -f ../../common/stack_transformation)
