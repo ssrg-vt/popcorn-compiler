@@ -22,7 +22,7 @@ fi
 
 POPCORN="/usr/local/popcorn"
 
-$POPCORN/bin/ld.gold -static --verbose \
+$POPCORN/bin/ld.gold -static \
  ${OUTPUT} ${INPUT} -z relro --hash-style=gnu --build-id -m elf_x86_64 \
  /usr/lib/gcc/x86_64-linux-gnu/4.8/libgcc.a \
  $POPCORN/x86_64/lib/crt1.o \

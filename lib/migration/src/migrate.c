@@ -22,11 +22,25 @@
 /* Returns a CPU set for architecture AR. */
 cpu_set_t arch_to_cpus(enum arch ar)
 {
+  int cpus_x86;
+  char s[512];
+  FILE *fd;
+
   cpu_set_t cpus;
   CPU_ZERO(&cpus);
   switch(ar) {
   case AARCH64: CPU_SET(0, &cpus); break;
-  case X86_64: CPU_SET(8, &cpus); break;
+  case X86_64:
+    fd = fopen("/proc/cpuinfo", "r");
+    if(fd)
+    {
+      cpus_x86 = 0;
+      while(fgets(s, 512, fd) != NULL)
+        if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
+          cpus_x86++;
+    }
+    else cpus_x86 = 8;
+    CPU_SET(cpus_x86, &cpus); break;
   default: break;
   }
   return cpus;
