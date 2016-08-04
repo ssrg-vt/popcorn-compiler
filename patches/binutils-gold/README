@@ -1,0 +1,9 @@
+ABOUT THIS PATCH
+
+This patch is for binutils Gold ld linker. Specifically it is for release v2.27
+
+TO APPLY THIS PATCH
+
+Untar binutils and run the following:
+
+patch < binutils-2.27-gold.patch

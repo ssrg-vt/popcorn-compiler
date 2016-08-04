@@ -1,7 +1,7 @@
-diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
---- ../../binutils-2.25.1/gold/aarch64.cc	2014-10-14 03:32:04.000000000 -0400
-+++ gold/aarch64.cc	2016-07-29 17:21:57.843529164 -0400
-@@ -44,6 +44,8 @@
+diff -Naur binutils-2.27_clean/gold/aarch64.cc binutils-2.27/gold/aarch64.cc
+--- binutils-2.27_clean/gold/aarch64.cc	2016-08-03 03:36:53.000000000 -0400
++++ binutils-2.27/gold/aarch64.cc	2016-08-04 15:31:05.663783662 -0400
+@@ -46,6 +46,8 @@
  #include "icf.h"
  #include "aarch64-reloc-property.h"
  
@@ -10,7 +10,7 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
  // The first three .got.plt entries are reserved.
  const int32_t AARCH64_GOTPLT_RESERVE_COUNT = 3;
  
-@@ -1888,10 +1890,33 @@
+@@ -5033,6 +5035,27 @@
  
      // Clear immediate fields.
      val &= ~dst_mask;
@@ -18,7 +18,6 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
 +    elfcpp::Swap<valsize, big_endian>::writeval(wv,
 +      static_cast<Valtype>(val | (immed << doffset)));
 +  }
-+
 +
 +  template<int valsize>
 +  static inline void
@@ -39,32 +38,24 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
      elfcpp::Swap<valsize, big_endian>::writeval(wv,
        static_cast<Valtype>(val | (immed << doffset)));
    }
- 
-+
-   // Update two parts of an instruction (pointed by view) with selected
-   // bits (immed1 and immed2).
-   // val = (val & ~dst_mask) | (immed1 << doffset1) | (immed2 << doffset2)
-@@ -2078,9 +2103,19 @@
-     // Calculate relocation.
-     Address x = s + addend;
- 
-+#ifdef X86_TLS
-+    x = -5424 + x - 16; //0x1530
-+
+@@ -5116,8 +5139,16 @@
+ 		const AArch64_reloc_property* reloc_property)
+   {
      // Select bits from X.
++#ifdef X86_TLS
 +    Address immed;
 +#else
      Address immed = reloc_property->select_x_value(x);
 +#endif
  
 +#ifdef X86_TLS
-+    if ( (static_cast<uint64_t>(x) >> 32) == 0 ) {
-+    	immed = reloc_property->select_x_value(x);
++    if((static_cast<uint64_t>(x) >> 32) == 0) {
++      immed = reloc_property->select_x_value(x);
 +#endif
      // Update view.
      const AArch64_reloc_property::Reloc_inst inst =
- 	reloc_property->reloc_inst();
-@@ -2091,11 +2126,27 @@
+       reloc_property->reloc_inst();
+@@ -5128,11 +5159,27 @@
      This::template update_view<valsize>(view, immed,
  					aarch64_howto[inst].doffset,
  					aarch64_howto[inst].dst_mask);
@@ -92,10 +83,20 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
 +#endif
    }
  
-   // Do address relative relocate. Update selected bits in text.
-@@ -2128,10 +2179,14 @@
- 					aarch64_howto[inst].doffset,
- 					aarch64_howto[inst].dst_mask);
+   // Construct a B insn. Note, although we group it here with other relocation
+@@ -5235,6 +5282,9 @@
+   {
+     // Calculate relocation.
+     Address x = s + addend;
++#ifdef X86_TLS
++    x = -5424 + x - 16; // 0x1530
++#endif
+     return This::template reloc_common<valsize>(view, x, reloc_property);
+   }
+ 
+@@ -5346,10 +5396,14 @@
+     // Update movnz instruction.
+     update_movnz(view, immed, is_movz);
  
 +#ifdef X86_TLS
 +    return This::STATUS_OKAY;
@@ -107,8 +108,8 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
 +#endif
    }
  
-   // Calculate PG(S+A) - PG(address), update adrp instruction.
-@@ -3851,14 +3906,24 @@
+   static inline bool
+@@ -7707,14 +7761,22 @@
    AArch64_address aligned_tcb_address =
        align_address(target->tcb_size(), tls_segment->maximum_alignment());
    const elfcpp::Elf_Xword addend = rela.get_r_addend();
@@ -123,9 +124,7 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
    // range [0, 2^32-1]
    if (!(size == 32 || (size == 64 && (static_cast<uint64_t>(x) >> 32) == 0)))
      {
-+#ifdef X86_TLS
-+
-+#else
++#ifndef X86_TLS
        gold_error(_("TLS variable referred by reloc %u is too far from TP."),
  		 r_type);
        return aarch64_reloc_funcs::STATUS_BAD_RELOC;
@@ -133,7 +132,7 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
      }
  
    Insntype* ip = reinterpret_cast<Insntype*>(view);
-@@ -3873,10 +3938,21 @@
+@@ -7729,10 +7791,21 @@
      }
    else if (r_type == elfcpp::R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC)
      {
@@ -154,8 +153,8 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
 +#endif
      }
    else
-     gold_assert(false);
-@@ -3945,9 +4021,19 @@
+     gold_unreachable();
+@@ -7801,9 +7874,19 @@
        break;
  
      case elfcpp::R_AARCH64_TLSDESC_LD64_LO12:
@@ -175,12 +174,12 @@ diff -Naur ../../binutils-2.25.1/gold/aarch64.cc gold/aarch64.cc
  
      default:
        gold_error(_("unsupported tlsdesc gd_to_le optimization on reloc %u"),
-diff -Naur ../../binutils-2.25.1/gold/mapfile.cc gold/mapfile.cc
---- ../../binutils-2.25.1/gold/mapfile.cc	2014-10-14 03:32:04.000000000 -0400
-+++ gold/mapfile.cc	2016-07-29 17:21:57.843529164 -0400
-@@ -261,9 +261,11 @@
+diff -Naur binutils-2.27_clean/gold/mapfile.cc binutils-2.27/gold/mapfile.cc
+--- binutils-2.27_clean/gold/mapfile.cc	2016-08-03 03:36:53.000000000 -0400
++++ binutils-2.27/gold/mapfile.cc	2016-08-04 08:45:59.968445578 -0400
+@@ -264,9 +264,11 @@
    snprintf(sizebuf, sizeof sizebuf, "0x%llx",
- 	   static_cast<unsigned long long>(relobj->section_size(shndx)));
+ 	   static_cast<unsigned long long>(size));
  
 -  fprintf(this->map_file_, "0x%0*llx %10s %s\n",
 +  fprintf(this->map_file_, "0x%0*llx %10s 0x%lx %s\n",
