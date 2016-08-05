@@ -19,28 +19,32 @@
 # include <arch/x86_64/migrate.h>
 #endif
 
-/* Returns a CPU set for architecture AR. */
-cpu_set_t arch_to_cpus(enum arch ar)
+static int __cpus_x86 = 0;
+static void __attribute__((constructor)) __init_cpu_sets()
 {
   int cpus_x86;
   char s[512];
   FILE *fd;
 
+  fd = fopen("/proc/cpuinfo", "r");
+  if(fd)
+  {
+    __cpus_x86 = 0;
+    while(fgets(s, 512, fd) != NULL)
+      if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
+        __cpus_x86++;
+  }
+  else __cpus_x86 = 8;
+}
+
+/* Returns a CPU set for architecture AR. */
+cpu_set_t arch_to_cpus(enum arch ar)
+{
   cpu_set_t cpus;
   CPU_ZERO(&cpus);
   switch(ar) {
   case AARCH64: CPU_SET(0, &cpus); break;
-  case X86_64:
-    fd = fopen("/proc/cpuinfo", "r");
-    if(fd)
-    {
-      cpus_x86 = 0;
-      while(fgets(s, 512, fd) != NULL)
-        if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
-          cpus_x86++;
-    }
-    else cpus_x86 = 8;
-    CPU_SET(cpus_x86, &cpus); break;
+  case X86_64: CPU_SET(__cpus_x86, &cpus); break;
   default: break;
   }
   return cpus;
