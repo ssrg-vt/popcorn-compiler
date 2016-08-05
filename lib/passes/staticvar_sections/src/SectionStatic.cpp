@@ -26,7 +26,8 @@ SectionStatic::SectionStatic() : ModulePass(ID), numInstrumented(0) {}
 SectionStatic::~SectionStatic() {}
 
 /**
- * Make RO Data & inlined strings have symbols to be aligned
+ * Change the linkage of static global variables to put them in their own
+ * sections.
  */
 bool SectionStatic::runOnModule(Module &M) {
   bool modified = false;
@@ -37,32 +38,36 @@ bool SectionStatic::runOnModule(Module &M) {
 
   // Iterate over all static globals and place them in their own section
   for(gl = M.global_begin(), gle = M.global_end(); gl != gle; gl++) {
+    std::string secName = ".";
+    if(gl->isThreadLocal()) secName += "t";
+
     // InternalLinkage is specifically for STATIC variables
     if(gl->getLinkage() == GlobalValue::InternalLinkage) {  
       DEBUG(errs() << "\nInternal: " <<  *gl << "\n");
       if(gl->isConstant()) {
         //Belongs in RODATA
-        DEBUG(errs() << "RO Name:" << ".rodata." + gl->getName().str() << "\n");
-        gl->setSection(".rodata." + gl->getName().str());
+        assert(!gl->isThreadLocal() && "TLS data should not be in .rodata");
+        secName += "rodata.";
+        DEBUG(errs() << "RO Name: " << secName + gl->getName().str() << "\n");
       }
       else if(gl->getInitializer()->isZeroValue()) {
         //Belongs in BSS
-        DEBUG(errs() << "Zero Value or No def:" << gl->getValueType() <<"\n");
-        DEBUG(errs() << "BSS Name:" << ".bss." + gl->getName().str() << "\n");
-        gl->setSection(".bss." + gl->getName().str());
+        secName += "bss.";
+        DEBUG(errs() << "Zero Value or No def: " << gl->getValueType() <<"\n");
+        DEBUG(errs() << "BSS Name: " << secName + gl->getName().str() << "\n");
       }
       else {
         //Belongs in DATA
-        DEBUG(errs() << "D Name:" << ".data." + gl->getName().str() << "\n");
-        gl->setSection(".data." + gl->getName().str());
+        secName += "data.";
+        DEBUG(errs() << "DATA Name: " << secName + gl->getName().str() << "\n");
       }
-      DEBUG(errs() << "New: " <<  *gl << "\n");
-      this->numInstrumented++;
     } else {
       DEBUG(errs() << "> " <<  *gl << "\n");
       DEBUG(errs() << "Linkage: " <<  gl->getLinkage() << "\n");
       continue;
     }
+    gl->setSection(secName + gl->getName().str());
+    this->numInstrumented++;
   }
 
   if(numInstrumented > 0) modified = true;
