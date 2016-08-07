@@ -1,5 +1,7 @@
---- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/AsmPrinter.h	2016-05-25 11:33:02.184960318 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/AsmPrinter.h	2016-06-30 14:31:02.615205799 -0400
+Index: include/llvm/CodeGen/AsmPrinter.h
+===================================================================
+--- include/llvm/CodeGen/AsmPrinter.h	(revision 270708)
++++ include/llvm/CodeGen/AsmPrinter.h	(working copy)
 @@ -202,9 +202,10 @@
  
    /// Emit the specified function out to the OutStreamer.
@@ -27,8 +29,10 @@
    //===------------------------------------------------------------------===//
    // Dwarf Emission Helper Routines
    //===------------------------------------------------------------------===//
---- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/MachineFunction.h	2016-05-25 11:33:01.792960322 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/MachineFunction.h	2016-08-02 11:26:53.218600576 -0400
+Index: include/llvm/CodeGen/MachineFunction.h
+===================================================================
+--- include/llvm/CodeGen/MachineFunction.h	(revision 270708)
++++ include/llvm/CodeGen/MachineFunction.h	(working copy)
 @@ -86,6 +86,20 @@
  };
  
@@ -103,8 +107,10 @@
  };
  
  //===--------------------------------------------------------------------===//
---- /usr/local/popcorn/src/llvm-3.8_clean/include/llvm/CodeGen/StackMaps.h	2016-05-25 11:33:02.176960318 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/include/llvm/CodeGen/StackMaps.h	2016-08-02 11:15:32.366606742 -0400
+Index: include/llvm/CodeGen/StackMaps.h
+===================================================================
+--- include/llvm/CodeGen/StackMaps.h	(revision 270708)
++++ include/llvm/CodeGen/StackMaps.h	(working copy)
 @@ -143,9 +143,15 @@
      unsigned Size;
      unsigned Reg;
@@ -163,8 +169,10 @@
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-05-25 11:33:09.072960256 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/AsmPrinter/AsmPrinter.cpp	2016-07-08 18:01:24.484832595 -0400
+Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
+===================================================================
+--- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 270708)
++++ lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(working copy)
 @@ -1292,6 +1292,39 @@
    return CurExceptionSym;
  }
@@ -205,8 +213,10 @@
  void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
    this->MF = &MF;
    // Get the function symbol.
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/MachineFunction.cpp	2016-05-25 11:33:10.048960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/MachineFunction.cpp	2016-08-02 11:28:01.630599957 -0400
+Index: lib/CodeGen/MachineFunction.cpp
+===================================================================
+--- lib/CodeGen/MachineFunction.cpp	(revision 270708)
++++ lib/CodeGen/MachineFunction.cpp	(working copy)
 @@ -281,6 +281,15 @@
                                 MMO->getBaseAlignment());
  }
@@ -360,8 +370,10 @@
  //===----------------------------------------------------------------------===//
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.cpp	2016-08-02 12:30:18.198566122 -0400
+Index: lib/CodeGen/RegAllocBase.cpp
+===================================================================
+--- lib/CodeGen/RegAllocBase.cpp	(revision 270708)
++++ lib/CodeGen/RegAllocBase.cpp	(working copy)
 @@ -14,12 +14,15 @@
  
  #include "RegAllocBase.h"
@@ -378,7 +390,7 @@
  #include "llvm/CodeGen/VirtRegMap.h"
  #include "llvm/Target/TargetRegisterInfo.h"
  #ifndef NDEBUG
-@@ -153,3 +156,273 @@
+@@ -153,3 +156,280 @@
      }
    }
  }
@@ -525,8 +537,9 @@
 +
 +  // Iterate over all stackmaps to find virtual register operands which have
 +  // been spilled to the stack or to other registers
-+  DenseMap<unsigned, const Value *> vregs;
-+  DenseMap<unsigned, const Value *>::iterator vregIt;
++  typedef std::pair<unsigned, SmallVector<const Value *, 8> > RegValsPair;
++  DenseMap<unsigned, SmallVector<const Value *, 8> > vregs;
++  DenseMap<unsigned, SmallVector<const Value *, 8> >::iterator vregIt;
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
 +    const CallInst *SMIR = std::get<0>(*S);
 +    const MachineInstr *SMMI = std::get<1>(*S);
@@ -560,8 +573,6 @@
 +        assert(IRVal && "Invalid stackmap IR operand");
 +        assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
 +               "Should not have been converted to physical registers yet");
-+        assert(vregs.find(Reg) == vregs.end() &&
-+               "Virtual register mapped to multiple IR values");
 +
 +        DEBUG(
 +          IRVal->printAsOperand(dbgs());
@@ -569,7 +580,11 @@
 +                 << TargetRegisterInfo::virtReg2Index(Reg) << "\n";
 +        );
 +
-+        vregs[Reg] = IRVal;
++        if((vregIt = vregs.find(Reg)) == vregs.end()) {
++          SmallVector<const Value *, 8> vals;
++          vregIt = vregs.insert(RegValsPair(Reg, std::move(vals))).first;
++        }
++        vregIt->second.push_back(IRVal);
 +      }
 +    }
 +    assert(IRit == SMIR->arg_end() && "Did not search all stackmap operands");
@@ -621,23 +636,27 @@
 +          PhysReg = VRM->getPhys(DefChain.copy.second);
 +          assert(PhysReg != VirtRegMap::NO_PHYS_REG && "Invalid register");
 +          assert(!MF.isCallerSaved(PhysReg) && "Invalid register");
-+          DEBUG(
-+            vregIt->second->printAsOperand(dbgs());
-+            dbgs() << ": spilled to callee-saved register "
-+                   << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << "\n";
-+          );
-+          MF.addSMOpPhysRegMapping(SMIR, vregIt->second, PhysReg);
++          for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
++            DEBUG(
++              vregIt->second[sz]->printAsOperand(dbgs());
++              dbgs() << ": spilled to callee-saved register "
++                     << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << "\n";
++            );
++            MF.addSMOpPhysRegMapping(SMIR, vregIt->second[sz], PhysReg);
++          }
 +        }
 +        break;
 +      case SpillLoc::STACK_SLOT:
 +        if((vregIt = vregs.find(Loc.load.first)) != vregs.end()) {
 +          int SS = DefChain.load.second;
 +          assert(SS != VirtRegMap::NO_STACK_SLOT && "Invalid stack slot");
-+          DEBUG(
-+            vregIt->second->printAsOperand(dbgs());
-+            dbgs() << ": spilled to stack slot " << SS << "\n";
-+          );
-+          MF.addSMOpStackSlotMapping(SMIR, vregIt->second, SS);
++          for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
++            DEBUG(
++              vregIt->second[sz]->printAsOperand(dbgs());
++              dbgs() << ": spilled to stack slot " << SS << "\n";
++            );
++            MF.addSMOpStackSlotMapping(SMIR, vregIt->second[sz], SS);
++          }
 +        }
 +        break;
 +      case SpillLoc::NONE:
@@ -652,9 +671,11 @@
 +    vregs.clear();
 +  }
 +}
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBase.h	2016-05-25 11:33:10.040960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBase.h	2016-08-01 17:38:49.487180863 -0400
-@@ -99,12 +99,57 @@
+Index: lib/CodeGen/RegAllocBase.h
+===================================================================
+--- lib/CodeGen/RegAllocBase.h	(revision 270708)
++++ lib/CodeGen/RegAllocBase.h	(working copy)
+@@ -99,6 +99,8 @@
    /// Method called when the allocator is about to remove a LiveInterval.
    virtual void aboutToRemoveInterval(LiveInterval &LI) {}
  
@@ -663,6 +684,7 @@
  public:
    /// VerifyEnabled - True when -verify-regalloc is given.
    static bool VerifyEnabled;
+@@ -105,6 +107,49 @@
  
  private:
    void seedLiveRegs();
@@ -712,8 +734,10 @@
  };
  
  } // end namespace llvm
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocBasic.cpp	2016-05-25 11:33:10.040960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocBasic.cpp	2016-07-31 18:10:56.647945777 -0400
+Index: lib/CodeGen/RegAllocBasic.cpp
+===================================================================
+--- lib/CodeGen/RegAllocBasic.cpp	(revision 270708)
++++ lib/CodeGen/RegAllocBasic.cpp	(working copy)
 @@ -283,6 +283,7 @@
    SpillerInstance.reset(createInlineSpiller(*this, *MF, *VRM));
  
@@ -722,8 +746,10 @@
  
    // Diagnostic output before rewriting
    DEBUG(dbgs() << "Post alloc VirtRegMap:\n" << *VRM << "\n");
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocFast.cpp	2016-05-25 11:33:10.048960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocFast.cpp	2016-08-01 11:06:01.299394277 -0400
+Index: lib/CodeGen/RegAllocFast.cpp
+===================================================================
+--- lib/CodeGen/RegAllocFast.cpp	(revision 270708)
++++ lib/CodeGen/RegAllocFast.cpp	(working copy)
 @@ -1071,6 +1071,10 @@
  /// runOnMachineFunction - Register allocate the whole function
  ///
@@ -735,8 +761,10 @@
    DEBUG(dbgs() << "********** FAST REGISTER ALLOCATION **********\n"
                 << "********** Function: " << Fn.getName() << '\n');
    MF = &Fn;
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocGreedy.cpp	2016-05-25 11:33:10.048960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocGreedy.cpp	2016-07-31 18:10:39.971945928 -0400
+Index: lib/CodeGen/RegAllocGreedy.cpp
+===================================================================
+--- lib/CodeGen/RegAllocGreedy.cpp	(revision 270708)
++++ lib/CodeGen/RegAllocGreedy.cpp	(working copy)
 @@ -2601,6 +2601,7 @@
  
    allocatePhysRegs();
@@ -745,8 +773,10 @@
    releaseMemory();
    return true;
  }
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/RegAllocPBQP.cpp	2016-05-25 11:33:10.044960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/RegAllocPBQP.cpp	2016-08-01 11:06:09.899394199 -0400
+Index: lib/CodeGen/RegAllocPBQP.cpp
+===================================================================
+--- lib/CodeGen/RegAllocPBQP.cpp	(revision 270708)
++++ lib/CodeGen/RegAllocPBQP.cpp	(working copy)
 @@ -721,6 +721,10 @@
  }
  
@@ -758,8 +788,10 @@
    LiveIntervals &LIS = getAnalysis<LiveIntervals>();
    MachineBlockFrequencyInfo &MBFI =
      getAnalysis<MachineBlockFrequencyInfo>();
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackMaps.cpp	2016-05-25 11:33:09.148960255 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackMaps.cpp	2016-08-02 12:26:30.050568188 -0400
+Index: lib/CodeGen/StackMaps.cpp
+===================================================================
+--- lib/CodeGen/StackMaps.cpp	(revision 270708)
++++ lib/CodeGen/StackMaps.cpp	(working copy)
 @@ -13,6 +13,7 @@
  #include "llvm/CodeGen/MachineFunction.h"
  #include "llvm/CodeGen/MachineInstr.h"
@@ -768,7 +800,7 @@
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
-@@ -84,44 +85,75 @@
+@@ -84,18 +85,44 @@
    return (unsigned)RegNum;
  }
  
@@ -816,6 +848,7 @@
        unsigned Size = DL.getPointerSizeInBits();
        assert((Size % 8) == 0 && "Need pointer size in bytes.");
        Size /= 8;
+@@ -102,16 +129,19 @@
        unsigned Reg = (++MOI)->getReg();
        int64_t Imm = (++MOI)->getImm();
        Locs.emplace_back(StackMaps::Location::Direct, Size,
@@ -838,6 +871,7 @@
        break;
      }
      case StackMaps::ConstantOp: {
+@@ -118,10 +148,12 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -942,8 +976,8 @@
      parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
 -                 LiveOuts);
 +                 LiveOuts, Op);
-+  }
-+
+   }
+ 
 +  // Find the IR stackmap instruction which corresponds to MI so we can emit
 +  // type information along with the value's location
 +  const BasicBlock *BB = MI.getParent()->getBasicBlock();
@@ -959,9 +993,9 @@
 +      IRSM = cast<IntrinsicInst>(&*BBI);
 +      break;
 +    }
-   }
++  }
 +  assert(IRSM && "Could not find associated stackmap instruction");
- 
++
    // Parse operands.
 +  Op = std::next(IRSM->arg_begin(), 2);
    while (MOI != MOE) {
@@ -1032,8 +1066,10 @@
      }
  
      // Num live-out registers and padding to align to 4 byte.
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/CodeGen/StackSlotColoring.cpp	2016-05-25 11:33:10.052960247 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/CodeGen/StackSlotColoring.cpp	2016-07-27 14:44:48.227187230 -0400
+Index: lib/CodeGen/StackSlotColoring.cpp
+===================================================================
+--- lib/CodeGen/StackSlotColoring.cpp	(revision 270708)
++++ lib/CodeGen/StackSlotColoring.cpp	(working copy)
 @@ -278,6 +278,7 @@
    SmallVector<int, 16> SlotMapping(NumObjs, -1);
    SmallVector<float, 16> SlotWeights(NumObjs, 0.0);
@@ -1052,8 +1088,10 @@
  
    DEBUG(dbgs() << "\nSpill slots after coloring:\n");
    for (unsigned i = 0, e = SSIntervals.size(); i != e; ++i) {
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/Target/AArch64/AArch64AsmPrinter.cpp	2016-05-25 11:33:05.876960285 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/Target/AArch64/AArch64AsmPrinter.cpp	2016-05-26 17:29:36.100063984 -0400
+Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
+===================================================================
+--- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 270708)
++++ lib/Target/AArch64/AArch64AsmPrinter.cpp	(working copy)
 @@ -129,8 +129,8 @@
      // linker can safely perform dead code stripping.  Since LLVM never
      // generates code that does this, it is always safe to set.
@@ -1064,8 +1102,10 @@
  }
  
  MachineLocation
---- /usr/local/popcorn/src/llvm-3.8_clean/lib/Target/X86/X86AsmPrinter.cpp	2016-05-25 11:33:05.560960288 -0400
-+++ /usr/local/popcorn/src/llvm-3.8/lib/Target/X86/X86AsmPrinter.cpp	2016-06-30 11:42:55.391297140 -0400
+Index: lib/Target/X86/X86AsmPrinter.cpp
+===================================================================
+--- lib/Target/X86/X86AsmPrinter.cpp	(revision 270708)
++++ lib/Target/X86/X86AsmPrinter.cpp	(working copy)
 @@ -49,6 +49,8 @@
  bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
    Subtarget = &MF.getSubtarget<X86Subtarget>();
