@@ -566,7 +566,7 @@ Index: lib/CodeGen/RegAllocBase.cpp
 +    CallInst::const_op_iterator IRit;
 +    for(MOit = std::next(SMMI->operands_begin(), 2),
 +        IRit = std::next(SMIR->op_begin(), 2);
-+        MOit != SMMI->operands_end() && IRit != SMIR->op_end();
++        MOit != SMMI->operands_end() && IRit != (SMIR->op_end() - 1);
 +        MOit++, IRit++) {
 +      // Emulate StackMaps::parseOperand to correlate IR and machine operands
 +      if(MOit->isImm()) {
@@ -597,7 +597,7 @@ Index: lib/CodeGen/RegAllocBase.cpp
 +        vregIt->second.push_back(IRVal);
 +      }
 +    }
-+    assert(IRit == SMIR->op_end() && "Did not search all stackmap operands");
++    assert(IRit == (SMIR->op_end() - 1) && "Did not search all stackmap operands");
 +
 +    // Walk from the call to the stackmap, watching for stackmap operand spill
 +    // locations
@@ -1010,7 +1010,7 @@ Index: lib/CodeGen/StackMaps.cpp
 -    MOI = parseOperand(MOI, MOE, Locations, LiveOuts);
 +    MOI = parseOperand(MOI, MOE, Locations, LiveOuts, Op);
    }
-+  assert(Op == IRSM->op_end() && "did not lower all stackmap operands");
++  assert(Op == (IRSM->op_end() - 1) && "did not lower all stackmap operands");
  
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
