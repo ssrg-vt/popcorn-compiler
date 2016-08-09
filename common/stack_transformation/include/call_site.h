@@ -67,7 +67,8 @@ typedef struct __attribute__((__packed__)) call_site_value {
   int32_t offset_or_constant;
   uint8_t is_ptr;
   uint8_t is_alloca;
-  uint16_t padding;
+  uint8_t is_backing;
+  uint8_t padding;
   uint32_t pointed_size;
 } call_site_value;
 

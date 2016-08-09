@@ -122,6 +122,9 @@ bool print_loc_record(call_site_value record)
     return false;
   }
 
+  if(record.is_backing)
+    printf(" (is a backing stack slot)");
+
   if(record.is_ptr)
   {
     printf(", points to data of size %u byte(s)", record.pointed_size);

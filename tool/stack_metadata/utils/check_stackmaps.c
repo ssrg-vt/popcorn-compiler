@@ -89,7 +89,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                      bin *b, stack_map *sm_b, size_t num_sm_b)
 {
   char buf[BUF_SIZE];
-  size_t i, j, k, num_sm, num_records, num_locs;
+  size_t i, j, k, l, num_sm, num_records;
   uint64_t func_a, func_b;
   uint8_t flag_a, flag_b;
   uint32_t size_a, size_b;
@@ -152,17 +152,27 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
       else
       {
         /*
+         * The raw location record count may be different, so count
+         * non-duplicated records, i.e., ignore backing stack slot locations.
+         */
+        unsigned num_a = 0, num_b = 0;
+        for(k = 0; k < sm_a[i].stack_maps[j].locations->num; k++)
+          if(!sm_a[i].stack_maps[j].locations->record[k].is_backing)
+            num_a++;
+
+        for(k = 0; k < sm_b[i].stack_maps[j].locations->num; k++)
+          if(!sm_b[i].stack_maps[j].locations->record[k].is_backing)
+            num_b++;
+
+        /*
          * Errors here indicate different numbers of live values at the stackmap
          * intrinsic call site.
          */
-        if(sm_a[i].stack_maps[j].locations->num !=
-           sm_b[i].stack_maps[j].locations->num)
+        if(num_a != num_b)
         {
           snprintf(buf, BUF_SIZE,
                    "stackmap %lu has different numbers of location records "
-                   "(%u vs. %u)",
-                   j, sm_a[i].stack_maps[j].locations->num,
-                   sm_b[i].stack_maps[j].locations->num);
+                   "(%u vs. %u)", j, num_a, num_b);
           warn(buf);
         }
 
@@ -171,52 +181,54 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          * site.  Errors point to different live values/different orderings of
          * live values at the site.
          */
-        num_locs = MIN(sm_a[i].stack_maps[j].locations->num,
-                       sm_b[i].stack_maps[j].locations->num);
-        for(k = 0; k < num_locs; k++)
+        for(k = 0, l = 0; k < num_a && l < num_b; k++, l++)
         {
           flag_a = sm_a[i].stack_maps[j].locations->record[k].size;
-          flag_b = sm_b[i].stack_maps[j].locations->record[k].size;
+          flag_b = sm_b[i].stack_maps[j].locations->record[l].size;
           if(flag_a != flag_b)
           {
-            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "different size (%u vs. %u)",
-                     sym_a_name, j, k, flag_a, flag_b);
+                     sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
           }
 
           flag_a = sm_a[i].stack_maps[j].locations->record[k].is_ptr;
-          flag_b = sm_b[i].stack_maps[j].locations->record[k].is_ptr;
+          flag_b = sm_b[i].stack_maps[j].locations->record[l].is_ptr;
           if(flag_a != flag_b)
           {
-            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched pointer flag (%u vs. %u)",
-                     sym_a_name, j, k, flag_a, flag_b);
+                     sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
           }
 
           flag_a = sm_a[i].stack_maps[j].locations->record[k].is_alloca;
-          flag_b = sm_b[i].stack_maps[j].locations->record[k].is_alloca;
+          flag_b = sm_b[i].stack_maps[j].locations->record[l].is_alloca;
           if(flag_a != flag_b)
           {
-            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+            snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched alloca flag (%u vs. %u)",
-                     sym_a_name, j, k, flag_a, flag_b);
+                     sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
           }
 
           if(flag_a && flag_b)
           {
             size_a = sm_a[i].stack_maps[j].locations->record[k].pointed_size;
-            size_b = sm_b[i].stack_maps[j].locations->record[k].pointed_size;
+            size_b = sm_b[i].stack_maps[j].locations->record[l].pointed_size;
             if(size_a != size_b)
             {
-              snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu has "
+              snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                       "different size (%u vs. %u)",
-                       sym_a_name, j, k, size_a, size_b);
+                       sym_a_name, j, k, l, size_a, size_b);
               warn(buf);
             }
           }
+
+          /* Skip backing stack slot records */
+          while(sm_a[i].stack_maps[j].locations->record[k+1].is_backing) k++;
+          while(sm_b[i].stack_maps[j].locations->record[l+1].is_backing) l++;
         }
       }
     }

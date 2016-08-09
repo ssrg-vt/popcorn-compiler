@@ -639,7 +639,7 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
  */
 static void rewrite_frame(rewrite_context src, rewrite_context dest)
 {
-  size_t i;
+  size_t i, j;
   const variable* var_src, *var_dest;
 #if _LIVE_VALS == STACKMAP_LIVE_VALS
   size_t src_offset, dest_offset;
@@ -678,22 +678,42 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
   }
 #else /* STACKMAP_LIVE_VALS */
-  ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
-        "call sites have different numbers of live values (%u vs. %u)\n",
-        ACT(src).site.num_live, ACT(dest).site.num_live);
-
   /* Copy live values */
   src_offset = ACT(src).site.live_offset;
   dest_offset = ACT(dest).site.live_offset;
-  for(i = 0; i < ACT(src).site.num_live; i++)
+  for(i = 0, j = 0;
+      i < ACT(src).site.num_live && j < ACT(dest).site.num_live;
+      i++, j++)
   {
     ASSERT(i < src->handle->live_vals_count,
-          "out-of-bounds live value record access\n");
+          "out-of-bounds live value record access in source handle\n");
+    ASSERT(j < dest->handle->live_vals_count,
+          "out-of-bounds live value record access in destination handle\n");
 
     var_src = &src->handle->live_vals[i + src_offset];
-    var_dest = &dest->handle->live_vals[i + dest_offset];
+    var_dest = &dest->handle->live_vals[j + dest_offset];
+
+    ASSERT(!var_src->is_backing, "invalid backing location record\n");
+    ASSERT(!var_dest->is_backing, "invalid backing location record\n");
+
+    /* Apply to normal location record */
     needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
+
+    /* Apply to all duplicate/backing location records */
+    while(dest->handle->live_vals[j + 1 + dest_offset].is_backing)
+    {
+      j++;
+      var_dest = &dest->handle->live_vals[j + dest_offset];
+      ASSERT(!var_dest->is_alloca, "invalid backing location record\n");
+      ST_INFO("Applying to backing location record\n");
+      needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
+    }
+
+    /* Advance source variable past duplicates/backing location records */
+    while(src->handle->live_vals[i + 1 + src_offset].is_backing) i++;
   }
+  ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
+        "did not handle all live values\n");
 #endif
 
   /*
@@ -738,10 +758,26 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 #else /* STACKMAP_LIVE_VALS */
     src_offset = ACT(src).site.live_offset;
     dest_offset = ACT(dest).site.live_offset;
-    for(i = 0; i < ACT(src).site.num_live; i++)
+    for(i = 0, j = 0;
+        i < ACT(src).site.num_live && j < ACT(dest).site.num_live;
+        i++, j++)
     {
       var_src = &src->handle->live_vals[i + src_offset];
-      var_dest = &dest->handle->live_vals[i + dest_offset];
+      var_dest = &dest->handle->live_vals[j + dest_offset];
+
+      ASSERT(!var_src->is_backing, "invalid backing location record\n");
+      ASSERT(!var_dest->is_backing, "invalid backing location record\n");
+
+      /*
+       * Advance past duplicate/backing location records, which can never be
+       * pointed-to (these are spilled values, no stack allocations).
+       */
+      while(src->handle->live_vals[i + 1 + src_offset].is_backing) i++;
+      while(dest->handle->live_vals[j + 1 + dest_offset].is_backing) j++;
+
+      /* Can only have stack pointers to allocas */
+      if(!var_src->is_alloca || !var_dest->is_alloca) continue;
+
       val_src = get_var_val(src, var_src);
       val_dest = get_var_val(dest, var_dest);
       if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
@@ -752,6 +788,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         list_add(varval, &var_list, varval_data);
       }
     }
+    ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
+          "did not handle all live values\n");
 #endif /* STACKMAP_LIVE_VALS */
 
     /* Traverse list to resolve fixups. */

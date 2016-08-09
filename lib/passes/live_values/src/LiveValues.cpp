@@ -1,3 +1,4 @@
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/Analysis/CFG.h"
