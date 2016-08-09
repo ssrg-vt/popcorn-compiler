@@ -693,24 +693,24 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     var_src = &src->handle->live_vals[i + src_offset];
     var_dest = &dest->handle->live_vals[j + dest_offset];
 
-    ASSERT(!var_src->is_backing, "invalid backing location record\n");
-    ASSERT(!var_dest->is_backing, "invalid backing location record\n");
+    ASSERT(!var_src->is_duplicate, "invalid backing location record\n");
+    ASSERT(!var_dest->is_duplicate, "invalid backing location record\n");
 
-    /* Apply to normal location record */
+    /* Apply to first location record */
     needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
 
     /* Apply to all duplicate/backing location records */
-    while(dest->handle->live_vals[j + 1 + dest_offset].is_backing)
+    while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
     {
       j++;
       var_dest = &dest->handle->live_vals[j + dest_offset];
       ASSERT(!var_dest->is_alloca, "invalid backing location record\n");
-      ST_INFO("Applying to backing location record\n");
+      ST_INFO("Applying to duplicate location record\n");
       needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
     }
 
     /* Advance source variable past duplicates/backing location records */
-    while(src->handle->live_vals[i + 1 + src_offset].is_backing) i++;
+    while(src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
   }
   ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
         "did not handle all live values\n");
@@ -765,15 +765,15 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
       var_src = &src->handle->live_vals[i + src_offset];
       var_dest = &dest->handle->live_vals[j + dest_offset];
 
-      ASSERT(!var_src->is_backing, "invalid backing location record\n");
-      ASSERT(!var_dest->is_backing, "invalid backing location record\n");
+      ASSERT(!var_src->is_duplicate, "invalid backing location record\n");
+      ASSERT(!var_dest->is_duplicate, "invalid backing location record\n");
 
       /*
        * Advance past duplicate/backing location records, which can never be
-       * pointed-to (these are spilled values, no stack allocations).
+       * pointed-to (these are spilled values, not stack allocations).
        */
-      while(src->handle->live_vals[i + 1 + src_offset].is_backing) i++;
-      while(dest->handle->live_vals[j + 1 + dest_offset].is_backing) j++;
+      while(src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
+      while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate) j++;
 
       /* Can only have stack pointers to allocas */
       if(!var_src->is_alloca || !var_dest->is_alloca) continue;

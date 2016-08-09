@@ -1,3 +1,25 @@
+Index: include/llvm/ADT/ilist_node.h
+===================================================================
+--- include/llvm/ADT/ilist_node.h	(revision 277823)
++++ include/llvm/ADT/ilist_node.h	(working copy)
+@@ -70,7 +70,7 @@
+     const NodeTy *Prev = this->getPrev();
+ 
+     // Check for sentinel.
+-    if (!Prev->getNext())
++    if (!Prev || !Prev->getNext())
+       return nullptr;
+ 
+     return Prev;
+@@ -81,7 +81,7 @@
+     NodeTy *Next = getNext();
+ 
+     // Check for sentinel.
+-    if (!Next->getNext())
++    if (!Next || !Next->getNext())
+       return nullptr;
+ 
+     return Next;
 Index: include/llvm/CodeGen/AsmPrinter.h
 ===================================================================
 --- include/llvm/CodeGen/AsmPrinter.h	(revision 277823)
@@ -60,7 +82,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
    const Function *Fn;
    const TargetMachine &Target;
    const TargetSubtargetInfo *STI;
-@@ -145,6 +158,16 @@
+@@ -145,6 +158,23 @@
    /// True if the function includes any inline assembly.
    bool HasInlineAsm;
  
@@ -70,14 +92,21 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +  /// Map from stackmap operands to physical registers
 +  InstOpPhysRegMap SMOp2PhysReg;
 +
++  // TODO the next two maps should actually contain sets of backing slots &
++  // duplicate physical registers rather than being restricted to one of each
++
 +  /// Map from stackmap operands to spilled stack slots, for operands in
 +  /// physical registers that have a backing stack slot
 +  InstOpStackSlotMap SMOp2BackingStackSlot;
 +
++  /// Map from stackmap operands to physical registers, for operands that
++  /// are duplicated across several registers
++  InstOpPhysRegMap SMOp2DupPhysReg;
++
    MachineFunction(const MachineFunction &) = delete;
    void operator=(const MachineFunction&) = delete;
  public:
-@@ -457,6 +480,9 @@
+@@ -457,6 +487,9 @@
      return Mask;
    }
  
@@ -87,7 +116,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
    /// allocateMemRefsArray - Allocate an array to hold MachineMemOperand
    /// pointers.  This array is owned by the MachineFunction.
    MachineInstr::mmo_iterator allocateMemRefsArray(unsigned long Num);
-@@ -488,6 +514,42 @@
+@@ -488,6 +521,55 @@
    /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
    /// base.
    MCSymbol *getPICBaseSymbol() const;
@@ -123,10 +152,23 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +  /// Update stack slot references to new indexes after stack slot coloring
 +  void updateSMBackingStackSlotRefs(SmallDenseMap<int, int, 16> &Changes);
 +
++  // TODO should return a set of backing stack slots
++
 +  /// Return the backing stack slot for a stackmap operand mapped to a physical
 +  /// register
 +  int getSMBackingStackSlot(const CallInst *SM, const Value *Val) const;
 +  int getSMBackingStackSlot(const CallInst *SM, unsigned Op) const;
++
++  /// Add an IR/physical register mapping for a stackmap operand with duplicate
++  /// physical registers
++  void addSMOpDupPhysRegMapping(const CallInst *SM, const Value *Val, unsigned Reg);
++  void addSMOpDupPhysRegMapping(const CallInst *SM, unsigned Op, unsigned Reg);
++
++  // TODO should return a set of duplicate registers
++
++  /// Return the duplicate physical register mapped to a stackmap operand
++  unsigned getSMDupPhysReg(const CallInst *SM, const Value *Val) const;
++  unsigned getSMDupPhysReg(const CallInst *SM, unsigned Op) const;
  };
  
  //===--------------------------------------------------------------------===//
@@ -143,14 +185,14 @@ Index: include/llvm/CodeGen/StackMaps.h
 -        : Type(Type), Size(Size), Reg(Reg), Offset(Offset) {}
 +    bool Ptr;
 +    bool Alloca;
-+    bool Backing;
++    bool Duplicate;
 +    unsigned PtrDataSize;
 +    Location() : Type(Unprocessed), Size(0), Reg(0), Offset(0),
-+                 Ptr(false), Alloca(false), Backing(false), PtrDataSize(0) {}
++                 Ptr(false), Alloca(false), Duplicate(false), PtrDataSize(0) {}
 +    Location(LocationType Type, unsigned Size, unsigned Reg, int64_t Offset,
-+             bool Ptr, bool Alloca, bool Backing, unsigned PtrDataSize)
++             bool Ptr, bool Alloca, bool Duplicate, unsigned PtrDataSize)
 +        : Type(Type), Size(Size), Reg(Reg), Offset(Offset), Ptr(Ptr),
-+          Alloca(Alloca), Backing(Backing), PtrDataSize(PtrDataSize) {}
++          Alloca(Alloca), Duplicate(Duplicate), PtrDataSize(PtrDataSize) {}
    };
  
    struct LiveOutReg {
@@ -259,7 +301,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  MachineInstr::mmo_iterator
  MachineFunction::allocateMemRefsArray(unsigned long Num) {
    return Allocator.Allocate<MachineMemOperand *>(Num);
-@@ -482,6 +491,225 @@
+@@ -482,6 +491,281 @@
                                 Twine(getFunctionNumber()) + "$pb");
  }
  
@@ -417,6 +459,7 @@ Index: lib/CodeGen/MachineFunction.cpp
 +    it = ins.first;
 +  }
 +
++  // TODO allow multiple backing slots
 +  ValStackSlotMap::iterator valIt = it->second.find(Val);
 +  if(valIt == it->second.end()) it->second.insert(ValStackSlotPair(Val, SS));
 +  else assert(valIt->second == SS && "Multiple backing slots");
@@ -480,6 +523,61 @@ Index: lib/CodeGen/MachineFunction.cpp
 +  assert(SM && "Invalid stackmap");
 +  assert(Op < SM->getNumArgOperands() && "Invalid operand number");
 +  return getSMBackingStackSlot(SM, SM->getArgOperand(Op));
++}
++
++/// Add an IR/physical register mapping for a stackmap operand
++void MachineFunction::addSMOpDupPhysRegMapping(const CallInst *SM,
++                                               const Value *Val,
++                                               unsigned Reg) {
++  InstOpPhysRegMap::iterator it;
++  std::pair<InstOpPhysRegMap::iterator, bool> ins;
++
++  assert(SM && "Invalid stackmap");
++  assert(Val && "Invalid operand");
++  assert(TargetRegisterInfo::isPhysicalRegister(Reg) && "Invalid register");
++
++  if((it = SMOp2DupPhysReg.find(SM)) == SMOp2DupPhysReg.end())
++  {
++    ValPhysRegMap NewMap;
++    ins = SMOp2DupPhysReg.insert(InstOpPhysRegPair(SM, std::move(NewMap)));
++    assert(ins.second && "Map insertion error");
++    it = ins.first;
++  }
++
++  // TODO allow multiple duplicate registers
++  ValPhysRegMap::iterator valIt = it->second.find(Val);
++  if(valIt == it->second.end()) it->second.insert(ValStackSlotPair(Val, Reg));
++  else assert(valIt->second == Reg && "Multiple duplicate registers");
++}
++
++void MachineFunction::addSMOpDupPhysRegMapping(const CallInst *SM,
++                                               unsigned Op,
++                                               unsigned Reg) {
++  assert(SM && "Invalid stackmap");
++  assert(Op < SM->getNumArgOperands() && "Invalid operand number");
++  addSMOpDupPhysRegMapping(SM, SM->getArgOperand(Op), Reg);
++}
++
++/// Return the physical register mapped to a stackmap operand
++unsigned MachineFunction::getSMDupPhysReg(const CallInst *SM,
++                                          const Value *Val) const {
++  assert(SM && "Invalid stackmap");
++  assert(Val && "Invalid operand");
++
++  InstOpPhysRegMap::const_iterator i = SMOp2DupPhysReg.find(SM);
++  if(i != SMOp2DupPhysReg.end())
++  {
++    ValPhysRegMap::const_iterator j = i->second.find(Val);
++    if(j != i->second.end()) return j->second;
++  }
++  return UINT_MAX;
++}
++
++unsigned MachineFunction::getSMDupPhysReg(const CallInst *SM,
++                                          unsigned Op) const {
++  assert(SM && "Invalid stackmap");
++  assert(Op < SM->getNumArgOperands() && "Invalid operand number");
++  return getSMDupPhysReg(SM, SM->getArgOperand(Op));
 +}
 +
  //===----------------------------------------------------------------------===//
@@ -597,7 +695,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -134,17 +168,79 @@
+@@ -134,17 +168,101 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -662,6 +760,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +                      isPtr, isAlloca, false, PtrDataSize);
 +
 +    // Check if there's a backing stack slot
++    // TODO should be able to generate records for multiple backing slots
 +    SS = AP.MF->getSMBackingStackSlot(SMIR, OpVal);
 +    if(MFI->getObjectIndexBegin() <= SS && SS < MFI->getObjectIndexEnd() &&
 +       !MFI->isDeadObjectIndex(SS)) {
@@ -677,11 +776,32 @@ Index: lib/CodeGen/StackMaps.cpp
 +                        Offset, isPtr, isAlloca, true, PtrDataSize);
 +    }
 +
++    // Check if there's a duplicate register
++    // TODO should be able to generate records multiple duplicates
++    PhysReg = AP.MF->getSMDupPhysReg(SMIR, OpVal);
++    if(TargetRegisterInfo::isPhysicalRegister(PhysReg)) {
++      Offset = 0;
++      DwarfRegNum = getDwarfRegNum(PhysReg, TRI);
++      LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
++      SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, PhysReg);
++      if (SubRegIdx)
++        Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++
++      DEBUG(
++        dbgs() << "Stackmap " << ID << ": ";
++        OpVal->printAsOperand(dbgs());
++        dbgs() << ": duplicated in register " << DwarfRegNum << "\n";
++      );
++
++      Locs.emplace_back(Location::Register, valSize, DwarfRegNum, Offset,
++                        isPtr, isAlloca, true, PtrDataSize);
++    }
++
 +    ++Op;
      return ++MOI;
    }
  
-@@ -285,6 +381,7 @@
+@@ -285,6 +403,7 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -689,7 +809,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    LocationVec Locations;
    LiveOutVec LiveOuts;
-@@ -292,13 +389,33 @@
+@@ -292,13 +411,33 @@
    if (recordResult) {
      assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
      parseOperand(MI.operands_begin(), std::next(MI.operands_begin()), Locations,
@@ -725,7 +845,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
-@@ -327,8 +444,8 @@
+@@ -327,8 +466,8 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -736,7 +856,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -417,7 +534,7 @@
+@@ -417,7 +556,7 @@
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
      DEBUG(dbgs() << WSMP << "function addr: " << FR.first
@@ -745,7 +865,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
    }
-@@ -439,6 +556,8 @@
+@@ -439,6 +578,8 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -754,19 +874,19 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -447,6 +566,11 @@
+@@ -447,6 +588,11 @@
  ///     uint8  : Size in Bytes
  ///     uint16 : Dwarf RegNum
  ///     int32  : Offset
 +///     uint8  : Is it a pointer?
 +///     uint8  : Is it an alloca?
-+///     uint8  : Does it have a backing stack slot?
++///     uint8  : Is it a duplicate record for the same live value?
 +///     uint8  : Padding
 +///     uint32 : Size of pointed-to data
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -487,6 +611,8 @@
+@@ -487,6 +633,8 @@
      }
  
      OS.EmitIntValue(CSI.ID, 8);
@@ -775,13 +895,13 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -498,6 +624,11 @@
+@@ -498,6 +646,11 @@
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
 +      OS.EmitIntValue(Loc.Ptr, 1);
 +      OS.EmitIntValue(Loc.Alloca, 1);
-+      OS.EmitIntValue(Loc.Backing, 1);
++      OS.EmitIntValue(Loc.Duplicate, 1);
 +      OS.EmitIntValue(0, 1);
 +      OS.EmitIntValue(Loc.PtrDataSize, 4);
      }
@@ -923,7 +1043,7 @@ Index: lib/CodeGen/VirtRegMap.cpp
    // Live-in lists on basic blocks are required for physregs.
    addMBBLiveIns();
  
-@@ -496,3 +562,333 @@
+@@ -496,3 +562,334 @@
    }
  }
  
@@ -1006,10 +1126,8 @@ Index: lib/CodeGen/VirtRegMap.cpp
 +  SlotIndexes *SlotIndexes = LIS->getSlotIndexes();
 +  SlotIndex SMIdx = SlotIndexes->getInstructionIndex(std::get<1>(Inst));
 +  SlotIndex Use;
++  LiveInterval::iterator Seg;
 +
-+  // The goal is to search for stack loads/stores associated with the vreg.
-+  // Then, we check to see if the referenced stack slot is live during the same
-+  // interval as the stackmap.  If so, the value has a backing stack slot.
 +  for(MachineRegisterInfo::reg_instr_iterator MI = MRI->reg_instr_begin(Vreg),
 +      MIE = MRI->reg_instr_end();
 +      MI != MIE; MI++) {
@@ -1017,9 +1135,12 @@ Index: lib/CodeGen/VirtRegMap.cpp
 +    switch(Loc.type) {
 +    case SpillLoc::STACK_SLOT_LOAD:
 +    case SpillLoc::STACK_SLOT_STORE:
++      // Search for stack loads/stores associated with the vreg.  Then, check
++      // to see if the referenced stack slot is live during the same interval
++      // as the stackmap.  If so, the value has a backing stack slot.
 +      if(Loc.load.second >= 0 && LS->hasInterval(Loc.load.second)) {
 +        Use = SlotIndexes->getInstructionIndex(&*MI);
-+        LiveInterval::iterator Seg = LS->getInterval(Loc.load.second).find(Use);
++        Seg = LS->getInterval(Loc.load.second).find(Use);
 +        if(Seg->contains(SMIdx)) {
 +          DEBUG(
 +            Val->printAsOperand(dbgs());

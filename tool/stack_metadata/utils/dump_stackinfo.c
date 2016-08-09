@@ -122,8 +122,8 @@ bool print_loc_record(call_site_value record)
     return false;
   }
 
-  if(record.is_backing)
-    printf(" (is a backing stack slot)");
+  if(record.is_duplicate)
+    printf(" (duplicate record)");
 
   if(record.is_ptr)
   {

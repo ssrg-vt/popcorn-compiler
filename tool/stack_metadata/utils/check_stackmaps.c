@@ -157,11 +157,11 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          */
         unsigned num_a = 0, num_b = 0;
         for(k = 0; k < sm_a[i].stack_maps[j].locations->num; k++)
-          if(!sm_a[i].stack_maps[j].locations->record[k].is_backing)
+          if(!sm_a[i].stack_maps[j].locations->record[k].is_duplicate)
             num_a++;
 
         for(k = 0; k < sm_b[i].stack_maps[j].locations->num; k++)
-          if(!sm_b[i].stack_maps[j].locations->record[k].is_backing)
+          if(!sm_b[i].stack_maps[j].locations->record[k].is_duplicate)
             num_b++;
 
         /*
@@ -227,8 +227,8 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           }
 
           /* Skip backing stack slot records */
-          while(sm_a[i].stack_maps[j].locations->record[k+1].is_backing) k++;
-          while(sm_b[i].stack_maps[j].locations->record[l+1].is_backing) l++;
+          while(sm_a[i].stack_maps[j].locations->record[k+1].is_duplicate) k++;
+          while(sm_b[i].stack_maps[j].locations->record[l+1].is_duplicate) l++;
         }
       }
     }
