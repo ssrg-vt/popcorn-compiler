@@ -203,9 +203,9 @@ static volatile int __hold = 1;
 // saved by the pthread library.  Arguments can then be accessed post-migration
 // by reading this pointer.  This method for saving/restoring arguments is
 // necessary because saving argument locations in the LLVM backend is tricky.
-static void __migrate_shim_internal(void (*callback)(void *),
-                                    void *callback_data,
-                                    void *pc)
+static void inline __migrate_shim_internal(void (*callback)(void *),
+                                           void *callback_data,
+                                           void *pc)
 {
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
