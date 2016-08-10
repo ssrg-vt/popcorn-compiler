@@ -41,8 +41,14 @@ bool SectionStatic::runOnModule(Module &M) {
     std::string secName = ".";
     if(gl->isThreadLocal()) secName += "t";
 
+    if(gl->hasCommonLinkage() &&
+       gl->getName().find(".cache.") != std::string::npos) {
+      gl->setLinkage(GlobalValue::InternalLinkage);
+      this->numInstrumented++;
+    }
+
     // InternalLinkage is specifically for STATIC variables
-    if(gl->getLinkage() == GlobalValue::InternalLinkage) {  
+    if(gl->hasInternalLinkage()) {
       DEBUG(errs() << "\nInternal: " <<  *gl << "\n");
       if(gl->isConstant()) {
         //Belongs in RODATA
