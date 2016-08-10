@@ -555,6 +555,7 @@ public class AlignmentLogic {
 		}//end option 1
 		
 		if(globalVars.DEBUG){
+		System.out.println("HIIII ");
 			System.out.println("Ranges text:");
 			System.out.println("0x"+Long.toHexString(textMin));
 			System.out.println("0x"+Long.toHexString(textMax));
@@ -606,9 +607,18 @@ public class AlignmentLogic {
 					name = m.group(1);
 					type = m.group(2);
 					//System.out.println("BSS OLD temp: "+name);
-					if (name.indexOf(".",8) > 7){
-						name = name.substring(0, name.lastIndexOf("."));
-						name = name.concat(".*");
+					if (name.indexOf(".",8) > 7){	
+						System.out.println("DOT FOUND: "+name);
+						if(name.compareTo(".text..omp_outlined.") ==0 ){
+							 System.out.println("MOTEEEEEE BAD OMP");
+							continue;
+						}
+						String dot = name.substring(0, name.lastIndexOf("."));
+						if(dot.compareTo(".text..omp_outlined.") != 0){
+							System.out.println("NOT OMP outlined: "+name);
+							name = dot;
+							name = name.concat(".*");
+						}
 						//System.out.println("new: "+name);
 					}
 	
