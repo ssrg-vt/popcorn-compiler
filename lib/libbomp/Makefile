@@ -15,7 +15,10 @@ CFLAGS = -O3 -g -gdwarf-aranges -DPOSIX -fno-stack-protector \
          -ffunction-sections -fdata-sections
 
 OPT       = opt
-OPT_FLAGS = -load $(POPCORN)/lib/libStackInfo.so -stack-info
+OPT_FLAGS = -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
+            -load $(POPCORN)/lib/libSectionStatic.so -section-static \
+            -load $(POPCORN)/lib/libLiveValues.so \
+            -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 SRC = kmp.c linux_backend.c omp.c parallel.c processing.c self_info.c
 OBJ = $(SRC:.c=.o)
