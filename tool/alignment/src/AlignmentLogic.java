@@ -607,20 +607,29 @@ public class AlignmentLogic {
 					name = m.group(1);
 					type = m.group(2);
 					//System.out.println("BSS OLD temp: "+name);
-					if (name.indexOf(".",8) > 7){	
-						System.out.println("DOT FOUND: "+name);
-						if(name.compareTo(".text..omp_outlined.") ==0 ){
-							 System.out.println("MOTEEEEEE BAD OMP");
-							continue;
-						}
-						String dot = name.substring(0, name.lastIndexOf("."));
-						if(dot.compareTo(".text..omp_outlined.") != 0){
-							System.out.println("NOT OMP outlined: "+name);
-							name = dot;
+					if (name.indexOf(".",8) > 7){
+						if(type.compareTo("rodata") == 0){
+							//System.out.println("RODATA DOTY FOUND: "+name);
+							name = name.substring(0, name.lastIndexOf("."));
 							name = name.concat(".*");
-						}
-						//System.out.println("new: "+name);
-					}
+							System.out.println("FIXED RODATA DOT: "+name);
+						}else if(name.compareTo(".text..omp_outlined.") ==0 || name.compareTo(".text..omp.reduction.reduction_func") ==0){
+							//System.out.println("MOTEEEEEE BAD OMP");
+							continue;
+						}else{
+							String dot = name.substring(0, name.lastIndexOf("."));
+							if(dot.compareTo(".text..omp_outlined.") == 0 || dot.compareTo(".text..omp.reduction.reduction_func") ==0 ){
+								//skip these symbols
+							}else{
+								//transform
+								//System.out.println("NOT OMP outlined: "+dot);
+								name = dot;
+								name = name.concat(".*");
+								System.out.println("new: "+name);
+							}
+						}//end ELSE
+					}//end DOT NAME
+					
 	
 					//read and utilize the next line
 					temp = br1.readLine();
