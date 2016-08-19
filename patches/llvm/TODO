@@ -1,6 +1,0 @@
-LLVM 3.8
---------
-
-1. Port 3.7.1 changes to 3.8
-2. Update bomp for 3.8-specific OpenMP changes
-  - Uses different function passing interface for outlined OpenMP functions

@@ -1,0 +1,34 @@
+---------------------
+Installing clang/LLVM
+---------------------
+
+1. Download LLVM and clang 3.7.1:
+
+  $ svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final /usr/local/popcorn/src/llvm
+  $ svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final /usr/local/popcorn/src/llvm/tools/clang
+
+2. Patch LLVM:
+
+  $ patch -d /usr/local/popcorn/src/llvm < llvm-3.7.1.patch
+
+3. Build & install LLVM (see [1] for more details)
+
+  $ cd /usr/local/popcorn/src/llvm
+  $ mkdir build && cd build
+  $ cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local/popcorn \
+          -DLLVM_ENABLE_RTTI=ON \
+          ..
+  $ make install
+
+4. Go get a cup of coffee, this might take an hour or so.  You can speed it up
+   by enabling a parallel build:
+
+  $ make -j<# of parallel jobs> install
+
+   Also, you can specify which targets are built:
+
+  $ cmake <all previous flags> -DLLVM_TARGETS_TO_BUILD="AArch64;X86" ..
+
+[1] Building LLVM with CMake, http://llvm.org/docs/CMake.html
+

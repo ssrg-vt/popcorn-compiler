@@ -1,0 +1,40 @@
+Popcorn Compiler Toolchain Installation
+
+---------------
+Getting started
+---------------
+
+The toolchain will be installed at /usr/local/popcorn.  After the toolchain has
+been installed, add /usr/local/popcorn/bin to PATH and /usr/local/popcorn/lib
+to LD_LIBRARY_PATH so that the correct compiler and libraries are used when
+building multi-ISA binaries (alternatively, hard-code these locations into your
+build procedure).
+
+Note: if you have a previous clang/LLVM installation or binutils installation,
+adding /usr/local/popcorn/* to environment variables may shadow previous
+installations!
+
+------------------
+Installation order
+------------------
+
+There are many components that need to be installed, and several prerequisites
+between components, so components should be installed in the following order:
+
+1. Download/patch/install clang/LLVM - see patches/llvm
+2. Download/patch/install binutils - see patches/binutils-gold
+3. Install LLVM passes - see lib/passes
+4. Install architecture-specific libraries
+  - see lib/musl-1.1.10
+  - see lib/libelf
+  - see lib/libdwarf
+  - see lib/libbomp
+  - see lib/stack_transformation
+  - see lib/migration
+5. Install alignment tool - see tool/alignment
+6. Install stack transformation metadata tool - see tool/stack_metadata
+7. (Optional) Install call information library - see lib/stack_depth
+
+See the INSTALL file in each subdirectory for more details.
+
+# TODO installation script

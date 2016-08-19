@@ -1,9 +1,11 @@
-ABOUT THIS PATCH
+--------
+Overview
+--------
 
-This patch is for binutils Gold ld linker. Specifically it is for release v2.27
+This patch is for binutils' gold ld linker, v2.27.  It achieves two things:
 
-TO APPLY THIS PATCH
+1. Adjusts aarch64's TLS layout to conform to x86-64's layout
+2. Print detailed size and alignment information for all data/function symbols
+   in the generated binaries.
 
-Untar binutils and run the following:
-
-patch < binutils-2.27-gold.patch
+# TODO add information about how the layout is changed, i.e., is it inverted?
