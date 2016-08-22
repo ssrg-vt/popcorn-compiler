@@ -1,0 +1,15 @@
+------------------------------
+Installing Alignment Component
+------------------------------
+
+The Alignment component is needed by the Popcorn Compiler Toolchain
+to produce the custom linker scripts used by the GOLD linker.
+This enables the given target application to be properly aligne when
+compiling the target application into a heterogeneous-ISA executable
+for Popcorn Linux.
+
+1. Build and install Alignment Component
+
+  $ make
+  $ make install
+

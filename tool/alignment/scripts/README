@@ -24,6 +24,21 @@ The Java tool is needed as it performs the logic behind aligning
 symbols for the heterogeneous ISA binary. Running the scripts ALONE
 will NOT accomplish an ALIGNED heterogeneous binary.
 
+----------------------
+DEFAULT LINKER FILES
+----------------------
+elf_x86_64.x
+aarch64linux.x
+
+Purpose: These files are templates for the alignment component when
+creating the custom linker scripts needed to align all symbols and
+data in the resulting executables for the architectures currently
+supported (more to come hopefully). These files are populated with
+symbol section and additional alignment rules to ensure all
+executables have symbols conformed to be at the same address.
+
+DO NOT MODIFY THESE LINKER FILES !!!
+
 SCRIPTS + Description
 ==============================================================
 generateObjs_gcc.sh
