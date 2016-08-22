@@ -1,0 +1,30 @@
+-----------------
+Installing libelf
+-----------------
+
+The libelf library is needed by the stack transformation runtime, and therefore
+needs to be compiled for all architectures in the system.
+
+NOTE: libelf is built against Popcorn's musl-libc.  Please install musl-libc
+for all architectures in /usr/local/popcorn/<arch> before continuing -- it is
+important to compile against musl-libc, otherwise gcc will default to compiling
+against glibc and glibc-specific symbols will creep into the library.  This
+will lead to undefined/unresolved symbols when compiling applications.
+
+NOTE: do a "make distclean" in-between building for individual architectures
+
+1. Build & install libelf for aarch64:
+
+  $ CFLAGS="-O3 -ffunction-sections -fdata-sections -specs /usr/local/popcorn/aarch64/lib/musl-gcc.specs" ./configure --host=aarch64-linux-gnu --prefix=/usr/local/popcorn/aarch64 --enable-elf64 --disable-shared --enable-extended-format
+  $ make install
+
+2. Build & install libelf for x86_64:
+
+  $ make distclean
+  $ CFLAGS="-O3 -ffunction-sections -fdata-sections -specs /usr/local/popcorn/x86_64/lib/musl-gcc.specs" ./configure  --prefix=/usr/local/popcorn/x86_64 --enable-elf64 --disable-shared --enable-extended-format
+  $ make install
+
+3. You can speed the build up by enabling parallel jobs:
+
+  $ make -j<# of parallel jobs> install
+
