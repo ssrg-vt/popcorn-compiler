@@ -9,7 +9,7 @@ Installing clang/LLVM
 
 2. Patch LLVM:
 
-  $ patch -d /usr/local/popcorn/src/llvm < llvm-3.7.1.patch
+  $ patch -p0 -d /usr/local/popcorn/src/llvm < llvm-3.7.1.patch
 
 3. Build & install LLVM (see [1] for more details)
 
