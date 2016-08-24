@@ -172,6 +172,21 @@ Index: include/llvm/CodeGen/MachineFunction.h
  };
  
  //===--------------------------------------------------------------------===//
+Index: include/llvm/CodeGen/Passes.h
+===================================================================
+--- include/llvm/CodeGen/Passes.h	(revision 277823)
++++ include/llvm/CodeGen/Passes.h	(working copy)
+@@ -448,6 +448,10 @@
+   // instruction and update the MachineFunctionInfo with that information.
+   extern char &ShrinkWrapID;
+ 
++  /// Stack transformation metadata pass.  Gather additional stack
++  /// transformation metadata from machine functions.
++  extern char &StackTransformMetadataID;
++
+   /// VirtRegRewriter pass. Rewrite virtual registers to physical registers as
+   /// assigned in VirtRegMap.
+   extern char &VirtRegRewriterID;
 Index: include/llvm/CodeGen/StackMaps.h
 ===================================================================
 --- include/llvm/CodeGen/StackMaps.h	(revision 277823)
@@ -235,6 +250,18 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
+Index: include/llvm/InitializePasses.h
+===================================================================
+--- include/llvm/InitializePasses.h	(revision 277823)
++++ include/llvm/InitializePasses.h	(working copy)
+@@ -263,6 +263,7 @@
+ void initializeStackProtectorPass(PassRegistry&);
+ void initializeStackColoringPass(PassRegistry&);
+ void initializeStackSlotColoringPass(PassRegistry&);
++void initializeStackTransformMetadataPass(PassRegistry&);
+ void initializeStraightLineStrengthReducePass(PassRegistry &);
+ void initializeStripDeadDebugInfoPass(PassRegistry&);
+ void initializeStripDeadPrototypesPassPass(PassRegistry&);
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
 --- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 277823)
@@ -281,6 +308,30 @@ Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
  void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
    this->MF = &MF;
    // Get the function symbol.
+Index: lib/CodeGen/CMakeLists.txt
+===================================================================
+--- lib/CodeGen/CMakeLists.txt	(revision 277823)
++++ lib/CodeGen/CMakeLists.txt	(working copy)
+@@ -111,6 +111,7 @@
+   StackSlotColoring.cpp
+   StackMapLivenessAnalysis.cpp
+   StackMaps.cpp
++  StackTransformMetadata.cpp
+   StatepointExampleGC.cpp
+   TailDuplication.cpp
+   TargetFrameLoweringImpl.cpp
+Index: lib/CodeGen/CodeGen.cpp
+===================================================================
+--- lib/CodeGen/CodeGen.cpp	(revision 277823)
++++ lib/CodeGen/CodeGen.cpp	(working copy)
+@@ -68,6 +68,7 @@
+   initializeStackMapLivenessPass(Registry);
+   initializeStackProtectorPass(Registry);
+   initializeStackSlotColoringPass(Registry);
++  initializeStackTransformMetadataPass(Registry);
+   initializeTailDuplicatePassPass(Registry);
+   initializeTargetPassConfigPass(Registry);
+   initializeTwoAddressInstructionPassPass(Registry);
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
 --- lib/CodeGen/MachineFunction.cpp	(revision 277823)
@@ -583,6 +634,21 @@ Index: lib/CodeGen/MachineFunction.cpp
  //===----------------------------------------------------------------------===//
  //  MachineFrameInfo implementation
  //===----------------------------------------------------------------------===//
+Index: lib/CodeGen/Passes.cpp
+===================================================================
+--- lib/CodeGen/Passes.cpp	(revision 277823)
++++ lib/CodeGen/Passes.cpp	(working copy)
+@@ -754,6 +754,10 @@
+   // Allow targets to change the register assignments before rewriting.
+   addPreRewrite();
+ 
++  // Gather additional stack transformation metadata before rewriting virtual
++  // registers
++  addPass(&StackTransformMetadataID);
++
+   // Finally rewrite virtual registers.
+   addPass(&VirtRegRewriterID);
+ 
 Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
 --- lib/CodeGen/RegAllocFast.cpp	(revision 277823)
@@ -930,249 +996,233 @@ Index: lib/CodeGen/StackSlotColoring.cpp
  
    DEBUG(dbgs() << "\nSpill slots after coloring:\n");
    for (unsigned i = 0, e = SSIntervals.size(); i != e; ++i) {
-Index: lib/CodeGen/VirtRegMap.cpp
+Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
---- lib/CodeGen/VirtRegMap.cpp	(revision 277823)
-+++ lib/CodeGen/VirtRegMap.cpp	(working copy)
-@@ -18,6 +18,7 @@
- 
- #include "llvm/CodeGen/VirtRegMap.h"
- #include "LiveDebugVariables.h"
-+#include "llvm/ADT/DenseSet.h"
- #include "llvm/ADT/STLExtras.h"
- #include "llvm/ADT/SparseSet.h"
- #include "llvm/ADT/Statistic.h"
-@@ -28,7 +29,9 @@
- #include "llvm/CodeGen/MachineInstrBuilder.h"
- #include "llvm/CodeGen/MachineRegisterInfo.h"
- #include "llvm/CodeGen/Passes.h"
-+#include "llvm/CodeGen/StackMaps.h"
- #include "llvm/IR/Function.h"
-+#include "llvm/IR/IntrinsicInst.h"
- #include "llvm/Support/CommandLine.h"
- #include "llvm/Support/Compiler.h"
- #include "llvm/Support/Debug.h"
-@@ -162,6 +165,7 @@
-   MachineRegisterInfo *MRI;
-   SlotIndexes *Indexes;
-   LiveIntervals *LIS;
-+  LiveStacks *LS;
-   VirtRegMap *VRM;
-   SparseSet<unsigned> PhysRegs;
- 
-@@ -168,6 +172,63 @@
-   void rewrite();
-   void addMBBLiveIns();
-   bool readsUndefSubreg(const MachineOperand &MO) const;
+--- lib/CodeGen/StackTransformMetadata.cpp	(revision 0)
++++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
+@@ -0,0 +1,591 @@
++//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file accumulates additional data from machine functions needed to do
++// correct and complete stack transformation.
++//
++//===----------------------------------------------------------------------===//
 +
++#include "llvm/CodeGen/LiveIntervalAnalysis.h"
++#include "llvm/CodeGen/LiveStackAnalysis.h"
++#include "llvm/CodeGen/MachineFrameInfo.h"
++#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/CodeGen/MachineRegisterInfo.h"
++#include "llvm/CodeGen/Passes.h"
++#include "llvm/CodeGen/VirtRegMap.h"
++#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/Target/TargetInstrInfo.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "stack-transform-metadata"
++
++//===----------------------------------------------------------------------===//
++//                          StackTransformMetadata
++//===----------------------------------------------------------------------===//
++//
++// Run analyses over machine functions (before virtual register rewriting) to
++// glean additional information about live values.  This analysis finds
++// duplicate locations for live values, including backing stack slots and other
++// registers.
++//
++// TODO this analysis should also find pre-populated registers, e.g., pointers
++// to the argument area
++//
++namespace {
++class StackTransformMetadata : public MachineFunctionPass {
++  MachineFunction *MF;
++  const MachineRegisterInfo *MRI;
++  const TargetInstrInfo *TII;
++  const LiveIntervals *LI;
++  const LiveStacks *LS;
++  const SlotIndexes *Indexes;
++  const VirtRegMap *VRM;
++
++  /// Operation type (copied from StackMap.h, without including everything else)
++  enum OpType { DirectMemRefOp, IndirectMemRefOp, ConstantOp };
++
++  /// A bundle tying together a stackmap IR instruction, the generated stackmap
++  /// machine instruction and the call machine instruction that caused the
++  /// stackmap to be emitted in the IR, respectively
 +  typedef std::tuple<const CallInst *,
 +                     const MachineInstr *,
 +                     const MachineInstr *> SMInstBundle;
 +
-+  /// Find stackmap operands that have been spilled
-+  void findSpilledStackmapOperands();
++  /// Getters for individual elements of instruction bundles
++  static inline const CallInst *getIRSM(const SMInstBundle &B) { return std::get<0>(B); }
++  static inline const MachineInstr *getMISM(const SMInstBundle &B) { return std::get<1>(B); }
++  static inline const MachineInstr *getMICall(const SMInstBundle &B) { return std::get<2>(B); }
++
++  /// Mapping between virtual registers and IR operands
++  typedef std::pair<unsigned, SmallVector<const Value *, 8> > RegValsPair;
++  typedef std::map<unsigned, SmallVector<const Value *, 8> > RegValsMap;
 +
 +  /// A value's spill location
 +  class SpillLoc {
 +  public:
-+    enum type {
-+      NONE,
-+      VREG,
-+      STACK_SLOT_LOAD,
-+      STACK_SLOT_STORE
-+    };
-+
-+    typedef std::pair<unsigned, unsigned> VregCopy;
-+    typedef std::pair<unsigned, int> StackSlotCopy;
-+
-+    SpillLoc() : type(NONE), copy(VregCopy(0, 0)) {}
-+
-+    SpillLoc& operator=(const SpillLoc &RHS) {
-+      if(this != &RHS) {
-+        type = RHS.type;
-+        switch(type) {
-+        case VREG: copy = RHS.copy; break;
-+        case STACK_SLOT_LOAD: load = RHS.load; break;
-+        case STACK_SLOT_STORE: load = RHS.load; break;
-+        default: copy = VregCopy(0, 0); break;
-+        }
-+      }
-+      return *this;
-+    }
-+
-+    enum type type;
-+    union {
-+      VregCopy copy;
-+      StackSlotCopy load;
-+    };
++    enum Type { NONE, VREG, STACK_LOAD, STACK_STORE };
++    unsigned Vreg;
++    SpillLoc() : Vreg(VirtRegMap::NO_PHYS_REG) {}
++    SpillLoc(unsigned Vreg) : Vreg(Vreg) {}
++    virtual SpillLoc *copy() const = 0;
++    virtual ~SpillLoc() {}
++    virtual Type getType() const = 0;
 +  };
++
++  /// A spill to a stack slot
++  class StackSpillLoc : public SpillLoc {
++  public:
++    int StackSlot;
++    StackSpillLoc() : StackSlot(VirtRegMap::NO_STACK_SLOT) {}
++    StackSpillLoc(unsigned Vreg, int StackSlot) :
++                      SpillLoc(Vreg), StackSlot(StackSlot) {}
++    virtual SpillLoc *copy() const = 0;
++    virtual Type getType() const = 0;
++  };
++
++  /// A load from a stack slot
++  class StackLoadLoc : public StackSpillLoc {
++  public:
++    StackLoadLoc() {}
++    StackLoadLoc(unsigned Vreg, int StackSlot) :
++                     StackSpillLoc(Vreg, StackSlot) {}
++    virtual SpillLoc *copy() const {
++      return new StackLoadLoc(Vreg, StackSlot);
++    }
++    virtual Type getType() const { return SpillLoc::STACK_LOAD; }
++  };
++
++  /// A store to a stack slot
++  class StackStoreLoc : public StackSpillLoc {
++  public:
++    StackStoreLoc() {}
++    StackStoreLoc(unsigned Vreg, int StackSlot) :
++                      StackSpillLoc(Vreg, StackSlot) {}
++    virtual SpillLoc *copy() const {
++      return new StackStoreLoc(Vreg, StackSlot);
++    }
++    virtual Type getType() const { return SpillLoc::STACK_STORE; }
++  };
++
++  /// A spill to another register
++  class RegSpillLoc : public SpillLoc {
++  public:
++    unsigned SrcVreg;
++    RegSpillLoc() : SrcVreg(VirtRegMap::NO_PHYS_REG) {}
++    RegSpillLoc(unsigned DefVreg, unsigned SrcVreg) :
++                    SpillLoc(DefVreg), SrcVreg(SrcVreg) {}
++    virtual SpillLoc *copy() const {
++      return new RegSpillLoc(Vreg, SrcVreg);
++    }
++    virtual Type getType() const { return SpillLoc::VREG; }
++  };
++
++  /// Find stackmap operands that have been spilled to alternate locations
++  void findSpilledStackmapOps();
++
++  /// Gather stackmap machine instructions, the IR instructions which generated
++  /// the stackmaps, and their associated call machine instructions
++  void bundleStackmaps(SmallVector<SMInstBundle, 32> &SM);
++
++  /// Find all virtual register operands in a stackmap and collect virtual
++  /// register/IR value mappings
++  void findVregOps(const CallInst *IRSM,
++                   const MachineInstr *MISM,
++                   RegValsMap &Vregs);
++
++  /// Unwind live value movement in the series of instructions between a call
++  /// and a stackmap
++  void unwindToCall(const SMInstBundle &SM, RegValsMap &Vregs);
 +
 +  /// Analyze a machine instruction to see if a value is getting restored
 +  /// from a spill location.
-+  void getSpillLocation(const MachineInstr *MI, SpillLoc &Loc) const;
++  SpillLoc *getSpillLocation(const MachineInstr *MI) const;
 +
-+  /// Return the machine instruction that defines the specified Vreg within
-+  /// range, or nullptr if it is not defined in that range
++  /// Return whether or not a virtual registers is defined within a range of
++  /// machine instructions, inclusive
 +  const MachineInstr *definedInRange(const MachineInstr *Start,
 +                                     const MachineInstr *End,
 +                                     unsigned Vreg) const;
 +
 +  /// Find if a virtual register is backed by a stack slot
-+  void findBackingStackSlots(unsigned Vreg,
-+                             const SMInstBundle &Inst,
-+                             const Value *Val);
- public:
-   static char ID;
-   VirtRegRewriter() : MachineFunctionPass(ID) {}
-@@ -212,6 +273,7 @@
-   MRI = &MF->getRegInfo();
-   Indexes = &getAnalysis<SlotIndexes>();
-   LIS = &getAnalysis<LiveIntervals>();
++  int findBackingStackSlots(unsigned Vreg, const MachineInstr *SM);
++public:
++  static char ID;
++  StackTransformMetadata() : MachineFunctionPass(ID) {}
++
++  void getAnalysisUsage(AnalysisUsage &AU) const override;
++
++  bool runOnMachineFunction(MachineFunction&) override;
++};
++} // end anonymous namespace
++
++char &llvm::StackTransformMetadataID = StackTransformMetadata::ID;
++
++INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
++  "Analyze functions for additional stack transformation metadata", false, true)
++INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
++INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
++INITIALIZE_PASS_DEPENDENCY(LiveStacks)
++INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
++INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
++  "Analyze functions for additional stack transformation metadata", false, true)
++
++char StackTransformMetadata::ID = 0;
++
++void StackTransformMetadata::getAnalysisUsage(AnalysisUsage &AU) const {
++  AU.setPreservesAll();
++  AU.addRequired<LiveIntervals>();
++  AU.addRequired<LiveStacks>();
++  AU.addRequired<SlotIndexes>();
++  AU.addRequired<VirtRegMap>();
++  MachineFunctionPass::getAnalysisUsage(AU);
++}
++
++bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
++  MF = &fn;
++  TII = MF->getSubtarget().getInstrInfo();
++  MRI = &MF->getRegInfo();
++  Indexes = &getAnalysis<SlotIndexes>();
++  LI = &getAnalysis<LiveIntervals>();
 +  LS = &getAnalysis<LiveStacks>();
-   VRM = &getAnalysis<VirtRegMap>();
-   DEBUG(dbgs() << "********** REWRITE VIRTUAL REGISTERS **********\n"
-                << "********** Function: "
-@@ -221,6 +283,10 @@
-   // Add kill flags while we still have virtual registers.
-   LIS->addKillFlags(VRM);
- 
-+  // Find stackmap operand spill locations
-+  if(MF->getFrameInfo()->hasStackMap())
-+    findSpilledStackmapOperands();
++  VRM = &getAnalysis<VirtRegMap>();
 +
-   // Live-in lists on basic blocks are required for physregs.
-   addMBBLiveIns();
- 
-@@ -496,3 +562,334 @@
-   }
- }
- 
-+/// Analyze a machine instruction to see if a value is getting restored from a
-+/// spill location.
-+void VirtRegRewriter::getSpillLocation(const MachineInstr *MI,
-+                                       SpillLoc &Loc) const {
-+  assert(MI && "Invalid machine instruction");
++  if(MF->getFrameInfo()->hasStackMap()) {
++    DEBUG(
++      dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
++             << "********** Function: " << MF->getName() << '\n';
++      VRM->dump();
++    );
 +
-+  unsigned Vreg;
-+  unsigned DefVreg;
-+  int SS;
-+  Loc.type = SpillLoc::NONE;
-+  Loc.copy = SpillLoc::VregCopy(0, 0);
++    findSpilledStackmapOps();
 +
-+  if(MI->isCopy()) { // Check for copies from callee-saved regs
-+    for(unsigned i = 0, e = MI->getNumOperands(); i != e; i++) {
-+      const MachineOperand &MO = MI->getOperand(i);
-+      if(MO.isReg()) {
-+        if(MO.isDef()) DefVreg = MO.getReg();
-+        else Vreg = MO.getReg();
-+      }
-+    }
++    // TODO what about duplicate registers & stack slots?
 +
-+    if(TargetRegisterInfo::isVirtualRegister(Vreg) &&
-+       TargetRegisterInfo::isVirtualRegister(DefVreg)) {
-+      Loc.type = SpillLoc::VREG;
-+      Loc.copy = SpillLoc::VregCopy(DefVreg, Vreg);
-+    }
-+  } else if((DefVreg = TII->isLoadFromStackSlot(MI, SS))) {
-+    if(TargetRegisterInfo::isVirtualRegister(DefVreg)) {
-+      Loc.type = SpillLoc::STACK_SLOT_LOAD;
-+      Loc.load = SpillLoc::StackSlotCopy(DefVreg, SS);
-+    }
-+  } else if((Vreg = TII->isStoreToStackSlot(MI, SS))) {
-+    if(TargetRegisterInfo::isVirtualRegister(Vreg)) {
-+      Loc.type = SpillLoc::STACK_SLOT_STORE;
-+      Loc.load = SpillLoc::StackSlotCopy(Vreg, SS);
-+    }
-+  }
-+}
-+
-+/// Return whether or not the specified machine instruction is defined within
-+/// the specified range of machine instructions, inclusive
-+const MachineInstr *VirtRegRewriter::definedInRange(const MachineInstr *Start,
-+                                                    const MachineInstr *End,
-+                                                    unsigned Vreg) const {
-+  assert(Start && End && "Invalid machine instruction");
-+  assert(TargetRegisterInfo::isVirtualRegister(Vreg) && "Invalid register");
-+  assert(Start->getParent() == End->getParent() &&
-+         "Range must be contained within the same basic block");
-+
-+  // The vreg may have multiple definitions, search over all of them
-+  for(MachineRegisterInfo::def_instr_iterator DI = MRI->def_instr_begin(Vreg),
-+      DIE = MRI->def_instr_end();
-+      DI != DIE; DI++) {
-+    const MachineInstr *MI = &*DI;
-+
-+    // Shortcut -- are we the starting or ending instruction of the range?
-+    if(MI == Start || MI == End) return MI;
-+
-+    // Search the range of machine instructions
-+    for(const MachineInstr *Cur = Start->getNextNode();
-+        Cur != End && Cur != nullptr;
-+        Cur = Cur->getNextNode())
-+      if(Cur == MI)
-+        return MI;
++    // TODO find pre-populated registers that do not correspond to live values 
 +  }
 +
-+  // None of the definitions were within the range
-+  return nullptr;
++  return false;
 +}
 +
-+/// Find if a virtual register is backed by a stack slot
-+void VirtRegRewriter::findBackingStackSlots(unsigned Vreg,
-+                                            const SMInstBundle &Inst,
-+                                            const Value *Val)
-+{
-+  SpillLoc Loc;
-+  SlotIndexes *SlotIndexes = LIS->getSlotIndexes();
-+  SlotIndex SMIdx = SlotIndexes->getInstructionIndex(std::get<1>(Inst));
-+  SlotIndex Use;
-+  LiveInterval::iterator Seg;
-+
-+  for(MachineRegisterInfo::reg_instr_iterator MI = MRI->reg_instr_begin(Vreg),
-+      MIE = MRI->reg_instr_end();
-+      MI != MIE; MI++) {
-+    getSpillLocation(&*MI, Loc);
-+    switch(Loc.type) {
-+    case SpillLoc::STACK_SLOT_LOAD:
-+    case SpillLoc::STACK_SLOT_STORE:
-+      // Search for stack loads/stores associated with the vreg.  Then, check
-+      // to see if the referenced stack slot is live during the same interval
-+      // as the stackmap.  If so, the value has a backing stack slot.
-+      if(Loc.load.second >= 0 && LS->hasInterval(Loc.load.second)) {
-+        Use = SlotIndexes->getInstructionIndex(&*MI);
-+        Seg = LS->getInterval(Loc.load.second).find(Use);
-+        if(Seg->contains(SMIdx)) {
-+          DEBUG(
-+            Val->printAsOperand(dbgs());
-+            dbgs() << ": backed by stack slot " << Loc.load.second << "\n"
-+          );
-+          MF->addSMOpBackingStackSlot(std::get<0>(Inst), Val, Loc.load.second);
-+        }
-+      } else {
-+        DEBUG(
-+          dbgs() << "WARNING: ignoring when searching for backing slot:\n";
-+          MI->dump();
-+        );
-+      }
-+      break;
-+    case SpillLoc::VREG:
-+    case SpillLoc::NONE:
-+    default: break;
-+    }
-+  }
-+}
-+
-+/// Find stackmap operands that have been spilled
-+void VirtRegRewriter::findSpilledStackmapOperands()
-+{
-+  DEBUG(
-+    dbgs() << "\n********** Searching for spilled stackmap operands in "
-+           << MF->getName() << " **********\n";
-+  );
-+
-+  // Gather stackmap machine instructions, the IR instructions which generated
-+  // the stackmaps, and their associated call machine instructions
-+  SmallVector<SMInstBundle, 32> SM;
++/// Gather stackmap machine instructions, the IR instructions which generated
++/// the stackmaps, and their associated call machine instructions
++void
++StackTransformMetadata::bundleStackmaps(SmallVector<SMInstBundle, 32> &SM) {
 +  static const std::string SMName("llvm.experimental.stackmap");
 +  for(auto MBB = MF->begin(), MBBE = MF->end(); MBB != MBBE; MBB++) {
 +    for(auto MI = MBB->instr_begin(), MIE = MBB->instr_end();
@@ -1212,7 +1262,7 @@ Index: lib/CodeGen/VirtRegMap.cpp
 +            dbgs() << "WARNING: stackmap " << ID << " ";
 +            SMIR->printAsOperand(dbgs());
 +            dbgs() << ": could not find associated call instruction "
-+                      "(has it been lowered to a native instruction?)\n";
++                      "(lowered to a native instruction?)\n";
 +          );
 +          continue;
 +        }
@@ -1221,158 +1271,322 @@ Index: lib/CodeGen/VirtRegMap.cpp
 +      }
 +    }
 +  }
++}
++
++/// Find all virtual register operands in a stackmap and collect virtual
++/// register/IR value mappings
++void StackTransformMetadata::findVregOps(const CallInst *IRSM,
++                                         const MachineInstr *MISM,
++                                         RegValsMap &Vregs) {
++  RegValsMap::iterator VregIt;
++  MachineInstr::const_mop_iterator MOit;
++  CallInst::const_op_iterator IRit;
++
++  for(MOit = std::next(MISM->operands_begin(), 2),
++      IRit = std::next(IRSM->op_begin(), 2);
++      MOit != MISM->operands_end() && IRit != (IRSM->op_end() - 1);
++      MOit++, IRit++) {
++    // Emulate StackMaps::parseOperand to correlate IR and machine operands
++    if(MOit->isImm()) {
++      switch(MOit->getImm()) {
++      case DirectMemRefOp: MOit++; MOit++; break;
++      case IndirectMemRefOp: MOit++; MOit++; MOit++; break;
++      case ConstantOp: MOit++; break;
++      default: llvm_unreachable("Unrecognized operand type.");
++      }
++    } else if(MOit->isReg()) {
++      const Value *IRVal = IRit->get();
++      unsigned Reg = MOit->getReg();
++
++      assert(IRVal && "Invalid stackmap IR operand");
++      assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
++             "Should not have been converted to physical registers yet");
++
++      DEBUG(
++        IRVal->printAsOperand(dbgs());
++        dbgs() << ": in vreg" << TargetRegisterInfo::virtReg2Index(Reg) << "\n";
++      );
++
++      if((VregIt = Vregs.find(Reg)) == Vregs.end()) {
++        SmallVector<const Value *, 8> vals;
++        VregIt = Vregs.insert(RegValsPair(Reg, std::move(vals))).first;
++      }
++      VregIt->second.push_back(IRVal);
++    }
++  }
++  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
++}
++
++/// Analyze a machine instruction to see if a value is getting restored from a
++/// spill location.
++StackTransformMetadata::SpillLoc *
++StackTransformMetadata::getSpillLocation(const MachineInstr *MI) const {
++  unsigned SrcVreg;
++  unsigned DefVreg;
++  int SS;
++
++  assert(MI && "Invalid machine instruction");
++
++  // Is it a copy from another register?
++  if(MI->isCopy()) {
++    for(unsigned i = 0, e = MI->getNumOperands(); i != e; i++) {
++      const MachineOperand &MO = MI->getOperand(i);
++      if(MO.isReg()) {
++        if(MO.isDef()) DefVreg = MO.getReg();
++        else SrcVreg = MO.getReg();
++      }
++    }
++
++    if(TargetRegisterInfo::isVirtualRegister(SrcVreg) &&
++       TargetRegisterInfo::isVirtualRegister(DefVreg))
++      return new RegSpillLoc(DefVreg, SrcVreg);
++  }
++
++  // Is it a load from the stack?
++  if((DefVreg = TII->isLoadFromStackSlot(MI, SS)) &&
++     TargetRegisterInfo::isVirtualRegister(DefVreg))
++      return new StackLoadLoc(DefVreg, SS);
++
++  // Is it a store to the stack?
++  if((SrcVreg = TII->isStoreToStackSlot(MI, SS)) &&
++     TargetRegisterInfo::isVirtualRegister(SrcVreg))
++      return new StackStoreLoc(SrcVreg, SS);
++
++  // Something else
++  return nullptr;
++}
++
++/// Return whether or not a machine instruction is defined within a range of
++/// machine instructions, inclusive
++const MachineInstr *
++StackTransformMetadata::definedInRange(const MachineInstr *Start,
++                                       const MachineInstr *End,
++                                       unsigned Vreg) const {
++  assert(Start && End && "Invalid machine instruction");
++  assert(TargetRegisterInfo::isVirtualRegister(Vreg) && "Invalid register");
++  assert(Start->getParent() == End->getParent() &&
++         "Range must be contained within the same basic block");
++
++  // Search over all the vreg's definitions
++  for(MachineRegisterInfo::def_instr_iterator DI = MRI->def_instr_begin(Vreg),
++      DIE = MRI->def_instr_end();
++      DI != DIE; DI++) {
++    const MachineInstr *MI = &*DI;
++
++    // Shortcut -- are we the starting or ending instruction of the range?
++    if(MI == Start || MI == End) return MI;
++
++    // Search the range of machine instructions
++    for(const MachineInstr *Cur = Start->getNextNode();
++        Cur != End && Cur != nullptr;
++        Cur = Cur->getNextNode())
++      if(Cur == MI)
++        return MI;
++  }
++
++  // None of the definitions were within the range
++  return nullptr;
++}
++
++/// Unwind live value movement in the series of instructions between a call and
++/// a stackmap
++void StackTransformMetadata::unwindToCall(const SMInstBundle &SM,
++                                          RegValsMap &Vregs) {
++  unsigned PhysReg;
++  const CallInst *IRSM = getIRSM(SM);
++  const MachineInstr *MISM = getMISM(SM), *MICall = getMICall(SM), *Cur;
++  SpillLoc *Loc, *DefChain;
++  StackLoadLoc *SLL;
++  RegSpillLoc *RSL;
++  RegValsMap::iterator vregIt;
++
++  for(Cur = MICall->getNextNode(); Cur != MISM; Cur = Cur->getNextNode()) {
++    Loc = getSpillLocation(Cur);
++    if(!Loc) continue;
++    if((vregIt = Vregs.find(Loc->Vreg)) == Vregs.end()) {
++      delete Loc;
++      continue;
++    }
++
++    // We may be unwinding a chain of copies to find the original spill
++    // location.  There are 2 halting conditions for the while-loop below:
++    //
++    //  1. Restoring the vreg from a spill slot
++    //  2. Restoring the vreg from a callee-saved register allocated to a
++    //     vreg whose definition is NOT between the call and the stackmap
++    //
++    // The second condition is qualified by the location of the definition of
++    // the callee-saved vreg because the backend can generate really stupid
++    // code, e.g., on x86:
++    //
++    //    callq ...
++    //    mov -0x10(%rbp), %rbx
++    //    mov %rbx, %rcx
++    //    <stackmap machine instruction>
++    //
++    // TODO it should not possible to restore from a stack slot, then spill
++    // again before reaching the stackmap -- this would invalidate #1 above.
++    DefChain = Loc->copy();
++    while(DefChain->getType() == SpillLoc::VREG) {
++      assert(DefChain && "Invalid use-def chain");
++      RSL = (RegSpillLoc *)DefChain;
++      const MachineInstr *Def = definedInRange(MICall, MISM, RSL->SrcVreg);
++
++      // Are we in a callee-saved register defined outside of the range of
++      // instructions between the call and the stackmap?
++      if(!Def && !MF->isCallerSaved(VRM->getPhys(RSL->SrcVreg)))
++          break;
++
++      assert(Def && "Invalid virtual register definition");
++      DefChain = getSpillLocation(Def);
++      delete RSL;
++    }
++
++    switch(DefChain->getType()) {
++    case SpillLoc::VREG:
++      RSL = (RegSpillLoc *)DefChain;
++      PhysReg = VRM->getPhys(RSL->SrcVreg);
++      assert(PhysReg != VirtRegMap::NO_PHYS_REG && "Invalid register");
++      assert(!MF->isCallerSaved(PhysReg) && "Invalid register");
++
++      for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
++        DEBUG(
++          vregIt->second[sz]->printAsOperand(dbgs());
++          dbgs() << ": spilled to callee-saved register "
++                 << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << "\n";
++        );
++        MF->addSMOpPhysRegMapping(IRSM, vregIt->second[sz], PhysReg);
++      }
++
++      // We need to check the vreg at the head of the copy chain for spill
++      // locations instead of the vreg in the stackmap
++      Vregs[RSL->SrcVreg] = vregIt->second;
++      Vregs.erase(Loc->Vreg);
++      break;
++    case SpillLoc::STACK_LOAD:
++      SLL = (StackLoadLoc *)DefChain;
++      assert(SLL->StackSlot != VirtRegMap::NO_STACK_SLOT && "Invalid stack slot");
++
++      for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
++        DEBUG(
++          vregIt->second[sz]->printAsOperand(dbgs());
++          dbgs() << ": spilled to stack slot " << SLL->StackSlot << "\n";
++        );
++        MF->addSMOpStackSlotMapping(IRSM, vregIt->second[sz], SLL->StackSlot);
++      }
++
++      // Since we've already resolved the vreg to a stack slot, remove the
++      // vreg so we don't try to find backing stack slots
++      Vregs.erase(Loc->Vreg);
++      break;
++    case SpillLoc::STACK_STORE:
++    case SpillLoc::NONE:
++    default:
++      DEBUG(
++        dbgs() << "WARNING: ignoring machine instruction:\n";
++        Cur->dump();
++      );
++      break;
++    }
++
++    delete Loc;
++    delete DefChain;
++  }
++}
++
++/// Find if a virtual register is backed by a stack slot
++int StackTransformMetadata::findBackingStackSlots(unsigned Vreg,
++                                                  const MachineInstr *SM) {
++  int ret = VirtRegMap::NO_STACK_SLOT;
++  SpillLoc *Loc;
++  StackSpillLoc *SSL;
++  SlotIndex SMIdx = Indexes->getInstructionIndex(SM), Use;
++  LiveInterval::const_iterator Seg;
++
++  for(MachineRegisterInfo::reg_instr_iterator MI = MRI->reg_instr_begin(Vreg),
++      MIE = MRI->reg_instr_end();
++      MI != MIE; MI++) {
++    Loc = getSpillLocation(&*MI);
++    if(!Loc) continue;
++
++    switch(Loc->getType()) {
++    case SpillLoc::STACK_LOAD:
++    case SpillLoc::STACK_STORE:
++      // Search for stack loads/stores associated with the vreg, and check if
++      // those stack slots are live at the same time as the stackmap
++      SSL = (StackSpillLoc*)Loc;
++      if(SSL->StackSlot >= 0 && LS->hasInterval(SSL->StackSlot)) {
++        Use = Indexes->getInstructionIndex(&*MI);
++        Seg = LS->getInterval(SSL->StackSlot).find(Use);
++        if(Seg->contains(SMIdx))
++          ret = SSL->StackSlot;
++      } else {
++        DEBUG(
++          dbgs() << "WARNING: ignoring when searching for backing slot:\n";
++          MI->dump();
++        );
++      }
++      break;
++    case SpillLoc::VREG:
++    case SpillLoc::NONE:
++    default: break;
++    }
++    delete Loc;
++  }
++
++  return ret;
++}
++
++/// Find stackmap operands that have been spilled to alternate locations
++void StackTransformMetadata::findSpilledStackmapOps()
++{
++  SmallVector<SMInstBundle, 32> SM;
++  RegValsMap vregs;
++  RegValsMap::iterator vregIt, vregEnd;
++
++  // Gather the stackmaps
++  bundleStackmaps(SM);
 +
 +  // Iterate over all stackmaps to find virtual register operands which have
 +  // been spilled to the stack or to other registers
-+  typedef std::pair<unsigned, SmallVector<const Value *, 8> > RegValsPair;
-+  std::map<unsigned, SmallVector<const Value *, 8> > vregs;
-+  std::map<unsigned, SmallVector<const Value *, 8> >::iterator vregIt, vregEnd;
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
-+    const CallInst *SMIR = std::get<0>(*S);
-+    const MachineInstr *SMMI = std::get<1>(*S);
-+    const MachineInstr *CMI = std::get<2>(*S);
++    const CallInst *IRSM = getIRSM(*S);
++    const MachineInstr *MISM = getMISM(*S);
 +
 +    DEBUG(
-+      dbgs() << "\nStackmap " << SMMI->getOperand(0).getImm() << ":\n";
-+      SMMI->dump();
-+      dbgs() << "\n";
++      const MachineInstr *MICall = getMICall(*S);
++      dbgs() << "\nStackmap " << MISM->getOperand(0).getImm() << ":\n";
++      MISM->dump();
++      dbgs() << "\nInstructions between call and stackmap:\n";
++      while(MICall != MISM) {
++        MICall->dump();
++        MICall = MICall->getNextNode();
++      }
++      dbgs() << '\n';
 +    );
 +
-+    // Find all virtual register operands in the machine instruction
-+    MachineInstr::const_mop_iterator MOit;
-+    CallInst::const_op_iterator IRit;
-+    for(MOit = std::next(SMMI->operands_begin(), 2),
-+        IRit = std::next(SMIR->op_begin(), 2);
-+        MOit != SMMI->operands_end() && IRit != (SMIR->op_end() - 1);
-+        MOit++, IRit++) {
-+      // Emulate StackMaps::parseOperand to correlate IR and machine operands
-+      if(MOit->isImm()) {
-+        switch(MOit->getImm()) {
-+        case StackMaps::DirectMemRefOp: MOit++; MOit++; break;
-+        case StackMaps::IndirectMemRefOp: MOit++; MOit++; MOit++; break;
-+        case StackMaps::ConstantOp: MOit++; break;
-+        default: llvm_unreachable("Unrecognized operand type.");
-+        }
-+      } else if(MOit->isReg()) {
-+        const Value *IRVal = IRit->get();
-+        unsigned Reg = MOit->getReg();
++    // Get all virtual register operands in the stackmap
++    findVregOps(IRSM, MISM, vregs);
 +
-+        assert(IRVal && "Invalid stackmap IR operand");
-+        assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
-+               "Should not have been converted to physical registers yet");
++    // Walk from the call to the stackmap, reversing stackmap operand movement
++    unwindToCall(*S, vregs);
 +
-+        DEBUG(
-+          IRVal->printAsOperand(dbgs());
-+          dbgs() << ": in vreg" << TargetRegisterInfo::virtReg2Index(Reg);
-+          if(MOit->isKill()) dbgs() << " (killed)";
-+          dbgs() << "\n";
-+        );
-+
-+        if((vregIt = vregs.find(Reg)) == vregs.end()) {
-+          SmallVector<const Value *, 8> vals;
-+          vregIt = vregs.insert(RegValsPair(Reg, std::move(vals))).first;
-+        }
-+        vregIt->second.push_back(IRVal);
-+      }
-+    }
-+    assert(IRit == (SMIR->op_end() - 1) && "Did not search all stackmap operands");
-+
-+    // Walk from the call to the stackmap, watching for stackmap operand spill
-+    // locations
-+    const MachineInstr *Cur;
-+    for(Cur = CMI->getNextNode(); Cur != SMMI; Cur = Cur->getNextNode()) {
-+      // We may be restoring from a chain of copies, so traverse the chain to
-+      // find the original spill location.  There are 2 halting conditions for
-+      // the while-loop below:
-+      //
-+      //  1. Restoring the vreg from a spill slot
-+      //  2. Restoring the vreg from a callee-saved register allocated to a
-+      //     vreg whose definition is NOT between the call and the stackmap
-+      //
-+      // The second condition is qualified by the location of the definition of
-+      // the callee-saved vreg because the backend can generate really stupid
-+      // code, e.g., on x86:
-+      //
-+      //    callq ...
-+      //    mov -0x10(%rbp), %rbx
-+      //    mov %rbx, %rcx
-+      //    <stackmap machine instruction>
-+      //
-+      // TODO it's not possible to restore from a stack slot, then spill again
-+      // before reaching the stackmap, right? This would invalidate #1 above.
-+      SpillLoc Loc, DefChain;
-+      getSpillLocation(Cur, Loc);
-+      DefChain = Loc;
-+      while(DefChain.type == SpillLoc::VREG) {
-+        const MachineInstr *Def = definedInRange(CMI,
-+                                                 SMMI,
-+                                                 DefChain.copy.second);
-+
-+        // Are we in a callee-saved register defined outside of the range of
-+        // instructions between the call and the stackmap?
-+        if(!MF->isCallerSaved(VRM->getPhys(DefChain.copy.second)) && !Def)
-+            break;
-+
-+        assert(Def && "Invalid vreg definition");
-+        getSpillLocation(Def, DefChain);
-+      }
-+
-+      unsigned PhysReg;
-+      switch(DefChain.type) {
-+      case SpillLoc::VREG:
-+        if((vregIt = vregs.find(Loc.copy.first)) != vregs.end()) {
-+          PhysReg = VRM->getPhys(DefChain.copy.second);
-+          assert(PhysReg != VirtRegMap::NO_PHYS_REG && "Invalid register");
-+          assert(!MF->isCallerSaved(PhysReg) && "Invalid register");
-+          for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
-+            DEBUG(
-+              vregIt->second[sz]->printAsOperand(dbgs());
-+              dbgs() << ": spilled to callee-saved register "
-+                     << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << "\n";
-+            );
-+            MF->addSMOpPhysRegMapping(SMIR, vregIt->second[sz], PhysReg);
-+          }
-+
-+          // We need to check the vreg at the head of the copy chain for spill
-+          // locations instead of the vreg in the stackmap
-+          vregs[DefChain.copy.second] = vregIt->second;
-+          vregs.erase(vregIt->first);
-+        }
-+        break;
-+      case SpillLoc::STACK_SLOT_LOAD:
-+        if((vregIt = vregs.find(Loc.load.first)) != vregs.end()) {
-+          int SS = DefChain.load.second;
-+          assert(SS != VirtRegMap::NO_STACK_SLOT && "Invalid stack slot");
-+          for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
-+            DEBUG(
-+              vregIt->second[sz]->printAsOperand(dbgs());
-+              dbgs() << ": spilled to stack slot " << SS << "\n";
-+            );
-+            MF->addSMOpStackSlotMapping(SMIR, vregIt->second[sz], SS);
-+          }
-+
-+          // Since we've already resolved the vreg to a stack slot, remove the
-+          // vreg from backing stack slot checking
-+          vregs.erase(Loc.load.first);
-+        }
-+        break;
-+      case SpillLoc::STACK_SLOT_STORE:
-+      case SpillLoc::NONE:
-+      default:
-+        DEBUG(
-+          dbgs() << "WARNING: ignoring machine instruction:\n";
-+          Cur->dump();
-+        );
-+        break;
-+      }
-+    }
-+
-+    // Walk through vreg operands to see if they have a backing stack slot
++    // Walk through remaining virtual register operands to see if they have a
++    // backing stack slot
 +    for(vregIt = vregs.begin(), vregEnd = vregs.end();
 +        vregIt != vregEnd;
-+        vregIt++)
-+      for(size_t sz = 0; sz < vregIt->second.size(); sz++)
-+        findBackingStackSlots(vregIt->first, *S, vregIt->second[sz]);
++        vregIt++) {
++      int StackSlot = findBackingStackSlots(vregIt->first, MISM);
++      if(StackSlot != VirtRegMap::NO_STACK_SLOT) {
++        for(size_t sz = 0; sz < vregIt->second.size(); sz++) {
++          DEBUG(
++            vregIt->second[sz]->printAsOperand(dbgs());
++            dbgs() << ": backed by stack slot " << StackSlot << "\n"
++          );
++          MF->addSMOpBackingStackSlot(IRSM, vregIt->second[sz], StackSlot);
++        }
++      }
++    }
 +
 +    vregs.clear();
 +  }
