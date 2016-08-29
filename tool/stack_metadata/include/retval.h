@@ -23,7 +23,8 @@
   X(WRITE_ELF_FAILED, "writing ELF information failed") \
   X(ADD_SECTION_FAILED, "adding section to binary failed") \
   X(UPDATE_SECTION_FAILED, "updating section in binary failed") \
-  X(CREATE_METADATA_FAILED, "creating metadata failed")
+  X(CREATE_METADATA_FAILED, "creating metadata failed") \
+  X(INVALID_METADATA, "invalid metadata")
 
 /* Return type enumeration */
 typedef enum _ret_t {

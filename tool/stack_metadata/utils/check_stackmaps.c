@@ -85,9 +85,10 @@ static void parse_args(int argc, char **argv)
  * possible rather than to die on errors.  So, we'll iterate over everything
  * and print out where we find inconsistencies.
  */
-void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
-                     bin *b, stack_map *sm_b, size_t num_sm_b)
+ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
+                      bin *b, stack_map *sm_b, size_t num_sm_b)
 {
+  ret_t ret = SUCCESS;
   char buf[BUF_SIZE];
   size_t i, j, k, l, num_sm, num_records;
   uint64_t func_a, func_b;
@@ -106,6 +107,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
     snprintf(buf, BUF_SIZE, "number of stackmaps doesn't match (%lu vs. %lu)",
              num_sm_a, num_sm_b);
     warn(buf);
+    ret = INVALID_METADATA;
   }
 
   /* Iterate over all accumulated stackmap sections (one per .o file) */
@@ -122,6 +124,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                "number of records for stackmap section %lu doesn't match (%u vs. %u)",
                i, sm_a[i].num_records, sm_b[i].num_records);
       warn(buf);
+      ret = INVALID_METADATA;
     }
 
     /*
@@ -148,6 +151,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                  "(%s/%lx vs. %s/%lx)",
                  j, sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
+        ret = INVALID_METADATA;
       }
       else
       {
@@ -174,6 +178,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                    "stackmap %lu has different numbers of location records "
                    "(%u vs. %u)", j, num_a, num_b);
           warn(buf);
+          ret = INVALID_METADATA;
         }
 
         /*
@@ -191,6 +196,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                                     "different size (%u vs. %u)",
                      sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
+            ret = INVALID_METADATA;
           }
 
           flag_a = sm_a[i].stack_maps[j].locations->record[k].is_ptr;
@@ -201,6 +207,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                                     "mismatched pointer flag (%u vs. %u)",
                      sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
+            ret = INVALID_METADATA;
           }
 
           flag_a = sm_a[i].stack_maps[j].locations->record[k].is_alloca;
@@ -211,6 +218,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                                     "mismatched alloca flag (%u vs. %u)",
                      sym_a_name, j, k, l, flag_a, flag_b);
             warn(buf);
+            ret = INVALID_METADATA;
           }
 
           if(flag_a && flag_b)
@@ -223,6 +231,7 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
                                       "different size (%u vs. %u)",
                        sym_a_name, j, k, l, size_a, size_b);
               warn(buf);
+              ret = INVALID_METADATA;
             }
           }
 
@@ -233,6 +242,8 @@ void check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
       }
     }
   }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -261,8 +272,9 @@ int main(int argc, char **argv)
   if((ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64)) != SUCCESS)
     die("could not read stackmaps (x86-64)", ret);
 
-  check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
-                  bin_x86_64, sm_x86_64, num_sm_x86_64);
+  if((ret = check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
+                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
+    die("stackmap sections differ", ret);
 
   free_stackmaps(sm_aarch64, num_sm_aarch64);
   free_stackmaps(sm_x86_64, num_sm_x86_64);
