@@ -51,7 +51,7 @@ install: $(BIN) $(UTIL) $(CHECK)
 	@cp $^ $(POPCORN)/bin
 
 clean:
-	@echo " [RM] $(BIN) $(BUILD) $(UTIL)"
-	@rm -rf $(BIN) $(BUILD) $(UTIL)
+	@echo " [RM] $(BIN) $(BUILD) $(UTIL) $(CHECK)"
+	@rm -rf $(BIN) $(BUILD) $(UTIL) $(CHECK)
 
 .PHONY: all util clean

@@ -836,9 +836,9 @@ def install_tools(base_path, install_path, num_threads):
             rv = subprocess.check_call(['make', '-j', str(num_threads),
                                         'POPCORN={}'.format(install_path)])
             tmp = install_path.replace('/', '\/')
-            sed_cmd = "sed -ie 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_armObjs.sh".format(tmp)
+            sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_armObjs.sh".format(tmp)
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-            sed_cmd = "sed -ie 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_x86Objs.sh".format(tmp)
+            sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_x86Objs.sh".format(tmp)
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
             rv = subprocess.check_call(['make', 'install', 
                                         'POPCORN={}'.format(install_path)])
@@ -906,7 +906,7 @@ def install_utils(base_path, install_path, num_threads):
     print("Updating util/Makefile.template to reflect install path...")
     try:
         tmp = install_path.replace('/', '\/')
-        sed_cmd = "sed -ie 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
+        sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
