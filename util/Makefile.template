@@ -9,10 +9,6 @@
 # FIXME directory of Popcorn compiler installation
 POPCORN := /usr/local/popcorn
 
-# FIXME directory of Popcorn compiler repository
-# TODO remove
-POPCORN_REPO := ~/popcorn-compiler-arm-x86
-
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := /usr/lib/gcc-cross/aarch64-linux-gnu/4.8
 
@@ -25,28 +21,22 @@ BIN := test
 # FIXME specify source files
 SRC := $(shell ls *.c)
 
-###############################################################################
-#                                 Locations                                   #
-###############################################################################
-
-APP_DIR     := $(shell pwd)
-ALIGN_CHECK := $(POPCORN_REPO)/util/scripts/check-align.py
-SCRIPTS     := $(POPCORN)/lib/scripts
+APP_DIR := $(shell pwd)
 
 ###############################################################################
 #                  Compiler toolchain & command-line flags                    #
 ###############################################################################
 
 # Compiler
-CC         := clang
-CXX        := clang++
+CC         := $(POPCORN)/bin/clang
+CXX        := $(POPCORN)/bin/clang++
 CFLAGS     := -O0 -Wall -g -gdwarf-aranges -c -fopenmp=libomp -DPOSIX -DBOMP
 HET_CFLAGS := $(CFLAGS) -nostdinc -ffunction-sections -fdata-sections \
               -finstrument-functions -fno-common -ftls-model=initial-exec \
               -fno-vectorize -Wno-override-module -mllvm -optimize-regalloc
 
 # Optimization Middle-End
-OPT       := opt
+OPT       := $(POPCORN)/bin/opt
 OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
              -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
              -load $(POPCORN)/lib/libSectionStatic.so -section-static \
@@ -69,7 +59,8 @@ LD_EXTRA := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 # TODO remove dependencies on external scripting
-ALIGN         := align
+ALIGN         := $(POPCORN)/bin/align
+SCRIPTS       := $(POPCORN)/lib/scripts
 ALIGN_BUILD   := align
 ALIGN_SCRIPTS := $(ALIGN_BUILD)/readMyElfToFile.sh \
                  $(ALIGN_BUILD)/nmScript.sh \
@@ -83,8 +74,10 @@ ALIGN_OBJ     := $(ALIGN_BUILD)/obj_arm.txt $(ALIGN_BUILD)/obj_x86.txt
 ALIGN_SYMBOLS := $(ALIGN_BUILD)/nm_symbols_aarch64.txt \
                  $(ALIGN_BUILD)/nm_symbols_x86.txt
 
-# Post-processing
-POST_PROCESS := $(POPCORN)/bin/gen-stackinfo
+# Post-processing & checking
+POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
+ALIGN_CHECK    := $(POPCORN)/bin/check-align.py
+STACKMAP_CHECK := $(POPCORN)/bin/check-stackmaps
 
 ##########
 # Common #
@@ -145,6 +138,8 @@ X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib -L$(X86_64_LIBGCC) \
 all: post_process
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking stackmaps for $^"
+	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 

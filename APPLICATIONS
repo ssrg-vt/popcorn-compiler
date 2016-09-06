@@ -1,0 +1,200 @@
+---------------------
+Building applications
+---------------------
+
+The toolchain will build multi-ISA binaries suitable from running and migrating
+across heterogeneous systems running Popcorn's OS (please see "INSTALL" for
+installing the compiler toolchain).  The toolchain builds applications using
+the following procedure:
+
+1. Compile each source code file (.c) into an LLVM bitcode file (.bc)
+2. Run optimizations over the LLVM bitcode, and run several custom passes that
+   adjust linkage and request stack transformation metadata be added
+3. Run each bitcode file through the LLVM backend for every architecture in the
+   system (e.g., AArch64 & x86) to generate an object file (.o) per ISA
+4. Link each set of per-ISA object files together using modified gold linker to
+   generate an unaligned binary per ISA
+5. Run the alignment tool, which iteratively aligns sections and re-links the
+   binary to produce a per-ISA linker script that enforces a common layout
+6. Do a final linking (using the generated linker scripts) and post-process
+   binaries to generate stack transformation metadata
+
+This process is complicated, so a template makefile is available in
+"util/Makefile.template".  To use this makefile, create a folder for your
+application and copy all of your application's source code files into the
+folder.  Additionally, copy the template into the folder and rename it to
+"Makefile" (without the quotes).  There are several fields at the top of the
+file that need to be set:
+
+  POPCORN       : the installation folder for the compiler toolchain, which is
+                  /usr/local/popcorn by default.
+  ARM64_LIBGCC  : directory of libgcc & libgcc_eh for aarch64 compiler (set to
+                  Ubuntu-specific location by default)
+  X86_64_LIBGCC : directory of libgcc & libgcc_eh for x86-64 compiler (set to
+                  Ubuntu-specific location by default)
+  BIN           : name of the binary
+  SRC           : all source code filenames
+
+After setting these fields, the makefile will follow the process above to
+compile the application for each architecture.  The makefile will generate
+several intermediate directories:
+
+  align         : alignment tool work directory
+  build_aarch64 : constains aarch64 object files, vanilla (unaligned) binary
+                  and linker map used for alignment
+  build_x86-64  : same as build_aarch64 but for x86-64
+  ir            : optimized & modified (ISA-agnostic) LLVM bitcode files
+
+The makefile will build a binary per-architecture with post-fixes of *_aarch64
+and *_x86-64, and which are ready to run and be migrated (see "Running
+applications" below).  There are several standard recipes which can be used to
+build the application in varying steps:
+
+  make / make all     : build the application to completion
+  make vanilla        : build the application, but do not align (vanilla
+                        binaries are in build_<arch>)
+  make vanilla-<arch> : build vanilla binary for <arch>
+  make aligned        : build & align the application (not ready to run, needs
+                        final post-processing step)
+  make aligned-<arch> : build & align the application for <arch>
+  make post_process   : post-process aligned binaries to add stack
+                        transformation metadata, binaries are ready to run
+  make check          : run several sanity checks over the multi-ISA binaries
+                        to check for obvious problems*
+  make clean          : torch all generated files
+  make stack-depth    : build application against libstack-depth.a, which can
+                        be used to generate call chain information for the
+                        application
+
+* make check is intended to be very verbose and as of right now will always end
+  in an error.  See "ISSUES" for more information.
+
+The next sections will go into more detail about each of the compilation steps
+above, and in particular, how compilation is configured at each step in the
+process.
+
+1. Compiling to LLVM bitcode
+
+This step uses standard compiler flags to generate LLVM bitcode from source
+files.  There is, however, special configuration needed:
+
+-O0                    : disable optimizations, which will be run in the
+                         middle-end
+-g -gdwarf-aranges     : force clang/LLVM to emit ".debug_aranges" section
+                         (needed by the stack transformation runtime)
+-nostdinc              : don't include glibc headers (musl-libc headers will be
+                         used instead)
+-finstrument-functions : add migration points to function entry and exit
+-fno-vectorize         : disable vectorization (not supported)
+
+2. Optimize & customize LLVM bitcode
+
+In addition to using aggressive optimizations, several passes are run which
+modify the linkage of several variables and add stack transformation intrinsics
+into the IR:
+
+-disable-loop-vectorization
+-disable-slp-vectorization  : disable vectorization (not supported)
+-associate-literal          : generate symbol names for anonymous string
+                              literals so they can be aligned
+-section-static             : place static global variables into their own
+                              sections (similarly to -fdata-sections)
+-stack-info                 : run live-value analysis & add stackmap intrinsics
+                              into the LLVM IR
+
+3. Compile LLVM bitcode into per-architecture object files
+
+The toolchain compiles each of the LLVM bitcode files that comprise the
+application into a per-ISA binary.  There are a lot of special configuration
+options needed to prepare the application for alignment:
+
+-O0                       : disable optimizations -- required because compiling
+                            with optimizations enabled (even after running "opt
+                            -O3") changes the bitcode, screwing up the analysis
+                            and placement of stackmap intrinsics by -stack-info
+-ffunction-sections
+-fdata-sections           : put each function & global data symbol into its own
+                            ELF section in the object file (needed for
+                            alignment)
+-fno-common               : put uninitialized global variables in data sections
+                            rather than common blocks (needed for alignment)
+-mllvm -optimize-regalloc : use an optimized register allocator -- required
+                            because compiling with the unoptimized "fast" LLVM
+                            register allocator prevents generation of some
+                            types of metadata needed for stack transformation
+
+4. Link per-architecture unaligned binaries
+
+Use the modified gold linker to generate per-architecture binaries.  These
+binaries are unaligned, but will run homogeneously.  The linker also prints
+out a map file, which contains symbol sizes and alignments.  This is used by
+the alignment tool to find & place symbols that must be aligned.
+
+5. Align binaries
+
+The alignment tool uses a series of bash scripts to iteratively align and link
+the binaries.  The tool works out of the align/ directory -- the needed scripts
+are copied into the directory.  At the end of alignment, the tool will generate
+a linker script per-architecture which lays out symbols common across both
+binaries at identical virtual memory addresses, and moves architecture-specific
+symbols into disjoint memory ranges to prevent collisions.
+
+6. Final linking & post-processing
+
+The gold linker is run one final time using the generated linker scripts to
+build aligned binaries.  The stack transformation metadata generation tool can
+be run once the final function layout has been determined, as it uses offsets
+from the beginnings of functions to calculate return addresses for individual
+call sites.  The metadata generation tool post-processes each generated binary
+and adds several ELF sections containing stack transformation information.
+
+At this point, a multi-ISA binary has been generated and is ready to run.
+
+--------------------
+Running applications
+--------------------
+
+Running multi-ISA binaries and migrating them between architectures requires
+special handling.
+
+1. Putting applications in the correct location in the filesystem
+
+The heterogeneous binary loader needs to be able to find the per-architecture
+binary, and the stack transformation runtime needs to be able to access
+architecture-specific rewriting metadata.  Thus, the binaries need to be
+placed in well-known places in the filesystem.
+
+For example, consider running a multi-ISA binary named "app" out of the folder
+"~/working_dir".
+
+- Copy all generated binaries, i.e., app_aarch64 and app_x86-64, to
+  ~/working_dir on every machine.
+
+- Make a hardlink from the binary for the given architecture to the name of
+  the application without the architecture suffix.  For example, on aarch64
+  make a hardlink from app_aarch64 to app, while on x86 make a hardlink from
+  app_x86-64 to app.  This is so that the heterogeneous binary loader is able
+  to find the architecture-specific version of the binary using the same name
+  and filesystem location on each architecture.  Additionally, the stack
+  transformation runtime searches for each architecture-specific version of the
+  metadata by appending the architecture name to the suffix of the executing
+  binary.
+
+- The filesystems should be set up as follows on each architecture:
+
+  On aarch64:
+
+  ~/working_dir:
+    app_aarch64
+    app_x86-64
+    app (hardlink from app_aarch64)
+
+  On x86-64:
+    app_aarch64
+    app_x86-64
+    app (hardlink from app_x86-64)
+
+- You *must* run applications from the same working directory as where the
+  binaries are located, e.g., change to directories to ~/working_dir before
+  running the application
+
