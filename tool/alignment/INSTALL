@@ -13,3 +13,9 @@ for Popcorn Linux.
   $ make
   $ make install
 
+2. Modify scripts/mlink_x86Objs.sh
+	  scripts/mlink_armObjs.sh
+
+  such that the variable "POPCORN" is the absolute path of the
+install directory of the popcorn toolchain
+(default is : POPCORN="/usr/local/popcorn")
