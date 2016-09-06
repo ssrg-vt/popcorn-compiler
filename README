@@ -119,6 +119,10 @@ applications be built on x86-64.
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
       default-jre
       default-jdk
++ Python, v2.7 and v3
+  - v2 is needed for installation script
+  - v3 is needed for scripts in util/scripts
+  - Both are pre-installed on Ubuntu 14.04
 
 -----------
 Limitations

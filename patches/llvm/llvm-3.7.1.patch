@@ -1000,7 +1000,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(revision 0)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,591 @@
+@@ -0,0 +1,595 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1427,8 +1427,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // TODO it should not possible to restore from a stack slot, then spill
 +    // again before reaching the stackmap -- this would invalidate #1 above.
 +    DefChain = Loc->copy();
-+    while(DefChain->getType() == SpillLoc::VREG) {
-+      assert(DefChain && "Invalid use-def chain");
++    while(DefChain && DefChain->getType() == SpillLoc::VREG) {
 +      RSL = (RegSpillLoc *)DefChain;
 +      const MachineInstr *Def = definedInRange(MICall, MISM, RSL->SrcVreg);
 +
@@ -1440,6 +1439,11 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      assert(Def && "Invalid virtual register definition");
 +      DefChain = getSpillLocation(Def);
 +      delete RSL;
++    }
++
++    if(!DefChain) {
++      delete Loc;
++      continue;
 +    }
 +
 +    switch(DefChain->getType()) {
