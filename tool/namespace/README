@@ -1,0 +1,31 @@
+--------
+Overview
+--------
+
+The namespace tools allow users to enter the heterogeneous container and to
+launch migratable applications.  The tools allow a user to enter the "Popcorn
+namespace", which has added functionalities for migration (see "APPLICATIONS"
+for more details on building & running multi-ISA binaries).  These tools
+automate the process of launching a new namespace and converting it into a
+heterogeneous container.
+
+NOTE: you *must* be root to enter the Popcorn namespace
+
+To enter a heterogeneous container (after building the tools):
+
+- Run the "launch_ns.sh" script:
+
+  $ sudo su
+  $ ./launch_ns.sh
+  launching a new namespace -cimnpu
+
+- This spawns a child in the namespace, which brings up a rudimentary shell
+  (note that it doesn't have environment variables, auto-complete, etc.).  Run
+  the "popcorn.sh" script to bring up a fully-functioning shell:
+
+  $ ./popcorn.sh
+  switching to popcorn ns!
+
+You now have a bash shell running inside of the heterogeneous container, which
+can be used to launch multi-ISA binaries capable of migration.
+
