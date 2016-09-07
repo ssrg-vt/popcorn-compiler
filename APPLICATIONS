@@ -198,3 +198,95 @@ For example, consider running a multi-ISA binary named "app" out of the folder
   binaries are located, e.g., change to directories to ~/working_dir before
   running the application
 
+----------------------
+Migrating applications
+----------------------
+
+This section assumes that you've entered the Popcorn Linux namespace and have
+successfully started running an application (as detailed in the previous
+section).
+
+There are a couple of ways to migrate applications. The first, discussed in the
+lib/migration/INSTALL, involves the use of environment variables. See that
+file for more information on how to use this method.
+
+The second way of migrating applications involves the use of the proc
+filesystem. Within /proc/ are two new files called /proc/popcorn_ps and
+/proc/popcorn_ps1. These files are similar to the traditional `ps` program in
+that they list all binaries running in the Popcorn namespace. Specifically:
+
+  /proc/popcorn_ps -- contains all applications running on ARM
+  /proc/popcorn_ps1 -- contains all applications running on x86
+
+There are several things to note:
+  1. Examining /proc/popcorn_ps1 on ARM will show ALL processes running
+     on x86.
+  2. Applications do not show up on ARM (in /proc/popcorn_ps) until they have
+     successfully migrated at least once. At that point, they will appear
+     until completion on either architecture.
+
+The contents of these files are formatted as follows. Note that the full 
+details of this formatting can be found by examining the "popcorn_ps_read"
+function in the kernel source code (at kernel/popcorn/sched_server.c):
+
+    <Binary Name> <Global Info> <Thread 0 Info> <Thread 0 Load>;
+
+    - <Binary Name> is the name of the application
+    - <Global Info> consists of a number of fields, delimited by colons. We 
+          care only about the 2nd field, which contains the "global" PID.
+          This PID is identical between both x86 and ARM after migration 
+          occurs, allowing you to differentiate identically-named processes.
+
+          Before migration, this value is "-1"; after migration, it is the same
+          as the x86-specific PID.
+    - <Thread 0 Info> consists of a number of fields, also deliminated by
+          colons. The fields of interest are the 1st, 2nd, and 3rd fields.
+
+          The 1st field is the architecture-specific PID. This is used for
+          migration!
+          The 2nd and 3rd fields are used to indicate where the application is
+          currently running:
+            - If both fields are 0, then the application has not migrated yet.
+            - If the 2nd field is 1 and the 3rd field is 0, then the
+              application is running on the remote architecture/machine.
+            - If the 2nd field is 0 and the 3rd field is 1, then the
+              application is running on the current architecture/machine, but
+              it *has* migrated previously.
+    - <Thread 0 Load> is not of interest for the purposes of migration.
+
+  An example from /proc/popcorn_ps1 *after* migration has already occured is
+  shown here:
+
+  test 1:2134843:1:144314 2134843:0:1:0:0 46:0;
+
+    - "test" is the <Binary Name>
+    - 2134843 is the global PID and the x86 PID.
+    - In <Thread 0 Info>, we see that the 2nd field is 0 and the 3rd field 
+      is 1. This means that the process is running locally (on x86), and it
+      *has* previously migrated.
+
+  It's also worth noting that for multi-threaded applications, the
+  <Thread Info> and <Thread Load> strings will be repeated once per thread.
+  Only the PID from <Thread 0 Info> is needed for migration, however.
+
+Migration is achieved using these two files in conjunction with a third 
+per-process file: /proc/<Popcorn PID>/mtrig. Note that the mtrig file is not
+unique to processes running in the Popcorn namespace, but its use is only
+defined for those processes that are running in the namespace.
+
+To migrate an application:
+
+  - On the machine that you are migrating *from*, run "cat /proc/popcorn_ps" 
+    or "cat /proc/popcorn_ps1" (without quotes), depending on if you are 
+    trying to migrate an application from ARM or x86, respectively.
+  
+  - Find the architecture-specific PID of the application that you want to 
+    migrate.
+  
+  - As a superuser, run "echo X > /proc/<PID>/mtrig" (without quotes), where:
+
+      X is either 0 or 1:
+      - If you want the application to migrate to/remain on x86, use 0
+      - If you want the application to migrate to/remain on ARM, use 1
+
+      <PID> is the architecture-specific PID of the application
