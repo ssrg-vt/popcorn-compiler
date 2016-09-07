@@ -153,6 +153,10 @@ def check_for_prerequisites():
 
 def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
 
+    llvm_download_path = os.path.join(install_path, 'src/llvm')
+    clang_download_path = os.path.join(llvm_download_path, 'tools/clang')
+
+
     patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
 
     cmake_flags = ['-DCMAKE_BUILD_TYPE=Release',
@@ -176,11 +180,11 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                                         stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not download LLVM source ({})!'.format(e))
-            return False
+            sys.exit(1)
         else:
             if rv != 0:
                 print('LLVM source download failed.')
-                return False
+                sys.exit(1)
 
         #=====================================================
         # DOWNLOAD CLANG
@@ -253,7 +257,6 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         os.chdir(cur_dir)
 
 def install_binutils(base_path, install_path, num_threads):
-
 
     binutils_install_path = os.path.join(install_path, 'src/binutils-2.27')
 
@@ -959,8 +962,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not args.skip_prereq_check:
-        retval = check_for_prerequisites()
-        if retval != -1:
+        success = check_for_prerequisites()
+        if success != True:
             print('All prerequisites found!')
 
     main(args)
