@@ -40,7 +40,7 @@ compile the application for each architecture.  The makefile will generate
 several intermediate directories:
 
   align         : alignment tool work directory
-  build_aarch64 : constains aarch64 object files, vanilla (unaligned) binary
+  build_aarch64 : contains aarch64 object files, vanilla (unaligned) binary
                   and linker map used for alignment
   build_x86-64  : same as build_aarch64 but for x86-64
   ir            : optimized & modified (ISA-agnostic) LLVM bitcode files
@@ -155,7 +155,9 @@ Running applications
 --------------------
 
 Running multi-ISA binaries and migrating them between architectures requires
-special handling.
+special handling.  It is assumed that there is *not* a shared filesystem across
+architectures in the platform, because the architecture-specific version of the
+application is aliased to a single application name for the loader.
 
 1. Putting applications in the correct location in the filesystem
 
@@ -180,7 +182,8 @@ For example, consider running a multi-ISA binary named "app" out of the folder
   metadata by appending the architecture name to the suffix of the executing
   binary.
 
-- The filesystems should be set up as follows on each architecture:
+- For example, the filesystems should be set up as follows on each
+  architecture:
 
   On aarch64:
 
@@ -194,17 +197,41 @@ For example, consider running a multi-ISA binary named "app" out of the folder
     app_x86-64
     app (hardlink from app_x86-64)
 
-- You *must* run applications from the same working directory as where the
-  binaries are located, e.g., change to directories to ~/working_dir before
-  running the application
+NOTE: you *must* run applications from the same working directory as where the
+binaries are located, e.g., change to directories to ~/working_dir before
+running the application.
 
-----------------------
-Migrating applications
-----------------------
+2. Running applications in the namespace
 
-This section assumes that you've entered the Popcorn Linux namespace and have
-successfully started running an application (as detailed in the previous
-section).
+Applications must be run from inside the heterogeneous container in order to be
+migratable across architectures.  Users must enter the heterogeneous container
+using Linux's namespaces functionality, which we'll refer to as the "Popcorn
+namespace".
+
+NOTE: you *must* be root when entering the namespace!
+
+- Change to the 'tool/namespace' directory
+- Run the "launch_ns.sh" script:
+
+  $ cd tool/namespace
+  $ sudo su
+  $ ./launch_ns.sh
+  launching a new namespace -cimnpu
+
+- This spawns a child in the namespace, which brings up a rudimentary shell
+  (note that it doesn't have environment variables, auto-complete, etc.).  Run
+  the "popcorn.sh" script to bring up a fully-functioning shell:
+
+  $ ./popcorn.sh
+  switching to popcorn ns!
+
+- This brings up bash and can be used like any other shell.  You can now run
+  the application as normal.
+
+3. Migrating applications
+
+NOTE: this section assumes that you've entered the Popcorn Linux namespace and
+have successfully started running an application.
 
 There are a couple of ways to migrate applications. The first, discussed in the
 lib/migration/INSTALL, involves the use of environment variables. See that
@@ -239,11 +266,11 @@ function in the kernel source code (at kernel/popcorn/sched_server.c):
 
           Before migration, this value is "-1"; after migration, it is the same
           as the x86-specific PID.
-    - <Thread 0 Info> consists of a number of fields, also deliminated by
-          colons. The fields of interest are the 1st, 2nd, and 3rd fields.
+    - <Thread 0 Info> consists of a number of fields, also delimited by colons.
+          The fields of interest are the 1st, 2nd, and 3rd fields.
 
           The 1st field is the architecture-specific PID. This is used for
-          migration!
+          migration (see below)!
           The 2nd and 3rd fields are used to indicate where the application is
           currently running:
             - If both fields are 0, then the application has not migrated yet.
@@ -254,7 +281,7 @@ function in the kernel source code (at kernel/popcorn/sched_server.c):
               it *has* migrated previously.
     - <Thread 0 Load> is not of interest for the purposes of migration.
 
-  An example from /proc/popcorn_ps1 *after* migration has already occured is
+  An example from /proc/popcorn_ps1 *after* migration has already occurred is
   shown here:
 
   test 1:2134843:1:144314 2134843:0:1:0:0 46:0;
@@ -267,7 +294,8 @@ function in the kernel source code (at kernel/popcorn/sched_server.c):
 
   It's also worth noting that for multi-threaded applications, the
   <Thread Info> and <Thread Load> strings will be repeated once per thread.
-  Only the PID from <Thread 0 Info> is needed for migration, however.
+  Only the PID from <Thread 0 Info> is needed for migration, however, because
+  triggering migration is currently implemented as a per-process mechanism.
 
 Migration is achieved using these two files in conjunction with a third 
 per-process file: /proc/<Popcorn PID>/mtrig. Note that the mtrig file is not
@@ -290,3 +318,7 @@ To migrate an application:
       - If you want the application to migrate to/remain on ARM, use 1
 
       <PID> is the architecture-specific PID of the application
+
+    Note that you do *not* have to be in the Popcorn namespace to trigger a
+    migration, you must only have superuser privileges.
+
