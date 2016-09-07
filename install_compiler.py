@@ -83,8 +83,12 @@ def setup_argument_parsing():
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
+    process_opts.add_argument("--skip-namespace",
+                        help="Skip building namespace tools",
+                        action="store_true",
+                        dest="skip_namespace")
     process_opts.add_argument("--install-call-info-library",
-                        help="Skip installation of libraries",
+                        help="Install application call information library",
                         action="store_true",
                         dest="install_call_info_library")
 
@@ -926,6 +930,18 @@ def install_utils(base_path, install_path, num_threads):
         d = os.path.join(os.path.join(install_path, 'bin'), item)
         shutil.copy(s, d)
 
+def build_namespace(base_path):
+    print("Building namespace tools...")
+    try:
+        make_cmd = "make -C {}/tool/namespace".format(base_path)
+        rv = subprocess.check_call(["make", "-C",
+                                    base_path + "/tool/namespace"])
+    except Exception as e:
+        print('Could not build namespace tools ({})'.format(e))
+    else:
+        if rv != 0:
+            print('make failed')
+
 def main(args):
     # Add to path temporarily
     os.environ['PATH'] = os.path.join(args.install_path, 'bin') + ':' \
@@ -956,6 +972,9 @@ def main(args):
 
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_namespace:
+        build_namespace(args.base_path)
 
 if __name__ == '__main__':
     parser = setup_argument_parsing()
