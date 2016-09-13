@@ -148,8 +148,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
       {
         snprintf(buf, BUF_SIZE,
                  "stackmap %lu corresponds to different functions "
-                 "(%s/%lx vs. %s/%lx)",
-                 j, sym_a_name, func_a, sym_b_name, func_b);
+                 "(%s/%lx vs. %s/%lx)", sm_a[i].stack_maps[j].id,
+                 sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
         ret = INVALID_METADATA;
       }
@@ -176,7 +176,7 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
         {
           snprintf(buf, BUF_SIZE,
                    "stackmap %lu has different numbers of location records "
-                   "(%u vs. %u)", j, num_a, num_b);
+                   "(%u vs. %u)", sm_a[i].stack_maps[j].id, num_a, num_b);
           warn(buf);
           ret = INVALID_METADATA;
         }
@@ -194,7 +194,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "different size (%u vs. %u)",
-                     sym_a_name, j, k, l, flag_a, flag_b);
+                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
@@ -205,7 +206,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched pointer flag (%u vs. %u)",
-                     sym_a_name, j, k, l, flag_a, flag_b);
+                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
@@ -216,7 +218,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched alloca flag (%u vs. %u)",
-                     sym_a_name, j, k, l, flag_a, flag_b);
+                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
@@ -229,7 +232,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
             {
               snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                       "different size (%u vs. %u)",
-                       sym_a_name, j, k, l, size_a, size_b);
+                       sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                       flag_b);
               warn(buf);
               ret = INVALID_METADATA;
             }
