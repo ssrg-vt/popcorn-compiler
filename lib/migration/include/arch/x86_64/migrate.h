@@ -65,8 +65,8 @@
     : "i"(pid), "i"(cpu_set_size), "g"(cpu_set), "g"(new_pc), \
       "g"(regs_aarch64.x[30]), \
       "g"(&regs_aarch64), \
-      "g"(regs_aarch64.sp), \
-      "g"(regs_aarch64.x[29]) /* Inputs */ \
+      "r"(regs_aarch64.sp), \
+      "r"(regs_aarch64.x[29]) /* Inputs */ \
     : "rdi", "rsi", "rdx", "r10", "r8", "r9" /* Clobbered */ \
   )
 

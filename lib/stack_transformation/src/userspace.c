@@ -313,16 +313,25 @@ void __st_userspace_dtor(void)
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
+  /*
+   * Hack - assume this activation is on the page at the high address range of
+   * the stack and calculate the lower bound.
+   */
+  bool found = true;
+  bounds->high = (void*)(((uint64_t)__builtin_frame_address(0) & 0xfffffffffffff000)
+                         + 0x1000);
+  bounds->low = bounds->high - (8 * 1024 * 1024);
+
   /* /proc/<id>/maps fields */
-  bool found = false;
+/*  bool found = false;
   int fields;
   uint64_t start, end, offset, inode;
   char perms[8]; // should be no more than 4
   char dev[8]; // should be no more than 5
-  char path[BUF_SIZE];
+  char path[BUF_SIZE];*/
 
   /* File data, reading & parsing */
-  char proc_fn[BUF_SIZE];
+/*  char proc_fn[BUF_SIZE];
   FILE* proc_fp;
   char* lineptr;
   size_t linesz = BUF_SIZE;
@@ -346,9 +355,9 @@ static bool get_main_stack(stack_bounds* bounds)
     }
   }
   free(lineptr);
-  fclose(proc_fp);
+  fclose(proc_fp);*/
 
-  //ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
+  ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
 }
 
