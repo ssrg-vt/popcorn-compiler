@@ -10,7 +10,7 @@ ARM64_LIBGCC := /usr/local/gcc-cross/aarch64-linux-gnu/4.8
 ###############################################################################
 
 # Compiler
-CC     := clang
+CC     := $(POPCORN)/bin/clang
 CFLAGS := -O0 -Wall -Wno-unused-variable -g -gdwarf-aranges \
           -nostdinc -nostdlib -static -I../../utils -DPOSIX \
           -mllvm -optimize-regalloc

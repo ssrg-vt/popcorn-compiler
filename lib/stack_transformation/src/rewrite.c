@@ -140,6 +140,8 @@ int st_rewrite_stack(st_handle handle_src,
 
   ST_INFO("--> Rewriting from source to destination stack <--\n");
 
+  TIMER_START(rewrite_stack);
+
   /* Rewrite outer-most frame. */
   ST_INFO("--> Rewriting outermost frame <--\n");
 
@@ -212,6 +214,8 @@ int st_rewrite_stack(st_handle handle_src,
     ASSERT(ACT(dest).function, "could not get function information\n");
     read_unwind_rules(dest);
   }
+
+  TIMER_STOP(rewrite_stack);
 
   /* Copy out register state for destination & clean up. */
   dest->acts[0].regs->regset_copyout(dest->acts[0].regs, dest->regs);
@@ -363,7 +367,7 @@ static void free_context(rewrite_context ctx)
   int i;
   node_t(fixup)* node;
 
-  TIMER_FG_START(free_context);
+  TIMER_START(free_context);
 
   node = list_begin(fixup, &ctx->stack_pointers);
   while(node)
@@ -380,7 +384,7 @@ static void free_context(rewrite_context ctx)
   free(ctx);
 #endif
 
-  TIMER_FG_STOP(free_context);
+  TIMER_STOP(free_context);
 }
 
 /*
@@ -401,7 +405,7 @@ static void unwind_and_size(rewrite_context src,
 {
   size_t stack_size = 0;
 
-  TIMER_FG_START(unwind_and_size);
+  TIMER_START(unwind_and_size);
 
   /*
    * Unwind the source stack in order to calculate destination stack size.
@@ -491,7 +495,7 @@ static void unwind_and_size(rewrite_context src,
   ACT(dest).regs->set_fbp(ACT(dest).regs,
                           ACT(dest).cfa - fp_offset(dest->handle->arch));
 
-  TIMER_FG_STOP(unwind_and_size);
+  TIMER_STOP(unwind_and_size);
 }
 
 /*
@@ -651,7 +655,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   varval varval_data;
   value val_src, val_dest, fixup_val;
 
-  TIMER_START(rewrite_frame);
+  TIMER_FG_START(rewrite_frame);
   ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
 
 #if _LIVE_VALS == DWARF_LIVE_VALS
@@ -841,7 +845,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     list_clear(varval, &var_list);
   }
 
-  TIMER_STOP(rewrite_frame);
+  TIMER_FG_STOP(rewrite_frame);
 }
 
 /*
@@ -860,7 +864,7 @@ static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
 #endif
   bool needs_local_fixup = false;
 
-  TIMER_START(rewrite_frame);
+  TIMER_FG_START(rewrite_frame);
   ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
 
 #if _LIVE_VALS == DWARF_LIVE_VALS
@@ -897,6 +901,6 @@ static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
 
   ASSERT(!needs_local_fixup, "argument cannot point to another argument\n");
 
-  TIMER_STOP(rewrite_frame);
+  TIMER_FG_STOP(rewrite_frame);
 }
 

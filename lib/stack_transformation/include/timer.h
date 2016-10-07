@@ -33,14 +33,15 @@ typedef struct timer* timer;
 #define COARSE_TIMERS \
   X(st_init) \
   X(st_destroy) \
-  X(st_rewrite_stack)
-
-/* Fine-grained timers for timing of individual operations */
-#define FINE_TIMERS \
+  X(st_rewrite_stack) \
   X(init_src_context) \
   X(init_dest_context) \
   X(free_context) \
   X(unwind_and_size) \
+  X(rewrite_stack) \
+
+/* Fine-grained timers for timing of individual operations */
+#define FINE_TIMERS \
   X(rewrite_frame) \
   X(read_unwind_rules) \
   X(pop_frame) \
@@ -52,7 +53,6 @@ typedef struct timer* timer;
   X(var_prep) \
   X(datum_size) \
   X(datum_location) \
-  X(get_val) \
   X(put_val) \
   X(eval_location) \
   X(get_site_by_addr) \

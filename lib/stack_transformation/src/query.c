@@ -689,9 +689,9 @@ const call_site_value* get_call_site_values(Elf* e, const char* sec_name)
 bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
 {
   bool found = false;
-  size_t min = 0;
-  size_t max = (handle->sites_count - 1);
-  size_t mid;
+  long min = 0;
+  long max = (handle->sites_count - 1);
+  long mid;
   uint64_t retaddr = (uint64_t)ret_addr;
 
   TIMER_FG_START(get_site_by_addr);
@@ -721,9 +721,9 @@ bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
 bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
 {
   bool found = false;
-  size_t min = 0;
-  size_t max = (handle->sites_count - 1);
-  size_t mid;
+  long min = 0;
+  long max = (handle->sites_count - 1);
+  long mid;
 
   TIMER_FG_START(get_site_by_id);
   ASSERT(cs, "invalid arguments to get_site_by_id()\n");
