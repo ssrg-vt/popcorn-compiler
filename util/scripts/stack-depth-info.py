@@ -67,7 +67,7 @@ def printRaw(dataFile, avgDepth, maxDepth, funcCalls):
 
 def getSymbolTable(binFile):
 	symbols = {}
-	out = subprocess.check_output(["readelf", "--symbols", binFile])
+	out = subprocess.check_output(["readelf", "-sW", binFile])
 	outlines = out.decode("utf-8").split("\n")
 	for line in outlines:
 		if "Symbol table" in line or "Num:" in line:

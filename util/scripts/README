@@ -6,7 +6,15 @@ This folder contains several useful scripts.  These are copied to the
 installation folder by the installation script.  You can find more information
 about using the scripts by running them with "-h".
 
-1. Checking alignment
+1. Generating an LLVM patch
+
+The "gen-compare-llvm-diff.sh" script will generate a patch from the modified
+LLVM source.  It checks the patch against the release, and then checks to see
+if the generated patch is different from the patch currently in the Popcorn
+compiler repository.  If so, it swaps out the old patch with the new (and
+retains the old patch).
+
+2. Checking alignment
 
 The "check-align.py" script is useful for sanity checking symbol alignment in
 multi-ISA binaries.  This can be useful for detecting when, for instance,
@@ -19,7 +27,7 @@ status when it finds a misalignment.
 
   $ check-align.py bin_aarch64 bin_x86-64
 
-2. Parsing call chain information
+3. Parsing call chain information
 
 If applications are built against the call information library (see
 "lib/stack_depth/README" for more information), the library will dump call
@@ -40,7 +48,7 @@ script can be used to parse this file and print human-readable information.
 
 - To print detailed call information, use the "-v" switch
 
-3. Testing various points
+4. Testing various points
 
 There are several ways to migrate applications between architectures, depending
 on how the migration library was built.  If the library was built with
