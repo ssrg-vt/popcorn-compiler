@@ -12,14 +12,14 @@
 #include <time.h>
 #endif
 
-/* Architecture-specific macros for migrating between architectures. */
+/* Architecture-specific assembly for migrating between architectures. */
 #ifdef __aarch64__
 # include <arch/aarch64/migrate.h>
 #else
 # include <arch/x86_64/migrate.h>
 #endif
 
-static int __cpus_x86 = 0;
+static int cpus_x86 = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
   int cpus_x86;
@@ -29,12 +29,13 @@ static void __attribute__((constructor)) __init_cpu_sets()
   fd = fopen("/proc/cpuinfo", "r");
   if(fd)
   {
-    __cpus_x86 = 0;
+    cpus_x86 = 0;
     while(fgets(s, 512, fd) != NULL)
       if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
-        __cpus_x86++;
+        cpus_x86++;
+    fclose(fd);
   }
-  else __cpus_x86 = 8;
+  else cpus_x86 = 8;
 }
 
 /* Returns a CPU set for architecture AR. */
@@ -44,7 +45,7 @@ cpu_set_t arch_to_cpus(enum arch ar)
   CPU_ZERO(&cpus);
   switch(ar) {
   case AARCH64: CPU_SET(0, &cpus); break;
-  case X86_64: CPU_SET(__cpus_x86, &cpus); break;
+  case X86_64: CPU_SET(cpus_x86, &cpus); break;
   default: break;
   }
   return cpus;
@@ -74,7 +75,7 @@ cpu_set_t select_arch()
 
 /*
  * The user can specify at which point a thread should migrate by specifying
- * function address ranges via environment variables.
+ * program counter address ranges via environment variables.
  */
 
 /* Environment variables specifying at which function to migrate */
