@@ -666,6 +666,55 @@ Index: lib/CodeGen/RegAllocFast.cpp
    DEBUG(dbgs() << "********** FAST REGISTER ALLOCATION **********\n"
                 << "********** Function: " << Fn.getName() << '\n');
    MF = &Fn;
+Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
+===================================================================
+--- lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(revision 277823)
++++ lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(working copy)
+@@ -886,6 +886,9 @@
+   case ISD::SRL:
+   case ISD::ROTL:
+   case ISD::ROTR: Res = PromoteIntOp_Shift(N); break;
++
++  case (uint16_t)~TargetOpcode::STACKMAP:
++    Res = PromoteIntOp_STACKMAP(N, OpNo); break;
+   }
+ 
+   // If the result is null, the sub-method took care of registering results etc.
+@@ -1131,6 +1134,22 @@
+                                 SExtPromotedInteger(N->getOperand(0))), 0);
+ }
+ 
++SDValue DAGTypeLegalizer::PromoteIntOp_STACKMAP(SDNode *N, unsigned OpNo) {
++  std::vector<SDValue> Ops(N->getNumOperands());
++  SDLoc dl(N);
++
++  for(unsigned i = 0; i < N->getNumOperands(); i++) {
++    if(i == OpNo) {
++      if(N->getOperand(i).getValueType() == MVT::i8 ||
++         N->getOperand(i).getValueType() == MVT::i16)
++        Ops[i] = std::move(DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i32, N->getOperand(i)));
++    }
++    else Ops[i] = N->getOperand(i);
++  }
++
++  return SDValue(DAG.UpdateNodeOperands(N, Ops), 0);
++}
++
+ SDValue DAGTypeLegalizer::PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo){
+   assert(ISD::isUNINDEXEDStore(N) && "Indexed store during type legalization!");
+   SDValue Ch = N->getChain(), Ptr = N->getBasePtr();
+Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
+===================================================================
+--- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 277823)
++++ lib/CodeGen/SelectionDAG/LegalizeTypes.h	(working copy)
+@@ -288,6 +288,7 @@
+   SDValue PromoteIntOp_Shift(SDNode *N);
+   SDValue PromoteIntOp_SIGN_EXTEND(SDNode *N);
+   SDValue PromoteIntOp_SINT_TO_FP(SDNode *N);
++  SDValue PromoteIntOp_STACKMAP(SDNode *N, unsigned OpNo);
+   SDValue PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo);
+   SDValue PromoteIntOp_TRUNCATE(SDNode *N);
+   SDValue PromoteIntOp_UINT_TO_FP(SDNode *N);
 Index: lib/CodeGen/StackMaps.cpp
 ===================================================================
 --- lib/CodeGen/StackMaps.cpp	(revision 277823)
@@ -1610,6 +1659,32 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  }
  
  MachineLocation
+Index: lib/Target/AArch64/AArch64ISelLowering.cpp
+===================================================================
+--- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 277823)
++++ lib/Target/AArch64/AArch64ISelLowering.cpp	(working copy)
+@@ -2032,6 +2032,8 @@
+     return LowerFSINCOS(Op, DAG);
+   case ISD::MUL:
+     return LowerMUL(Op, DAG);
++  case (uint16_t)~TargetOpcode::STACKMAP:
++    return SDValue(); // Use generic stackmap type legalizer
+   }
+ }
+ 
+Index: lib/Target/AArch64/AArch64TargetMachine.cpp
+===================================================================
+--- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 277823)
++++ lib/Target/AArch64/AArch64TargetMachine.cpp	(working copy)
+@@ -65,7 +65,7 @@
+ EnableAtomicTidy("aarch64-atomic-cfg-tidy", cl::Hidden,
+                  cl::desc("Run SimplifyCFG after expanding atomic operations"
+                           " to make use of cmpxchg flow-based information"),
+-                 cl::init(true));
++                 cl::init(false));
+ 
+ static cl::opt<bool>
+ EnableEarlyIfConversion("aarch64-enable-early-ifcvt", cl::Hidden,
 Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
 --- lib/Target/X86/X86AsmPrinter.cpp	(revision 277823)
