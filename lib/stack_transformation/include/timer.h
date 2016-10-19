@@ -76,11 +76,11 @@ ALL_TIMERS
 
 /* Macros to control enabling/disabling timer function calls. */
 #ifdef _TIMING
-# define TIMER_START( timer_name ) timer_start(__timer_##timer_name)
-# define TIMER_STOP( timer_name ) timer_stop_and_accum(__timer_##timer_name)
-# define TIMER_RESET( timer_name ) timer_reset(__timer_##timer_name)
-# define TIMER_ELAPSED( timer_name ) timer_get_elapsed(__timer_##timer_name)
-# define TIMER_PRINT timer_print_all()
+# define TIMER_START( timer_name ) st_timer_start(__timer_##timer_name)
+# define TIMER_STOP( timer_name ) st_timer_stop_and_accum(__timer_##timer_name)
+# define TIMER_RESET( timer_name ) st_timer_reset(__timer_##timer_name)
+# define TIMER_ELAPSED( timer_name ) st_timer_get_elapsed(__timer_##timer_name)
+# define TIMER_PRINT st_timer_print_all()
 #else
 # define TIMER_START( timer_name )
 # define TIMER_STOP( timer_name )
@@ -91,11 +91,11 @@ ALL_TIMERS
 
 // TODO combine with TIMER_* macros above
 #ifdef _FINE_GRAINED_TIMING
-# define TIMER_FG_START( timer_name ) timer_start(__timer_##timer_name)
-# define TIMER_FG_STOP( timer_name ) timer_stop_and_accum(__timer_##timer_name)
-# define TIMER_FG_RESET( timer_name ) timer_reset(__timer_##timer_name)
-# define TIMER_FG_ELAPSED( timer_name ) timer_get_elapsed(__timer_##timer_name)
-# define TIMER_FG_PRINT timer_print_all()
+# define TIMER_FG_START( timer_name ) st_timer_start(__timer_##timer_name)
+# define TIMER_FG_STOP( timer_name ) st_timer_stop_and_accum(__timer_##timer_name)
+# define TIMER_FG_RESET( timer_name ) st_timer_reset(__timer_##timer_name)
+# define TIMER_FG_ELAPSED( timer_name ) st_timer_get_elapsed(__timer_##timer_name)
+# define TIMER_FG_PRINT st_timer_print_all()
 #else
 # define TIMER_FG_START( timer_name )
 # define TIMER_FG_STOP( timer_name )
@@ -114,7 +114,7 @@ ALL_TIMERS
  * @param timer a timer type pointer
  * @return 0 if the timer was successfully started, -1 otherwise
  */
-int timer_start(timer timer);
+int st_timer_start(timer timer);
 
 /*
  * Stop a timer and accumulate the elapsed time.
@@ -122,14 +122,14 @@ int timer_start(timer timer);
  * @param timer a timer type pointer
  * @return 0 if the timer was successfully stopped, -1 otherwise
  */
-int timer_stop_and_accum(timer timer);
+int st_timer_stop_and_accum(timer timer);
 
 /*
  * Reset a timer to initial values.
  *
  * @param timer a timer type pointer
  */
-void timer_reset(timer timer);
+void st_timer_reset(timer timer);
 
 /*
  * Return the total elapsed time accumulated by the timer.
@@ -137,12 +137,12 @@ void timer_reset(timer timer);
  * @param timer a timer type pointer
  * @return the accumulated elapsed time, in nanoseconds
  */
-unsigned long timer_get_elapsed(timer timer);
+unsigned long st_timer_get_elapsed(timer timer);
 
 /*
  * Print elapsed time for all timers.
  */
-void timer_print_all(void);
+void st_timer_print_all(void);
 
 #endif /* _TIMER_H */
 

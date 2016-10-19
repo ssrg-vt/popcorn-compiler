@@ -83,7 +83,7 @@ ALL_TIMERS
 // Timer API
 ///////////////////////////////////////////////////////////////////////////////
 
-int timer_start(timer timer)
+int st_timer_start(timer timer)
 {
   int ret;
 #if _TIMER_SRC == CLOCK_GETTIME
@@ -98,7 +98,7 @@ int timer_start(timer timer)
   return ret;
 }
 
-int timer_stop_and_accum(timer timer)
+int st_timer_stop_and_accum(timer timer)
 {
   int ret;
   unsigned long end;
@@ -119,19 +119,19 @@ int timer_stop_and_accum(timer timer)
   return ret;
 }
 
-void timer_reset(timer timer)
+void st_timer_reset(timer timer)
 {
   timer->num_timings = 0;
   timer->start = 0;
   timer->elapsed = 0;
 }
 
-unsigned long timer_get_elapsed(timer timer)
+unsigned long st_timer_get_elapsed(timer timer)
 {
   return timer->elapsed;
 }
 
-void timer_print_all(void)
+void st_timer_print_all(void)
 {
   int i;
   printf("[Timing] Elapsed time (%s):\n",
