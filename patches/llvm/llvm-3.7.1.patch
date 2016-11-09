@@ -36,7 +36,18 @@ Index: include/llvm/CodeGen/AsmPrinter.h
    }
  
    //===------------------------------------------------------------------===//
-@@ -393,6 +394,14 @@
+@@ -329,6 +330,10 @@
+   /// instructions in verbose mode.
+   virtual void emitImplicitDef(const MachineInstr *MI) const;
+ 
++  /// Offset to adjust values returned by getObjectOffset to be an offset from
++  /// the function's frame base pointer
++  virtual unsigned getFBPOffset(void) { return 16; }
++
+   //===------------------------------------------------------------------===//
+   // Symbol Lowering Routines.
+   //===------------------------------------------------------------------===//
+@@ -393,6 +398,14 @@
      EmitLabelPlusOffset(Label, 0, Size, IsSectionRelative);
    }
  
@@ -211,8 +222,26 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    struct LiveOutReg {
-@@ -195,15 +202,17 @@
+@@ -171,6 +178,13 @@
+     FnStackSize.clear();
+   }
+ 
++  /// Go up the super-register chain until we hit a valid dwarf register number
++  static unsigned getDwarfRegNum(unsigned Reg, const TargetRegisterInfo *TRI);
++
++  /// Record the offset into the unwinding information section and the number
++  /// of unwinding entries for a function.
++  void recordUnwindInfo(const MCSymbol *FuncSym, uint32_t Off, uint32_t Size);
++
+   /// \brief Generate a stackmap record for a stackmap instruction.
+   ///
+   /// MI must be a raw STACKMAP, not a PATCHPOINT.
+@@ -193,17 +207,21 @@
+   typedef SmallVector<LiveOutReg, 8> LiveOutVec;
+   typedef MapVector<uint64_t, uint64_t> ConstantPool;
    typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
++  typedef std::pair<uint32_t, uint32_t> OffsetSizePair;
++  typedef MapVector<const MCSymbol *, OffsetSizePair> UnwindInfoMap;
  
    struct CallsiteInfo {
 +    const MCSymbol *Func;
@@ -234,9 +263,11 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +222,14 @@
+@@ -212,11 +230,16 @@
+   CallsiteInfoList CSInfos;
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
++  UnwindInfoMap FnUnwindMap;
  
 +  /// Get pointer information for stackmap operand
 +  void getPointerInfo(const Value *Op, const DataLayout &DL, bool &isPtr,
@@ -250,6 +281,90 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
+Index: include/llvm/CodeGen/UnwindInfo.h
+===================================================================
+--- include/llvm/CodeGen/UnwindInfo.h	(nonexistent)
++++ include/llvm/CodeGen/UnwindInfo.h	(working copy)
+@@ -0,0 +1,79 @@
++//===----------------- UnwindInfo.h - UnwindInfo ---------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// Generate unwinding information for stack transformation runtime.  Note that
++// this is implemented assuming the function uses a frame base pointer (FBP).
++// This requirment is guaranteed to be satisfied if the function has a
++// stackmap, which are the only functions for which we want to generate
++// unwinding information.
++//
++//===---------------------------------------------------------------------===//
++
++#ifndef LLVM_CODEGEN_UNWINDINFO_H
++#define LLVM_CODEGEN_UNWINDINFO_H
++
++#include "llvm/CodeGen/AsmPrinter.h"
++#include "llvm/CodeGen/MachineFrameInfo.h"
++#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/MC/MCContext.h"
++#include "llvm/MC/MCStreamer.h"
++#include "llvm/Support/Debug.h"
++#include <map>
++
++namespace llvm {
++
++class UnwindInfo {
++public:
++  class RegOffset {
++  public:
++    uint32_t DwarfReg;
++    int32_t Offset;
++
++    RegOffset() : DwarfReg(0), Offset(0) {}
++    RegOffset(uint32_t DwarfReg, int32_t Offset) :
++      DwarfReg(DwarfReg), Offset(Offset) {}
++  };
++
++  typedef SmallVector<RegOffset, 32> CalleeSavedRegisters;
++  typedef std::pair<const MCSymbol *, CalleeSavedRegisters> FuncCalleePair;
++  typedef std::map<const MCSymbol *, CalleeSavedRegisters> FuncCalleeMap;
++
++  UnwindInfo() = delete;
++  UnwindInfo(AsmPrinter &AP, StackMaps &SM) :
++    AP(AP), SM(SM), OutContext(AP.OutStreamer->getContext()) {};
++
++  void reset() { FuncCalleeSaved.clear(); }
++
++  /// \brief Store unwinding information for a function
++  void recordUnwindInfo(const MachineFunction &MF);
++
++  /// \brief Add a register restore offset for a function
++  void addRegisterUnwindInfo(const MachineFunction &MF,
++                             uint32_t DwarfReg,
++                             int32_t Offset);
++
++  /// Create an unwinding information section and serialize the map info into
++  /// it. This clears the UnwindInfo data structures afterwards.
++  void serializeToUnwindInfoSection();
++
++private:
++  AsmPrinter &AP;
++  StackMaps &SM;
++  MCContext &OutContext;
++  FuncCalleeMap FuncCalleeSaved;
++
++  /// \brief Emit the unwind info for each function.
++  void emitUnwindInfo(MCStreamer &OS);
++
++  void print(raw_ostream &OS);
++  void debug() { print(dbgs()); }
++};
++}
++
++#endif
 Index: include/llvm/InitializePasses.h
 ===================================================================
 --- include/llvm/InitializePasses.h	(revision 277823)
@@ -262,6 +377,28 @@ Index: include/llvm/InitializePasses.h
  void initializeStraightLineStrengthReducePass(PassRegistry &);
  void initializeStripDeadDebugInfoPass(PassRegistry&);
  void initializeStripDeadPrototypesPassPass(PassRegistry&);
+Index: include/llvm/MC/MCObjectFileInfo.h
+===================================================================
+--- include/llvm/MC/MCObjectFileInfo.h	(revision 277823)
++++ include/llvm/MC/MCObjectFileInfo.h	(working copy)
+@@ -135,6 +135,9 @@
+   /// Null if this target doesn't support a BSS section. ELF and MachO only.
+   MCSection *TLSBSSSection; // Defaults to ".tbss".
+ 
++  /// UnwindInfo section.
++  MCSection *UnwindInfoSection;
++
+   /// StackMap section.
+   MCSection *StackMapSection;
+ 
+@@ -267,6 +270,7 @@
+   const MCSection *getTLSDataSection() const { return TLSDataSection; }
+   MCSection *getTLSBSSSection() const { return TLSBSSSection; }
+ 
++  MCSection *getUnwindInfoSection() const { return UnwindInfoSection; }
+   MCSection *getStackMapSection() const { return StackMapSection; }
+   MCSection *getFaultMapSection() const { return FaultMapSection; }
+ 
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
 --- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 277823)
@@ -320,6 +457,14 @@ Index: lib/CodeGen/CMakeLists.txt
    StatepointExampleGC.cpp
    TailDuplication.cpp
    TargetFrameLoweringImpl.cpp
+@@ -122,6 +123,7 @@
+   TargetSchedule.cpp
+   TwoAddressInstructionPass.cpp
+   UnreachableBlockElim.cpp
++  UnwindInfo.cpp
+   VirtRegMap.cpp
+   WinEHPrepare.cpp
+ 
 Index: lib/CodeGen/CodeGen.cpp
 ===================================================================
 --- lib/CodeGen/CodeGen.cpp	(revision 277823)
@@ -657,7 +802,7 @@ Index: lib/CodeGen/RegAllocFast.cpp
  /// runOnMachineFunction - Register allocate the whole function
  ///
  bool RAFast::runOnMachineFunction(MachineFunction &Fn) {
-+  // TODO the fast register allocator behave poorly for stackmaps with lots
++  // TODO the fast register allocator behaves poorly for stackmaps with lots
 +  // of operands, and since it doesn't use the VirtRegRewriter pass we can't
 +  // capture correct stackmap operand locations
 +  assert(false && "fast register allocator not supported "
@@ -727,6 +872,15 @@ Index: lib/CodeGen/StackMaps.cpp
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
+@@ -75,7 +76,7 @@
+ }
+ 
+ /// Go up the super-register chain until we hit a valid dwarf register number.
+-static unsigned getDwarfRegNum(unsigned Reg, const TargetRegisterInfo *TRI) {
++unsigned StackMaps::getDwarfRegNum(unsigned Reg, const TargetRegisterInfo *TRI) {
+   int RegNum = TRI->getDwarfRegNum(Reg, false);
+   for (MCSuperRegIterator SR(Reg, TRI); SR.isValid() && RegNum < 0; ++SR)
+     RegNum = TRI->getDwarfRegNum(*SR, false);
 @@ -84,32 +85,63 @@
    return (unsigned)RegNum;
  }
@@ -971,25 +1125,56 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -417,7 +556,7 @@
-   DEBUG(dbgs() << WSMP << "functions:\n");
-   for (auto const &FR : FnStackSize) {
-     DEBUG(dbgs() << WSMP << "function addr: " << FR.first
--                 << " frame size: " << FR.second);
-+                 << " frame size: " << FR.second << "\n");
+@@ -339,6 +478,12 @@
+       HasDynamicFrameSize ? UINT64_MAX : MFI->getStackSize();
+ }
+ 
++void StackMaps::recordUnwindInfo(const MCSymbol *FuncSym,
++                                 uint32_t Off,
++                                 uint32_t Size) {
++  FnUnwindMap[FuncSym] = OffsetSizePair(Off, Size);
++}
++
+ void StackMaps::recordStackMap(const MachineInstr &MI) {
+   assert(MI.getOpcode() == TargetOpcode::STACKMAP && "expected stackmap");
+ 
+@@ -411,6 +556,8 @@
+ /// StkSizeRecord[NumFunctions] {
+ ///   uint64 : Function Address
+ ///   uint64 : Stack Size
++///   uint32 : Offset into Unwinding Section
++///   uint32 : Number of Unwinding Entries
+ /// }
+ void StackMaps::emitFunctionFrameRecords(MCStreamer &OS) {
+   // Function Frame records.
+@@ -420,6 +567,17 @@
+                  << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
++
++    UnwindInfoMap::const_iterator FnUI;
++    if((FnUI = FnUnwindMap.find(FR.first)) != FnUnwindMap.end()) {
++      const OffsetSizePair &OSP = FnUI->second;
++      DEBUG(dbgs() << " unwind info start: " << OSP.first
++                   << " (" << OSP.second << " entries)\n");
++      OS.EmitIntValue(OSP.first, 4);
++      OS.EmitIntValue(OSP.second, 4);
++    }
++    else
++      llvm_unreachable("No unwinding information for function with stackmap");
    }
-@@ -439,6 +578,8 @@
+ }
+ 
+@@ -439,6 +597,8 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
-+///   uint32 : Index of Function Stack Size Record
++///   uint32 : Index of Function Record
 +///   uint32 : Padding
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -447,6 +588,11 @@
+@@ -447,6 +607,11 @@
  ///     uint8  : Size in Bytes
  ///     uint16 : Dwarf RegNum
  ///     int32  : Offset
@@ -1001,7 +1186,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -487,6 +633,8 @@
+@@ -487,6 +652,8 @@
      }
  
      OS.EmitIntValue(CSI.ID, 8);
@@ -1010,7 +1195,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -498,6 +646,11 @@
+@@ -498,6 +665,11 @@
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
@@ -1047,9 +1232,9 @@ Index: lib/CodeGen/StackSlotColoring.cpp
    for (unsigned i = 0, e = SSIntervals.size(); i != e; ++i) {
 Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
---- lib/CodeGen/StackTransformMetadata.cpp	(revision 0)
+--- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,595 @@
+@@ -0,0 +1,686 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1078,7 +1263,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +using namespace llvm;
 +
-+#define DEBUG_TYPE "stack-transform-metadata"
++#define DEBUG_TYPE "stacktransform"
 +
 +//===----------------------------------------------------------------------===//
 +//                          StackTransformMetadata
@@ -1088,9 +1273,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +// glean additional information about live values.  This analysis finds
 +// duplicate locations for live values, including backing stack slots and other
 +// registers.
-+//
-+// TODO this analysis should also find pre-populated registers, e.g., pointers
-+// to the argument area
 +//
 +namespace {
 +class StackTransformMetadata : public MachineFunctionPass {
@@ -1117,9 +1299,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  static inline const MachineInstr *getMISM(const SMInstBundle &B) { return std::get<1>(B); }
 +  static inline const MachineInstr *getMICall(const SMInstBundle &B) { return std::get<2>(B); }
 +
++  /// Stackmap instructions & the associated call machine instruction
++  SmallVector<SMInstBundle, 32> SM;
++
 +  /// Mapping between virtual registers and IR operands
 +  typedef std::pair<unsigned, SmallVector<const Value *, 8> > RegValsPair;
 +  typedef std::map<unsigned, SmallVector<const Value *, 8> > RegValsMap;
++
++  /// Mapping between stackmaps and the virtual registers saved by the stackmap
++  typedef std::pair<const MachineInstr *, RegValsMap> SMVregsPair;
++  typedef std::map<const MachineInstr *, RegValsMap> SMVregsMap;
++  SMVregsMap SMVregs;
 +
 +  /// A value's spill location
 +  class SpillLoc {
@@ -1181,22 +1371,24 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    virtual Type getType() const { return SpillLoc::VREG; }
 +  };
 +
++  /// Gather stackmap machine instructions, the IR instructions which generated
++  /// the stackmaps, and their associated call machine instructions
++  void bundleStackmaps();
++
 +  /// Find stackmap operands that have been spilled to alternate locations
 +  void findSpilledStackmapOps();
 +
-+  /// Gather stackmap machine instructions, the IR instructions which generated
-+  /// the stackmaps, and their associated call machine instructions
-+  void bundleStackmaps(SmallVector<SMInstBundle, 32> &SM);
++  /// Find architecture-specific live values added by the backend
++  void findArchSpecificLiveVals();
 +
 +  /// Find all virtual register operands in a stackmap and collect virtual
 +  /// register/IR value mappings
 +  void findVregOps(const CallInst *IRSM,
-+                   const MachineInstr *MISM,
-+                   RegValsMap &Vregs);
++                   const MachineInstr *MISM);
 +
 +  /// Unwind live value movement in the series of instructions between a call
 +  /// and a stackmap
-+  void unwindToCall(const SMInstBundle &SM, RegValsMap &Vregs);
++  void unwindToCall(const SMInstBundle &SM);
 +
 +  /// Analyze a machine instruction to see if a value is getting restored
 +  /// from a spill location.
@@ -1250,6 +1442,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  LI = &getAnalysis<LiveIntervals>();
 +  LS = &getAnalysis<LiveStacks>();
 +  VRM = &getAnalysis<VirtRegMap>();
++  SM.clear();
++  SMVregs.clear();
 +
 +  if(MF->getFrameInfo()->hasStackMap()) {
 +    DEBUG(
@@ -1258,11 +1452,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      VRM->dump();
 +    );
 +
++    bundleStackmaps();
 +    findSpilledStackmapOps();
-+
-+    // TODO what about duplicate registers & stack slots?
-+
-+    // TODO find pre-populated registers that do not correspond to live values 
++    findArchSpecificLiveVals();
 +  }
 +
 +  return false;
@@ -1271,7 +1463,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Gather stackmap machine instructions, the IR instructions which generated
 +/// the stackmaps, and their associated call machine instructions
 +void
-+StackTransformMetadata::bundleStackmaps(SmallVector<SMInstBundle, 32> &SM) {
++StackTransformMetadata::bundleStackmaps() {
 +  static const std::string SMName("llvm.experimental.stackmap");
 +  for(auto MBB = MF->begin(), MBBE = MF->end(); MBB != MBBE; MBB++) {
 +    for(auto MI = MBB->instr_begin(), MIE = MBB->instr_end();
@@ -1325,11 +1517,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Find all virtual register operands in a stackmap and collect virtual
 +/// register/IR value mappings
 +void StackTransformMetadata::findVregOps(const CallInst *IRSM,
-+                                         const MachineInstr *MISM,
-+                                         RegValsMap &Vregs) {
++                                         const MachineInstr *MISM) {
 +  RegValsMap::iterator VregIt;
 +  MachineInstr::const_mop_iterator MOit;
 +  CallInst::const_op_iterator IRit;
++
++  // Initialize a new virtual register map for the stackmap
++  SMVregs.insert(SMVregsPair(MISM, std::move(RegValsMap())));
 +
 +  for(MOit = std::next(MISM->operands_begin(), 2),
 +      IRit = std::next(IRSM->op_begin(), 2);
@@ -1341,7 +1535,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      case DirectMemRefOp: MOit++; MOit++; break;
 +      case IndirectMemRefOp: MOit++; MOit++; MOit++; break;
 +      case ConstantOp: MOit++; break;
-+      default: llvm_unreachable("Unrecognized operand type.");
++      default: llvm_unreachable("Unrecognized stackmap operand type."); break;
 +      }
 +    } else if(MOit->isReg()) {
 +      const Value *IRVal = IRit->get();
@@ -1356,11 +1550,15 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        dbgs() << ": in vreg" << TargetRegisterInfo::virtReg2Index(Reg) << "\n";
 +      );
 +
-+      if((VregIt = Vregs.find(Reg)) == Vregs.end()) {
-+        SmallVector<const Value *, 8> vals;
-+        VregIt = Vregs.insert(RegValsPair(Reg, std::move(vals))).first;
++      // Because multiple IR values can map to a single virtual register,
++      // maintain a list of IR values
++      if((VregIt = SMVregs[MISM].find(Reg)) == SMVregs[MISM].end()) {
++        SmallVector<const Value *, 4> vals;
++        VregIt = SMVregs[MISM].insert(RegValsPair(Reg, std::move(vals))).first;
 +      }
 +      VregIt->second.push_back(IRVal);
++    } else {
++      llvm_unreachable("Unrecognized stackmap operand type.");
 +    }
 +  }
 +  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
@@ -1370,8 +1568,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// spill location.
 +StackTransformMetadata::SpillLoc *
 +StackTransformMetadata::getSpillLocation(const MachineInstr *MI) const {
-+  unsigned SrcVreg;
-+  unsigned DefVreg;
++  unsigned SrcVreg = 0;
++  unsigned DefVreg = 0;
 +  int SS;
 +
 +  assert(MI && "Invalid machine instruction");
@@ -1439,16 +1637,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +/// Unwind live value movement in the series of instructions between a call and
 +/// a stackmap
-+void StackTransformMetadata::unwindToCall(const SMInstBundle &SM,
-+                                          RegValsMap &Vregs) {
++void StackTransformMetadata::unwindToCall(const SMInstBundle &SM) {
 +  unsigned PhysReg;
 +  const CallInst *IRSM = getIRSM(SM);
 +  const MachineInstr *MISM = getMISM(SM), *MICall = getMICall(SM), *Cur;
 +  SpillLoc *Loc, *DefChain;
 +  StackLoadLoc *SLL;
 +  RegSpillLoc *RSL;
++  RegValsMap &Vregs = SMVregs[MISM];
 +  RegValsMap::iterator vregIt;
 +
++  // Walk from call to stackmap
 +  for(Cur = MICall->getNextNode(); Cur != MISM; Cur = Cur->getNextNode()) {
 +    Loc = getSpillLocation(Cur);
 +    if(!Loc) continue;
@@ -1491,6 +1690,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    }
 +
 +    if(!DefChain) {
++      DEBUG(
++        dbgs() << "WARNING: couldn't resolve definition chain for vreg"
++               << TargetRegisterInfo::virtReg2Index(Loc->Vreg) << "\n"
++      );
 +      delete Loc;
 +      continue;
 +    }
@@ -1506,7 +1709,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        DEBUG(
 +          vregIt->second[sz]->printAsOperand(dbgs());
 +          dbgs() << ": spilled to callee-saved register "
-+                 << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << "\n";
++                 << PrintReg(PhysReg, &VRM->getTargetRegInfo()) << " (vreg"
++                 << TargetRegisterInfo::virtReg2Index(RSL->SrcVreg) << ")\n";
 +        );
 +        MF->addSMOpPhysRegMapping(IRSM, vregIt->second[sz], PhysReg);
 +      }
@@ -1593,12 +1797,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Find stackmap operands that have been spilled to alternate locations
 +void StackTransformMetadata::findSpilledStackmapOps()
 +{
-+  SmallVector<SMInstBundle, 32> SM;
-+  RegValsMap vregs;
 +  RegValsMap::iterator vregIt, vregEnd;
-+
-+  // Gather the stackmaps
-+  bundleStackmaps(SM);
 +
 +  // Iterate over all stackmaps to find virtual register operands which have
 +  // been spilled to the stack or to other registers
@@ -1607,6 +1806,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const MachineInstr *MISM = getMISM(*S);
 +
 +    DEBUG(
++      MISM->dump();
 +      const MachineInstr *MICall = getMICall(*S);
 +      dbgs() << "\nStackmap " << MISM->getOperand(0).getImm() << ":\n";
 +      MISM->dump();
@@ -1618,15 +1818,15 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      dbgs() << '\n';
 +    );
 +
-+    // Get all virtual register operands in the stackmap
-+    findVregOps(IRSM, MISM, vregs);
++    // Get all virtual register operands & their associated IR values
++    findVregOps(IRSM, MISM);
 +
 +    // Walk from the call to the stackmap, reversing stackmap operand movement
-+    unwindToCall(*S, vregs);
++    unwindToCall(*S);
 +
 +    // Walk through remaining virtual register operands to see if they have a
 +    // backing stack slot
-+    for(vregIt = vregs.begin(), vregEnd = vregs.end();
++    for(vregIt = SMVregs[MISM].begin(), vregEnd = SMVregs[MISM].end();
 +        vregIt != vregEnd;
 +        vregIt++) {
 +      int StackSlot = findBackingStackSlots(vregIt->first, MISM);
@@ -1640,21 +1840,284 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        }
 +      }
 +    }
-+
-+    vregs.clear();
 +  }
 +}
 +
++
++/// Find architecture-specific live values added by the backend
++void StackTransformMetadata::findArchSpecificLiveVals() {
++  DEBUG(
++    dbgs() << "*** Detecting live values inserted by the backend ***\n\n";
++  );
++
++  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
++  {
++    const MachineInstr *MISM = getMISM(*S);
++    DEBUG(MISM->dump(););
++
++    // Look for & handle register live-out mask
++    // TODO implement?
++    for(auto SMOp = MISM->operands_begin(), SMEnd = MISM->operands_end();
++        SMOp != SMEnd; SMOp++) {
++      if(SMOp->isRegLiveOut()) {
++        DEBUG(
++          dbgs() << "Found register live-out mask:\n";
++          SMOp->print(dbgs());
++        );
++        llvm_unreachable("Unhandled register live-out mask!\n");
++      }
++    }
++
++    // Iterate over all virtual registers to see which are live for stackmap
++    const MachineInstr *MICall = getMICall(*S);
++    SlotIndex CallIdx = Indexes->getInstructionIndex(MICall);
++    DEBUG(dbgs() << "  -> SlotIndex "; CallIdx.dump(););
++    for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
++      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
++
++      // Detect if virtual register is live during function call but not
++      // recorded in stackmap
++      if(VRM->hasPhys(Vreg) && LI->hasInterval(Vreg)) {
++        const LiveInterval &interval = LI->getInterval(Vreg);
++        LiveInterval::const_iterator Seg = interval.find(CallIdx);
++        // Is it live across the call?
++        if(Seg != interval.end() && Seg->contains(CallIdx)) {
++          // Is it recorded in the stackmap?
++          if(SMVregs[MISM].find(Vreg) == SMVregs[MISM].end()) {
++            DEBUG(
++              dbgs() << "    + vreg" << i
++                     << " is in register but not in stackmap ";
++              Seg->dump();
++              for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
++                  def != end; def++) {
++                dbgs() << "    ->";
++                def->dump();
++              }
++            );
++            // TODO pick up here -- what do we do next?
++          }
++        }
++      }
++      // Detect if virtual register is in a stack slot during function call but
++      // not recorded in stackmap
++      else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
++              LI->hasInterval(Vreg)) {
++        const LiveInterval &interval = LI->getInterval(Vreg);
++        LiveInterval::const_iterator Seg = interval.find(CallIdx);
++        // Is it live across the call?
++        if(Seg != interval.end() && Seg->contains(CallIdx)) {
++          DEBUG(dbgs() << "    + vreg" << i << " is in stack slot"
++                       << VRM->getStackSlot(Vreg) << "\n";);
++          // TODO
++        }
++      }
++
++    }
++
++    // TODO iterate over all stack objects *not* in the VRM (i.e., all stack
++    // allocated variables) and see if they're live across the call
++
++    DEBUG(dbgs() << "\n";);
++  }
++}
++
+Index: lib/CodeGen/UnwindInfo.cpp
+===================================================================
+--- lib/CodeGen/UnwindInfo.cpp	(nonexistent)
++++ lib/CodeGen/UnwindInfo.cpp	(working copy)
+@@ -0,0 +1,133 @@
++//===--------------------------- UnwindInfo.cpp ---------------------------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#include "llvm/CodeGen/AsmPrinter.h"
++#include "llvm/CodeGen/StackMaps.h"
++#include "llvm/CodeGen/UnwindInfo.h"
++#include "llvm/MC/MCSymbol.h"
++#include "llvm/MC/MCObjectFileInfo.h"
++#include "llvm/Target/TargetRegisterInfo.h"
++#include "llvm/Target/TargetSubtargetInfo.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "unwindinfo"
++
++static const char *DUI = "Unwind Info: ";
++
++void UnwindInfo::recordUnwindInfo(const MachineFunction &MF) {
++  // We *only* need this information for functions which have a stackmap, as
++  // only those function activations can be unwound during stack
++  // transformation.  This might also be a correctness criterion since we
++  // record offsets from the FBP (which is required to exist because of the
++  // stackmap), and not all functions may have one.
++  if(!MF.getFrameInfo()->hasStackMap()) return;
++
++  // Get this function's saved registers & FBP offset
++  const unsigned FBPOff = AP.getFBPOffset();
++  const MachineFrameInfo *MFI = MF.getFrameInfo();
++  const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
++  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
++  assert(FuncSym && "Could not find function symbol");
++
++  // Get DWARF register number and FBP offset using callee saved information
++  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
++  CalleeSavedRegisters SavedRegs(CSI.size());
++  for(unsigned i = 0; i < CSI.size(); i++) {
++    SavedRegs[i].DwarfReg = StackMaps::getDwarfRegNum(CSI[i].getReg(), TRI);
++    SavedRegs[i].Offset = MFI->getObjectOffset(CSI[i].getFrameIdx()) + FBPOff;
++  }
++
++  // Save the information for when we emit the section
++  FuncCalleeSaved.insert(FuncCalleePair(FuncSym, std::move(SavedRegs)));
++}
++
++void UnwindInfo::addRegisterUnwindInfo(const MachineFunction &MF,
++                                       uint32_t DwarfReg,
++                                       int32_t Offset) {
++  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
++  assert(FuncSym && "Could not find function symbol");
++  assert(FuncCalleeSaved.find(FuncSym) != FuncCalleeSaved.end() &&
++         "Cannot add register restore information -- function not found");
++  FuncCalleeSaved[FuncSym].push_back(RegOffset(DwarfReg, Offset));
++}
++
++void UnwindInfo::emitUnwindInfo(MCStreamer &OS) {
++  unsigned curIdx = 0;
++  unsigned startIdx;
++  FuncCalleeMap::const_iterator f, e;
++  for(f = FuncCalleeSaved.begin(), e = FuncCalleeSaved.end(); f != e; f++) {
++    const MCSymbol *FuncSym = f->first;
++    const CalleeSavedRegisters &CSR = f->second;
++
++    assert(FuncSym && "Invalid machine function");
++    assert(CSR.size() >= 2 && "Should have at least 2 registers to restore "
++                              "(return address & saved FBP");
++
++    DEBUG(dbgs() << DUI << "Function " << FuncSym->getName()
++                 << "(offset " << curIdx << ", "
++                 << CSR.size() << " entries):\n");
++
++    startIdx = curIdx;
++    CalleeSavedRegisters::const_iterator cs, cse;
++    for(cs = CSR.begin(), cse = CSR.end(); cs != cse; cs++) {
++      assert(cs->DwarfReg < UINT16_MAX &&
++             "Register number too large for resolution");
++      assert(INT16_MIN < cs->Offset && cs->Offset < INT16_MAX &&
++             "Register save offset too large for resolution");
++
++      DEBUG(dbgs() << DUI << "  Register " << cs->DwarfReg
++                   << " saved at " << cs->Offset << "\n";);
++
++      OS.EmitIntValue(cs->DwarfReg, 2);
++      OS.EmitIntValue(cs->Offset, 2);
++      curIdx++;
++    }
++    SM.recordUnwindInfo(FuncSym, startIdx, curIdx - startIdx);
++  }
++}
++
++/// Serialize the unwinding information.
++void UnwindInfo::serializeToUnwindInfoSection() {
++  // Bail out if there's no unwind info.
++  if(FuncCalleeSaved.empty()) return;
++
++  // Switch to the unwind info section.
++  MCStreamer &OS = *AP.OutStreamer;
++  MCSection *UnwindInfoSection =
++      OutContext.getObjectFileInfo()->getUnwindInfoSection();
++  OS.SwitchSection(UnwindInfoSection);
++
++  // Emit a dummy symbol to force section inclusion.
++  OS.EmitLabel(OutContext.getOrCreateSymbol(Twine("__StackTransform_UnwindInfo")));
++
++  // Serialize data.
++  DEBUG(dbgs() << "********** Unwind Info Output **********\n");
++  emitUnwindInfo(OS);
++  OS.AddBlankLine();
++
++  // Clean up.
++  reset();
++}
++
++void UnwindInfo::print(raw_ostream &OS) {
++  OS << DUI << "Function unwinding information\n";
++  FuncCalleeMap::const_iterator b, e;
++  for(b = FuncCalleeSaved.begin(), e = FuncCalleeSaved.end();
++      b != e;
++      b++) {
++    OS << DUI << "Function - " << b->first->getName() << "\n";
++    const CalleeSavedRegisters &CSR = b->second;
++    CalleeSavedRegisters::const_iterator br, be;
++    for(br = CSR.begin(), be = CSR.end(); br != be; br++) {
++      OS << "Register " << br->DwarfReg << " at offset " << br->Offset << "\n";
++    }
++  }
++}
++
+Index: lib/MC/MCObjectFileInfo.cpp
+===================================================================
+--- lib/MC/MCObjectFileInfo.cpp	(revision 277823)
++++ lib/MC/MCObjectFileInfo.cpp	(working copy)
+@@ -519,6 +519,10 @@
+   DwarfAddrSection =
+       Ctx->getELFSection(".debug_addr", ELF::SHT_PROGBITS, 0, "addr_sec");
+ 
++  UnwindInfoSection =
++      Ctx->getELFSection(".stack_transform.unwind", ELF::SHT_PROGBITS, 0);
++  UnwindInfoSection->setAlignment(sizeof(uint16_t) + sizeof(int16_t));
++
+   StackMapSection =
+       Ctx->getELFSection(".llvm_stackmaps", ELF::SHT_PROGBITS, ELF::SHF_ALLOC);
+ 
 Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64AsmPrinter.cpp	(working copy)
-@@ -129,8 +129,8 @@
+@@ -28,6 +28,7 @@
+ #include "llvm/CodeGen/MachineModuleInfoImpls.h"
+ #include "llvm/CodeGen/StackMaps.h"
+ #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
++#include "llvm/CodeGen/UnwindInfo.h"
+ #include "llvm/IR/DataLayout.h"
+ #include "llvm/IR/DebugInfo.h"
+ #include "llvm/MC/MCAsmInfo.h"
+@@ -49,11 +50,12 @@
+ class AArch64AsmPrinter : public AsmPrinter {
+   AArch64MCInstLower MCInstLowering;
+   StackMaps SM;
++  UnwindInfo UI;
+ 
+ public:
+   AArch64AsmPrinter(TargetMachine &TM, std::unique_ptr<MCStreamer> Streamer)
+       : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(OutContext, *this),
+-        SM(*this), AArch64FI(nullptr) {}
++        SM(*this), UI(*this, SM), AArch64FI(nullptr) {}
+ 
+   const char *getPassName() const override {
+     return "AArch64 Assembly Printer";
+@@ -83,7 +85,9 @@
+ 
+   bool runOnMachineFunction(MachineFunction &F) override {
+     AArch64FI = F.getInfo<AArch64FunctionInfo>();
+-    return AsmPrinter::runOnMachineFunction(F);
++    bool retval = AsmPrinter::runOnMachineFunction(F);
++    UI.recordUnwindInfo(F);
++    return retval;
+   }
+ 
+ private:
+@@ -129,8 +133,9 @@
      // linker can safely perform dead code stripping.  Since LLVM never
      // generates code that does this, it is always safe to set.
      OutStreamer->EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
 -    SM.serializeToStackMapSection();
    }
++  UI.serializeToUnwindInfoSection();
 +  SM.serializeToStackMapSection();
  }
  
@@ -1698,14 +2161,61 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
    SMShadowTracker.startFunction(MF);
  
    SetupMachineFunction(MF);
-@@ -66,8 +68,8 @@
+@@ -66,8 +68,16 @@
    // Emit the rest of the function body.
    EmitFunctionBody();
  
 -  // We didn't modify anything.
 -  return false;
++  // Add this function's register unwind info.  The x86 backend doesn't
++  // maintain the saved FBP (old RBP) and return address (RIP) as callee-saved
++  // registers, so manually add where they're saved here
++  MachineFrameInfo *MFI = MF.getFrameInfo();
++  UI.recordUnwindInfo(MF);
++  UI.addRegisterUnwindInfo(MF, 6, MFI->getObjectOffset(-2) + 16);
++  UI.addRegisterUnwindInfo(MF, 16, MFI->getObjectOffset(-1) + 16);
++
 +  // We may have modified where stack map intrinsics are located.
 +  return modified;
  }
  
  /// printSymbolOperand - Print a raw symbol reference operand.  This handles
+@@ -689,6 +699,7 @@
+   }
+ 
+   if (TT.isOSBinFormatELF()) {
++    UI.serializeToUnwindInfoSection();
+     SM.serializeToStackMapSection();
+     FM.serializeToFaultMapSection();
+   }
+Index: lib/Target/X86/X86AsmPrinter.h
+===================================================================
+--- lib/Target/X86/X86AsmPrinter.h	(revision 277823)
++++ lib/Target/X86/X86AsmPrinter.h	(working copy)
+@@ -14,6 +14,7 @@
+ #include "llvm/CodeGen/AsmPrinter.h"
+ #include "llvm/CodeGen/FaultMaps.h"
+ #include "llvm/CodeGen/StackMaps.h"
++#include "llvm/CodeGen/UnwindInfo.h"
+ #include "llvm/Target/TargetMachine.h"
+ 
+ // Implemented in X86MCInstLower.cpp
+@@ -28,6 +29,7 @@
+ class LLVM_LIBRARY_VISIBILITY X86AsmPrinter : public AsmPrinter {
+   const X86Subtarget *Subtarget;
+   StackMaps SM;
++  UnwindInfo UI;
+   FaultMaps FM;
+ 
+   // This utility class tracks the length of a stackmap instruction's 'shadow'.
+@@ -90,8 +92,8 @@
+  public:
+    explicit X86AsmPrinter(TargetMachine &TM,
+                           std::unique_ptr<MCStreamer> Streamer)
+-       : AsmPrinter(TM, std::move(Streamer)), SM(*this), FM(*this),
+-         SMShadowTracker(TM) {}
++       : AsmPrinter(TM, std::move(Streamer)), SM(*this), UI(*this, SM),
++         FM(*this), SMShadowTracker(TM) {}
+ 
+   const char *getPassName() const override {
+     return "X86 Assembly / Object Emitter";
