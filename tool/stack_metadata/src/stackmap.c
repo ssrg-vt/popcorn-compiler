@@ -25,7 +25,8 @@ static uint64_t stackmap_records_size(void *raw_sm, unsigned num_records)
     raw_sm += 2;
     tmp.live_outs = raw_sm;
     raw_sm += 2 + sizeof(sm_live_out_record) * tmp.live_outs->num;
-    raw_sm += 4;
+    if((uint64_t)raw_sm % 8)
+      raw_sm += 8 - ((uint64_t)raw_sm % 8);
   }
 
   return raw_sm - orig_raw;
@@ -51,7 +52,8 @@ static uint64_t read_stackmap_records(void *raw_sm, stack_map *sm)
     raw_sm += 2;
     sm->stack_maps[i].live_outs = raw_sm;
     raw_sm += 2 + sizeof(sm_live_out_record) * sm->stack_maps[i].live_outs->num;
-    raw_sm += 4;
+    if((uint64_t)raw_sm % 8)
+      raw_sm += 8 - ((uint64_t)raw_sm % 8);
   }
 
   return raw_sm - orig_raw;
@@ -90,6 +92,7 @@ ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm)
     offset += sizeof(sm_stack_size_record) * tmp_sm.num_functions;
     offset += sizeof(uint64_t) * tmp_sm.num_constants;
     offset += stackmap_records_size(data->d_buf + offset, tmp_sm.num_records);
+    printf("Current offset: %lx\n", offset);
   }
 
   if(verbose) printf("Found %lu stackmap section(s)\n", *num_sm);
@@ -137,6 +140,8 @@ ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm)
                j, sm[i].stack_maps[j].id, sm[i].stack_maps[j].func_idx,
                sm[i].stack_maps[j].offset, sm[i].stack_maps[j].locations->num,
                sm[i].stack_maps[j].live_outs->num);
+
+    printf("Parsing current offset: %lx\n", offset);
   }
 
   *sm_ptr = sm;

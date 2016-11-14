@@ -185,6 +185,10 @@ static bool create_call_site_metadata(bin *b,
       sites[cur].fbp_offset =
         sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].stack_size -
         fp_offset(b->arch);
+      sites[cur].num_unwind =
+        sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].num_unwind;
+      sites[cur].unwind_offset =
+        sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].unwind_offset;
       sites[cur].num_live = sm[i].stack_maps[j].locations->num;
       sites[cur].live_offset = loc_num;
       memcpy(&locs[loc_num], &sm[i].stack_maps[j].locations->record,

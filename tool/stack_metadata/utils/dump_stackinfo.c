@@ -89,8 +89,10 @@ bool dump_callsite_section(Elf_Scn *scn)
   sites = (call_site *)data->d_buf;
   printf("found %lu entries\n", num_sites);
   for(i = 0; i < num_sites; i++)
-    printf("%lu: 0x%lx, %u, %u live value(s) (offset=%lu)\n",
+    printf("%lu: 0x%lx, %u, %u unwind entries (offset=%u), "
+           "%u live value(s) (offset=%lu)\n",
       sites[i].id, sites[i].addr, sites[i].fbp_offset,
+      sites[i].num_unwind, sites[i].unwind_offset,
       sites[i].num_live, sites[i].live_offset);
   printf("\n");
 

@@ -285,7 +285,7 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 ===================================================================
 --- include/llvm/CodeGen/UnwindInfo.h	(nonexistent)
 +++ include/llvm/CodeGen/UnwindInfo.h	(working copy)
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,81 @@
 +//===----------------- UnwindInfo.h - UnwindInfo ---------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -297,7 +297,7 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +//
 +// Generate unwinding information for stack transformation runtime.  Note that
 +// this is implemented assuming the function uses a frame base pointer (FBP).
-+// This requirment is guaranteed to be satisfied if the function has a
++// This requirement is guaranteed to be satisfied if the function has a
 +// stackmap, which are the only functions for which we want to generate
 +// unwinding information.
 +//
@@ -332,10 +332,12 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +  typedef std::pair<const MCSymbol *, CalleeSavedRegisters> FuncCalleePair;
 +  typedef std::map<const MCSymbol *, CalleeSavedRegisters> FuncCalleeMap;
 +
++  /// \brief Constructors
 +  UnwindInfo() = delete;
 +  UnwindInfo(AsmPrinter &AP, StackMaps &SM) :
 +    AP(AP), SM(SM), OutContext(AP.OutStreamer->getContext()) {};
 +
++  /// \bried Clear all saved unwinding information
 +  void reset() { FuncCalleeSaved.clear(); }
 +
 +  /// \brief Store unwinding information for a function
@@ -1165,7 +1167,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,6 +597,8 @@
+@@ -439,14 +597,21 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -1174,15 +1176,20 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
-@@ -447,6 +607,11 @@
- ///     uint8  : Size in Bytes
- ///     uint16 : Dwarf RegNum
- ///     int32  : Offset
-+///     uint8  : Is it a pointer?
-+///     uint8  : Is it an alloca?
-+///     uint8  : Is it a duplicate record for the same live value?
-+///     uint8  : Padding
-+///     uint32 : Size of pointed-to data
+ ///   Location[NumLocations] {
+-///     uint8  : Register | Direct | Indirect | Constant | ConstantIndex
+-///     uint8  : Size in Bytes
+-///     uint16 : Dwarf RegNum
+-///     int32  : Offset
++///     uint8 (4 bits) : Register | Direct | Indirect | Constant | ConstantIndex
++///     uint8 (1 bit)  : Padding
++///     uint8 (1 bit)  : Is it a pointer?
++///     uint8 (1 bit)  : Is it an alloca?
++///     uint8 (1 bit)  : Is it a duplicate record for the same live value?
++///     uint8          : Size in Bytes
++///     uint16         : Dwarf RegNum
++///     int32          : Offset
++///     uint32         : Size of pointed-to data
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
@@ -1195,14 +1202,25 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -498,6 +665,11 @@
+@@ -494,10 +661,21 @@
+     OS.EmitIntValue(CSLocs.size(), 2);
+ 
+     for (const auto &Loc : CSLocs) {
+-      OS.EmitIntValue(Loc.Type, 1);
++      //OS.EmitIntValue(Loc.Type, 1);
++      // First byte is type information, bit fields represent different values:
++      //   xxxx - type (Register, Direct, Indirect, Constant/ConstantIdx)
++      //      x - padding
++      //      x - is it a pointer?
++      //      x - is it an alloca?
++      //      x - is it a duplicate?
++      uint8_t TypeAndFlags = 0;
++      TypeAndFlags = ((uint8_t)Loc.Type) << 4 | ((uint8_t)Loc.Ptr) << 2
++                   | ((uint8_t)Loc.Alloca) << 1 | ((uint8_t)Loc.Duplicate);
++      OS.EmitIntValue(TypeAndFlags, 1);
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
        OS.EmitIntValue(Loc.Offset, 4);
-+      OS.EmitIntValue(Loc.Ptr, 1);
-+      OS.EmitIntValue(Loc.Alloca, 1);
-+      OS.EmitIntValue(Loc.Duplicate, 1);
-+      OS.EmitIntValue(0, 1);
 +      OS.EmitIntValue(Loc.PtrDataSize, 4);
      }
  
@@ -1925,7 +1943,7 @@ Index: lib/CodeGen/UnwindInfo.cpp
 ===================================================================
 --- lib/CodeGen/UnwindInfo.cpp	(nonexistent)
 +++ lib/CodeGen/UnwindInfo.cpp	(working copy)
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,134 @@
 +//===--------------------------- UnwindInfo.cpp ---------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1935,7 +1953,6 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#include "llvm/CodeGen/AsmPrinter.h"
 +#include "llvm/CodeGen/StackMaps.h"
 +#include "llvm/CodeGen/UnwindInfo.h"
 +#include "llvm/MC/MCSymbol.h"
@@ -1979,6 +1996,7 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +void UnwindInfo::addRegisterUnwindInfo(const MachineFunction &MF,
 +                                       uint32_t DwarfReg,
 +                                       int32_t Offset) {
++  if(!MF.getFrameInfo()->hasStackMap()) return;
 +  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
 +  assert(FuncSym && "Could not find function symbol");
 +  assert(FuncCalleeSaved.find(FuncSym) != FuncCalleeSaved.end() &&
@@ -1995,11 +2013,12 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +    const CalleeSavedRegisters &CSR = f->second;
 +
 +    assert(FuncSym && "Invalid machine function");
-+    assert(CSR.size() >= 2 && "Should have at least 2 registers to restore "
-+                              "(return address & saved FBP");
++    if(CSR.size() < 2)
++      DEBUG(dbgs() << "WARNING: should have at least 2 registers to restore "
++                               "(return address & saved FBP");
 +
 +    DEBUG(dbgs() << DUI << "Function " << FuncSym->getName()
-+                 << "(offset " << curIdx << ", "
++                 << " (offset " << curIdx << ", "
 +                 << CSR.size() << " entries):\n");
 +
 +    startIdx = curIdx;
@@ -2152,7 +2171,15 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
 --- lib/Target/X86/X86AsmPrinter.cpp	(revision 277823)
 +++ lib/Target/X86/X86AsmPrinter.cpp	(working copy)
-@@ -49,6 +49,8 @@
+@@ -24,6 +24,7 @@
+ #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+ #include "llvm/IR/DebugInfo.h"
+ #include "llvm/IR/DerivedTypes.h"
++#include "llvm/IR/DiagnosticInfo.h"
+ #include "llvm/IR/Mangler.h"
+ #include "llvm/IR/Module.h"
+ #include "llvm/IR/Type.h"
+@@ -49,6 +50,8 @@
  bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
    Subtarget = &MF.getSubtarget<X86Subtarget>();
  
@@ -2161,7 +2188,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
    SMShadowTracker.startFunction(MF);
  
    SetupMachineFunction(MF);
-@@ -66,8 +68,16 @@
+@@ -66,8 +69,26 @@
    // Emit the rest of the function body.
    EmitFunctionBody();
  
@@ -2171,16 +2198,26 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
 +  // maintain the saved FBP (old RBP) and return address (RIP) as callee-saved
 +  // registers, so manually add where they're saved here
 +  MachineFrameInfo *MFI = MF.getFrameInfo();
-+  UI.recordUnwindInfo(MF);
-+  UI.addRegisterUnwindInfo(MF, 6, MFI->getObjectOffset(-2) + 16);
-+  UI.addRegisterUnwindInfo(MF, 16, MFI->getObjectOffset(-1) + 16);
++  if(MFI->hasStackMap()) {
++    UI.recordUnwindInfo(MF);
++    if(-2 >= MFI->getObjectIndexBegin()) {
++      UI.addRegisterUnwindInfo(MF, 6, MFI->getObjectOffset(-2) + 16);
++      UI.addRegisterUnwindInfo(MF, 16, MFI->getObjectOffset(-1) + 16);
++    }
++    else {
++      const Function *F = MF.getFunction();
++      F->getContext().diagnose(DiagnosticInfoOptimizationFailure(*F,
++        DebugLoc(), Twine("Function '" + F->getName() +
++        "' has stackmap but no frame pointer")));
++    }
++  }
 +
 +  // We may have modified where stack map intrinsics are located.
 +  return modified;
  }
  
  /// printSymbolOperand - Print a raw symbol reference operand.  This handles
-@@ -689,6 +699,7 @@
+@@ -689,6 +710,7 @@
    }
  
    if (TT.isOSBinFormatELF()) {

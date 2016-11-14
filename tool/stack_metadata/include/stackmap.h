@@ -26,6 +26,8 @@ typedef struct __attribute__((__packed__)) sm_header {
 typedef struct __attribute__((__packed__)) sm_stack_size_record {
   uint64_t func_addr;
   uint64_t stack_size;
+  uint32_t unwind_offset;
+  uint32_t num_unwind;
 } sm_stack_size_record;
 
 /* A set of location descriptions. */
