@@ -55,7 +55,6 @@ typedef struct __attribute__((__packed__)) sm_live_outs {
 typedef struct __attribute__((__packed__)) sm_stack_map_record {
   uint64_t id;
   uint32_t func_idx; /* index into stack_sizes for function information */
-  uint32_t padding;
   uint32_t offset; /* offset from beginning of function */
   uint16_t reserved;
   sm_locations *locations;
