@@ -275,3 +275,15 @@ ret_t update_section(Elf *e,
   return SUCCESS;
 }
 
+void *get_section_data(Elf_Scn *scn)
+{
+  Elf_Data *data = NULL;
+
+  // TODO gracefully handle multiple data sections?
+  if(!scn) return NULL;
+  if(get_num_data_blocks(scn) > 1) return NULL;
+  if(!(data = elf_getdata(scn, data))) return NULL;
+
+  return data->d_buf;
+}
+

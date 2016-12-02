@@ -11,6 +11,12 @@
 /* Section name prefix for all call site metadata. */
 #define SECTION_PREFIX ".stack_transform"
 
+/* Section name postfix for unwinding information. */
+#define SECTION_UNWIND "unwind"
+
+/* Section name postfix for unwinding address range information. */
+#define SECTION_UNWIND_ADDR "unwind_arange"
+
 /*
  * Section name postfix for call site sections -- sorted by ID & address,
  * respectively.

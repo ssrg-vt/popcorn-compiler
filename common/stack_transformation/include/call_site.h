@@ -10,28 +10,18 @@
 
 #include <stdint.h>
 
-#if _LIVE_VALS == DWARF_LIVE_VALS
+/* Function address & starting offset in unwind information section. */
+typedef struct __attribute__((__packed__)) unwind_addr {
+  uint64_t addr; /* function address */
+  uint32_t num_unwind;
+  uint32_t unwind_offset; /* offset into unwind info section */
+} unwind_addr;
 
-#define EMPTY_CALL_SITE \
-  ((call_site){ \
-    .id = 0, \
-    .addr = 0, \
-    .fbp_offset = 0, \
-    .has_fbp = 0 \
-  })
-
-/*
- * A call-site record containing metadata for finding & rewriting a stack frame
- * at the given call site.
- */
-typedef struct __attribute__((__packed__)) call_site {
-  uint64_t id; /* call site ID -- maps sites across binaries */
-  uint64_t addr; /* call site return address */
-  uint32_t fbp_offset; /* frame pointer offset from top of stack */
-  uint8_t has_fbp; /* does this frame have a frame pointer? */
-} call_site;
-
-#else /* STACKMAP_LIVE_VALS */
+/* Stack location for callee-saved register. Encodes offset from FBP. */
+typedef struct __attribute__((__packed__)) unwind_loc {
+  uint16_t reg; /* which register is saved onto the stack */
+  int16_t offset; /* offset from FBP where register contents were spilled */
+} unwind_loc;
 
 #define EMPTY_CALL_SITE \
   ((call_site){ \
@@ -71,19 +61,20 @@ enum location_type {
 };
 
 /* A location description record for a live value at a call site. */
+// Note: the compiler lays out the bit fields from least-significant to
+// most-significant, meaning they *must* be in the following order to adhere to
+// the on-disk layout
 typedef struct __attribute__((__packed__)) call_site_value {
-  uint8_t type : 4;
-  uint8_t bit_pad : 1;
-  uint8_t is_ptr : 1;
-  uint8_t is_alloca : 1;
   uint8_t is_duplicate : 1;
+  uint8_t is_alloca : 1;
+  uint8_t is_ptr : 1;
+  uint8_t bit_pad : 1;
+  uint8_t type : 4;
   uint8_t size;
   uint16_t regnum;
   int32_t offset_or_constant;
   uint32_t pointed_size;
 } call_site_value;
-
-#endif
 
 #endif /* _CALL_SITE_H */
 

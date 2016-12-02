@@ -213,7 +213,7 @@ ret_t add_section(Elf *e,
 /**
  * Update a section in the ELF.
  * @param e an ELF object
- * @param name the section name
+ * @param scn an ELF section
  * @param num_entries number of entries in the section
  * @param entry_size size of each entry, in bytes
  * @param buf data comprising the section
@@ -224,6 +224,14 @@ ret_t update_section(Elf *e,
                      size_t num_entries,
                      size_t entry_size,
                      void *buf);
+
+/**
+ * Get an ELF section's data.
+ * @param e an ELF object
+ * @param name the section name
+ * @return a pointer to the section, or NULL if there was an error
+ */
+void *get_section_data(Elf_Scn *scn);
 
 #endif /* _UTIL_H */
 

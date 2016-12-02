@@ -18,7 +18,7 @@
 // Configuration
 ///////////////////////////////////////////////////////////////////////////////
 
-static const char *args = "hf:s:i:v";
+static const char *args = "ha:f:s:i:v";
 static const char *help =
 "gen-stackinfo -- post-process object files (and their LLVM-generated stack \
 maps) to tag call-sites with globally-unique identifiers & generate stack \
@@ -27,12 +27,15 @@ transformation meta-data\n\n\
 Usage: ./gen-stackinfo [ OPTIONS ]\n\
 Options:\n\
 \t-h      : print help & exit\n\
+\t-a name : name of unwind address range section (default is '" \
+            SECTION_PREFIX "." SECTION_UNWIND_ADDR "')\n\
 \t-f name : object file or executable to post-process\n\
 \t-s name : section name added to object file (default is '" SECTION_PREFIX "')\n\
 \t-i num  : number at which to begin generating call site IDs\n\
 \t-v      : be verbose";
 
 static const char *file = NULL;
+static const char *unwind_addr_name = SECTION_PREFIX "." SECTION_UNWIND_ADDR;
 static const char *section_name = SECTION_PREFIX;
 static uint64_t start_id = 0;
 bool verbose = false;
@@ -58,6 +61,9 @@ static void parse_args(int argc, char **argv)
 		case 'h':
 			print_help();
 			break;
+    case 'a':
+      unwind_addr_name = optarg;
+      break;
     case 'f':
       file = optarg;
       break;
@@ -105,6 +111,10 @@ int main(int argc, char **argv)
   /* Read stack map information */
   if((ret = init_stackmap(b, &sm, &num_sm)))
     die("could not read stack map section", ret);
+
+  /* Sort the unwind address range section */
+  if((ret = sort_addresses(b, unwind_addr_name)))
+    die("could not sort unwind address range section", ret);
 
   /* Add stack transformation sections. */
   if((ret = add_sections(b, sm, num_sm, section_name, start_id)))

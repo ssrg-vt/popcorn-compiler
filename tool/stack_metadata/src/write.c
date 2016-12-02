@@ -36,6 +36,15 @@ static bool create_call_site_metadata(bin *b,
                                       call_site_value **live);
 
 /**
+ * Comparison function to sort unwind address ranges by address.  Called by
+ * qsort().
+ * @param a first unwind address range
+ * @param b second unwind address range
+ * @return -1 if a < b, 0 if a == b or 1 if a > b
+ */
+static int sort_unwind_addr(const void *a, const void *b);
+
+/**
  * Comparison function to sort sites by ID.  Called by qsort().
  * @param a first call site record
  * @param b second call site record
@@ -54,6 +63,26 @@ static int sort_addr(const void *a, const void *b);
 ///////////////////////////////////////////////////////////////////////////////
 // Public API
 ///////////////////////////////////////////////////////////////////////////////
+
+ret_t sort_addresses(bin *b, const char *sec)
+{
+  size_t num_records;
+  size_t record_size;
+  Elf_Scn *scn;
+  Elf64_Shdr *shdr;
+  unwind_addr *ua;
+
+  if(!(scn = get_section_by_name(b->e, sec))) return FIND_SECTION_FAILED;
+  if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
+  if(!(ua = get_section_data(scn))) return READ_ELF_FAILED;
+
+  num_records = shdr->sh_size / shdr->sh_entsize;
+  record_size = shdr->sh_entsize;
+  if(verbose) printf("Found %lu records in the unwind address range section\n",
+                     num_records);
+  qsort(ua, num_records, record_size, sort_unwind_addr);
+  return update_section(b->e, scn, num_records, record_size, ua);
+}
 
 ret_t add_sections(bin *b,
                    stack_map *sm,
@@ -197,19 +226,27 @@ static bool create_call_site_metadata(bin *b,
     }
   }
 
-  /* Add entries for main thread's __libc_start_main & thread's start */
-  sites[cur].id = start_id++;
+  /*
+   * Add entries for main thread's __libc_start_main & thread's start.  We
+   * denote stack beginning call site records with an ID Of UINT64_MAX for
+   * the main thread & UINT64_MAX-1 for spawned threads.
+   */
+  sites[cur].id = UINT64_MAX;
   sites[cur].addr = mainthr.st_value + main_start_offset(b->arch);
   sites[cur].fbp_offset = 0;
+  sites[cur].num_unwind = 0;
+  sites[cur].unwind_offset = UINT32_MAX;
   sites[cur].num_live = 0;
   sites[cur].live_offset = loc_num;
   cur++;
 
   if(thread.st_size) // May not exist if application doesn't use pthreads
   {
-    sites[cur].id = start_id++;
+    sites[cur].id = UINT64_MAX - 1;
     sites[cur].addr = thread.st_value + thread_start_offset(b->arch);
     sites[cur].fbp_offset = 0;
+    sites[cur].num_unwind = 0;
+    sites[cur].unwind_offset = UINT32_MAX;
     sites[cur].num_live = 0;
     sites[cur].live_offset = loc_num;
   }
@@ -220,6 +257,16 @@ static bool create_call_site_metadata(bin *b,
   *live = locs;
 
   return true;
+}
+
+static int sort_unwind_addr(const void *a, const void *b)
+{
+  const unwind_addr *ua_a = (const unwind_addr*)a;
+  const unwind_addr *ua_b = (const unwind_addr*)b;
+
+  if(ua_a->addr < ua_b->addr) return -1;
+  else if(ua_a->addr == ua_a->addr) return 0;
+  else return 1;
 }
 
 static int sort_id(const void *a, const void *b)
