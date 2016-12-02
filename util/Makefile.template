@@ -30,7 +30,7 @@ APP_DIR := $(shell pwd)
 # Compiler
 CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
-CFLAGS     := -O0 -Wall -g -gdwarf-aranges -c -fopenmp=libomp -DPOSIX -DBOMP
+CFLAGS     := -O0 -Wall -g -c -fopenmp=libomp -DPOSIX -DBOMP
 HET_CFLAGS := $(CFLAGS) -nostdinc -ffunction-sections -fdata-sections \
               -finstrument-functions -fno-common -ftls-model=initial-exec \
               -fno-vectorize -Wno-override-module -mllvm -optimize-regalloc
@@ -49,7 +49,6 @@ LIBS     := /lib/crt1.o \
             /lib/libc.a \
             /lib/libmigrate.a \
             /lib/libstack-transform.a \
-            /lib/libdwarf.a \
             /lib/libelf.a \
             /lib/libpthread.a \
             /lib/libbomp.a \
