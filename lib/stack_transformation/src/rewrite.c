@@ -6,11 +6,8 @@
  */
 
 #include "stack_transform.h"
-#include "func.h"
 #include "data.h"
 #include "unwind.h"
-#include "query.h"
-#include "properties.h"
 #include "util.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -79,11 +76,12 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
  */
 static void rewrite_frame(rewrite_context src, rewrite_context dest);
 
+// TODO needed?
 /*
  * Re-write the outer-most frame, which doesn't need to copy over local
  * variables.
  */
-static void rewrite_frame_outer(rewrite_context src, rewrite_context dest);
+//static void rewrite_frame_outer(rewrite_context src, rewrite_context dest);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Perform stack transformation
@@ -118,10 +116,9 @@ int st_rewrite_stack(st_handle handle_src,
   // Note: functions are aligned & we're only transforming starting at the
   // beginning of functions, so source pc == destination pc.
   src = init_src_context(handle_src, regset_src, sp_base_src);
-  dest = init_dest_context(handle_dest,
-                           regset_dest,
-                           sp_base_dest,
-                           ACT(src).regs->pc(ACT(src).regs));
+  dest = init_dest_context(handle_dest, regset_dest, sp_base_dest,
+                           REGOPS(src)->pc(ACT(src).regs));
+
   if(!src || !dest)
   {
     if(src) free_context(src);
@@ -145,32 +142,17 @@ int st_rewrite_stack(st_handle handle_src,
   /* Rewrite outer-most frame. */
   ST_INFO("--> Rewriting outermost frame <--\n");
 
-  rewrite_frame_outer(src, dest);
-  set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
-  pop_frame(dest);
-  ACT(dest).function = get_func_by_pc(dest->handle, ACT(dest).regs->pc(ACT(dest).regs));
-  ASSERT(ACT(dest).function, "could not get function information\n");
-#if _LIVE_VALS == DWARF_LIVE_VALS
-  if(ACT(dest).site.has_fbp)
-  {
-    fbp = ACT(dest).regs->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
-    ASSERT(fbp, "invalid frame pointer\n");
-    ACT(dest).regs->set_fbp(ACT(dest).regs, fbp);
-    PREV_ACT(dest).regs->set_fbp(PREV_ACT(dest).regs, fbp);
-
-    ST_INFO("Set FP=%p for outer-most frame\n", fbp);
-  }
-#else /* STACKMAP_LIVE_VALS */
-  // Note: the LLVM stackmap intrinsic disables -fomit-frame-pointer
-  // optimization, so we *must* have a frame pointer.
-  fbp = ACT(dest).regs->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
+  // TODO do we need to rewrite the outer frame?  Arguments to migration shim
+  // are stored in the pthreads library
+  //rewrite_frame_outer(src, dest);
+  set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
+  pop_frame_funcentry(dest);
+  fbp = REGOPS(dest)->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
   ASSERT(fbp, "invalid frame pointer\n");
-  ACT(dest).regs->set_fbp(ACT(dest).regs, fbp);
-  PREV_ACT(dest).regs->set_fbp(PREV_ACT(dest).regs, fbp);
-
+  REGOPS(dest)->set_fbp(ACT(dest).regs, fbp);
+  REGOPS(dest)->set_fbp(PREV_ACT(dest).regs, fbp);
+  setup_frame_info(dest);
   ST_INFO("Set FP=%p for outer-most frame\n", fbp);
-#endif
-  read_unwind_rules(dest);
 
   /* Rewrite rest of frames. */
   // Note: no need to rewrite libc start function, no state to maintain there
@@ -180,49 +162,25 @@ int st_rewrite_stack(st_handle handle_src,
 
     rewrite_frame(src, dest);
     set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
-#if _LIVE_VALS == DWARF_LIVE_VALS
-    if(NEXT_ACT(dest).site.has_fbp)
-    {
-      saved_fbp = get_savedfbp_loc(dest);
-      ASSERT(saved_fbp, "invalid saved frame pointer location\n");
-      pop_frame(dest);
-      ACT(dest).function = get_func_by_pc(dest->handle, ACT(dest).regs->pc(ACT(dest).regs));
-      fbp = ACT(dest).regs->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
-      ASSERT(fbp, "invalid frame pointer\n");
-      ACT(dest).regs->set_fbp(ACT(dest).regs, fbp);
-      *saved_fbp = (uint64_t)fbp;
-
-      ST_INFO("Saved old FP=%p to %p\n", fbp, saved_fbp);
-    }
-    else
-    {
-      pop_frame(dest);
-      ACT(dest).function = get_func_by_pc(dest->handle, ACT(dest).regs->pc(ACT(dest).regs));
-    }
-#else /* STACKMAP_LIVE_VALS */
     saved_fbp = get_savedfbp_loc(dest);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dest);
-    ACT(dest).function = get_func_by_pc(dest->handle, ACT(dest).regs->pc(ACT(dest).regs));
-    fbp = ACT(dest).regs->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
+    fbp = REGOPS(dest)->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
     ASSERT(fbp, "invalid frame pointer\n");
-    ACT(dest).regs->set_fbp(ACT(dest).regs, fbp);
+    REGOPS(dest)->set_fbp(ACT(dest).regs, fbp);
     *saved_fbp = (uint64_t)fbp;
-
+    setup_frame_info(dest);
     ST_INFO("Saved old FP=%p to %p\n", fbp, saved_fbp);
-#endif
-    ASSERT(ACT(dest).function, "could not get function information\n");
-    read_unwind_rules(dest);
   }
 
   TIMER_STOP(rewrite_stack);
 
   /* Copy out register state for destination & clean up. */
-  dest->acts[0].regs->regset_copyout(dest->acts[0].regs, dest->regs);
+  REGOPS(dest)->regset_copyout(dest->acts[0].regs, dest->regs);
   free_context(dest);
   free_context(src);
 
-  ST_INFO("Finished rewrite\n");
+  ST_INFO("Finished rewrite!\n");
 
   TIMER_STOP(st_rewrite_stack);
   TIMER_PRINT;
@@ -265,6 +223,7 @@ static rewrite_context init_src_context(st_handle handle,
                                         void* sp_base)
 {
   rewrite_context ctx;
+  unwind_addr meta;
 
   TIMER_START(init_src_context);
 
@@ -273,32 +232,33 @@ static rewrite_context init_src_context(st_handle handle,
 #else
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
+  ctx->handle = handle;
   ctx->num_acts = 0;
   ctx->act = 0;
   list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = handle->regops->regset_init(regset);
-  ACT(ctx).function = get_func_by_pc(handle, ACT(ctx).regs->pc(ACT(ctx).regs));
+  ACT(ctx).regs = REGOPS(ctx)->regset_init(regset);
   ctx->regs = regset;
   ctx->stack_base = sp_base;
-  ctx->stack = ACT(ctx).regs->sp(ACT(ctx).regs);
-  ctx->handle = handle;
-  init_data_pools(ctx, ACT(ctx).regs->num_regs);
-  read_unwind_rules(ctx);
+  ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
+  init_data_pools(ctx, REGOPS(ctx)->num_regs);
+  setup_frame_info(ctx);
 
-  /* Correct PC for destination context. */
-  // Note: must come after read_unwind_rules() to unwind the current frame with
-  // correct register info
-  ACT(ctx).regs->set_pc(ACT(ctx).regs, get_func_start_addr(ACT(ctx).function));
-  if(!get_site_by_addr(handle, ACT(ctx).regs->pc(ACT(ctx).regs), &ACT(ctx).site))
+  if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
   {
-    // Note: in the migration shim we may not have a stackmap marking function
-    // entry, so bootstrap with an empty one
     ACT(ctx).site = EMPTY_CALL_SITE;
-    ACT(ctx).site.addr = (uint64_t)ACT(ctx).regs->pc(ACT(ctx).regs);
+    ST_INFO("No source call site information @ %p, searching for function\n",
+           REGOPS(ctx)->pc(ACT(ctx).regs));
+
+    if(!get_unwind_offset_by_addr(handle,
+                                  REGOPS(ctx)->pc(ACT(ctx).regs),
+                                  &meta))
+      ST_ERR(1, "unable to find unwinding information for outermost frame\n");
+
+    ACT(ctx).site.num_unwind = meta.num_unwind;
+    ACT(ctx).site.unwind_offset = meta.unwind_offset;
   }
 
   ASSERT(ctx->stack, "invalid stack pointer\n");
-  ASSERT(ACT(ctx).function, "could not get starting function information\n");
 
   TIMER_STOP(init_src_context);
   return ctx;
@@ -323,26 +283,20 @@ static rewrite_context init_dest_context(st_handle handle,
 #else
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
+  ctx->handle = handle;
   ctx->num_acts = 0;
   ctx->act = 0;
   list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = handle->regops->regset_default();
-  ACT(ctx).regs->set_pc(ACT(ctx).regs, pc);
-  ACT(ctx).function = get_func_by_pc(handle, pc);
-  if(!get_site_by_addr(handle, pc, &ACT(ctx).site))
-  {
-    // Note: in the migration shim we may not have a stackmap marking function
-    // entry, so bootstrap with an empty one
-    ACT(ctx).site = EMPTY_CALL_SITE;
-    ACT(ctx).site.addr = (uint64_t)pc;
-  }
+  ACT(ctx).regs = REGOPS(ctx)->regset_default();
+  REGOPS(ctx)->set_pc(ACT(ctx).regs, pc);
+  ACT(ctx).site = EMPTY_CALL_SITE;
+
   ctx->regs = regset;
   ctx->stack_base = sp_base;
-  ctx->handle = handle;
   init_data_pools(ctx, ACT(ctx).regs->num_regs);
-  // Note: cannot read unwind rules yet because CFA will be invalid (no SP)
+  // Note: cannot setup frame information because CFA will be invalid (need to
+  // set up SP first)
 
-  ASSERT(ACT(ctx).function, "could not get starting function information\n");
   TIMER_STOP(init_dest_context);
   return ctx;
 }
@@ -352,11 +306,8 @@ static rewrite_context init_dest_context(st_handle handle,
  */
 static void init_data_pools(rewrite_context ctx, size_t num_regs)
 {
-  ctx->regtable_pool =
-    malloc(sizeof(Dwarf_Regtable_Entry3) * num_regs * MAX_FRAMES);
   ctx->callee_saved_pool = malloc(bitmap_size(num_regs) * MAX_FRAMES);
-  ASSERT(ctx->regtable_pool && ctx->callee_saved_pool,
-        "could not initialize data pools\n");
+  ASSERT(ctx->callee_saved_pool, "could not initialize data pools\n");
 }
 
 /*
@@ -392,7 +343,6 @@ static void free_context(rewrite_context ctx)
  */
 static void free_data_pools(rewrite_context ctx)
 {
-  free(ctx->regtable_pool);
   free(ctx->callee_saved_pool);
 }
 
@@ -407,65 +357,51 @@ static void unwind_and_size(rewrite_context src,
 
   TIMER_START(unwind_and_size);
 
-  /*
-   * Unwind the source stack in order to calculate destination stack size.
-   */
-  pop_frame(src);
-  src->num_acts++;
-  dest->num_acts++;
-  dest->act++;
-  ACT(src).function = first_frame(src->handle, ACT(src).regs->pc(ACT(src).regs));
-
-  while(!ACT(src).function)
+  do
   {
-    ACT(src).function = get_func_by_pc(src->handle, ACT(src).regs->pc(ACT(src).regs));
-    ASSERT(ACT(src).function, "could not get function information\n");
-    read_unwind_rules(src);
+    pop_frame(src);
+    setup_frame_info(src);
+    src->num_acts++;
+    dest->num_acts++;
+    dest->act++;
 
     /*
      * Call site meta-data will be used to get return addresses & frame-base
      * pointer locations.
      */
-    if(!get_site_by_addr(src->handle, ACT(src).regs->pc(ACT(src).regs), &ACT(src).site))
-      ASSERT(false, "could not get source call site information (address=%p)\n",
-                    ACT(src).regs->pc(ACT(src).regs));
+    if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
+      ST_ERR(1, "could not get source call site information (address=%p)\n",
+             REGOPS(src)->pc(ACT(src).regs));
     if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
-      ASSERT(false, "could not get destination call site information (address=%p, ID=%ld)\n",
-                    ACT(src).regs->pc(ACT(src).regs), ACT(src).site.id);
+      ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
+             REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
 
+    /* Update stack size with newly discovered stack frame's size */
     // Note: this might overestimate the size for frames without a base pointer
     // but that shouldn't be a problem.
-    stack_size += ACT(dest).site.fbp_offset + (2 * dest->handle->ptr_size); // old FBP & RA
-
-    pop_frame(src);
-    src->num_acts++;
-    dest->num_acts++;
-    dest->act++;
-    ACT(src).function = first_frame(src->handle, ACT(src).regs->pc(ACT(src).regs));
+    stack_size += ACT(dest).site.fbp_offset +
+                  (2 * dest->handle->ptr_size); // old FBP & RA
   }
+  while(!first_frame(ACT(src).site.id));
 
-  /* Get frame information for starting function */
-  ASSERT(ACT(src).function, "could not get starting function information\n");
-  if(!get_site_by_addr(src->handle, ACT(src).regs->pc(ACT(src).regs), &ACT(src).site))
-    ASSERT(false, "could not get source call site information (address=%p)\n",
-                  ACT(src).regs->pc(ACT(src).regs));
-  if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
-    ASSERT(false, "could not get destination call site information (address=%p, ID=%ld)\n",
-                  ACT(src).regs->pc(ACT(src).regs), ACT(src).site.id);
-  stack_size += ACT(dest).site.fbp_offset + (2 * dest->handle->ptr_size); // old FBP & RA
+  /* Do one more iteration for starting function */
+  pop_frame(src);
+  setup_frame_info(src);
   src->num_acts++;
   dest->num_acts++;
-  ASSERT(stack_size < MAX_STACK_SIZE, "invalid stack size\n");
+  dest->act++;
+  if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
+    ST_ERR(1, "could not get source call site information (address=%p)\n",
+           REGOPS(src)->pc(ACT(src).regs));
+  if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
+    ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
+           REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
+  stack_size += ACT(dest).site.fbp_offset + (2 * dest->handle->ptr_size);
 
-  ST_INFO("Stack initial function: '%s'\n", get_func_name(ACT(src).function));
+  ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
+
   ST_INFO("Number of live activations: %d\n", src->num_acts);
   ST_INFO("Destination stack size: %lu\n", stack_size);
-
-  // TODO this could be cleaner
-  if(ACT(src).function == src->handle->start_main)
-    ACT(dest).function = dest->handle->start_main;
-  else ACT(dest).function = dest->handle->start_thread;
-  ASSERT(ACT(src).function && ACT(dest).function, "invalid start function\n");
 
   /* Reset to outer-most frame. */
   src->act = 0;
@@ -484,16 +420,17 @@ static void unwind_and_size(rewrite_context src,
                                      bitmap_size(ACT(dest).regs->num_regs) *
                                      dest->num_acts);
 
-  /* Read unwind rules & calculate CFA for destination since we have a SP. */
-  read_unwind_rules(dest);
+  /* Set up outermost activation for destination since we have a SP. */
+  setup_frame_info_funcentry(dest);
 
   /*
    * The compiler may specify arguments are located at an offset from the frame
    * pointer at all function PCs, including the ones where the frame hasn't
    * been set up.  Hard-code outer frame's FBP for this situation.
    */
-  ACT(dest).regs->set_fbp(ACT(dest).regs,
-                          ACT(dest).cfa - fp_offset(dest->handle->arch));
+  // TODO this is wrong, probably...
+  /*REGOPS(dest)->set_fbp(ACT(dest).regs,
+                        ACT(dest).cfa - fp_offset(dest->handle->arch));*/
 
   TIMER_STOP(unwind_and_size);
 }
@@ -511,18 +448,12 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 
   // TODO hack -- va_list is implemented as a different type for aarch64 &
   // x86-64, and thus has a different size.  Need to handle more gracefully.
-#if _LIVE_VALS == DWARF_LIVE_VALS
-  if((VAR_SIZE(var_src) == 24 && VAR_SIZE(var_dest) == 32) ||
-     (VAR_SIZE(var_src) == 32 && VAR_SIZE(var_dest) == 24))
-    skip = true;
-#else /* STACKMAP_LIVE_VALS */
   if(var_src->is_alloca && var_src->pointed_size == 24 &&
      var_dest->is_alloca && var_dest->pointed_size == 32)
     skip = true;
   else if(var_src->is_alloca && var_src->pointed_size == 32 &&
           var_dest->is_alloca && var_dest->pointed_size == 24)
     skip = true;
-#endif
   if(skip)
   {
     ST_INFO("Skipping va_list (different size for aarch64/x86-64)\n");
@@ -537,12 +468,10 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
         "variable does not have same type (%s vs. %s)\n",
         (var_src->is_ptr ? "pointer" : "non-pointer"),
         (var_dest->is_ptr ? "pointer" : "non-pointer"));
-#if _LIVE_VALS == STACKMAP_LIVE_VALS
   ASSERT(!(var_src->is_alloca ^ var_dest->is_alloca),
         "variable does not have same type (%s vs. %s)\n",
         (var_src->is_alloca ? "alloca" : "non-alloca"),
         (var_dest->is_alloca ? "alloca" : "non-alloca"));
-#endif
 
   /* Read variable's source value & perform appropriate action. */
   val_src = get_var_val(src, var_src);
@@ -557,11 +486,7 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
      * If variable is a pointer to the stack, record a fixup.  Otherwise, copy
      * the variable into the destination frame.
      */
-#if _LIVE_VALS == DWARF_LIVE_VALS
-    if(var_src->is_ptr)
-#else /* STACKMAP_LIVE_VALS */
     if(!var_src->is_alloca && var_src->is_ptr)
-#endif
     {
       /* Read the pointer's value */
       switch(val_src.type)
@@ -569,9 +494,9 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
       case ADDRESS: stack_addr = *(void**)val_src.addr; break;
       case REGISTER:
         // Note: we assume that we're doing offsets from 64-bit registers 
-        ASSERT(src->handle->props->reg_size(val_src.reg) == 8,
+        ASSERT(REGOPS(src)->reg_size(val_src.reg) == 8,
                "invalid register size for pointer\n");
-        stack_addr = *(void**)ACT(src).regs->reg(ACT(src).regs, val_src.reg);
+        stack_addr = *(void**)REGOPS(src)->reg(ACT(src).regs, val_src.reg);
         break;
       case CONSTANT: stack_addr = (void*)val_src.cnst; break;
       }
@@ -645,9 +570,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 {
   size_t i, j;
   const variable* var_src, *var_dest;
-#if _LIVE_VALS == STACKMAP_LIVE_VALS
   size_t src_offset, dest_offset;
-#endif
   bool needs_local_fixup = false;
   list_t(varval) var_list;
   node_t(varval)* varval_node;
@@ -658,30 +581,6 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   TIMER_FG_START(rewrite_frame);
   ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
 
-#if _LIVE_VALS == DWARF_LIVE_VALS
-  ASSERT(num_args(ACT(src).function) == num_args(ACT(dest).function),
-        "functions have different numbers of arguments (%lu vs. %lu)\n",
-        num_args(ACT(src).function), num_args(ACT(dest).function));
-  ASSERT(num_vars(ACT(src).function) == num_vars(ACT(dest).function),
-        "functions have different numbers of local variables (%lu vs. %lu)\n",
-        num_vars(ACT(src).function), num_vars(ACT(dest).function));
-
-  /* Copy arguments */
-  for(i = 0; i < num_args(ACT(src).function); i++)
-  {
-    var_src = get_arg_by_pos(ACT(src).function, i);
-    var_dest = get_arg_by_pos(ACT(dest).function, i);
-    needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
-  }
-
-  /* Copy variables */
-  for(i = 0; i < num_vars(ACT(src).function); i++)
-  {
-    var_src = get_var_by_pos(ACT(src).function, i);
-    var_dest = get_var_by_pos(ACT(dest).function, i);
-    needs_local_fixup |= rewrite_var(src, var_src, dest, var_dest);
-  }
-#else /* STACKMAP_LIVE_VALS */
   /* Copy live values */
   src_offset = ACT(src).site.live_offset;
   dest_offset = ACT(dest).site.live_offset;
@@ -718,7 +617,6 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   }
   ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
         "did not handle all live values\n");
-#endif
 
   /*
    * Fix up pointers to arguments or local variables. This is assumed to *not*
@@ -731,35 +629,6 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 
     /* Re-generate list of argument & local variable locations. */
     list_init(varval, &var_list);
-#if _LIVE_VALS == DWARF_LIVE_VALS
-    for(i = 0; i < num_args(ACT(src).function); i++)
-    {
-      var_src = get_arg_by_pos(ACT(src).function, i);
-      val_src = get_var_val(src, var_src);
-      val_dest = get_var_val(dest, get_arg_by_pos(ACT(dest).function, i));
-      if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
-      {
-        varval_data.var = var_src;
-        varval_data.val_src = val_src;
-        varval_data.val_dest = val_dest;
-        list_add(varval, &var_list, varval_data);
-      }
-    }
-
-    for(i = 0; i < num_vars(ACT(src).function); i++)
-    {
-      var_src = get_var_by_pos(ACT(src).function, i);
-      val_src = get_var_val(src, var_src);
-      val_dest = get_var_val(dest, get_var_by_pos(ACT(dest).function, i));
-      if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
-      {
-        varval_data.var = var_src;
-        varval_data.val_src = val_src;
-        varval_data.val_dest = val_dest;
-        list_add(varval, &var_list, varval_data);
-      }
-    }
-#else /* STACKMAP_LIVE_VALS */
     src_offset = ACT(src).site.live_offset;
     dest_offset = ACT(dest).site.live_offset;
     for(i = 0, j = 0;
@@ -794,7 +663,6 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     }
     ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
           "did not handle all live values\n");
-#endif /* STACKMAP_LIVE_VALS */
 
     /* Traverse list to resolve fixups. */
     fixup_node = list_begin(fixup, &dest->stack_pointers);
@@ -848,6 +716,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   TIMER_FG_STOP(rewrite_frame);
 }
 
+// TODO needed?
 /*
  * Transform the outer-most frame from the source to destination stack.
  */
@@ -855,38 +724,23 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 // correctness criterion.  The compiler *may* mark local variables as valid for
 // all PCs (e.g. if its location doesn't change within a function) but stack
 // space hasn't been allocated yet when entering a function.
-static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
+/*static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
 {
   size_t i;
   const variable* arg_src, *arg_dest;
-#if _LIVE_VALS == STACKMAP_LIVE_VALS
   size_t src_offset, dest_offset;
-#endif
   bool needs_local_fixup = false;
 
   TIMER_FG_START(rewrite_frame);
   ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
 
-#if _LIVE_VALS == DWARF_LIVE_VALS
-  ASSERT(num_args(ACT(src).function) == num_args(ACT(dest).function),
-        "functions have different numbers of arguments (%lu vs. %lu)\n",
-        num_args(ACT(src).function), num_args(ACT(dest).function));
-
-  /* Copy arguments */
-  for(i = 0; i < num_args(ACT(src).function); i++)
-  {
-    arg_src = get_arg_by_pos(ACT(src).function, i);
-    arg_dest = get_arg_by_pos(ACT(dest).function, i);
-    needs_local_fixup |= rewrite_var(src, arg_src, dest, arg_dest);
-  }
-#else /* STACKMAP_LIVE_VALS */
   ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
         "call sites have different numbers of live values (%lu vs. %lu)\n",
         (long unsigned)ACT(src).site.num_live,
-        (long unsigned)ACT(dest).site.num_live);
+        (long unsigned)ACT(dest).site.num_live);*/
 
   /* Copy live values */
-  src_offset = ACT(src).site.live_offset;
+/*  src_offset = ACT(src).site.live_offset;
   dest_offset = ACT(dest).site.live_offset;
   for(i = 0; i < ACT(src).site.num_live; i++)
   {
@@ -897,10 +751,9 @@ static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
     arg_dest = &dest->handle->live_vals[i + dest_offset];
     needs_local_fixup |= rewrite_var(src, arg_src, dest, arg_dest);
   }
-#endif
 
   ASSERT(!needs_local_fixup, "argument cannot point to another argument\n");
 
   TIMER_FG_STOP(rewrite_frame);
-}
+}*/
 

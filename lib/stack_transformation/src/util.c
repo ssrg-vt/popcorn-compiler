@@ -5,26 +5,12 @@
  * Date: 11/11/2015
  */
 
-#include <stdbool.h>
-#include <libdwarf.h>
+#include <libelf/gelf.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
 #include "arch_regs.h"
 #include "util.h"
-
-///////////////////////////////////////////////////////////////////////////////
-// (Public) Utility functions
-///////////////////////////////////////////////////////////////////////////////
-
-/*
- * Free strings returned by information functions.
- */
-void st_free_str(st_handle handle, char* str)
-{
-  if(!handle) ST_WARN("invalid arguments\n");
-  else dwarf_dealloc(handle->dbg, str, DW_DLA_STRING);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // (Private) Utility functions
@@ -73,115 +59,169 @@ properties_t get_properties(uint16_t arch)
   }
 }
 
-
 /*
- * Print the DIE entry's name, if available.
+ * Search for and return ELF section named SEC.
  */
-void print_die_name(st_handle handle, Dwarf_Die die)
+Elf_Scn* get_section(Elf* e, const char* sec)
 {
-  char* name;
-  Dwarf_Bool has_attr;
-  Dwarf_Error err;
+  size_t shdrstrndx = 0;
+  const char* cur_sec;
+  Elf_Scn* scn = NULL;
+  GElf_Shdr shdr;
 
-  DWARF_OK(dwarf_hasattr(die, DW_AT_name, &has_attr, &err), "dwarf_hasattr");
-  if(has_attr)
+  ASSERT(sec, "invalid arguments to get_section()\n");
+
+  if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
+  while((scn = elf_nextscn(e, scn)))
   {
-    DWARF_OK(dwarf_diename(die, &name, &err), "dwarf_diename");
-    ST_INFO("Name: %s\n", name);
-    dwarf_dealloc(handle->dbg, name, DW_DLA_STRING);
+    if(gelf_getshdr(scn, &shdr) != &shdr) return NULL;
+    if((cur_sec = elf_strptr(e, shdrstrndx, shdr.sh_name)))
+      if(!strcmp(sec, cur_sec)) break;
   }
-  else
-    ST_INFO("Name: n/a\n");
+  return scn; // NULL if not found
 }
 
 /*
- * Print the DIE's type (a.k.a. its tag).
+ * Get the number of entries in section SEC.
  */
-void print_die_type(Dwarf_Die die)
+int64_t get_num_entries(Elf* e, const char* sec)
 {
-  const char* tag_name;
-  Dwarf_Half tag;
-  Dwarf_Error err;
+  Elf_Scn* scn;
+  GElf_Shdr shdr;
 
-  DWARF_OK(dwarf_tag(die, &tag, &err), "dwarf_tag");
-  dwarf_get_TAG_name(tag, &tag_name);
-  ST_INFO("Type: %s\n", tag_name);
+  if(!(scn = get_section(e, sec))) return -1;
+  if(gelf_getshdr(scn, &shdr) != &shdr) return -1;
+  return (shdr.sh_size / shdr.sh_entsize);
 }
 
 /*
- * Print all attributes for the DIE.
+ * Return the start of the section SEC in Elf data E.
  */
-void print_die_attrs(st_handle handle, Dwarf_Die die)
+const void* get_section_data(Elf* e, const char* sec)
 {
-  int ret;
-  const char* attr_name;
-  Dwarf_Attribute* attrs;
-  Dwarf_Signed i, num_attrs;
-  Dwarf_Half attr;
-  Dwarf_Error err;
+  Elf_Scn* scn;
+  Elf_Data* data = NULL;
 
-  ret = DWARF_CHK(dwarf_attrlist(die, &attrs, &num_attrs, &err), "dwarf_attrlist");
-  if(ret != DW_DLV_NO_ENTRY)
+  if(!(scn = get_section(e, sec))) return NULL;
+  if(!(data = elf_getdata(scn, data))) return NULL;
+  return data->d_buf;
+}
+
+/*
+ * Search through call site entries for the specified return address.
+ */
+bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
+{
+  bool found = false;
+  long min = 0;
+  long max = (handle->sites_count - 1);
+  long mid;
+  uint64_t retaddr = (uint64_t)ret_addr;
+
+  TIMER_FG_START(get_site_by_addr);
+  ASSERT(cs, "invalid arguments to get_site_by_addr()\n");
+
+  while(max >= min)
   {
-    DWARF_OK(dwarf_whatattr(attrs[0], &attr, &err), "dwarf_whatattr");
-    dwarf_get_AT_name(attr, &attr_name);
-    ST_INFO("Attributes: %s", attr_name);
-    dwarf_dealloc(handle->dbg, attrs[0], DW_DLA_ATTR);
-    for(i = 1; i < num_attrs; i++)
-    {
-      DWARF_OK(dwarf_whatattr(attrs[i], &attr, &err), "dwarf_whatattr");
-      dwarf_get_AT_name(attr, &attr_name);
-      ST_RAW_INFO(", %s", attr_name);
-      dwarf_dealloc(handle->dbg, attrs[i], DW_DLA_ATTR);
+    mid = (max + min) / 2;
+    if(handle->sites_addr[mid].addr == retaddr) {
+      *cs = handle->sites_addr[mid];
+      found = true;
+      break;
     }
-    ST_RAW_INFO("\n");
-    dwarf_dealloc(handle->dbg, attrs, DW_DLA_LIST);
+    else if(retaddr > handle->sites_addr[mid].addr)
+      min = mid + 1;
+    else
+      max = mid - 1;
   }
-  else
-    ST_INFO("Attributes: n/a\n");
+
+  TIMER_FG_STOP(get_site_by_addr);
+  return found;
 }
 
 /*
- * Decode an unsigned little-endian base-128 (LEB128) value.  Adapted from LLVM
- * (LEB128.h).
+ * Search through call site entries for the specified ID.
  */
-Dwarf_Unsigned decode_leb128u(Dwarf_Unsigned raw)
+bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
 {
-  Dwarf_Unsigned value = 0, shift = 0;
-  uint8_t* p = (uint8_t*)&raw;
+  bool found = false;
+  long min = 0;
+  long max = (handle->sites_count - 1);
+  long mid;
 
-  do {
-    value += (Dwarf_Unsigned)((*p & 0x7f) << shift);
-    shift += 7;
+  TIMER_FG_START(get_site_by_id);
+  ASSERT(cs, "invalid arguments to get_site_by_id()\n");
+
+  while(max >= min)
+  {
+    mid = (max + min) / 2;
+    if(handle->sites_id[mid].id == csid) {
+      *cs = handle->sites_id[mid];
+      found = true;
+      break;
+    }
+    else if(csid > handle->sites_id[mid].id)
+      min = mid + 1;
+    else
+      max = mid - 1;
   }
-  while(*p++ >= 128);
 
-  ST_INFO("Decoded %llx -> %llu\n", raw, value);
-  return value;
+  TIMER_FG_STOP(get_site_by_id);
+  return found;
 }
 
+/* Check if an address is within the range of a function unwinding record */
+#define IN_RANGE( idx, _addr ) \
+  (handle->unwind_addrs[idx].addr <= _addr && \
+   _addr < handle->unwind_addrs[idx + 1].addr)
+
 /*
- * Decode a signed little-endian base-128 (LEB128) value.  Adapted from LLVM
- * (LEB128.h).
+ * Search through unwinding information addresses for the specified address.
  */
-Dwarf_Signed decode_leb128s(Dwarf_Unsigned raw)
+bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
 {
-  Dwarf_Signed value = 0;
-  Dwarf_Unsigned shift = 0;
-  uint8_t byte;
-  uint8_t* p = (uint8_t*)&raw;
+  bool found = false;
+  long min = 0;
+  long max = (handle->unwind_addr_count - 1);
+  long mid;
+  uint64_t addr_int = (uint64_t)addr;
 
-  do {
-    byte = *p++;
-    value |= ((byte & 0x7f) << shift);
-    shift += 7;
+  TIMER_FG_START(get_unwind_offset_by_addr);
+  ASSERT(meta, "invalid arguments to get_unwind_offset_by_addr()\n");
+
+  while(max >= min)
+  {
+    mid = (max + min) / 2;
+
+    // Corner case: mid == last record, this is always a stopping condition
+    if(mid == handle->unwind_addr_count - 1)
+    {
+      if(handle->unwind_addrs[mid].addr <= addr_int)
+      {
+        ST_WARN("cannot check range of last record (%lx = record %ld?)\n",
+                addr_int, mid);
+        *meta = handle->unwind_addrs[mid];
+        found = true;
+      }
+      break;
+    }
+
+    if(IN_RANGE(mid, addr_int))
+    {
+      *meta = handle->unwind_addrs[mid];
+      found = true;
+      break;
+    }
+    else if(addr_int > handle->unwind_addrs[mid].addr)
+      min = mid + 1;
+    else
+      max = mid - 1;
   }
-  while(byte >= 128);
 
-  if(byte & 0x40)
-    value |= (-1ULL) << shift;
+  if(found)
+    ST_INFO("Starting address of enclosing function: 0x%lx\n", meta->addr);
 
-  ST_INFO("Decoded %llx -> %lld\n", raw, value);
-  return value;
+  TIMER_FG_STOP(get_unwind_offset_by_addr);
+  return found;
 }
 

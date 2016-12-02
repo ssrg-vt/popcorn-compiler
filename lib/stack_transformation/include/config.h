@@ -41,22 +41,6 @@
 #define _TIMER_SRC CLOCK_GETTIME // musl-libc has vDSO versions for both archs
 
 /*
- * Select the type of metadata used to locate live values in stack frames.
- */
-#define DWARF_LIVE_VALS 0
-#define STACKMAP_LIVE_VALS 1
-#define _LIVE_VALS STACKMAP_LIVE_VALS
-
-/*
- * Enable function argument/variable querying optimization.  Does a targeted
- * search through the function's children for DW_TAG_formal_argument and
- * DW_TAG_variable DIEs rather than doing multiple generic searches.
- */
-// Note: this only applies when using DWARF debugging information to locate
-// live values, i.e. _LIVE_VALS == DWARF_LIVE_VALS
-#define _FUNC_QUERY_OPT 1
-
-/*
  * Select TLS implementation.  Popcorn compiler support for TLS is a little
  * iffy, so fall back to the pthreads implementation if necessary.
  */
@@ -70,28 +54,16 @@
 #define MAX_FRAMES 512
 
 /*
- * Maximum size of the DWARF expression evaluation stack.  Consistent w/ GCC.
- */
-#define EXPR_STACK_SIZE 64
-
-/*
  * Default character buffer size.
  */
 #define BUF_SIZE 512
 
 /*
- * Files containing definitions of starting functions for both the main and
- * forked threads.
+ * Names of ELF sections containing stack transformation unwind & call site
+ * meta-data.
  */
-// Note: containing files must be specified because musl has differing
-// declaration and definition prototypes for some functions, e.g.
-// __libc_start_main().
-#define START_MAIN_CU "src/env/__libc_start_main.c"
-#define START_THREAD_CU "src/thread/pthread_create.c"
-
-/*
- * Names of ELF sections containing stack transformation call site meta-data.
- */
+#define SECTION_ST_UNWIND_ADDR SECTION_PREFIX "." SECTION_UNWIND_ADDR
+#define SECTION_ST_UNWIND SECTION_PREFIX "." SECTION_UNWIND
 #define SECTION_ST_ID SECTION_PREFIX "." SECTION_ID
 #define SECTION_ST_ADDR SECTION_PREFIX "." SECTION_ADDR
 #define SECTION_ST_LIVE SECTION_PREFIX "." SECTION_LIVE

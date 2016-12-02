@@ -36,27 +36,19 @@ typedef struct timer* timer;
   X(st_rewrite_stack) \
   X(init_src_context) \
   X(init_dest_context) \
-  X(free_context) \
   X(unwind_and_size) \
   X(rewrite_stack) \
+  X(free_context)
 
 /* Fine-grained timers for timing of individual operations */
 #define FINE_TIMERS \
   X(rewrite_frame) \
-  X(read_unwind_rules) \
   X(pop_frame) \
-  X(get_func_by_pc) \
-  X(get_func_by_name) \
-  X(free_func_info) \
-  X(init_func_info) \
-  X(var_lookup) \
-  X(var_prep) \
-  X(datum_size) \
-  X(datum_location) \
-  X(put_val) \
   X(eval_location) \
+  X(put_val) \
   X(get_site_by_addr) \
-  X(get_site_by_id)
+  X(get_site_by_id) \
+  X(get_unwind_offset_by_addr)
 
 /* All timers available to the runtime. */
 #if defined(_TIMING) && defined(_FINE_GRAINED_TIMING)

@@ -1,6 +1,9 @@
 /*
  * Register definitions and macros for access for x86-64.
  *
+ * DWARF register number to name mappings are derived from the x86-64 ABI
+ * http://www.x86-64.org/documentation/abi.pdf
+ *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 11/17/2015
  */
@@ -45,6 +48,47 @@ struct regset_x86_64
 
   // TODO control registers
 };
+
+///////////////////////////////////////////////////////////////////////////////
+// DWARF register mappings
+///////////////////////////////////////////////////////////////////////////////
+
+/* General purpose x86-64 registers */
+#define RAX 0
+#define RDX 1
+#define RCX 2
+#define RBX 3
+#define RSI 4
+#define RDI 5
+#define RBP 6
+#define RSP 7
+#define R8 8
+#define R9 9
+#define R10 10
+#define R11 11
+#define R12 12
+#define R13 13
+#define R14 14
+#define R15 15
+#define RIP 16
+
+/* Streaming SIMD Extension (SSE) registers */
+#define XMM0 17
+#define XMM1 18
+#define XMM2 19
+#define XMM3 20
+#define XMM4 21
+#define XMM5 22
+#define XMM6 23
+#define XMM7 24
+#define XMM8 25
+#define XMM9 26
+#define XMM10 27
+#define XMM11 28
+#define XMM12 29
+#define XMM13 30
+#define XMM14 31
+#define XMM15 32
 
 ///////////////////////////////////////////////////////////////////////////////
 // Register access

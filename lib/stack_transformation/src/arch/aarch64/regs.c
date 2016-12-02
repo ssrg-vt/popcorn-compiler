@@ -5,10 +5,6 @@
  * Callee-saved register information is derived from the ARM ABI:
  * http://infocenter.arm.com/help/topic/com.arm.doc.ihi0055b/IHI0055B_aapcs64.pdf
  *
- * DWARF register number to name mappings are derived from the ARM DWARF
- * documentation:
- * http://infocenter.arm.com/help/topic/com.arm.doc.ihi0057b/IHI0057B_aadwarf64.pdf
- *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 11/12/2015
  */
@@ -22,8 +18,7 @@
 
 #define AARCH64_NUM_REGS 128
 #define AARCH64_FBP_REG 29
-#define AARCH64_FBP_RULE AARCH64_FBP_REG
-#define AARCH64_RA_RULE 30
+#define AARCH64_LINK_REG 30
 
 static regset_t regset_default_aarch64(void);
 static regset_t regset_init_aarch64(const void* regs);
@@ -41,7 +36,8 @@ static void set_sp_aarch64(regset_t regset, void* sp);
 static void set_fbp_aarch64(regset_t regset, void* fp);
 static void set_ra_reg_aarch64(regset_t regset, void* ra);
 
-static void* reg_aarch64(regset_t regset, dwarf_reg reg);
+static uint16_t reg_size_aarch64(uint16_t reg);
+static void* reg_aarch64(regset_t regset, uint16_t reg);
 
 /*
  * aarch64 register operations (externally visible), used to construct new
@@ -49,8 +45,6 @@ static void* reg_aarch64(regset_t regset, dwarf_reg reg);
  */
 const struct regset_t regs_aarch64 = {
   .num_regs = AARCH64_NUM_REGS,
-  .ra_rule = AARCH64_RA_RULE,
-  .fbp_rule = AARCH64_FBP_RULE,
   .has_ra_reg = true,
 
   .regset_default = regset_default_aarch64,
@@ -69,6 +63,7 @@ const struct regset_t regs_aarch64 = {
   .set_fbp = set_fbp_aarch64,
   .set_ra_reg = set_ra_reg_aarch64,
 
+  .reg_size = reg_size_aarch64,
   .reg = reg_aarch64,
 };
 
@@ -145,7 +140,7 @@ static void* fbp_aarch64(const_regset_t regset)
 static void* ra_reg_aarch64(const_regset_t regset)
 {
   const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  return (void*)cur->regs.x[AARCH64_RA_RULE];
+  return (void*)cur->regs.x[AARCH64_LINK_REG];
 }
 
 static void set_pc_aarch64(regset_t regset, void* pc)
@@ -169,94 +164,114 @@ static void set_fbp_aarch64(regset_t regset, void* fp)
 static void set_ra_reg_aarch64(regset_t regset, void* ra)
 {
   regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.x[AARCH64_RA_RULE] = (uint64_t)ra;
+  cur->regs.x[AARCH64_LINK_REG] = (uint64_t)ra;
 }
 
-static void* reg_aarch64(regset_t regset, dwarf_reg reg)
+static uint16_t reg_size_aarch64(uint16_t reg)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  const char* op_name;
-
-  switch(reg.reg)
+  switch(reg)
   {
-  case DW_OP_reg0: return &cur->regs.x[0];
-  case DW_OP_reg1: return &cur->regs.x[1];
-  case DW_OP_reg2: return &cur->regs.x[2];
-  case DW_OP_reg3: return &cur->regs.x[3];
-  case DW_OP_reg4: return &cur->regs.x[4];
-  case DW_OP_reg5: return &cur->regs.x[5];
-  case DW_OP_reg6: return &cur->regs.x[6];
-  case DW_OP_reg7: return &cur->regs.x[7];
-  case DW_OP_reg8: return &cur->regs.x[8];
-  case DW_OP_reg9: return &cur->regs.x[9];
-  case DW_OP_reg10: return &cur->regs.x[10];
-  case DW_OP_reg11: return &cur->regs.x[11];
-  case DW_OP_reg12: return &cur->regs.x[12];
-  case DW_OP_reg13: return &cur->regs.x[13];
-  case DW_OP_reg14: return &cur->regs.x[14];
-  case DW_OP_reg15: return &cur->regs.x[15];
-  case DW_OP_reg16: return &cur->regs.x[16];
-  case DW_OP_reg17: return &cur->regs.x[17];
-  case DW_OP_reg18: return &cur->regs.x[18];
-  case DW_OP_reg19: return &cur->regs.x[19];
-  case DW_OP_reg20: return &cur->regs.x[20];
-  case DW_OP_reg21: return &cur->regs.x[21];
-  case DW_OP_reg22: return &cur->regs.x[22];
-  case DW_OP_reg23: return &cur->regs.x[23];
-  case DW_OP_reg24: return &cur->regs.x[24];
-  case DW_OP_reg25: return &cur->regs.x[25];
-  case DW_OP_reg26: return &cur->regs.x[26];
-  case DW_OP_reg27: return &cur->regs.x[27];
-  case DW_OP_reg28: return &cur->regs.x[28];
-  case DW_OP_reg29: return &cur->regs.x[29];
-  case DW_OP_reg30: return &cur->regs.x[30];
-  case DW_OP_reg31: return &cur->regs.sp;
-  case DW_OP_regx:
-    switch(reg.x) {
-    case 64: return &cur->regs.v[0];
-    case 65: return &cur->regs.v[1];
-    case 66: return &cur->regs.v[2];
-    case 67: return &cur->regs.v[3];
-    case 68: return &cur->regs.v[4];
-    case 69: return &cur->regs.v[5];
-    case 70: return &cur->regs.v[6];
-    case 71: return &cur->regs.v[7];
-    case 72: return &cur->regs.v[8];
-    case 73: return &cur->regs.v[9];
-    case 74: return &cur->regs.v[10];
-    case 75: return &cur->regs.v[11];
-    case 76: return &cur->regs.v[12];
-    case 77: return &cur->regs.v[13];
-    case 78: return &cur->regs.v[14];
-    case 79: return &cur->regs.v[15];
-    case 80: return &cur->regs.v[16];
-    case 81: return &cur->regs.v[17];
-    case 82: return &cur->regs.v[18];
-    case 83: return &cur->regs.v[19];
-    case 84: return &cur->regs.v[20];
-    case 85: return &cur->regs.v[21];
-    case 86: return &cur->regs.v[22];
-    case 87: return &cur->regs.v[23];
-    case 88: return &cur->regs.v[24];
-    case 89: return &cur->regs.v[25];
-    case 90: return &cur->regs.v[26];
-    case 91: return &cur->regs.v[27];
-    case 92: return &cur->regs.v[28];
-    case 93: return &cur->regs.v[29];
-    case 94: return &cur->regs.v[30];
-    case 95: return &cur->regs.v[31];
-    /*
-     * TODO:
-     *   33: ELR_mode
-     */
-    default: break;
-    }
-    break;
+  /* General-purpose registers */
+  case X0: case X1: case X2: case X3: case X4: case X5: case X6:
+  case X7: case X8: case X9: case X10: case X11: case X12: case X13:
+  case X14: case X15: case X16: case X17: case X18: case X19: case X20:
+  case X21: case X22: case X23: case X24: case X25: case X26: case X27:
+  case X28: case X29: case X30: case SP:
+    return sizeof(uint64_t);
+
+  /* Floating-point registers */
+  case V0: case V1: case V2: case V3: case V4: case V5: case V6:
+  case V7: case V8: case V9: case V10: case V11: case V12: case V13:
+  case V14: case V15: case V16: case V17: case V18: case V19: case V20:
+  case V21: case V22: case V23: case V24: case V25: case V26: case V27:
+  case V28: case V29: case V30: case V31:
+    return sizeof(unsigned __int128);
+
   default: break;
   }
 
-  dwarf_get_OP_name(reg.reg, &op_name);
-  ASSERT(false, "unknown/invalid register '%s' (aarch64)\n", op_name);
+  ST_ERR(1, "unknown/invalid register %d (aarch64)\n", reg);
+  return 0;
+}
+
+static void* reg_aarch64(regset_t regset, uint16_t reg)
+{
+  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
+
+  switch(reg)
+  {
+  case X0: return &cur->regs.x[0];
+  case X1: return &cur->regs.x[1];
+  case X2: return &cur->regs.x[2];
+  case X3: return &cur->regs.x[3];
+  case X4: return &cur->regs.x[4];
+  case X5: return &cur->regs.x[5];
+  case X6: return &cur->regs.x[6];
+  case X7: return &cur->regs.x[7];
+  case X8: return &cur->regs.x[8];
+  case X9: return &cur->regs.x[9];
+  case X10: return &cur->regs.x[10];
+  case X11: return &cur->regs.x[11];
+  case X12: return &cur->regs.x[12];
+  case X13: return &cur->regs.x[13];
+  case X14: return &cur->regs.x[14];
+  case X15: return &cur->regs.x[15];
+  case X16: return &cur->regs.x[16];
+  case X17: return &cur->regs.x[17];
+  case X18: return &cur->regs.x[18];
+  case X19: return &cur->regs.x[19];
+  case X20: return &cur->regs.x[20];
+  case X21: return &cur->regs.x[21];
+  case X22: return &cur->regs.x[22];
+  case X23: return &cur->regs.x[23];
+  case X24: return &cur->regs.x[24];
+  case X25: return &cur->regs.x[25];
+  case X26: return &cur->regs.x[26];
+  case X27: return &cur->regs.x[27];
+  case X28: return &cur->regs.x[28];
+  case X29: return &cur->regs.x[29];
+  case X30: return &cur->regs.x[30];
+  case SP: return &cur->regs.sp;
+  case V0: return &cur->regs.v[0];
+  case V1: return &cur->regs.v[1];
+  case V2: return &cur->regs.v[2];
+  case V3: return &cur->regs.v[3];
+  case V4: return &cur->regs.v[4];
+  case V5: return &cur->regs.v[5];
+  case V6: return &cur->regs.v[6];
+  case V7: return &cur->regs.v[7];
+  case V8: return &cur->regs.v[8];
+  case V9: return &cur->regs.v[9];
+  case V10: return &cur->regs.v[10];
+  case V11: return &cur->regs.v[11];
+  case V12: return &cur->regs.v[12];
+  case V13: return &cur->regs.v[13];
+  case V14: return &cur->regs.v[14];
+  case V15: return &cur->regs.v[15];
+  case V16: return &cur->regs.v[16];
+  case V17: return &cur->regs.v[17];
+  case V18: return &cur->regs.v[18];
+  case V19: return &cur->regs.v[19];
+  case V20: return &cur->regs.v[20];
+  case V21: return &cur->regs.v[21];
+  case V22: return &cur->regs.v[22];
+  case V23: return &cur->regs.v[23];
+  case V24: return &cur->regs.v[24];
+  case V25: return &cur->regs.v[25];
+  case V26: return &cur->regs.v[26];
+  case V27: return &cur->regs.v[27];
+  case V28: return &cur->regs.v[28];
+  case V29: return &cur->regs.v[29];
+  case V30: return &cur->regs.v[30];
+  case V31: return &cur->regs.v[31];
+  /*
+   * TODO:
+   *   33: ELR_mode
+   */
+  default: break;
+  }
+
+  ST_ERR(1, "unknown/invalid register %u (aarch64)\n", reg);
   return NULL;
 }
 

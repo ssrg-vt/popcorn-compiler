@@ -16,7 +16,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Get the value of the specified variable from the current rewrite context.
+ * Get the value of the specified variable in the current stack frame from the
+ * rewrite context.
  *
  * @param ctx a rewriting context
  * @param var a variable whose value to read
@@ -25,8 +26,9 @@
 value get_var_val(rewrite_context ctx, const variable* var);
 
 /*
- * Copy a value from its source location (in the source context) to its
- * destination location in the destination context.
+ * Copy a value from its location in the source context to its location in the
+ * destination context.  This function implicitly uses the current stack frame
+ * in the source & destination rewriting context.
  *
  * @param src the source rewriting context
  * @param src_val a value in the source context
@@ -35,7 +37,7 @@ value get_var_val(rewrite_context ctx, const variable* var);
  * @param size the size of the data to copy between contexts
  */
 void put_val(rewrite_context src,
-             value src_val,
+             const value src_val,
              rewrite_context dest,
              value dest_val,
              uint64_t size);
@@ -49,6 +51,16 @@ void put_val(rewrite_context src,
 void set_return_address(rewrite_context ctx, void* retaddr);
 
 /*
+ * Set the return address in the current stack frame of a rewriting context.
+ * This handles the case where the function has not yet set up the frame base
+ * pointer, i.e., directly upon function entry.
+ *
+ * @param ctx a rewriting context
+ * @param retaddr the return address
+ */
+void set_return_address_funcentry(rewrite_context ctx, void* retaddr);
+
+/*
  * Get the location in the current stack frame of the saved/old frame pointer
  * pushed in the function prologue.
  *
@@ -57,15 +69,6 @@ void set_return_address(rewrite_context ctx, void* retaddr);
  *         current frame
  */
 uint64_t* get_savedfbp_loc(rewrite_context ctx);
-
-/*
- * Get the value described by a location description.
- *
- * @param ctx a rewriting context
- * @param loc a location description
- * @return a value read using the location description
- */
-value get_val_from_desc(rewrite_context ctx, const Dwarf_Locdesc* loc);
 
 #endif /* _DATA_H */
 

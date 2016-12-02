@@ -7,7 +7,7 @@
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 5/2/2016
  */
-// Note: the type should be one word, e.g. 'int' and not 'struct my_struct'
+// Note: the type must be one word, e.g. 'int' and not 'struct my_struct'
 // (typedef structs to avoid this issue).
 
 #ifndef _LIST_H

@@ -9,36 +9,35 @@
 #define _UNWIND_H
 
 #include "definitions.h"
-#include "data.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Stack unwinding
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Initialize libDWARF-internal vairables to prepare it for unwinding.
- *
- * @param handle a stack transformation handle
- */
-void init_unwinding(st_handle handle);
-
-/*
- * Read in the unwinding rules for the current frame in the re-write context.
+ * Set up the frame information, including callee-save bitfield and CFA.
  *
  * @param ctx a rewriting context
  */
-void read_unwind_rules(rewrite_context ctx);
+void setup_frame_info(rewrite_context ctx);
 
 /*
- * Returns function information for the function if the current stack frame is
- * the first frame of the stack, i.e. the entry function of the thread.
+ * Set up the frame context.  This is a special case for setting up the frame
+ * data before the function has set up the frame base pointer, i.e., directly
+ * upon function entry.
  *
- * @param handle a stack transformation handle
- * @param pc a program counter
- * @return the first function's information handle if PC is in the first frame,
- *         or NULL otherwise
+ * @param ctx a rewriting context
  */
-func_info first_frame(st_handle handle, void* pc);
+void setup_frame_info_funcentry(rewrite_context ctx);
+
+/*
+ * Return whether or not the specified call site record corresponds to one of
+ * the starting functions, either for the main or spawned threads.
+ *
+ * @param id a call site record ID
+ * @return true if the record is for a starting function, false otherwise
+ */
+bool first_frame(uint64_t id);
 
 /*
  * Unwind a call frame activation from the stack stored in the handle.
@@ -48,18 +47,26 @@ func_info first_frame(st_handle handle, void* pc);
 void pop_frame(rewrite_context ctx);
 
 /*
- * Process the unwind rule to get the saved storage location for the register
- * (or the constant value).
+ * Unwind a call frame activation from the stack stored in the handle.  This is
+ * a special case for popping the frame before the function has set it up,
+ * i.e., directly upon function entry.
  *
  * @param ctx a rewriting context
- * @param rule an unwind rule
- * @param is_cfa is the rule for the CFA?
+ */
+void pop_frame_funcentry(rewrite_context ctx);
+
+/*
+ * Return the spill location for the specified register in the specified
+ * activation's call frame.
+ *
+ * @param ctx a rewriting context
+ * @param act an activation in which the register is saved
+ * @param reg a saved register
  * @return the location of the saved register
  */
-value get_stored_loc(rewrite_context ctx,
-                     activation* act,
-                     Dwarf_Regtable_Entry3* rule,
-                     bool is_cfa);
+value get_register_save_loc(rewrite_context ctx,
+                            activation* act,
+                            uint16_t reg);
 
 /*
  * Free the information describing the specified stack activation.

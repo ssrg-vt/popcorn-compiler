@@ -10,18 +10,6 @@
 #ifndef _REGS_H
 #define _REGS_H
 
-/* Macros to convert between DW_OP_reg* and raw values */
-#define OP_REG( _reg ) (_reg < 32 ? (dwarf_reg){(_reg + DW_OP_reg0), 0} : \
-                                    (dwarf_reg){DW_OP_regx, _reg})
-#define RAW_REG( _reg ) (_reg.reg == DW_OP_regx ? _reg.x : _reg.reg - DW_OP_reg0)
-
-/* A DWARF register specification. */
-typedef struct dwarf_reg
-{
-  Dwarf_Small reg;
-  Dwarf_Unsigned x;
-} dwarf_reg;
-
 /* The register set class. */
 struct regset_t
 {
@@ -31,12 +19,6 @@ struct regset_t
 
   /* Number of registers in the set */
   const size_t num_regs;
-
-  /* The return address unwinding rule number */
-  const size_t ra_rule;
-
-  /* The frame base pointer unwinding rule number */
-  const size_t fbp_rule;
 
   /* Is the return address mapped to a non-PC register? */
   const bool has_ra_reg;
@@ -92,13 +74,16 @@ struct regset_t
   // General-purpose register access
   /////////////////////////////////////////////////////////////////////////////
 
+  /* Size of a register in bytes. */
+  uint16_t (*reg_size)(uint16_t reg);
+
   /*
    * Get pointer to register, used for both reading & writing. This allows
    * a single API for registers of all sizes.
    *
    * Note: this does *NOT* return the registers contents!
    */
-  void* (*reg)(struct regset_t* regset, dwarf_reg reg);
+  void* (*reg)(struct regset_t* regset, uint16_t reg);
 };
 
 typedef struct regset_t* regset_t;

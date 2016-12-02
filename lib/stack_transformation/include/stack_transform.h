@@ -150,88 +150,12 @@ int st_rewrite_ondemand(st_handle src,
                         void* regset_dest,
                         void* sp_base_dest);
 
-///////////////////////////////////////////////////////////////////////////////
-// Information retrieval
-///////////////////////////////////////////////////////////////////////////////
-
-/*
- * Get the encapsulating compilation unit for the specified instruction
- * pointer.  In other words, get the name of the file containing the code the
- * application is executing.
- *
- * Note: the string returned by the function must be freed by a call to
- * st_free_str().
- * Note: handles cannot be accessed concurrently, so this is not thread safe!
- *
- * @param handle a stack transformation handle
- * @param pc the instruction pointer, pointing to code that is part of a
- *           function being executed
- * @return a string containing the compilation unit's name (must be freed by a
- *         call to st_free_str()), or NULL if there was a problem
- */
-char* st_get_cu_name(st_handle handle, void* pc);
-
-/*
- * Get the encapsulating function for the specified instruction pointer.  In
- * other words, get the name of the function the application is executing.
- *
- * Note: the string returned by the function must be freed by a call to
- * st_free_str().
- * Note: handles cannot be accessed concurrently, so this is not thread safe!
- *
- * @param handle a stack transformation handle
- * @param pc the instruction pointer, pointing to code that is part of a
- *           function being executed
- * @return a string containing the function's name (must be freed by a call to
- *         st_free_str())
- */
-char* st_get_func_name(st_handle handle, void* pc);
-
-/*
- * Print information about a function being executed, including its formal
- * arguments and local variables.
- *
- * Note: handles cannot be accessed concurrently, so this is not thread safe!
- *
- * @param handle a stack transformation handle
- * @param pc the instruction pointer, pointing to code that is part of a
- *           function being executed
- */
-void st_print_func_info(st_handle handle, void* pc);
-
-/*
- * Print out location description information for the function encapsulating
- * the specified instruction pointer.  In particular, print out location
- * description information for all arguments and local variables.
- *
- * Note: handles cannot be accessed concurrently, so this is not thread safe!
- *
- * @param handle a stack transformation handle
- * @param pc the instruction pointer, pointing to code that is part of a
- *           function being executed
- */
-void st_print_func_loc_desc(st_handle handle, void* pc);
-
 /*
  * Return the current thread's stack bounds.
  *
  * @return this thread's stack bounds information
  */
 stack_bounds get_stack_bounds();
-
-///////////////////////////////////////////////////////////////////////////////
-// Utility functions
-///////////////////////////////////////////////////////////////////////////////
-
-/*
- * Free a string returned by one of the other stack transformation functions.
- *
- * Note: handles cannot be accessed concurrently, so this is not thread safe!
- *
- * @param handle a stack transformation handle
- * @param str a string returned by a stack transformation function
- */
-void st_free_str(st_handle handle, char* str);
 
 #ifdef __cplusplus
 }

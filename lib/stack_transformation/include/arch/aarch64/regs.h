@@ -1,6 +1,10 @@
 /*
  * Register definitions and macros for access for aarch64.
  *
+ * DWARF register number to name mappings are derived from the ARM DWARF
+ * documentation:
+ * http://infocenter.arm.com/help/topic/com.arm.doc.ihi0057b/IHI0057B_aadwarf64.pdf
+ *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 11/17/2015
  */
@@ -31,6 +35,78 @@ struct regset_aarch64
 
   // TODO ELR_mode register
 };
+
+///////////////////////////////////////////////////////////////////////////////
+// DWARF register mappings
+///////////////////////////////////////////////////////////////////////////////
+
+/* General purpose aarch64 registers */
+#define X0 0
+#define X1 1
+#define X2 2
+#define X3 3
+#define X4 4
+#define X5 5
+#define X6 6
+#define X7 7
+#define X8 8
+#define X9 9
+#define X10 10
+#define X11 11
+#define X12 12
+#define X13 13
+#define X14 14
+#define X15 15
+#define X16 16
+#define X17 17
+#define X18 18
+#define X19 19
+#define X20 20
+#define X21 21
+#define X22 22
+#define X23 23
+#define X24 24
+#define X25 25
+#define X26 26
+#define X27 27
+#define X28 28
+#define X29 29
+#define X30 30
+#define SP 31
+
+/* Floating-point unit (FPU)/SIMD registers */
+#define V0 64
+#define V1 65
+#define V2 66
+#define V3 67
+#define V4 68
+#define V5 69
+#define V6 70
+#define V7 71
+#define V8 72
+#define V9 73
+#define V10 74
+#define V11 75
+#define V12 76
+#define V13 77
+#define V14 78
+#define V15 79
+#define V16 80
+#define V17 81
+#define V18 82
+#define V19 83
+#define V20 84
+#define V21 85
+#define V22 86
+#define V23 87
+#define V24 88
+#define V25 89
+#define V26 90
+#define V27 91
+#define V28 92
+#define V29 93
+#define V30 94
+#define V31 95
 
 ///////////////////////////////////////////////////////////////////////////////
 // Register access
@@ -136,7 +212,7 @@ struct regset_aarch64
 #define SET_PC_IMM( val ) asm volatile("b %0" : : "i" (val) : )
 #define SET_PC_REG( val ) asm volatile("br %0" : : "r" (val) : )
 
-/* Floating-point Unit (FPU)/SIMD registers */
+/* Floating-point unit (FPU)/SIMD registers */
 #define GET_V0( var ) GET_REG( var, "q0", "" )
 #define GET_V1( var ) GET_REG( var, "q1", "" )
 #define GET_V2( var ) GET_REG( var, "q2", "" )

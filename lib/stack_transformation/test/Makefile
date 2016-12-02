@@ -11,13 +11,11 @@ ARM64_LIBGCC := /usr/local/gcc-cross/aarch64-linux-gnu/4.8
 
 # Compiler
 CC     := $(POPCORN)/bin/clang
-CFLAGS := -O0 -Wall -Wno-unused-variable -g -gdwarf-aranges \
-          -nostdinc -nostdlib -static -I../../utils -DPOSIX \
-          -mllvm -optimize-regalloc
+CFLAGS := -O0 -Wall -Wno-unused-variable -g -nostdinc -nostdlib -static \
+          -I../../utils -DPOSIX -mllvm -optimize-regalloc
 LIBS   := /lib/crt1.o \
           /lib/libc.a \
           /lib/libstack-transform.a \
-          /lib/libdwarf.a \
           /lib/libelf.a \
           /lib/libc.a
 
@@ -25,7 +23,7 @@ OPT       := opt
 OPT_FLAGS := -O3 -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 # Post-processing
-POST_PROCESS_TOOL := $(POPCORN)/bin/gen-stackinfo
+POST_PROCESS := $(POPCORN)/bin/gen-stackinfo
 
 SRC	:= $(shell ls *.c)
 BC	:= $(SRC:.c=.bc)
@@ -90,7 +88,7 @@ $(ARM64_BUILD)/%.bc: %.c
 $(ARM64_BIN): $(ARM64_BUILD)/.dir $(ARM64_BC)
 	@echo " [CC (aarch64)] $@"
 	@$(CC) -target $(ARM64_TARGET) $(CFLAGS) -o $@ $(ARM64_BC) $(ARM64_LIB)
-	@$(POST_PROCESS_TOOL) -f $@
+	@$(POST_PROCESS) -f $@
 
 ##########
 # x86-64 #
@@ -104,6 +102,6 @@ $(X86_64_BUILD)/%.bc: %.c
 $(X86_64_BIN): $(X86_64_BUILD)/.dir $(X86_64_BC)
 	@echo " [CC (x86-64)] $@"
 	@$(CC) -target $(X86_64_TARGET) $(CFLAGS) -o $@ $(X86_64_BC) $(X86_64_LIB)
-	@$(POST_PROCESS_TOOL) -f $@
+	@$(POST_PROCESS) -f $@
 
 .PHONY: all post_process clean

@@ -6,17 +6,27 @@ Implementation
 
 2. Handle variable-sized stack objects
 
-3. Detect and handle when tail-call elimination only only happens on one
-   architecture. Note: is this actually a problem?
-
-4. Add constructor/destructor attributes to __st_userspace_ctr,
+3. Add constructor/destructor attributes to __st_userspace_ctr,
    __st_userspace_dtor & __st_destroy, make them static
+
+4. Implement correct error handling/reporting
+
+5. Cleanup list definition & where fixup/varval are defined
+
+6. Remove typedef that hides call_site_value
 
 ------------
 Optimization
 ------------
 
-1. Instead of storing complete copy of register operations in each regset,
-   store only a pointer (like C++ vtable)
+1. Remove copy of register operations from per-activation regsets (use regular
+   per-architecture regsets)
 
-2. Don't read FDE's CIE when getting FDE via PC
+2. Malloc pool of regsets rather than copying on malloc'ing when popping frame
+
+2. Rather than re-generating list of local variables when a local fix-up is
+   detected, store until finished transforming the current activation
+
+3. De-duplicate function information by storing function-specific information
+   in separate section and storing pointer in call site record
+
