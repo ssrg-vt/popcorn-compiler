@@ -97,13 +97,13 @@ struct regset_x86_64
 #ifdef __x86_64__
 
 /* Getters & setters for varying registers & sizes */
-#define GET_REG( var, reg, size ) asm volatile("mov"size" %%"reg", %0" : "=m" (var) : : )
+#define GET_REG( var, reg, size ) asm volatile("mov"size" %%"reg", %0" : "=m" (var) )
 #define GET_REG8( var, reg ) GET_REG( var, reg, "b" )
 #define GET_REG16( var, reg ) GET_REG( var, reg, "s" )
 #define GET_REG32( var, reg ) GET_REG( var, reg, "l" )
 #define GET_REG64( var, reg ) GET_REG( var, reg, "q" )
 
-#define SET_REG( var, reg, size ) asm volatile("mov"size" %0, %%"reg : : "m" (var) : )
+#define SET_REG( var, reg, size ) asm volatile("mov"size" %0, %%"reg : : "m" (var) : reg )
 #define SET_REG8( var, reg ) SET_REG( var, reg, "b" )
 #define SET_REG16( var, reg ) SET_REG( var, reg, "s" )
 #define SET_REG32( var, reg ) SET_REG( var, reg, "l" )
@@ -148,19 +148,19 @@ struct regset_x86_64
  * The instruction pointer is a little weird because you can't read it
  * directly.  The assembler replaces "$." with the address of the instruction.
  */
-#define GET_RIP( var ) asm volatile("movq $., %0" : "=g" (var) : : )
+#define GET_RIP( var ) asm volatile("movq $., %0" : "=g" (var) )
 
 /*
  * The only way to set the IP is through control flow operations.
  */
-#define SET_RIP_REG( var ) asm volatile("jmpq *%0" : : "r" (var) : )
-#define SET_RIP_IMM( var ) asm volatile("movq %0, -0x8(%%rsp); jmpq *-0x8(%%rsp)" : : "i" (var) : )
+#define SET_RIP_REG( var ) asm volatile("jmpq *%0" : : "r" (var) )
+#define SET_RIP_IMM( var ) asm volatile("movq %0, -0x8(%%rsp); jmpq *-0x8(%%rsp)" : : "i" (var) )
 
 /* 
  * The flags register also can't be read directly.  Push its value onto the
  * stack then pop off into var.
  */
-#define GET_RFLAGS( var ) asm volatile("pushf; pop %0" : "=g" (var) : : )
+#define GET_RFLAGS( var ) asm volatile("pushf; pop %0" : "=g" (var) )
 
 /* Segment registers */
 #define GET_CS( var ) GET_REG( var, "cs", "" )
@@ -170,10 +170,10 @@ struct regset_x86_64
 #define GET_FS( var ) GET_REG( var, "fs", "" )
 #define GET_GS( var ) GET_REG( var, "gs", "" )
 
-// TODO set segment registers
+// TODO set segment registers -- requires syscall
 
 /* Multimedia-extension (MMX) registers */
-#define GET_XMM( var, num ) asm volatile("movsd %%xmm"num", %0" : "=m" (var) : : )
+#define GET_XMM( var, num ) asm volatile("movsd %%xmm"num", %0" : "=m" (var) )
 #define GET_XMM0( var ) GET_XMM( var, "0" )
 #define GET_XMM1( var ) GET_XMM( var, "1" )
 #define GET_XMM2( var ) GET_XMM( var, "2" )
@@ -191,7 +191,7 @@ struct regset_x86_64
 #define GET_XMM14( var ) GET_XMM( var, "14" )
 #define GET_XMM15( var ) GET_XMM( var, "15" )
 
-#define SET_XMM( var, num ) asm volatile("movsd %0, %%xmm"num : : "m" (var) : )
+#define SET_XMM( var, num ) asm volatile("movsd %0, %%xmm"num : : "m" (var) )
 #define SET_XMM0( var ) SET_XMM( var, "0" )
 #define SET_XMM1( var ) SET_XMM( var, "1" )
 #define SET_XMM2( var ) SET_XMM( var, "2" )
@@ -308,11 +308,11 @@ struct regset_x86_64
 
 /* Get current frame's size, defined as rbp-rsp. */
 #define GET_FRAME_SIZE_X86_64( size ) \
-  asm volatile("mov %%rbp, %0; sub %%rsp, %0" : "=g" (size) : : )
+  asm volatile("mov %%rbp, %0; sub %%rsp, %0" : "=g" (size) )
 
 /* Set frame by setting rbp & rsp. */
 #define SET_FRAME_X86_64( bp, sp ) \
-  asm volatile("mov %0, %%rsp; mov %1, %%rbp" : : "m" (sp), "m" (bp) : )
+  asm volatile("mov %0, %%rsp; mov %1, %%rbp" : : "m" (sp), "m" (bp) )
 
 #endif /* __x86_64__ */
 

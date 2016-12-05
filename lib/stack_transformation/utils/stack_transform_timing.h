@@ -55,7 +55,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -107,7 +107,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -163,7 +163,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -250,7 +250,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -302,7 +302,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -358,7 +358,7 @@
     } \
     else \
     { \
-      fprintf(stderr, "Couldn't open ELF/DWARF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
