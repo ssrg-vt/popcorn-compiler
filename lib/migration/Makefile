@@ -28,7 +28,8 @@ INC_X86 := $(INC) -I$(POPCORN_X86)/include
 OPT       := opt
 OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
              -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
-             -load $(POPCORN)/lib/libSectionStatic.so -section-static
+             -load $(POPCORN)/lib/libSectionStatic.so -section-static \
+             -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 AR := ar
 ARFLAGS := -cq

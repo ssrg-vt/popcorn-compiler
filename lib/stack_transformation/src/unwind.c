@@ -72,7 +72,8 @@ void pop_frame(rewrite_context ctx)
   for(uint32_t i = unwind_start; i < unwind_end; i++)
   {
     saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + locs[i].offset;
-    ST_INFO("Callee-saved: %u @ %p\n", locs[i].reg, saved_loc);
+    ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
+            locs[i].reg, locs[i].offset, saved_loc);
     memcpy(REGOPS(ctx)->reg(NEXT_ACT(ctx).regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
     bitmap_set(ACT(ctx).callee_saved, locs[i].reg);

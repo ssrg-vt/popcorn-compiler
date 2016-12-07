@@ -76,13 +76,6 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
  */
 static void rewrite_frame(rewrite_context src, rewrite_context dest);
 
-// TODO needed?
-/*
- * Re-write the outer-most frame, which doesn't need to copy over local
- * variables.
- */
-//static void rewrite_frame_outer(rewrite_context src, rewrite_context dest);
-
 ///////////////////////////////////////////////////////////////////////////////
 // Perform stack transformation
 ///////////////////////////////////////////////////////////////////////////////
@@ -142,9 +135,6 @@ int st_rewrite_stack(st_handle handle_src,
   /* Rewrite outer-most frame. */
   ST_INFO("--> Rewriting outermost frame <--\n");
 
-  // TODO do we need to rewrite the outer frame?  Arguments to migration shim
-  // are stored in the pthreads library
-  //rewrite_frame_outer(src, dest);
   set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
   pop_frame_funcentry(dest);
   fbp = REGOPS(dest)->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
@@ -246,8 +236,8 @@ static rewrite_context init_src_context(st_handle handle,
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
   {
     ACT(ctx).site = EMPTY_CALL_SITE;
-    ST_INFO("No source call site information @ %p, searching for function\n",
-           REGOPS(ctx)->pc(ACT(ctx).regs));
+    ST_INFO("No source call site information for PC=%p, searching for function\n",
+            REGOPS(ctx)->pc(ACT(ctx).regs));
 
     if(!get_unwind_offset_by_addr(handle,
                                   REGOPS(ctx)->pc(ACT(ctx).regs),
@@ -422,15 +412,6 @@ static void unwind_and_size(rewrite_context src,
 
   /* Set up outermost activation for destination since we have a SP. */
   setup_frame_info_funcentry(dest);
-
-  /*
-   * The compiler may specify arguments are located at an offset from the frame
-   * pointer at all function PCs, including the ones where the frame hasn't
-   * been set up.  Hard-code outer frame's FBP for this situation.
-   */
-  // TODO this is wrong, probably...
-  /*REGOPS(dest)->set_fbp(ACT(dest).regs,
-                        ACT(dest).cfa - fp_offset(dest->handle->arch));*/
 
   TIMER_STOP(unwind_and_size);
 }
@@ -715,45 +696,4 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
 
   TIMER_FG_STOP(rewrite_frame);
 }
-
-// TODO needed?
-/*
- * Transform the outer-most frame from the source to destination stack.
- */
-// Note: we don't copy local variables both as an optimization and as a
-// correctness criterion.  The compiler *may* mark local variables as valid for
-// all PCs (e.g. if its location doesn't change within a function) but stack
-// space hasn't been allocated yet when entering a function.
-/*static void rewrite_frame_outer(rewrite_context src, rewrite_context dest)
-{
-  size_t i;
-  const variable* arg_src, *arg_dest;
-  size_t src_offset, dest_offset;
-  bool needs_local_fixup = false;
-
-  TIMER_FG_START(rewrite_frame);
-  ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
-
-  ASSERT(ACT(src).site.num_live == ACT(dest).site.num_live,
-        "call sites have different numbers of live values (%lu vs. %lu)\n",
-        (long unsigned)ACT(src).site.num_live,
-        (long unsigned)ACT(dest).site.num_live);*/
-
-  /* Copy live values */
-/*  src_offset = ACT(src).site.live_offset;
-  dest_offset = ACT(dest).site.live_offset;
-  for(i = 0; i < ACT(src).site.num_live; i++)
-  {
-    ASSERT(i < src->handle->live_vals_count,
-          "out-of-bounds live value record access\n");
-
-    arg_src = &src->handle->live_vals[i + src_offset];
-    arg_dest = &dest->handle->live_vals[i + dest_offset];
-    needs_local_fixup |= rewrite_var(src, arg_src, dest, arg_dest);
-  }
-
-  ASSERT(!needs_local_fixup, "argument cannot point to another argument\n");
-
-  TIMER_FG_STOP(rewrite_frame);
-}*/
 

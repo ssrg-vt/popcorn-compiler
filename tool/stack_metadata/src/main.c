@@ -117,7 +117,8 @@ int main(int argc, char **argv)
     die("could not sort unwind address range section", ret);
 
   /* Add stack transformation sections. */
-  if((ret = add_sections(b, sm, num_sm, section_name, start_id)))
+  if((ret = add_sections(b, sm, num_sm, section_name, start_id,
+                         unwind_addr_name)))
     die("could not add stack transformation sections", ret);
 
   free_stackmaps(sm, num_sm);

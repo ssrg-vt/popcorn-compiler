@@ -204,6 +204,37 @@ uint64_t add_section_name(Elf *e, const char *name)
   return shstrtab_size - name_size - 1;
 }
 
+#define IN_RANGE( idx, _addr ) \
+  (addrs[idx].addr <= _addr && _addr < addrs[idx + 1].addr)
+
+const unwind_addr *get_func_unwind_data(uint64_t addr,
+                                        size_t num,
+                                        const unwind_addr *addrs)
+{
+  long min = 0;
+  long max = num - 1;
+  long mid;
+
+  while(max >= min)
+  {
+    mid = (max + min) / 2;
+
+    // Corner case: mid == last record, this is always a stopping condition
+    if(mid == num - 1)
+    {
+      if(addrs[mid].addr <= addr)
+        return &addrs[mid];
+      else break;
+    }
+
+    if(IN_RANGE(mid, addr)) return &addrs[mid];
+    else if(addr > addrs[mid].addr) min = mid + 1;
+    else max = mid - 1;
+  }
+
+  return NULL;
+}
+
 ret_t add_section(Elf *e,
                   const char *name,
                   size_t num_entries,

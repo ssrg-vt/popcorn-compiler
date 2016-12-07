@@ -1,6 +1,6 @@
 #!/bin/bash
 echo -e "\n\t --------------- link_x86Objs_To Binary VIA <<<MUSL + libBOMP>>>> ----------------\n"
-echo -e "Usage:\t ./alink_x86Objs.sh {MODE} {Input file w/ obj file list}\n"
+echo -e "Usage:\t ./mlink_x86Objs.sh {MODE} {Input file w/ obj file list}\n"
 echo -e "Usage:\t MODE: 0=Vanilla, 1=ALIGNED\n"
 
 MODE=$1
@@ -29,7 +29,6 @@ $POPCORN/bin/ld.gold -static \
  $POPCORN/x86_64/lib/libc.a \
  $POPCORN/x86_64/lib/libmigrate.a \
  $POPCORN/x86_64/lib/libstack-transform.a \
- $POPCORN/x86_64/lib/libdwarf.a \
  $POPCORN/x86_64/lib/libelf.a \
  $POPCORN/x86_64/lib/libpthread.a \
  $POPCORN/x86_64/lib/libbomp.a \

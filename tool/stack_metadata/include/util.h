@@ -10,6 +10,7 @@
 
 #include "definitions.h"
 #include "bin.h"
+#include "call_site.h"
 
 /**
  * Print warning message.
@@ -186,6 +187,19 @@ GElf_Sym get_sym_by_addr(Elf *e, uint64_t addr, uint8_t type);
  * @return the name of the symbol, or a NULL pointer if it doesn't exist
  */
 const char *get_sym_name(Elf *e, GElf_Sym sym);
+
+/**
+ * Get function unwinding metadata for an instruction address.
+ *
+ * @param addr an instruction address
+ * @param num number of function unwinding metadata records
+ * @param addrs function unwinding metadata records
+ * @return a pointer to the corresponding function's metadata, or NULL if not
+ *         found
+ */
+const unwind_addr *get_func_unwind_data(uint64_t addr,
+                                        size_t num,
+                                        const unwind_addr *addrs);
 
 /**
  * Add new section name to section header string table.

@@ -22,7 +22,6 @@
 static int cpus_x86 = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
-  int cpus_x86;
   char s[512];
   FILE *fd;
 

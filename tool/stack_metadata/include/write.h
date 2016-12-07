@@ -28,13 +28,15 @@ ret_t update_function_addr(bin *b, const char *sec);
  * @param num_sm number of stack maps pointed to by sm
  * @param sec prefix of sections to be added
  * @param start_id beginning call site ID
+ * @param unwind_sec name of function unwinding metadata section
  * @return 0 if the sections were added, an error code otherwise
  */
 ret_t add_sections(bin *b,
                    stack_map *sm,
                    size_t num_sm,
                    const char *sec,
-                   uint64_t start_id);
+                   uint64_t start_id,
+                   const char *unwind_sec);
 
 #endif /* _WRITE_H */
 

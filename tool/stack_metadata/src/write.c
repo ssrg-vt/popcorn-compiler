@@ -23,6 +23,8 @@
  * @param cs call site meta-data
  * @param num_live number of location records copied to live
  * @param live live variable location information
+ * @param unwind_addr function unwinding information address ranges
+ * @param num_addrs number of function unwinding information entries
  * @return true if the data was created, false otherwise (*cs & *locs will be
  *         NULL if creation failed)
  */
@@ -33,7 +35,9 @@ static bool create_call_site_metadata(bin *b,
                                       size_t *num_sites,
                                       call_site **cs,
                                       size_t *num_live,
-                                      call_site_value **live);
+                                      call_site_value **live,
+                                      size_t num_addrs,
+                                      const unwind_addr *addrs);
 
 /**
  * Comparison function to sort unwind address ranges by address.  Called by
@@ -100,18 +104,25 @@ ret_t add_sections(bin *b,
                    stack_map *sm,
                    size_t num_sm,
                    const char *sec,
-                   uint64_t start_id)
+                   uint64_t start_id,
+                   const char *unwind_sec)
 {
-  size_t num_shdr, i, cur_offset, num_sites, num_live;
+  size_t num_shdr, i, cur_offset, num_sites, num_live, num_unwind;
   char sec_name[BUF_SIZE];
   call_site *id_sites, *addr_sites;
   call_site_value *live_vals;
   Elf64_Ehdr *ehdr;
   Elf64_Shdr *shdr;
   Elf_Scn *scn;
+  const unwind_addr *unwind;
   ret_t ret;
 
   /* Generate the section's data (not yet sorted by anything) */
+  if(!(scn = get_section_by_name(b->e, unwind_sec))) return FIND_SECTION_FAILED;
+  if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
+  if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
+  num_unwind = shdr->sh_size / shdr->sh_entsize;
+  if(!(unwind = get_section_data(scn))) return READ_ELF_FAILED;
   if(!create_call_site_metadata(b,
                                 sm,
                                 num_sm,
@@ -119,7 +130,9 @@ ret_t add_sections(bin *b,
                                 &num_sites,
                                 &id_sites,
                                 &num_live,
-                                &live_vals))
+                                &live_vals,
+                                num_unwind,
+                                unwind))
     return CREATE_METADATA_FAILED;
 
   /* Add call site section sorted by ID */
@@ -187,12 +200,15 @@ static bool create_call_site_metadata(bin *b,
                                       size_t *num_sites,
                                       call_site **cs,
                                       size_t *num_live,
-                                      call_site_value **live)
+                                      call_site_value **live,
+                                      size_t num_addrs,
+                                      const unwind_addr *addrs)
 {
   size_t i, j, sites_num = 0, loc_num = 0, cur;
   GElf_Sym mainthr, thread;
   call_site *sites;
   call_site_value *locs;
+  const unwind_addr *ua;
 
   if(!num_sites || !cs || !num_live || !live) return false;
 
@@ -220,6 +236,7 @@ static bool create_call_site_metadata(bin *b,
   {
     for(j = 0; j < sm[i].num_records; j++, cur++)
     {
+      /* Populate call site record */
       sites[cur].id = start_id++;
       sites[cur].addr = sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].func_addr +
                         sm[i].stack_maps[j].offset;
@@ -228,10 +245,15 @@ static bool create_call_site_metadata(bin *b,
         fp_offset(b->arch);
       sites[cur].num_unwind =
         sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].num_unwind;
-      sites[cur].unwind_offset =
-        sm[i].stack_sizes[sm[i].stack_maps[j].func_idx].unwind_offset;
       sites[cur].num_live = sm[i].stack_maps[j].locations->num;
       sites[cur].live_offset = loc_num;
+
+      /* Update unwinding information offset */
+      ua = get_func_unwind_data(sites[cur].addr, num_addrs, addrs);
+      if(!ua) return false;
+      sites[cur].unwind_offset = ua->unwind_offset;
+
+      /* Copy live value location records to new section */
       memcpy(&locs[loc_num], &sm[i].stack_maps[j].locations->record,
              sizeof(call_site_value) * sites[cur].num_live);
       loc_num += sm[i].stack_maps[j].locations->num;

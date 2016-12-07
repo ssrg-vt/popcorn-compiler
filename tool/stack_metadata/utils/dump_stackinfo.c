@@ -89,7 +89,7 @@ bool dump_unwind_funcs(Elf_Scn *scn)
   funcs = (unwind_addr *)data->d_buf;
   printf("found %lu entries\n", num_funcs);
   for(i = 0; i < num_funcs; i++)
-    printf("0x%lu: %u records (offset=%u)\n", funcs[i].addr,
+    printf("0x%lx: %u records (offset=%u)\n", funcs[i].addr,
            funcs[i].num_unwind, funcs[i].unwind_offset);
   printf("\n");
 

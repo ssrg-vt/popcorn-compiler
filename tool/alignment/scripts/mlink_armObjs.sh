@@ -1,7 +1,7 @@
 #!/bin/bash
 # Version 0.2.0
 echo -e "\n\t --------------- link_armObjs_To Binary VIA <<<MUSL + libBOMP>>> ----------------\n"
-echo -e "Usage:\t ./link_armObjs.sh {MODE} {Input file w/ obj files list}\n"
+echo -e "Usage:\t ./mlink_armObjs.sh {MODE} {Input file w/ obj files list}\n"
 echo -e "Usage:\t MODE: 0=Vanilla, 1=ALIGNED\n"
 
 MODE=$1
@@ -31,7 +31,6 @@ $POPCORN/bin/ld.gold -static ${OUTPUT} ${INPUT} $GCC_LOC \
  $POPCORN/aarch64/lib/libc.a \
  $POPCORN/aarch64/lib/libmigrate.a \
  $POPCORN/aarch64/lib/libstack-transform.a \
- $POPCORN/aarch64/lib/libdwarf.a \
  $POPCORN/aarch64/lib/libelf.a \
  $POPCORN/aarch64/lib/libpthread.a \
  $POPCORN/aarch64/lib/libbomp.a \
