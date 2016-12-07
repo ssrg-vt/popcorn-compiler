@@ -13,12 +13,13 @@
 #include "stackmap.h"
 
 /**
- * Sort the unwind information address section.
+ * Update the offsets in the function unwinding metadata records and sort by
+ * function address.
  * @param b a binary descriptor
  * @param sec section name for unwinding address range section
  * @return 0 if the section was sorted, an error code otherwise
  */
-ret_t sort_addresses(bin *b, const char *sec);
+ret_t update_function_addr(bin *b, const char *sec);
 
 /**
  * Add stack transformation metadata to the object.

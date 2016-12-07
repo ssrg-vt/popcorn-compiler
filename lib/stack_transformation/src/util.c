@@ -198,7 +198,7 @@ bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
     {
       if(handle->unwind_addrs[mid].addr <= addr_int)
       {
-        ST_WARN("cannot check range of last record (%lx = record %ld?)\n",
+        ST_WARN("cannot check range of last record (0x%lx = record %ld?)\n",
                 addr_int, mid);
         *meta = handle->unwind_addrs[mid];
         found = true;

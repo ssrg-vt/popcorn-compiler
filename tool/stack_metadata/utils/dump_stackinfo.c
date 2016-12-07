@@ -74,6 +74,50 @@ static void parse_args(int argc, char **argv)
 // Printing metadata
 ///////////////////////////////////////////////////////////////////////////////
 
+bool dump_unwind_funcs(Elf_Scn *scn)
+{
+  uint64_t num_funcs, i;
+  Elf_Data *data = NULL;
+  GElf_Shdr shdr;
+  unwind_addr *funcs;
+
+  if(gelf_getshdr(scn, &shdr) != &shdr) return false;
+  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(!(data = elf_getdata(scn, data))) return false;
+
+  num_funcs = shdr.sh_size / shdr.sh_entsize;
+  funcs = (unwind_addr *)data->d_buf;
+  printf("found %lu entries\n", num_funcs);
+  for(i = 0; i < num_funcs; i++)
+    printf("0x%lu: %u records (offset=%u)\n", funcs[i].addr,
+           funcs[i].num_unwind, funcs[i].unwind_offset);
+  printf("\n");
+
+  return true;
+}
+
+bool dump_unwind_locs(Elf_Scn *scn)
+{
+  uint64_t num_locs, i;
+  Elf_Data *data = NULL;
+  GElf_Shdr shdr;
+  unwind_loc *locs;
+
+  if(gelf_getshdr(scn, &shdr) != &shdr) return false;
+  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(!(data = elf_getdata(scn, data))) return false;
+
+  num_locs = shdr.sh_size / shdr.sh_entsize;
+  locs = (unwind_loc *)data->d_buf;
+  printf("found %lu entries\n", num_locs);
+  for(i = 0; i < num_locs; i++)
+    printf("%lu: Register %u at frame pointer + %d\n",
+           i, locs[i].reg, locs[i].offset);
+  printf("\n");
+
+  return true;
+}
+
 bool dump_callsite_section(Elf_Scn *scn)
 {
   uint64_t num_sites, i;
@@ -170,6 +214,33 @@ ret_t dump_metadata(bin *thebin)
   char sec_name[BUF_SIZE];
   Elf_Scn *scn;
 
+  /* Function unwinding metadata */
+  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_UNWIND_ADDR);
+  if((scn = get_section_by_name(thebin->e, sec_name)))
+  {
+    printf("Reading section %s: ", sec_name);
+    if(!dump_unwind_funcs(scn))
+    {
+      printf("failed.\n");
+      return READ_ELF_FAILED;
+    }
+  }
+  else return FIND_SECTION_FAILED;
+
+  /* Register unwinding records */
+  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_UNWIND);
+  if((scn = get_section_by_name(thebin->e, sec_name)))
+  {
+    printf("Reading section %s: ", sec_name);
+    if(!dump_unwind_locs(scn))
+    {
+      printf("failed.\n");
+      return READ_ELF_FAILED;
+    }
+  }
+  else return FIND_SECTION_FAILED;
+
+  /* Call sites, sorted by ID */
   snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_ID);
   if((scn = get_section_by_name(thebin->e, sec_name)))
   {
@@ -182,6 +253,7 @@ ret_t dump_metadata(bin *thebin)
   }
   else return FIND_SECTION_FAILED;
 
+  /* Call sites, sorted by address */
   snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_ADDR);
   if((scn = get_section_by_name(thebin->e, sec_name)))
   {
@@ -194,6 +266,7 @@ ret_t dump_metadata(bin *thebin)
   }
   else return FIND_SECTION_FAILED;
 
+  /* Live value location records */
   snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_LIVE);
   if((scn = get_section_by_name(thebin->e, sec_name)))
   {

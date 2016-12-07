@@ -113,7 +113,7 @@ int main(int argc, char **argv)
     die("could not read stack map section", ret);
 
   /* Sort the unwind address range section */
-  if((ret = sort_addresses(b, unwind_addr_name)))
+  if((ret = update_function_addr(b, unwind_addr_name)))
     die("could not sort unwind address range section", ret);
 
   /* Add stack transformation sections. */

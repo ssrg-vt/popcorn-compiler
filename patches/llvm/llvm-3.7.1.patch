@@ -2184,18 +2184,16 @@ Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
 --- lib/MC/MCObjectFileInfo.cpp	(revision 277823)
 +++ lib/MC/MCObjectFileInfo.cpp	(working copy)
-@@ -519,6 +519,17 @@
+@@ -519,6 +519,15 @@
    DwarfAddrSection =
        Ctx->getELFSection(".debug_addr", ELF::SHT_PROGBITS, 0, "addr_sec");
  
 +  UnwindAddrRangeSection =
 +      Ctx->getELFSection(".stack_transform.unwind_arange", ELF::SHT_PROGBITS,
-+                         0, sizeof(uint64_t) + sizeof(uint64_t),
-+                         "stack_transform_unwind");
++                         0, sizeof(uint64_t) + sizeof(uint64_t), "");
 +  UnwindInfoSection =
 +      Ctx->getELFSection(".stack_transform.unwind", ELF::SHT_PROGBITS, 0,
-+                         sizeof(uint16_t) + sizeof(int16_t),
-+                         "stack_transform_unwind");
++                         sizeof(uint16_t) + sizeof(int16_t), "");
 +  UnwindAddrRangeSection->setAlignment(sizeof(uint64_t));
 +  UnwindInfoSection->setAlignment(sizeof(uint16_t) + sizeof(int16_t));
 +

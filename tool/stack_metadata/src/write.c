@@ -64,22 +64,34 @@ static int sort_addr(const void *a, const void *b);
 // Public API
 ///////////////////////////////////////////////////////////////////////////////
 
-ret_t sort_addresses(bin *b, const char *sec)
+ret_t update_function_addr(bin *b, const char *sec)
 {
-  size_t num_records;
-  size_t record_size;
+  size_t num_records, i, cur_offset = 0, record_size;
   Elf_Scn *scn;
   Elf64_Shdr *shdr;
   unwind_addr *ua;
 
   if(!(scn = get_section_by_name(b->e, sec))) return FIND_SECTION_FAILED;
   if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
+  if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
   if(!(ua = get_section_data(scn))) return READ_ELF_FAILED;
 
   num_records = shdr->sh_size / shdr->sh_entsize;
   record_size = shdr->sh_entsize;
   if(verbose) printf("Found %lu records in the unwind address range section\n",
                      num_records);
+
+  /*
+   * Update the offsets in the records because the records from all object
+   * files have been smushed together by the linker
+   */
+  for(i = 0; i < num_records; i++)
+  {
+    ua[i].unwind_offset = cur_offset;
+    cur_offset += ua[i].num_unwind;
+  }
+
+  /* Sort by address & update the section */
   qsort(ua, num_records, record_size, sort_unwind_addr);
   return update_section(b->e, scn, num_records, record_size, ua);
 }
@@ -157,7 +169,7 @@ ret_t add_sections(bin *b,
   if(!(ehdr = elf64_getehdr(b->e))) return READ_ELF_FAILED;
   ehdr->e_shoff = cur_offset;
   elf_flagehdr(b->e, ELF_C_SET, ELF_F_DIRTY);
-  if(verbose) printf("Section table moved to %lx\n", cur_offset);
+  if(verbose) printf("Section table moved to 0x%lx\n", cur_offset);
 
   /* Write changes back to disk.  LibELF now controls the data we malloc'd. */
   if(elf_update(b->e, ELF_C_WRITE) < 0) return WRITE_ELF_FAILED;
@@ -265,7 +277,7 @@ static int sort_unwind_addr(const void *a, const void *b)
   const unwind_addr *ua_b = (const unwind_addr*)b;
 
   if(ua_a->addr < ua_b->addr) return -1;
-  else if(ua_a->addr == ua_a->addr) return 0;
+  else if(ua_a->addr == ua_b->addr) return 0;
   else return 1;
 }
 
