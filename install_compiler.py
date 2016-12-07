@@ -732,6 +732,21 @@ def install_tools(base_path, install_path, num_threads):
         cur_dir = os.getcwd()
 
         #=====================================================
+        # MODIFY MLINK_ARMOBJS.SH
+        #=====================================================
+        print("Updating alignment tool scripts to reflect system setup...")
+        try:
+            stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
+                                               '-print-libgcc-file-name'],
+                                               stdout=subprocess.PIPE).communicate()
+            loc = stdout.strip()[:stdout.rfind('/')]
+            sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
+            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
+        except Exception as e:
+            print('Could not get/set libgcc location for aarch64 ({})!'.format(e))
+            sys.exit(1)
+
+        #=====================================================
         # INSTALL ALIGNMENT TOOL
         #=====================================================
         os.chdir(os.path.join(base_path, 'tool/alignment'))
@@ -809,11 +824,18 @@ def install_utils(base_path, install_path, num_threads):
     #=====================================================
     # MODIFY MAKEFILE TEMPLATE
     #=====================================================
-    print("Updating util/Makefile.template to reflect install path...")
+    print("Updating util/Makefile.template to reflect system setup and install path...")
     try:
         tmp = install_path.replace('/', '\/')
         sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
+
+        stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
+                                           '-print-libgcc-file-name'],
+                                           stdout=subprocess.PIPE).communicate()
+        loc = stdout.strip()[:stdout.rfind('/')]
+        sed_cmd = "sed -i -e 's/ARM64_LIBGCC := .*/ARM64_LIBGCC := {}/g' ./util/Makefile.template".format(loc)
+        rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
     else:

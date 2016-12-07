@@ -12,9 +12,6 @@ POPCORN := /usr/local/popcorn
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := /usr/lib/gcc-cross/aarch64-linux-gnu/4.8
 
-# FIXME directory of libgcc & libgcc_eh for x86-64 compiler
-X86_64_LIBGCC := /usr/lib/gcc/x86_64-linux-gnu/4.8
-
 # FIXME name of the generated executable
 BIN := test
 
@@ -43,18 +40,18 @@ OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
              -load $(POPCORN)/lib/libStackInfo.so -stack-info
 
 # Linker
-LD       := $(POPCORN)/bin/ld.gold
-LDFLAGS  := -z relro --hash-style=gnu --build-id -static
-LIBS     := /lib/crt1.o \
-            /lib/libc.a \
-            /lib/libmigrate.a \
-            /lib/libstack-transform.a \
-            /lib/libelf.a \
-            /lib/libpthread.a \
-            /lib/libbomp.a \
-            /lib/libc.a \
-            /lib/libm.a
-LD_EXTRA := --start-group -lgcc -lgcc_eh --end-group
+LD      := $(POPCORN)/bin/ld.gold
+LDFLAGS := -z relro --hash-style=gnu --build-id -static
+LIBS    := /lib/crt1.o \
+           /lib/libc.a \
+           /lib/libmigrate.a \
+           /lib/libstack-transform.a \
+           /lib/libelf.a \
+           /lib/libpthread.a \
+           /lib/libbomp.a \
+           /lib/libc.a \
+           /lib/libm.a
+LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 # TODO remove dependencies on external scripting
@@ -104,7 +101,7 @@ ARM64_LD_SCRIPT := $(ALIGN_BUILD)/modified__aarch64.x
 ARM64_TARGET  := aarch64-linux-gnu
 ARM64_INC     := -isystem $(ARM64_POPCORN)/include
 ARM64_LDFLAGS := -m aarch64linux -L$(ARM64_POPCORN)/lib -L$(ARM64_LIBGCC) \
-                 $(addprefix $(ARM64_POPCORN),$(LIBS)) $(LD_EXTRA)
+                 $(addprefix $(ARM64_POPCORN),$(LIBS)) $(LIBGCC)
 
 ##########
 # x86-64 #
@@ -127,8 +124,9 @@ X86_64_SD_OBJ    := $(subst $(X86_64_BUILD),$(X86_64_SD_BUILD),$(X86_64_OBJ))
 # Flags
 X86_64_TARGET  := x86_64-linux-gnu
 X86_64_INC     := -isystem $(X86_64_POPCORN)/include
-X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib -L$(X86_64_LIBGCC) \
-                  $(addprefix $(X86_64_POPCORN),$(LIBS)) $(LD_EXTRA)
+X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
+                  $(addprefix $(X86_64_POPCORN),$(LIBS)) \
+                  --start-group --end-group
 
 ###############################################################################
 #                                 Recipes                                     #
