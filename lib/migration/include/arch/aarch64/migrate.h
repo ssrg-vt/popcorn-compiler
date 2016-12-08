@@ -46,7 +46,7 @@
   })
 
 #define SET_FP_REGS \
-  SET_FP_REGS_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
+  SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
 
 #define SAVE_REGSET { data.regset = &regs_x86_64; }
 

@@ -191,7 +191,7 @@ struct regset_x86_64
 #define GET_XMM14( var ) GET_XMM( var, "14" )
 #define GET_XMM15( var ) GET_XMM( var, "15" )
 
-#define SET_XMM( var, num ) asm volatile("movsd %0, %%xmm"num : : "m" (var) )
+#define SET_XMM( var, num ) asm volatile("movsd %0, %%xmm"num : : "m" (var) : "xmm"num )
 #define SET_XMM0( var ) SET_XMM( var, "0" )
 #define SET_XMM1( var ) SET_XMM( var, "1" )
 #define SET_XMM2( var ) SET_XMM( var, "2" )
@@ -208,6 +208,26 @@ struct regset_x86_64
 #define SET_XMM13( var ) SET_XMM( var, "13" )
 #define SET_XMM14( var ) SET_XMM( var, "14" )
 #define SET_XMM15( var ) SET_XMM( var, "15" )
+
+// Note: the following NOCLOBBER macros are only used for special cases, use
+// the macros above for normal access
+#define SET_XMM_NOCLOBBER( var, num ) asm volatile("movsd %0, %%xmm"num : : "m" (var) )
+#define SET_XMM0_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "0" )
+#define SET_XMM1_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "1" )
+#define SET_XMM2_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "2" )
+#define SET_XMM3_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "3" )
+#define SET_XMM4_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "4" )
+#define SET_XMM5_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "5" )
+#define SET_XMM6_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "6" )
+#define SET_XMM7_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "7" )
+#define SET_XMM8_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "8" )
+#define SET_XMM9_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "9" )
+#define SET_XMM10_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "10" )
+#define SET_XMM11_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "11" )
+#define SET_XMM12_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "12" )
+#define SET_XMM13_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "13" )
+#define SET_XMM14_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "14" )
+#define SET_XMM15_NOCLOBBER( var ) SET_XMM_NOCLOBBER( var, "15" )
 
 /* Streaming SIMD Extension (SSE) registers */
 // TODO
@@ -279,6 +299,31 @@ struct regset_x86_64
   SET_XMM13((regset_x86_64).xmm[13]); \
   SET_XMM14((regset_x86_64).xmm[14]); \
   SET_XMM15((regset_x86_64).xmm[15]); \
+}
+
+/*
+ * Set floating-point/SIMD registers from a register set. Don't mark the
+ * registers as clobbered, so the compiler won't save/restore them.
+ */
+// Note: this should *only* be used inside of the migration library
+#define SET_FP_REGS_NOCLOBBER_X86_64( regset_x86_64 ) \
+{ \
+  SET_XMM0_NOCLOBBER((regset_x86_64).xmm[0]); \
+  SET_XMM1_NOCLOBBER((regset_x86_64).xmm[1]); \
+  SET_XMM2_NOCLOBBER((regset_x86_64).xmm[2]); \
+  SET_XMM3_NOCLOBBER((regset_x86_64).xmm[3]); \
+  SET_XMM4_NOCLOBBER((regset_x86_64).xmm[4]); \
+  SET_XMM5_NOCLOBBER((regset_x86_64).xmm[5]); \
+  SET_XMM6_NOCLOBBER((regset_x86_64).xmm[6]); \
+  SET_XMM7_NOCLOBBER((regset_x86_64).xmm[7]); \
+  SET_XMM8_NOCLOBBER((regset_x86_64).xmm[8]); \
+  SET_XMM9_NOCLOBBER((regset_x86_64).xmm[9]); \
+  SET_XMM10_NOCLOBBER((regset_x86_64).xmm[10]); \
+  SET_XMM11_NOCLOBBER((regset_x86_64).xmm[11]); \
+  SET_XMM12_NOCLOBBER((regset_x86_64).xmm[12]); \
+  SET_XMM13_NOCLOBBER((regset_x86_64).xmm[13]); \
+  SET_XMM14_NOCLOBBER((regset_x86_64).xmm[14]); \
+  SET_XMM15_NOCLOBBER((regset_x86_64).xmm[15]); \
 }
 
 /* Set all registers from a register set. */

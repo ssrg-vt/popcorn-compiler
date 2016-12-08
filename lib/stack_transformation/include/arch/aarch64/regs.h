@@ -281,6 +281,42 @@ struct regset_aarch64
 #define SET_V30( var ) SET_FP_REG( var, "q30", "v30" )
 #define SET_V31( var ) SET_FP_REG( var, "q31", "v31" )
 
+// Note: the following NOCLOBBER macros are only used for special cases, use
+// the macros above for normal access
+#define SET_FP_REG_NOCLOBBER( var, reg ) asm volatile("ldr "reg", %0" : : "m" (var) )
+#define SET_V0_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q0" )
+#define SET_V1_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q1" )
+#define SET_V2_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q2" )
+#define SET_V3_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q3" )
+#define SET_V4_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q4" )
+#define SET_V5_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q5" )
+#define SET_V6_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q6" )
+#define SET_V7_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q7" )
+#define SET_V8_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q8" )
+#define SET_V9_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q9" )
+#define SET_V10_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q10" )
+#define SET_V11_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q11" )
+#define SET_V12_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q12" )
+#define SET_V13_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q13" )
+#define SET_V14_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q14" )
+#define SET_V15_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q15" )
+#define SET_V16_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q16" )
+#define SET_V17_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q17" )
+#define SET_V18_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q18" )
+#define SET_V19_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q19" )
+#define SET_V20_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q20" )
+#define SET_V21_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q21" )
+#define SET_V22_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q22" )
+#define SET_V23_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q23" )
+#define SET_V24_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q24" )
+#define SET_V25_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q25" )
+#define SET_V26_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q26" )
+#define SET_V27_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q27" )
+#define SET_V28_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q28" )
+#define SET_V29_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q29" )
+#define SET_V30_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q30" )
+#define SET_V31_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "q31" )
+
 /* Read all registers into a register set. */
 #define READ_REGS_AARCH64( regset_aarch64 ) \
 { \
@@ -351,6 +387,7 @@ struct regset_aarch64
   GET_V31((regset_aarch64).v[31]); \
 }
 
+/* Set floating-point/SIMD registers from a register set. */
 #define SET_FP_REGS_AARCH64( regset_aarch64 ) \
 { \
   SET_V0((regset_aarch64).v[0]); \
@@ -385,6 +422,46 @@ struct regset_aarch64
   SET_V29((regset_aarch64).v[29]); \
   SET_V30((regset_aarch64).v[30]); \
   SET_V31((regset_aarch64).v[31]); \
+}
+
+/*
+ * Set floating-point/SIMD registers from a register set. Don't mark the
+ * registers as clobbered, so the compiler won't save/restore them.
+ */
+#define SET_FP_REGS_NOCLOBBER_AARCH64( regset_aarch64 ) \
+{ \
+  SET_V0_NOCLOBBER((regset_aarch64).v[0]); \
+  SET_V1_NOCLOBBER((regset_aarch64).v[1]); \
+  SET_V2_NOCLOBBER((regset_aarch64).v[2]); \
+  SET_V3_NOCLOBBER((regset_aarch64).v[3]); \
+  SET_V4_NOCLOBBER((regset_aarch64).v[4]); \
+  SET_V5_NOCLOBBER((regset_aarch64).v[5]); \
+  SET_V6_NOCLOBBER((regset_aarch64).v[6]); \
+  SET_V7_NOCLOBBER((regset_aarch64).v[7]); \
+  SET_V8_NOCLOBBER((regset_aarch64).v[8]); \
+  SET_V9_NOCLOBBER((regset_aarch64).v[9]); \
+  SET_V10_NOCLOBBER((regset_aarch64).v[10]); \
+  SET_V11_NOCLOBBER((regset_aarch64).v[11]); \
+  SET_V12_NOCLOBBER((regset_aarch64).v[12]); \
+  SET_V13_NOCLOBBER((regset_aarch64).v[13]); \
+  SET_V14_NOCLOBBER((regset_aarch64).v[14]); \
+  SET_V15_NOCLOBBER((regset_aarch64).v[15]); \
+  SET_V16_NOCLOBBER((regset_aarch64).v[16]); \
+  SET_V17_NOCLOBBER((regset_aarch64).v[17]); \
+  SET_V18_NOCLOBBER((regset_aarch64).v[18]); \
+  SET_V19_NOCLOBBER((regset_aarch64).v[19]); \
+  SET_V20_NOCLOBBER((regset_aarch64).v[20]); \
+  SET_V21_NOCLOBBER((regset_aarch64).v[21]); \
+  SET_V22_NOCLOBBER((regset_aarch64).v[22]); \
+  SET_V23_NOCLOBBER((regset_aarch64).v[23]); \
+  SET_V24_NOCLOBBER((regset_aarch64).v[24]); \
+  SET_V25_NOCLOBBER((regset_aarch64).v[25]); \
+  SET_V26_NOCLOBBER((regset_aarch64).v[26]); \
+  SET_V27_NOCLOBBER((regset_aarch64).v[27]); \
+  SET_V28_NOCLOBBER((regset_aarch64).v[28]); \
+  SET_V29_NOCLOBBER((regset_aarch64).v[29]); \
+  SET_V30_NOCLOBBER((regset_aarch64).v[30]); \
+  SET_V31_NOCLOBBER((regset_aarch64).v[31]); \
 }
 
 /* Set all registers from a register set. */
