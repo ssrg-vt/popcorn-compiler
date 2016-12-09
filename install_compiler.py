@@ -134,14 +134,13 @@ def check_for_prerequisites():
     success = True
 
     print('Checking for prerequisites (see README for more info)...')
-    gcc_prerequisites = ['gcc', 'aarch64-linux-gnu-gcc', 'g++', 
-                         'aarch64-linux-gnu-g++']
+    gcc_prerequisites = ['gcc', 'aarch64-linux-gnu-gcc', 'g++']
     other_prequisites = ['flex', 'bison']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
         if out:
-            major, minor, micro = [int(v) for v in out.split()[-1].split('.')]
+            major, minor, micro = [int(v) for v in out.split()[3].split('.')]
             if not ((major >= 4) and (minor >= 8)):
                 print('{} 4.8 or higher required to continue'.format(prereq))
                 success = False
@@ -739,8 +738,8 @@ def install_tools(base_path, install_path, num_threads):
             stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
                                                '-print-libgcc-file-name'],
                                                stdout=subprocess.PIPE).communicate()
-            loc = stdout.strip()[:stdout.rfind('/')]
-            sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
+            loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
+            sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"-L{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
         except Exception as e:
             print('Could not get/set libgcc location for aarch64 ({})!'.format(e))
@@ -833,7 +832,7 @@ def install_utils(base_path, install_path, num_threads):
         stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
                                            '-print-libgcc-file-name'],
                                            stdout=subprocess.PIPE).communicate()
-        loc = stdout.strip()[:stdout.rfind('/')]
+        loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
         sed_cmd = "sed -i -e 's/ARM64_LIBGCC := .*/ARM64_LIBGCC := {}/g' ./util/Makefile.template".format(loc)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
     except Exception as e:
@@ -904,6 +903,7 @@ if __name__ == '__main__':
     if not args.skip_prereq_check:
         success = check_for_prerequisites()
         if success != True:
-            print('All prerequisites found!')
+            print('All prerequisites were not satisfied!')
+            sys.exit(1)
 
     main(args)
