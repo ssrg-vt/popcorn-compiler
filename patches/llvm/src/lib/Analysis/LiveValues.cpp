@@ -1,3 +1,4 @@
+#include "llvm/Analysis/LiveValues.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/CFG.h"
@@ -6,12 +7,21 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/Support/Debug.h"
-#include "LiveValues.h"
 
 #define DEBUG_TYPE "live-values"
 
 using namespace llvm;
-typedef std::pair<const BasicBlock *, const BasicBlock *> Edge;
+
+char LiveValues::ID = 0;
+INITIALIZE_PASS_BEGIN(LiveValues, "live-values", 
+                    "Live-value set calculation", true, true)
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_END(LiveValues, "live-values", 
+                    "Live-value set calculation", true, true)
+
+namespace llvm {
+  FunctionPass *createLiveValuesPass() { return new LiveValues(); }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Public API
@@ -136,15 +146,6 @@ std::set<const Value *>
 
   return live;
 }
-
-/* Define pass ID & register pass w/ driver. */
-char LiveValues::ID = 0;
-static RegisterPass<LiveValues> RPLiveValues(
-  "live-values",
-  "Calculate live-value sets for basic blocks in functions",
-  true,
-  true
-);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private API

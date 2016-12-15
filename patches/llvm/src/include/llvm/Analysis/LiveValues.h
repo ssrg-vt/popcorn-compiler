@@ -19,13 +19,17 @@
 #include <set>
 #include <list>
 #include "llvm/Pass.h"
+#include "llvm/Analysis/LoopNestingTree.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Support/raw_ostream.h"
-#include "LoopNestingTree.h"
 
-class LiveValues : public llvm::FunctionPass
+namespace llvm {
+
+class LiveValues : public FunctionPass
 {
 public:
+  typedef std::pair<const BasicBlock *, const BasicBlock *> Edge;
+
   static char ID;
 
   /**
@@ -63,21 +67,21 @@ public:
    * Register which analysis passes we need.
    * @param AU an analysis usage object
    */
-  virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const;
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
   /**
    * Calculate liveness sets for a function.
    * @param F a function for which to calculate live values.
    * @return false, always
    */
-  virtual bool runOnFunction(llvm::Function &F);
+  virtual bool runOnFunction(Function &F);
 
   /**
    * Print a human-readable version of the analysis.
    * @param O an output stream
    * @param M the module being analyzed
    */
-  virtual void print(llvm::raw_ostream &O, const llvm::Module *M) const;
+  virtual void print(raw_ostream &O, const Module *M) const;
 
   /**
    * Return the live-in set for a basic block.
@@ -85,7 +89,7 @@ public:
    * @return a set of live-in values for the basic block; this set must be
    *         freed by the user.
    */
-  std::set<const llvm::Value *> *getLiveIn(const llvm::BasicBlock *BB) const;
+  std::set<const Value *> *getLiveIn(const BasicBlock *BB) const;
 
   /**
    * Return the live-out set for a basic block.
@@ -93,7 +97,7 @@ public:
    * @return a set of live-out values for the basic block; this set must be
    *         freed by the user.
    */
-  std::set<const llvm::Value *> *getLiveOut(const llvm::BasicBlock *BB) const;
+  std::set<const Value *> *getLiveOut(const BasicBlock *BB) const;
 
   /**
    * Get the live values across a given instruction, i.e., values live right
@@ -103,8 +107,8 @@ public:
    * @return the set of values live directly before the instruction; this set
    *         must be freed by the user.
    */
-  std::set<const llvm::Value *> *
-  getLiveValues(const llvm::Instruction *inst) const;
+  std::set<const Value *> *
+  getLiveValues(const Instruction *inst) const;
 
 private:
   /* Should values of each type be included? */
@@ -115,8 +119,8 @@ private:
   bool metadata;
 
   /* Per-basic block liveness sets. */
-  std::map<const llvm::BasicBlock *, std::set<const llvm::Value *> *> liveIn;
-  std::map<const llvm::BasicBlock *, std::set<const llvm::Value *> *> liveOut;
+  std::map<const BasicBlock *, std::set<const Value *> *> liveIn;
+  std::map<const BasicBlock *, std::set<const Value *> *> liveOut;
 
   /* Loop-nesting forest, contains all loop-nests for the function. */
   std::list<LoopNestingTree *> loopNestingForest;
@@ -126,7 +130,7 @@ private:
    * @param val a value
    * @return true if the value is a variable to be tracked, false otherwise
    */
-  bool includeVal(const llvm::Value *val) const;
+  bool includeVal(const Value *val) const;
 
   /**
    * Insert the values used in phi-nodes at the beginning of basic block S (as
@@ -136,9 +140,9 @@ private:
    * @param uses set in which to add values used in phi-nodes in B
    * @return the number of values added to the set
    */
-  unsigned phiUses(const llvm::BasicBlock *B,
-                   const llvm::BasicBlock *S,
-                   std::set<const llvm::Value *> &uses);
+  unsigned phiUses(const BasicBlock *B,
+                   const BasicBlock *S,
+                   std::set<const Value *> &uses);
 
   /**
    * Insert the values defined by the phi-nodes at the beginning of basic block
@@ -147,8 +151,8 @@ private:
    * @param defs set in which to add values defined by phi-nodes in B
    * @return the number of values added to the set
    */
-  unsigned phiDefs(const llvm::BasicBlock *B,
-                   std::set<const llvm::Value *> &defs);
+  unsigned phiDefs(const BasicBlock *B,
+                   std::set<const Value *> &defs);
 
   /**
    * Do a post-order traversal of the control flow graph to calculate partial
@@ -156,13 +160,13 @@ private:
    * @param F a function for which to calculate per-basic block partial
    *          liveness sets
    */
-  void dagDFS(llvm::Function &F);
+  void dagDFS(Function &F);
 
   /**
    * Construct the loop-nesting forest for a function.
    * @param F a function for which to calculate the loop-nesting forest.
    */
-  void constructLoopNestingForest(llvm::Function &F);
+  void constructLoopNestingForest(Function &F);
 
   /**
    * Propagate live values throughout the loop-nesting tree.
@@ -176,6 +180,8 @@ private:
    */
   void loopTreeDFS();
 };
+
+} /* llvm namespace */
 
 #endif /* _LIVE_VALUES_H */
 

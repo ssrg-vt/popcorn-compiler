@@ -13,6 +13,7 @@
 #ifndef _LOOP_NESTING_TREE_H
 #define _LOOP_NESTING_TREE_H
 
+#include <list>
 #include <vector>
 #include <queue>
 #include "llvm/IR/BasicBlock.h"

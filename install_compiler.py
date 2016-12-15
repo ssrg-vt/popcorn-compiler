@@ -67,10 +67,6 @@ def setup_argument_parsing():
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
-    process_opts.add_argument("--skip-passes-install",
-                        help="Skip installation of passes",
-                        action="store_true",
-                        dest="skip_passes_install")
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
@@ -337,96 +333,6 @@ def install_binutils(base_path, install_path, num_threads):
                 sys.exit(1)  
 
         os.chdir(cur_dir)
-
-def install_passes(base_path, install_path, num_threads):
-
-    passes_base_path = os.path.join(base_path, 'lib/passes/')
-    pass_names = ['live_values', 'name_literals', 'staticvar_sections']
-    cmake_flags = ['-DLLVM_DIR={}/share/llvm/cmake'.format(install_path),
-                   '-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
-                   '-DCMAKE_CXX_FLAGS=-std=c++11 -O3']
-
-    cur_dir = os.getcwd()
-
-    with open(os.devnull, 'wb') as FNULL:
-
-        # BUILD AND INSTALL LIVE VALUES/ASSOCIATE LITERAL/SECTION STATIC PASSES
-        for popcorn_pass in pass_names:
-            pass_path = os.path.join(passes_base_path, popcorn_pass)
-
-            print("Configuring and making {} pass...".format(popcorn_pass))
-            os.chdir(pass_path)
-
-            if os.path.isdir('build'):
-                shutil.rmtree('./build')
-
-            os.mkdir('build')
-            os.chdir('build')
-            print('Running CMake...')
-            try:
-                rv = subprocess.check_call(['cmake'] + cmake_flags + ['..'], 
-                                           #stdout=FNULL, 
-                                           stderr=subprocess.STDOUT)
-            except Exception as e:
-                print('Could not run CMake ({})!'.format(e))
-                sys.exit(1)
-            else:
-                if rv != 0:
-                    print('CMake failed.')
-                    sys.exit(1)
-
-            print('Running Make...')
-            try:
-                rv = subprocess.check_call(['make', '-j', str(num_threads)])
-                rv = subprocess.check_call(['make', 'install'])
-            except Exception as e:
-                print('Could not run Make ({})!'.format(e))
-                sys.exit(1)
-            else:
-                if rv != 0:
-                    print('Make failed.')
-                    sys.exit(1)  
-
-            os.chdir(cur_dir)
-
-        # BUILD AND INSTALL STACK INFO PASS
-        print("Configuring and making stack_info pass...")
-        os.chdir(os.path.join(passes_base_path, 'stack_info'))
-
-        if os.path.isdir('build'):
-                shutil.rmtree('./build')
-
-        os.mkdir('build')
-        os.chdir('build')
-        print('Running CMake...')
-        try:
-            rv = subprocess.check_call(
-                ['cmake'] + cmake_flags + 
-                ['-DCMAKE_LIBRARY_PATH={}/lib'.format(install_path), '..'], 
-                                       #stdout=FNULL, 
-                                       stderr=subprocess.STDOUT)
-        except Exception as e:
-            print('Could not run CMake ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('CMake failed.')
-                sys.exit(1)
-
-        print('Running Make...')
-        try:
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)  
-
-        os.chdir(cur_dir)
-
 
 def install_libraries(base_path, install_path, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
@@ -873,9 +779,6 @@ def main(args):
 
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
-
-    if not args.skip_passes_install:
-        install_passes(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path, args.threads,

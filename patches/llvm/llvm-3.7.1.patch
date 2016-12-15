@@ -20,6 +20,412 @@ Index: include/llvm/ADT/ilist_node.h
        return nullptr;
  
      return Next;
+Index: include/llvm/Analysis/LiveValues.h
+===================================================================
+--- include/llvm/Analysis/LiveValues.h	(nonexistent)
++++ include/llvm/Analysis/LiveValues.h	(working copy)
+@@ -0,0 +1,187 @@
++/*
++ * Calculate live-value sets for functions.
++ *
++ * Liveness-analysis is based on the non-iterative dataflow algorithm for
++ * reducible graphs by Brandner et. al in:
++ *
++ * "Computing Liveness Sets for SSA-Form Programs"
++ * URL: https://hal.inria.fr/inria-00558509v1/document
++ * Accessed: 5/19/2016
++ *
++ * Author: Rob Lyerly <rlyerly@vt.edu>
++ * Date: 5/19/2016
++ */
++
++#ifndef _LIVE_VALUES_H
++#define _LIVE_VALUES_H
++
++#include <map>
++#include <set>
++#include <list>
++#include "llvm/Pass.h"
++#include "llvm/Analysis/LoopNestingTree.h"
++#include "llvm/IR/Function.h"
++#include "llvm/Support/raw_ostream.h"
++
++namespace llvm {
++
++class LiveValues : public FunctionPass
++{
++public:
++  typedef std::pair<const BasicBlock *, const BasicBlock *> Edge;
++
++  static char ID;
++
++  /**
++   * Default constructor.
++   */
++  LiveValues(void);
++
++  /**
++   * Default destructor.
++   */
++  ~LiveValues(void);
++
++  /**
++   * Return whether or not a given type should be included in the analysis.
++   * @return true if the type is included in liveness sets, false otherwise
++   */
++  bool includeAsm(void) const { return inlineasm; }
++  bool includeBitcasts(void) const { return bitcasts; }
++  bool includeComparisons(void) const { return comparisons; }
++  bool includeConstants(void) const { return constants; }
++  bool includeMetadata(void) const { return metadata; }
++
++  /**
++   * Set whether or not to include the specified type in the analysis (all
++   * are set to false by default by the constructor).
++   * @param include true if it should be included, false otherwise
++   */
++  void includeAsm(bool include) { inlineasm = include; }
++  void includeBitcasts(bool include) { bitcasts = include; }
++  void includeComparisons(bool include) { comparisons = include; }
++  void includeConstants(bool include) { constants = include; }
++  void includeMetadata(bool include) { metadata = include; }
++
++  /**
++   * Register which analysis passes we need.
++   * @param AU an analysis usage object
++   */
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
++
++  /**
++   * Calculate liveness sets for a function.
++   * @param F a function for which to calculate live values.
++   * @return false, always
++   */
++  virtual bool runOnFunction(Function &F);
++
++  /**
++   * Print a human-readable version of the analysis.
++   * @param O an output stream
++   * @param M the module being analyzed
++   */
++  virtual void print(raw_ostream &O, const Module *M) const;
++
++  /**
++   * Return the live-in set for a basic block.
++   * @param BB a basic block
++   * @return a set of live-in values for the basic block; this set must be
++   *         freed by the user.
++   */
++  std::set<const Value *> *getLiveIn(const BasicBlock *BB) const;
++
++  /**
++   * Return the live-out set for a basic block.
++   * @param BB a basic block
++   * @return a set of live-out values for the basic block; this set must be
++   *         freed by the user.
++   */
++  std::set<const Value *> *getLiveOut(const BasicBlock *BB) const;
++
++  /**
++   * Get the live values across a given instruction, i.e., values live right
++   * after the invocation of the instruction (excluding the value defined by
++   * the instruction itself).
++   * @param inst an instruction
++   * @return the set of values live directly before the instruction; this set
++   *         must be freed by the user.
++   */
++  std::set<const Value *> *
++  getLiveValues(const Instruction *inst) const;
++
++private:
++  /* Should values of each type be included? */
++  bool inlineasm;
++  bool bitcasts;
++  bool comparisons;
++  bool constants;
++  bool metadata;
++
++  /* Per-basic block liveness sets. */
++  std::map<const BasicBlock *, std::set<const Value *> *> liveIn;
++  std::map<const BasicBlock *, std::set<const Value *> *> liveOut;
++
++  /* Loop-nesting forest, contains all loop-nests for the function. */
++  std::list<LoopNestingTree *> loopNestingForest;
++
++  /**
++   * Return whether or not a value is a variable that should be tracked.
++   * @param val a value
++   * @return true if the value is a variable to be tracked, false otherwise
++   */
++  bool includeVal(const Value *val) const;
++
++  /**
++   * Insert the values used in phi-nodes at the beginning of basic block S (as
++   * values live from B) into the set uses.
++   * @param B a basic block which passes live values into phi-nodes in S
++   * @param S a basic block, successor to B
++   * @param uses set in which to add values used in phi-nodes in B
++   * @return the number of values added to the set
++   */
++  unsigned phiUses(const BasicBlock *B,
++                   const BasicBlock *S,
++                   std::set<const Value *> &uses);
++
++  /**
++   * Insert the values defined by the phi-nodes at the beginning of basic block
++   * B into the set defs.
++   * @param B a basic block
++   * @param defs set in which to add values defined by phi-nodes in B
++   * @return the number of values added to the set
++   */
++  unsigned phiDefs(const BasicBlock *B,
++                   std::set<const Value *> &defs);
++
++  /**
++   * Do a post-order traversal of the control flow graph to calculate partial
++   * liveness sets.
++   * @param F a function for which to calculate per-basic block partial
++   *          liveness sets
++   */
++  void dagDFS(Function &F);
++
++  /**
++   * Construct the loop-nesting forest for a function.
++   * @param F a function for which to calculate the loop-nesting forest.
++   */
++  void constructLoopNestingForest(Function &F);
++
++  /**
++   * Propagate live values throughout the loop-nesting tree.
++   * @param loopNest a loop-nesting tree
++   */
++  void propagateValues(const LoopNestingTree *loopNest);
++
++  /**
++   * Propagate live values within loops for all loop-nesting trees in the
++   * function's loop-nesting forest.
++   */
++  void loopTreeDFS();
++};
++
++} /* llvm namespace */
++
++#endif /* _LIVE_VALUES_H */
++
+Index: include/llvm/Analysis/LoopNestingTree.h
+===================================================================
+--- include/llvm/Analysis/LoopNestingTree.h	(nonexistent)
++++ include/llvm/Analysis/LoopNestingTree.h	(working copy)
+@@ -0,0 +1,191 @@
++/*
++ * Loop-nesting tree for a loop.  The root of a loop-nesting tree is the loop
++ * header of the outermost loop.  The children of any given node (including the
++ * root) are the basic blocks contained within the loop and the loop headers of
++ * nested loops.
++ *
++ * Note: we assume that the control-flow graphs are reducible
++ *
++ * Author: Rob Lyerly <rlyerly@vt.edu>
++ * Date: 5/23/2016
++ */
++
++#ifndef _LOOP_NESTING_TREE_H
++#define _LOOP_NESTING_TREE_H
++
++#include <list>
++#include <vector>
++#include <queue>
++#include "llvm/IR/BasicBlock.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/Support/raw_ostream.h"
++
++class LoopNestingTree {
++private:
++  /*
++   * Tree node object.
++   */
++  class Node {
++  public:
++    /**
++     * Construct a node for a basic block.
++     * @param _bb a basic block
++     * @param _parent the parent of this node, i.e. the loop header of the
++     *                containing loop
++     * @param _isLoopHeader is the basic block a loop header?
++     */
++    Node(const llvm::BasicBlock *_bb, const Node *_parent, bool _isLoopHeader)
++      : bb(_bb), parent(_parent), isLoopHeader(_isLoopHeader) {}
++
++    /**
++     * Add a child to the node.
++     * @param child a child to add to the node
++     */
++    void addChild(Node *child) { children.push_back(child); }
++
++    const llvm::BasicBlock *bb; /* Basic block encapsulated by the node. */
++    const Node *parent; /* Parent node, i.e. header of containing loop. */
++    std::list<Node *> children; /* Regular child nodes in the tree. */
++    bool isLoopHeader; /* Is the basic block a loop header? */
++  };
++
++  unsigned _size; /* Number of nodes (i.e., basic blocks) in the tree. */
++  unsigned _depth; /* Number of nested loops in the tree. */
++  Node *_root; /* Root of the tree, i.e. loop header of outermost loop. */
++
++  /**
++   * Print a node & its children.  Recurses into nested loops.
++   * @param O an output stream on which to print the tree
++   * @param node a node to print
++   * @param depth the current depth
++   */
++  void print(llvm::raw_ostream &O, Node *node, unsigned depth) const;
++
++  /**
++   * Delete the node's children & the node itself.  Recurses into nested loops.
++   * @param node the node being deleted
++   */
++  void deleteRecursive(Node *node);
++
++public:
++  /**
++   * Construct a loop-nesting tree from a strongly-connected component of the
++   * control-flow graph.
++   * @param SCC a strongly-connected component of the control-flow graph
++   * @param LI analysis from the loop info pass
++   */
++  LoopNestingTree(const std::vector<llvm::BasicBlock *> &SCC,
++                  const llvm::LoopInfo &LI);
++
++  /**
++   * Destroy a loop-nesting tree.
++   */
++  ~LoopNestingTree() { deleteRecursive(this->_root); }
++
++  /**
++   * Return the size of the loop-nesting tree, that is the number of nodes in
++   * the loop (and all nested loops).
++   * @return the number of nodes in the tree
++   */
++  unsigned size() const { return this->_size; }
++
++  /**
++   * Return the depth of the loop-nesting tree, that is the number of nested
++   * loops.  A value of one indicates that there are no nested loops.
++   * @return the number of nested loops in the tree
++   */
++  unsigned depth() const { return this->_depth; }
++
++  /**
++   * Print the tree.
++   * @param O the output stream on which to print the tree
++   */
++  void print(llvm::raw_ostream &O) const { print(O, this->_root, 0); }
++
++  /*
++   * Loop-node iterator object.  Delivers loop nodes in breadth-first order.
++   */
++  class loop_iterator {
++  public:
++    typedef loop_iterator self_type;
++    typedef const llvm::BasicBlock *value_type;
++    typedef value_type& reference;
++    typedef value_type* pointer;
++    typedef std::forward_iterator_tag iterator_category;
++
++    self_type operator++(void);
++    self_type operator++(int junk);
++    reference operator*(void) { return cur->bb; }
++    pointer operator->(void) { return &cur->bb; }
++    bool operator==(const self_type& rhs) { return cur == rhs.cur; }
++    bool operator!=(const self_type& rhs) { return cur != rhs.cur; }
++
++    friend class LoopNestingTree;
++    friend class child_iterator;
++  private:
++    Node *cur;
++    std::queue<Node *> remaining;
++
++    loop_iterator(Node *start) : cur(start) { addLoopHeaders(); }
++    void addLoopHeaders(void);
++  };
++
++  /*
++   * Child iterator object.  Traverses children of tree nodes.
++   */
++  class child_iterator {
++  public:
++    typedef child_iterator self_type;
++    typedef const llvm::BasicBlock *value_type;
++    typedef value_type& reference;
++    typedef value_type* pointer;
++    typedef std::forward_iterator_tag iterator_category;
++    enum location { BEGIN, END };
++
++    self_type operator++(void)
++      { self_type me = *this; it.operator++(); return me; }
++    self_type operator++(int junk) { it.operator++(junk); return *this; }
++    reference operator*(void) { return (*it)->bb; }
++    pointer operator->(void) { return &(*it)->bb; }
++    bool operator==(const self_type& rhs) { return it == rhs.it; }
++    bool operator!=(const self_type& rhs) { return it != rhs.it; }
++
++    friend class LoopNestingTree;
++  private:
++    std::list<Node *>::const_iterator it;
++
++    child_iterator(loop_iterator &parent, enum location loc);
++  };
++
++  /**
++   * Return an iterator for traversing all loop nodes (i.e., loop header basic
++   * blocks) in the tree.  Delivers nodes in a breadth-first ordering.
++   * @return an iterator to traverse the loop nodes in the tree
++   */
++  loop_iterator loop_begin() const { loop_iterator it(_root); return it; };
++
++  /**
++   * Return an iterator marking the end of the loop nodes in the tree.
++   * @return an iterator marking the end of the traversal
++   */
++  loop_iterator loop_end() const { loop_iterator it(nullptr); return it; };
++
++  /**
++   * Return an iterator for traversing the children of a loop node.
++   * @param an iterator associated with a loop node
++   * @return an iterator to traverse the children of a loop node
++   */
++  child_iterator children_begin(loop_iterator &parent) const
++    { child_iterator it(parent, child_iterator::BEGIN); return it; }
++
++  /**
++   * Return an iterator marking the end of the children of a loop node.
++   * @param an iterator associated with a loop node
++   * @return an iterator marking the end of the traversal
++   */
++  child_iterator children_end(loop_iterator &parent) const
++    { child_iterator it(parent, child_iterator::END); return it; }
++};
++
++#endif /* _LOOP_NESTING_TREE_H */
++
+Index: include/llvm/Analysis/Passes.h
+===================================================================
+--- include/llvm/Analysis/Passes.h	(revision 277823)
++++ include/llvm/Analysis/Passes.h	(working copy)
+@@ -173,6 +173,13 @@
+   //
+   FunctionPass *createMemDerefPrinter();
+ 
++  //===--------------------------------------------------------------------===//
++  //
++  // createLiveValuesPass - This pass calculates live-value sets for basic
++  // blocks in a function.
++  //
++  FunctionPass *createLiveValuesPass();
++
+ }
+ 
+ #endif
 Index: include/llvm/CodeGen/AsmPrinter.h
 ===================================================================
 --- include/llvm/CodeGen/AsmPrinter.h	(revision 277823)
@@ -418,7 +824,41 @@ Index: include/llvm/InitializePasses.h
 ===================================================================
 --- include/llvm/InitializePasses.h	(revision 277823)
 +++ include/llvm/InitializePasses.h	(working copy)
-@@ -263,6 +263,7 @@
+@@ -146,6 +146,7 @@
+ void initializeInductiveRangeCheckEliminationPass(PassRegistry&);
+ void initializeIndVarSimplifyPass(PassRegistry&);
+ void initializeInlineCostAnalysisPass(PassRegistry&);
++void initializeInsertStackMapsPass(PassRegistry&);
+ void initializeInstructionCombiningPassPass(PassRegistry&);
+ void initializeInstCountPass(PassRegistry&);
+ void initializeInstNamerPass(PassRegistry&);
+@@ -162,6 +163,7 @@
+ void initializeLiveRegMatrixPass(PassRegistry&);
+ void initializeLiveStacksPass(PassRegistry&);
+ void initializeLiveVariablesPass(PassRegistry&);
++void initializeLiveValuesPass(PassRegistry&);
+ void initializeLoaderPassPass(PassRegistry&);
+ void initializeLocalStackSlotPassPass(PassRegistry&);
+ void initializeLoopDeletionPass(PassRegistry&);
+@@ -208,6 +210,7 @@
+ void initializeMetaRenamerPass(PassRegistry&);
+ void initializeMergeFunctionsPass(PassRegistry&);
+ void initializeModuleDebugInfoPrinterPass(PassRegistry&);
++void initializeNameStringLiteralsPass(PassRegistry&);
+ void initializeNaryReassociatePass(PassRegistry&);
+ void initializeNoAAPass(PassRegistry&);
+ void initializeObjCARCAliasAnalysisPass(PassRegistry&);
+@@ -252,7 +255,8 @@
+ void initializeScalarEvolutionPass(PassRegistry&);
+ void initializeShrinkWrapPass(PassRegistry &);
+ void initializeSimpleInlinerPass(PassRegistry&);
+-void initializeShadowStackGCLoweringPass(PassRegistry&);  
++void initializeShadowStackGCLoweringPass(PassRegistry&);
++void initializeStaticVarSectionsPass(PassRegistry&);
+ void initializeRegisterCoalescerPass(PassRegistry&);
+ void initializeSingleLoopExtractorPass(PassRegistry&);
+ void initializeSinkingPass(PassRegistry&);
+@@ -263,6 +267,7 @@
  void initializeStackProtectorPass(PassRegistry&);
  void initializeStackColoringPass(PassRegistry&);
  void initializeStackSlotColoringPass(PassRegistry&);
@@ -426,6 +866,48 @@ Index: include/llvm/InitializePasses.h
  void initializeStraightLineStrengthReducePass(PassRegistry &);
  void initializeStripDeadDebugInfoPass(PassRegistry&);
  void initializeStripDeadPrototypesPassPass(PassRegistry&);
+Index: include/llvm/LinkAllPasses.h
+===================================================================
+--- include/llvm/LinkAllPasses.h	(revision 277823)
++++ include/llvm/LinkAllPasses.h	(working copy)
+@@ -33,6 +33,7 @@
+ #include "llvm/Transforms/Instrumentation.h"
+ #include "llvm/Transforms/ObjCARC.h"
+ #include "llvm/Transforms/Scalar.h"
++#include "llvm/Transforms/Utils.h"
+ #include "llvm/Transforms/Utils/SymbolRewriter.h"
+ #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
+ #include "llvm/Transforms/Vectorize.h"
+@@ -92,11 +93,13 @@
+       (void) llvm::createIPSCCPPass();
+       (void) llvm::createInductiveRangeCheckEliminationPass();
+       (void) llvm::createIndVarSimplifyPass();
++      (void) llvm::createInsertStackMapsPass();
+       (void) llvm::createInstructionCombiningPass();
+       (void) llvm::createInternalizePass();
+       (void) llvm::createLCSSAPass();
+       (void) llvm::createLICMPass();
+       (void) llvm::createLazyValueInfoPass();
++      (void) llvm::createLiveValuesPass();
+       (void) llvm::createLoopExtractorPass();
+       (void) llvm::createLoopInterchangePass();
+       (void) llvm::createLoopSimplifyPass();
+@@ -110,6 +113,7 @@
+       (void) llvm::createLowerInvokePass();
+       (void) llvm::createLowerSwitchPass();
+       (void) llvm::createNaryReassociatePass();
++      (void) llvm::createNameStringLiteralsPass();
+       (void) llvm::createNoAAPass();
+       (void) llvm::createObjCARCAliasAnalysisPass();
+       (void) llvm::createObjCARCAPElimPass();
+@@ -134,6 +138,7 @@
+       (void) llvm::createSafeStackPass();
+       (void) llvm::createScalarReplAggregatesPass();
+       (void) llvm::createSingleLoopExtractorPass();
++      (void) llvm::createStaticVarSectionsPass();
+       (void) llvm::createStripSymbolsPass();
+       (void) llvm::createStripNonDebugSymbolsPass();
+       (void) llvm::createStripDeadDebugInfoPass();
 Index: include/llvm/MC/MCObjectFileInfo.h
 ===================================================================
 --- include/llvm/MC/MCObjectFileInfo.h	(revision 277823)
@@ -450,6 +932,590 @@ Index: include/llvm/MC/MCObjectFileInfo.h
    MCSection *getStackMapSection() const { return StackMapSection; }
    MCSection *getFaultMapSection() const { return FaultMapSection; }
  
+Index: include/llvm/Transforms/Instrumentation.h
+===================================================================
+--- include/llvm/Transforms/Instrumentation.h	(revision 277823)
++++ include/llvm/Transforms/Instrumentation.h	(working copy)
+@@ -136,6 +136,10 @@
+ /// protect against stack-based overflow vulnerabilities.
+ FunctionPass *createSafeStackPass();
+ 
++/// \brief This pass inserts stack map intrinsics at equivalence points in
++/// order to record live value locations
++ModulePass *createInsertStackMapsPass();
++
+ } // End llvm namespace
+ 
+ #endif
+Index: include/llvm/Transforms/Utils.h
+===================================================================
+--- include/llvm/Transforms/Utils.h	(nonexistent)
++++ include/llvm/Transforms/Utils.h	(working copy)
+@@ -0,0 +1,16 @@
++namespace llvm {
++
++//===----------------------------------------------------------------------===//
++//
++// NameStringLiterals - Give symbol names to anonymous string literals so they
++// can be aligned at link-time
++//
++ModulePass *createNameStringLiteralsPass();
++
++//===----------------------------------------------------------------------===//
++//
++// StaticVarSections - Put static global variables into their own sections
++//
++ModulePass *createStaticVarSectionsPass();
++
++}
+Index: lib/Analysis/Analysis.cpp
+===================================================================
+--- lib/Analysis/Analysis.cpp	(revision 277823)
++++ lib/Analysis/Analysis.cpp	(working copy)
+@@ -53,6 +53,7 @@
+   initializeLazyValueInfoPass(Registry);
+   initializeLibCallAliasAnalysisPass(Registry);
+   initializeLintPass(Registry);
++  initializeLiveValuesPass(Registry);
+   initializeLoopInfoWrapperPassPass(Registry);
+   initializeMemDepPrinterPass(Registry);
+   initializeMemDerefPrinterPass(Registry);
+Index: lib/Analysis/CMakeLists.txt
+===================================================================
+--- lib/Analysis/CMakeLists.txt	(revision 277823)
++++ lib/Analysis/CMakeLists.txt	(working copy)
+@@ -34,9 +34,11 @@
+   LibCallAliasAnalysis.cpp
+   LibCallSemantics.cpp
+   Lint.cpp
++  LiveValues.cpp
+   Loads.cpp
+   LoopAccessAnalysis.cpp
+   LoopInfo.cpp
++  LoopNestingTree.cpp
+   LoopPass.cpp
+   MemDepPrinter.cpp
+   MemDerefPrinter.cpp
+Index: lib/Analysis/LiveValues.cpp
+===================================================================
+--- lib/Analysis/LiveValues.cpp	(nonexistent)
++++ lib/Analysis/LiveValues.cpp	(working copy)
+@@ -0,0 +1,362 @@
++#include "llvm/Analysis/LiveValues.h"
++#include "llvm/IR/Metadata.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/CFG.h"
++#include "llvm/Analysis/CFG.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/ADT/PostOrderIterator.h"
++#include "llvm/ADT/SCCIterator.h"
++#include "llvm/Support/Debug.h"
++
++#define DEBUG_TYPE "live-values"
++
++using namespace llvm;
++
++char LiveValues::ID = 0;
++INITIALIZE_PASS_BEGIN(LiveValues, "live-values", 
++                    "Live-value set calculation", true, true)
++INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_END(LiveValues, "live-values", 
++                    "Live-value set calculation", true, true)
++
++namespace llvm {
++  FunctionPass *createLiveValuesPass() { return new LiveValues(); }
++}
++
++///////////////////////////////////////////////////////////////////////////////
++// Public API
++///////////////////////////////////////////////////////////////////////////////
++
++LiveValues::LiveValues(void)
++  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(false),
++    constants(false), metadata(false) {}
++
++LiveValues::~LiveValues(void)
++{
++  std::map<const BasicBlock *, std::set<const Value *> *>::iterator bbIt;
++  std::list<LoopNestingTree *>::iterator treeIt;
++
++  for(bbIt = liveIn.begin(); bbIt != liveIn.end(); bbIt++)
++    delete bbIt->second;
++  for(bbIt = liveOut.begin(); bbIt != liveOut.end(); bbIt++)
++    delete bbIt->second;
++  for(treeIt = loopNestingForest.begin();
++      treeIt != loopNestingForest.end();
++      treeIt++)
++    delete *treeIt;
++}
++
++void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const
++{
++  AU.addRequired<LoopInfoWrapperPass>();
++  AU.setPreservesAll();
++}
++
++bool LiveValues::runOnFunction(Function &F)
++{
++  DEBUG(errs() << "LiveValues: beginning live-value analysis\n\r"
++                  "LiveValues: performing bottom-up dataflow analysis\n\r");
++
++  /* 1. Compute partial liveness sets using a postorder traversal. */
++  dagDFS(F);
++
++  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n\r");
++
++  /* 2. Construct loop-nesting forest. */
++  constructLoopNestingForest(F);
++
++  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n\r");
++
++  /* 3. Propagate live variables within loop bodies. */
++  loopTreeDFS();
++
++  DEBUG(
++    print(errs(), F.getParent());
++    errs() << "LiveValues: finished analysis\n\r"
++  );
++
++  return false;
++}
++
++void LiveValues::print(raw_ostream &O, const Module *M) const
++{
++  std::map<const BasicBlock *, std::set<const Value *> *>::const_iterator bbIt;
++  std::set<const Value *>::const_iterator valIt;
++  const BasicBlock *bb;
++  const std::set<const Value *> *vals;
++
++  O << "LiveValues: results of live-value analysis\n\r";
++
++  for(bbIt = liveIn.cbegin(); bbIt != liveIn.cend(); bbIt++)
++  {
++    bb = bbIt->first;
++    vals = bbIt->second;
++
++    bbIt->first->printAsOperand(O, false, M);
++
++    O << "\n\r  Live-in:";
++    for(valIt = vals->cbegin(); valIt != vals->cend(); valIt++)
++    {
++      O << " ";
++      (*valIt)->printAsOperand(O, false, M);
++    }
++
++    O << "\n\r  Live-out:";
++    for(valIt = liveOut.at(bb)->cbegin();
++        valIt != liveOut.at(bb)->cend();
++        valIt++)
++    {
++      O << " ";
++      (*valIt)->printAsOperand(O, false, M);
++    }
++
++    O << "\n\r";
++  }
++}
++
++std::set<const Value *> *LiveValues::getLiveIn(const BasicBlock *BB) const
++{
++  return new std::set<const Value *>(*liveIn.at(BB));
++}
++
++std::set<const Value *> *LiveValues::getLiveOut(const BasicBlock *BB) const
++{
++  return new std::set<const Value *>(*liveOut.at(BB));
++}
++
++std::set<const Value *>
++*LiveValues::getLiveValues(const Instruction *inst) const
++{
++  const BasicBlock *BB = inst->getParent();
++  BasicBlock::const_reverse_iterator ri, rie;
++  std::set<const Value *> *live = new std::set<const Value *>(*liveOut.at(BB));
++
++  for(ri = BB->rbegin(), rie = BB->rend(); ri != rie; ri++)
++  {
++    if(&*ri == inst) break;
++
++    live->erase(&*ri);
++    for(User::const_op_iterator op = ri->op_begin();
++        op != ri->op_end();
++        op++)
++      if(includeVal(*op))
++        live->insert(*op);
++  }
++  live->erase(&*ri);
++
++  return live;
++}
++
++///////////////////////////////////////////////////////////////////////////////
++// Private API
++///////////////////////////////////////////////////////////////////////////////
++
++bool LiveValues::includeVal(const llvm::Value *val) const
++{
++  IntegerType *IntTy;
++
++  // TODO other values that should be filtered out?
++  if(isa<BasicBlock>(val))
++    return false;
++  else if(isa<InlineAsm>(val) && !inlineasm)
++    return false;
++  else if(isa<BitCastInst>(val) && !bitcasts)
++    return false;
++  else if(isa<CmpInst>(val) && !comparisons)
++    return false;
++  else if(isa<Constant>(val) && !constants)
++    return false;
++  else if(isa<MetadataAsValue>(val) && !metadata)
++    return false;
++  else if((IntTy = dyn_cast<IntegerType>(val->getType())))
++  {
++    if(IntTy->getBitWidth() == 1)
++      return false;
++  }
++  return true;
++}
++
++unsigned LiveValues::phiUses(const BasicBlock *B,
++                             const BasicBlock *S,
++                             std::set<const Value *> &uses)
++{
++  const PHINode *phi;
++  unsigned added = 0;
++
++  for(BasicBlock::const_iterator it = S->begin(); it != S->end(); it++)
++  {
++    if((phi = dyn_cast<PHINode>(&*it))) {
++      for(unsigned i = 0; i < phi->getNumIncomingValues(); i++)
++        if(phi->getIncomingBlock(i) == B &&
++           includeVal(phi->getIncomingValue(i)))
++          if(uses.insert(phi->getIncomingValue(i)).second)
++            added++;
++    }
++    else break; // phi-nodes are always at the start of the basic block
++  }
++
++  return added;
++}
++
++unsigned LiveValues::phiDefs(const BasicBlock *B,
++                             std::set<const Value *> &uses)
++{
++  const PHINode *phi;
++  unsigned added = 0;
++
++  for(BasicBlock::const_iterator it = B->begin(); it != B->end(); it++)
++  {
++    if((phi = dyn_cast<PHINode>(&*it))) {
++      if(includeVal(phi))
++        if(uses.insert(&*it).second)
++          added++;
++    }
++    else break; // phi-nodes are always at the start of the basic block
++  }
++
++  return added;
++}
++
++void LiveValues::dagDFS(Function &F)
++{
++  std::set<const Value *> live, phiDefined;
++  std::set<Edge> loopEdges;
++  SmallVector<Edge, 16> loopEdgeVec;
++
++  /* Find loop edges & convert to set for existence checking. */
++  FindFunctionBackedges(F, loopEdgeVec);
++  for(SmallVectorImpl<Edge>::const_iterator eit = loopEdgeVec.begin();
++      eit != loopEdgeVec.end();
++      eit++)
++    loopEdges.insert(*eit);
++
++  /* Calculate partial liveness sets for CFG nodes. */
++  for(auto B = po_iterator<const BasicBlock *>::begin(&F.getEntryBlock());
++      B != po_iterator<const BasicBlock *>::end(&F.getEntryBlock());
++      B++)
++  {
++    /* Calculate live-out set (lines 4-7 of Algorithm 2). */
++    for(succ_const_iterator S = succ_begin(*B); S != succ_end(*B); S++)
++    {
++      // Note: skip self-loop-edges, as adding values from phi-uses of this
++      // block causes use-def violations, and LLVM will complain.  This
++      // shouldn't matter, as phi-defs will cover this case.
++      if(*S == *B) continue;
++
++      phiUses(*B, *S, live);
++      if(!loopEdges.count(Edge(*B, *S)))
++      {
++        phiDefs(*S, phiDefined);
++        for(std::set<const Value *>::const_iterator vi = liveIn[*S]->begin();
++            vi != liveIn[*S]->end();
++            vi++)
++          if(!phiDefined.count(*vi) && includeVal(*vi)) live.insert(*vi);
++        phiDefined.clear();
++      }
++    }
++    liveOut[*B] = new std::set<const Value *>(live);
++
++    /* Calculate live-in set (lines 8-11 of Algorithm 2). */
++    for(BasicBlock::const_reverse_iterator inst = (*B)->rbegin();
++        inst != (*B)->rend();
++        inst++)
++    {
++      if(isa<PHINode>(&*inst)) break;
++
++      live.erase(&*inst);
++      for(User::const_op_iterator op = inst->op_begin();
++          op != inst->op_end();
++          op++)
++        if(includeVal(*op)) live.insert(*op);
++    }
++    phiDefs(*B, live);
++    liveIn[*B] = new std::set<const Value *>(live);
++
++    live.clear();
++
++    DEBUG(
++      errs() << "  ";
++      (*B)->printAsOperand(errs(), false);
++      errs() << ":\n\r";
++      errs() << "    Live-in:";
++      std::set<const Value *>::const_iterator it;
++      for(it = liveIn[*B]->begin(); it != liveIn[*B]->end(); it++)
++      {
++        errs() << " ";
++        (*it)->printAsOperand(errs(), false);
++      }
++      errs() << "\n\r    Live-out:";
++      for(it = liveOut[*B]->begin(); it != liveOut[*B]->end(); it++)
++      {
++        errs() << " ";
++        (*it)->printAsOperand(errs(), false);
++      }
++      errs() << "\n\r";
++    );
++  }
++}
++
++void LiveValues::constructLoopNestingForest(Function &F)
++{
++  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++  LoopNestingTree *loopNest;
++
++  for(scc_iterator<Function *> scc = scc_begin(&F);
++      scc != scc_end(&F);
++      ++scc)
++  {
++    const std::vector<BasicBlock *> &SCC = *scc;
++    loopNest = new LoopNestingTree(SCC, LI);
++    loopNestingForest.push_back(loopNest);
++
++    DEBUG(
++      errs() << "Loop nesting tree: "
++             << loopNest->size() << " node(s), loop-nesting depth: "
++             << loopNest->depth() << "\n\r";
++      loopNest->print(errs());
++      errs() << "\n\r"
++    );
++  }
++}
++
++void LiveValues::propagateValues(const LoopNestingTree *loopNest)
++{
++  std::set<const Value *> liveLoop;
++  std::set<const Value *> phiDefined;
++
++  /* Iterate over all loop nodes. */
++  for(LoopNestingTree::loop_iterator loop = loopNest->loop_begin();
++      loop != loopNest->loop_end();
++      loop++)
++  {
++    /* Calculate LiveLoop (lines 3 & 4 of Algorithm 3). */
++    phiDefs(*loop, phiDefined);
++    for(std::set<const Value *>::const_iterator it = liveIn[*loop]->begin();
++        it != liveIn[*loop]->end();
++        it++)
++      if(!phiDefined.count(*it) && includeVal(*it))
++        liveLoop.insert(*it);
++
++    /* Propagate values to children (lines 5-8 of Algorithm 3). */
++    for(LoopNestingTree::child_iterator child = loopNest->children_begin(loop);
++        child != loopNest->children_end(loop);
++        child++) {
++      for(std::set<const Value *>::const_iterator it = liveLoop.begin();
++          it != liveLoop.end();
++          it++) {
++        liveIn[*child]->insert(*it);
++        liveOut[*child]->insert(*it);
++      }
++    }
++
++    liveLoop.clear();
++  }
++}
++
++void LiveValues::loopTreeDFS()
++{
++  std::list<LoopNestingTree *>::const_iterator it;
++  for(it = loopNestingForest.begin(); it != loopNestingForest.end(); it++)
++    propagateValues(*it);
++}
++
+Index: lib/Analysis/LoopNestingTree.cpp
+===================================================================
+--- lib/Analysis/LoopNestingTree.cpp	(nonexistent)
++++ lib/Analysis/LoopNestingTree.cpp	(working copy)
+@@ -0,0 +1,148 @@
++#include "llvm/Analysis/LoopNestingTree.h"
++#include "llvm/Support/raw_ostream.h"
++
++using namespace llvm;
++
++///////////////////////////////////////////////////////////////////////////////
++// Public API
++///////////////////////////////////////////////////////////////////////////////
++
++LoopNestingTree::LoopNestingTree(const std::vector<BasicBlock *> &SCC,
++                                 const LoopInfo &LI)
++  : _size(1), _depth(1), _root(nullptr)
++{
++  unsigned depth = 1, nodeDepth;
++  const Loop *loop = nullptr;
++  Node *loopHeader = nullptr, *newHeader = nullptr;
++  std::list<Node *> work;
++
++  /* Bootstrap by grabbing the loop of the first basic block encountered. */
++  loop = LI[*SCC.begin()];
++  if(!loop) // Is the SCC actually a loop?
++  {
++    _root = new Node(*SCC.begin(), nullptr, true);
++    return;
++  }
++
++  /* Get header of outermost loop, the tree's root. */
++  while(loop->getLoopDepth() > 1)
++    loop = loop->getParentLoop();
++  _root = new Node(loop->getHeader(), nullptr, true);
++  work.push_back(_root);
++
++  /* Parse the loop-headers of the SCC into the tree. */
++  while(work.size())
++  {
++    loopHeader = work.front();
++    work.pop_front();
++    loop = LI[loopHeader->bb];
++    depth = LI.getLoopDepth(loopHeader->bb);
++    _depth = (depth > _depth ? depth : _depth);
++
++    /* Add children of the loop header. */
++    for(auto bbi = loop->block_begin()++; bbi != loop->block_end(); bbi++)
++    {
++      nodeDepth = LI.getLoopDepth(*bbi);
++      if(nodeDepth == depth) // Regular child node
++      {
++        loopHeader->addChild(new Node(*bbi, loopHeader, false));
++        _size++;
++      }
++      else if(nodeDepth == (depth + 1) && // Header of nested loop
++              LI.isLoopHeader(*bbi))
++      {
++        newHeader = new Node(*bbi, loopHeader, true);
++        loopHeader->addChild(newHeader);
++        work.push_back(newHeader);
++        _size++;
++      }
++    }
++  }
++}
++
++LoopNestingTree::loop_iterator LoopNestingTree::loop_iterator::operator++()
++{
++  loop_iterator me = *this;
++  if(remaining.size())
++  {
++    cur = remaining.front();
++    remaining.pop();
++    addLoopHeaders();
++  }
++  else cur = nullptr;
++  return me;
++}
++
++LoopNestingTree::loop_iterator
++LoopNestingTree::loop_iterator::operator++(int junk)
++{
++  if(remaining.size())
++  {
++    cur = remaining.front();
++    remaining.pop();
++    addLoopHeaders();
++  }
++  else cur = nullptr;
++  return *this;
++}
++
++LoopNestingTree::child_iterator::child_iterator(loop_iterator &parent,
++                                                enum location loc)
++{
++  if(loc == BEGIN) it = parent.cur->children.begin();
++  else it = parent.cur->children.end();
++}
++
++///////////////////////////////////////////////////////////////////////////////
++// Private API
++///////////////////////////////////////////////////////////////////////////////
++
++void LoopNestingTree::print(raw_ostream &O, Node *node, unsigned depth) const
++{
++  for(unsigned i = 0; i < depth; i++) O << " ";
++  node->bb->printAsOperand(O, false);
++  O << "\n\r";
++  if(node->children.size())
++  {
++    for(unsigned i = 0; i < depth; i++) O << " ";
++    O << "\\\n\r";
++
++    for(std::list<Node *>::const_iterator it = node->children.begin();
++        it != node->children.end();
++        it++)
++    {
++      if((*it)->isLoopHeader) print(O, (*it), depth + 1);
++      else
++      {
++        for(unsigned i = 0; i < depth + 1; i++) O << " ";
++        (*it)->bb->printAsOperand(O, false);
++        O << "\n\r";
++      }
++    }
++  }
++}
++
++void LoopNestingTree::deleteRecursive(Node *node)
++{
++  for(std::list<Node *>::iterator it = node->children.begin();
++      it != node->children.end();
++      it++)
++  {
++    if((*it)->isLoopHeader) deleteRecursive(*it);
++    else delete *it;
++  }
++  delete node;
++}
++
++void LoopNestingTree::loop_iterator::addLoopHeaders()
++{
++  if(cur != nullptr)
++  {
++    for(std::list<Node *>::const_iterator it = cur->children.begin();
++        it != cur->children.end();
++        it++)
++      if((*it)->isLoopHeader)
++        remaining.push(*it);
++  }
++}
++
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
 --- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 277823)
@@ -1316,7 +2382,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,686 @@
+@@ -0,0 +1,701 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1356,6 +2422,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +// duplicate locations for live values, including backing stack slots and other
 +// registers.
 +//
++// TODO need to capture architecture-specific live values
++//
 +namespace {
 +class StackTransformMetadata : public MachineFunctionPass {
 +  MachineFunction *MF;
@@ -1388,10 +2456,19 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  typedef std::pair<unsigned, SmallVector<const Value *, 8> > RegValsPair;
 +  typedef std::map<unsigned, SmallVector<const Value *, 8> > RegValsMap;
 +
-+  /// Mapping between stackmaps and the virtual registers saved by the stackmap
++  /// Mapping between stackmaps and virtual registers referenced by the stackmap
 +  typedef std::pair<const MachineInstr *, RegValsMap> SMVregsPair;
 +  typedef std::map<const MachineInstr *, RegValsMap> SMVregsMap;
 +  SMVregsMap SMVregs;
++
++  /// Mapping between stack slots and IR operands
++  typedef std::pair<int, SmallVector<const Value *, 8> > StackValsPair;
++  typedef std::map<int, SmallVector<const Value *, 8> > StackValsMap;
++
++  /// Mapping between stackmaps and stack slots referenced by the stackmap
++  typedef std::pair<const MachineInstr *, StackValsMap> SMStackSlotPair;
++  typedef std::map<const MachineInstr *, StackValsMap> SMStackSlotMap;
++  SMStackSlotMap SMStackSlots;
 +
 +  /// A value's spill location
 +  class SpillLoc {
@@ -1465,8 +2542,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +  /// Find all virtual register operands in a stackmap and collect virtual
 +  /// register/IR value mappings
-+  void findVregOps(const CallInst *IRSM,
-+                   const MachineInstr *MISM);
++  void mapIRToAlloc(const CallInst *IRSM, const MachineInstr *MISM);
 +
 +  /// Unwind live value movement in the series of instructions between a call
 +  /// and a stackmap
@@ -1596,30 +2672,49 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  }
 +}
 +
-+/// Find all virtual register operands in a stackmap and collect virtual
-+/// register/IR value mappings
-+void StackTransformMetadata::findVregOps(const CallInst *IRSM,
-+                                         const MachineInstr *MISM) {
++/// Find all virtual register/ stack slot operands in a stackmap and map them
++/// to the corresponding IR values
++void StackTransformMetadata::mapIRToAlloc(const CallInst *IRSM,
++                                          const MachineInstr *MISM) {
 +  RegValsMap::iterator VregIt;
++  StackValsMap::iterator SSIt;
 +  MachineInstr::const_mop_iterator MOit;
 +  CallInst::const_op_iterator IRit;
 +
-+  // Initialize a new virtual register map for the stackmap
++  // Initialize a new maps for the stackmap
 +  SMVregs.insert(SMVregsPair(MISM, std::move(RegValsMap())));
++  SMStackSlots.insert(SMStackSlotPair(MISM, std::move(StackValsMap())));
 +
++  // Loop over all operands
 +  for(MOit = std::next(MISM->operands_begin(), 2),
 +      IRit = std::next(IRSM->op_begin(), 2);
 +      MOit != MISM->operands_end() && IRit != (IRSM->op_end() - 1);
 +      MOit++, IRit++) {
-+    // Emulate StackMaps::parseOperand to correlate IR and machine operands
-+    if(MOit->isImm()) {
++    if(MOit->isImm()) { // Map IR values to stack slots
++      int FrameIdx = INT32_MAX;
++      const Value *IRVal = IRit->get();
++
 +      switch(MOit->getImm()) {
-+      case DirectMemRefOp: MOit++; MOit++; break;
-+      case IndirectMemRefOp: MOit++; MOit++; MOit++; break;
-+      case ConstantOp: MOit++; break;
-+      default: llvm_unreachable("Unrecognized stackmap operand type."); break;
++      case DirectMemRefOp:
++        MOit++;
++        assert(MOit->isFI() && "Invalid operand type");
++        FrameIdx = MOit->getIndex();
++        MOit++;
++        break;
++      case IndirectMemRefOp:
++        // TODO
++        break;
++      case ConstantOp: MOit++; continue;
++      default: llvm_unreachable("Unrecognized stackmap operand type"); break;
 +      }
-+    } else if(MOit->isReg()) {
++
++      DEBUG(
++        IRVal->printAsOperand(dbgs());
++        dbgs() << ": in stack slot" << MOit->getIndex();
++      );
++
++      // TODO add LLVM IR value/SS to map
++    } else if(MOit->isReg()) { // Map IR values to virtual registers
 +      const Value *IRVal = IRit->get();
 +      unsigned Reg = MOit->getReg();
 +
@@ -1888,7 +2983,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const MachineInstr *MISM = getMISM(*S);
 +
 +    DEBUG(
-+      MISM->dump();
 +      const MachineInstr *MICall = getMICall(*S);
 +      dbgs() << "\nStackmap " << MISM->getOperand(0).getImm() << ":\n";
 +      MISM->dump();
@@ -1901,7 +2995,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    );
 +
 +    // Get all virtual register operands & their associated IR values
-+    findVregOps(IRSM, MISM);
++    mapIRToAlloc(IRSM, MISM);
 +
 +    // Walk from the call to the stackmap, reversing stackmap operand movement
 +    unwindToCall(*S);
@@ -1936,19 +3030,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  {
 +    const MachineInstr *MISM = getMISM(*S);
 +    DEBUG(MISM->dump(););
-+
-+    // Look for & handle register live-out mask
-+    // TODO implement?
-+    for(auto SMOp = MISM->operands_begin(), SMEnd = MISM->operands_end();
-+        SMOp != SMEnd; SMOp++) {
-+      if(SMOp->isRegLiveOut()) {
-+        DEBUG(
-+          dbgs() << "Found register live-out mask:\n";
-+          SMOp->print(dbgs());
-+        );
-+        llvm_unreachable("Unhandled register live-out mask!\n");
-+      }
-+    }
 +
 +    // Iterate over all virtual registers to see which are live for stackmap
 +    const MachineInstr *MICall = getMICall(*S);
@@ -2368,3 +3449,490 @@ Index: lib/Target/X86/X86AsmPrinter.h
  
    const char *getPassName() const override {
      return "X86 Assembly / Object Emitter";
+Index: lib/Transforms/Instrumentation/CMakeLists.txt
+===================================================================
+--- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 277823)
++++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
+@@ -4,6 +4,7 @@
+   DataFlowSanitizer.cpp
+   GCOVProfiling.cpp
+   MemorySanitizer.cpp
++  InsertStackMaps.cpp
+   Instrumentation.cpp
+   InstrProfiling.cpp
+   SafeStack.cpp
+Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
++++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
+@@ -0,0 +1,228 @@
++#include <map>
++#include <set>
++#include <vector>
++#include "llvm/Pass.h"
++#include "llvm/Analysis/LiveValues.h"
++#include "llvm/IR/Dominators.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/IR/Type.h"
++#include "llvm/IR/Module.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "insert-stackmaps"
++
++using namespace llvm;
++
++namespace {
++
++/**
++ * This class instruments equivalence points in the IR with LLVM's stackmap
++ * intrinsic.  This tells the backend to record the locations of IR values
++ * after register allocation in a separate ELF section.
++ */
++class InsertStackMaps : public ModulePass
++{
++public:
++  static char ID;
++  size_t callSiteID;
++  size_t numInstrumented;
++
++  InsertStackMaps() : ModulePass(ID), callSiteID(0), numInstrumented(0) {}
++  ~InsertStackMaps() {}
++
++  /* ModulePass virtual methods */
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const
++  {
++    AU.addRequired<LiveValues>();
++    AU.addRequired<DominatorTreeWrapperPass>();
++    AU.setPreservesCFG();
++  }
++
++  /**
++   * Use liveness analysis to insert stackmap intrinsics into the IR to record
++   * live values at equivalence points.
++   *
++   * Note: currently we only insert stackmaps at function call sites.
++   */
++  virtual bool runOnModule(Module &M)
++  {
++    bool modified = false;
++    std::set<const Value *> *live;
++    std::set<const Value *, ValueComp> sortedLive;
++    std::set<const AllocaInst *> allocas;
++  
++    DEBUG(errs() << "InsertStackMaps: entering module " << M.getName() << "\n\r");
++  
++    this->createSMType(M);
++    if(this->addSMDeclaration(M)) modified = true;
++  
++    /* Iterate over all functions/basic blocks/instructions. */
++    for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
++    {
++      if(f->isDeclaration()) continue;
++  
++      DEBUG(errs() << "InsertStackMaps: entering function "
++                   << f->getName() << "\n\r");
++  
++      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
++      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
++      std::set<const Value *>::const_iterator v, ve;
++  
++      /*
++       * Gather all allocas because the stack transformation runtime must copy
++       * over all local data, and hence they should be recorded in the
++       * stackmaps.  If we're not careful allocas can slip through the cracks
++       * in liveness analysis, e.g.:
++       *
++       *  %arr = alloca [4 x double], align 8
++       *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
++       *  call void (i64, i32, ...) @llvm.experimental.stackmap(i64 1, i32 0, %arrayidx)
++       *
++       * After getting an element pointer, all subsequent accesses to %arr happen
++       * through %arrayidx, hence %arr is not caught by liveness analysis and is
++       * not copied to the destination stack.
++       */
++      allocas.clear();
++      BasicBlock &entry = f->getEntryBlock();
++      for(BasicBlock::iterator i = entry.begin(), ie = entry.end(); i != ie; i++)
++      {
++        const AllocaInst *inst = dyn_cast<AllocaInst>(&*i);
++        if(inst) allocas.insert(inst);
++      }
++  
++      /* Find call sites in the function. */
++      for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
++      {
++        DEBUG(
++          errs() << "InsertStackMaps: entering basic block ";
++          b->printAsOperand(errs(), false);
++          errs() << "\n\r"
++        );
++  
++        for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
++        {
++          CallInst *CI;
++          if((CI = dyn_cast<CallInst>(&*i)) &&
++             !CI->isInlineAsm() &&
++             !isa<IntrinsicInst>(CI))
++          {
++            live = liveVals.getLiveValues(&*i);
++            sortedLive.clear();
++            for(const Value *val : *live) sortedLive.insert(val);
++            for(const AllocaInst *val : allocas)
++              if(DT.dominates(val, CI))
++                sortedLive.insert(val);
++            delete live;
++  
++            DEBUG(
++              const Function *calledFunc;
++  
++              errs() << "  ";
++              CI->printAsOperand(errs(), false);
++              errs() << " ";
++  
++              calledFunc = CI->getCalledFunction();
++              if(calledFunc && calledFunc->hasName())
++              {
++                StringRef name = CI->getCalledFunction()->getName();
++                errs() << name << " " << this->callSiteID;
++              }
++              else errs() << this->callSiteID;
++  
++              errs() << ", " << sortedLive.size() << " live value(s)\n\r   ";
++              for(const Value *val : sortedLive) {
++                errs() << " ";
++                val->printAsOperand(errs(), false);
++              }
++              errs() << "\n\r";
++            );
++  
++            IRBuilder<> builder(CI->getNextNode());
++            std::vector<Value *> args(2);
++            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
++            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++            for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
++              args.push_back((Value*)*v);
++            builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
++            this->numInstrumented++;
++          }
++        }
++      }
++      this->callSiteID = 0;
++    }
++  
++    DEBUG(
++      errs() << "InsertStackMaps: finished module " << M.getName() << ", added "
++             << this->numInstrumented << " stackmaps\n\r";
++    );
++  
++    if(numInstrumented > 0) modified = true;
++  
++    return modified;
++  }
++
++private:
++  /* Name of stack map intrinsic */
++  static const StringRef SMName;
++
++  /* Stack map instruction creation */
++  Function *SMFunc;
++  FunctionType *SMTy; // Used for creating function declaration
++
++  /* Sort values based on name */
++  struct ValueComp {
++    bool operator() (const Value *lhs, const Value *rhs) const
++    { return lhs->getName().compare(rhs->getName()) < 0; }
++  };
++
++  /**
++   * Create the function type for the stack map intrinsic.
++   */
++  void createSMType(const Module &M)
++  {
++    std::vector<Type*> params(2);
++    params[0] = Type::getInt64Ty(M.getContext());
++    params[1] = Type::getInt32Ty(M.getContext());
++    this->SMTy = FunctionType::get(Type::getVoidTy(M.getContext()),
++                                                   ArrayRef<Type*>(params),
++                                                   true);
++  }
++
++  /**
++   * Add the stackmap intrinisic's function declaration if not already present.
++   * Return true if the declaration was added, or false if it's already there.
++   */
++  bool addSMDeclaration(Module &M)
++  {
++    if(!(this->SMFunc = M.getFunction(this->SMName)))
++    {
++      DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n\r");
++      this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
++      this->SMFunc->setCallingConv(CallingConv::C);
++      return true;
++    }
++    else return false;
++  }
++};
++
++} /* end anonymous namespace */
++
++
++char InsertStackMaps::ID = 0;
++const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
++INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
++                      "Instrument equivalence points with stack maps ",
++                      false, false)
++INITIALIZE_PASS_DEPENDENCY(LiveValues)
++INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
++INITIALIZE_PASS_END(InsertStackMaps, "insert-stackmaps",
++                    "Instrument equivalence points with stack maps",
++                    false, false)
++
++namespace llvm {
++  ModulePass *createInsertStackMapsPass() { return new InsertStackMaps(); }
++}
++
+Index: lib/Transforms/Instrumentation/Instrumentation.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 277823)
++++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
+@@ -25,6 +25,7 @@
+   initializeAddressSanitizerModulePass(Registry);
+   initializeBoundsCheckingPass(Registry);
+   initializeGCOVProfilerPass(Registry);
++  initializeInsertStackMapsPass(Registry);
+   initializeInstrProfilingPass(Registry);
+   initializeMemorySanitizerPass(Registry);
+   initializeThreadSanitizerPass(Registry);
+Index: lib/Transforms/Utils/CMakeLists.txt
+===================================================================
+--- lib/Transforms/Utils/CMakeLists.txt	(revision 277823)
++++ lib/Transforms/Utils/CMakeLists.txt	(working copy)
+@@ -28,6 +28,7 @@
+   Mem2Reg.cpp
+   MetaRenamer.cpp
+   ModuleUtils.cpp
++  NameStringLiterals.cpp
+   PromoteMemoryToRegister.cpp
+   SSAUpdater.cpp
+   SimplifyCFG.cpp
+@@ -34,6 +35,7 @@
+   SimplifyIndVar.cpp
+   SimplifyInstructions.cpp
+   SimplifyLibCalls.cpp
++  StaticVarSections.cpp
+   SymbolRewriter.cpp
+   UnifyFunctionExitNodes.cpp
+   Utils.cpp
+Index: lib/Transforms/Utils/NameStringLiterals.cpp
+===================================================================
+--- lib/Transforms/Utils/NameStringLiterals.cpp	(nonexistent)
++++ lib/Transforms/Utils/NameStringLiterals.cpp	(working copy)
+@@ -0,0 +1,96 @@
++#include <ctime>
++#include "llvm/Pass.h"
++#include "llvm/IR/Module.h"
++#include "llvm/IR/GlobalVariable.h"
++#include "llvm/IR/GlobalValue.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "name-string-literals"
++
++using namespace llvm;
++
++namespace
++{
++
++/**
++ * This pass searches for anonymous read-only data for which there is no symbol
++ * and generates a symbol for the data.  This is required by the Popcorn
++ * compiler in order to align the data at link-time.
++ */
++class NameStringLiterals : public ModulePass
++{
++public:
++	static char ID;
++
++  NameStringLiterals() : ModulePass(ID) {}
++  ~NameStringLiterals() {}
++
++	/* ModulePass virtual methods */
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const { AU.setPreservesCFG(); }
++	virtual bool runOnModule(Module &M)
++  {
++    bool modified = false;
++    std::string root, newName;
++    Module::iterator it, ite;
++    Module::global_iterator gl, gle; //for global variables
++
++    DEBUG(errs() << "NameStringLiterals: entering module " << M.getName() << "\n");
++
++    // Iterate over all globals and generate symbol for anonymous string
++    // literals in each module
++    for(gl = M.global_begin(), gle = M.global_end(); gl != gle; gl++) {
++      // DONT NEED TO CHANGE NAME PER-SE just change type
++      // PrivateLinkage does NOT show up in any symbol table in the object file!
++      if(gl->getLinkage() == GlobalValue::PrivateLinkage) {
++        //change Linkage
++        //FROM private unnamed_addr constant [num x i8]
++        //TO global [num x i8]
++        gl->setLinkage(GlobalValue::ExternalLinkage);
++
++        // Make the global's name unique so we don't clash when linking with
++        // other files
++        std::string::size_type minusPath = M.getName().find_last_of('/');
++        root = M.getName().substr(minusPath + 1);
++        std::string::size_type pos = root.find_first_of('.');
++        root = root.substr(0,pos);
++        root += "_" + std::to_string(getTimestamp());
++        newName = root + "_" + gl->getName().str();
++        gl->setName(newName);
++
++        // Also REMOVE unnamed_addr value
++        if(gl->hasUnnamedAddr()) {
++          gl->setUnnamedAddr(false);
++        }
++
++        modified = true;
++
++        DEBUG(errs() << "New anonymous string name: " << newName << "\n";);
++      } else {
++        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
++                     << gl->getLinkage() << "\n");
++      }
++    }
++  
++    return modified;
++  }
++
++private:
++  unsigned long long getTimestamp() 
++  {
++    struct timespec time;
++    clock_gettime(CLOCK_MONOTONIC, &time);
++    return (time.tv_sec * 1000000000UL) | time.tv_nsec;
++  }
++};
++
++} /* end anonymous namespace */
++
++char NameStringLiterals::ID = 0;
++INITIALIZE_PASS(NameStringLiterals, "name-string-literals",
++  "Generate symbols for anonymous string literals", false, false)
++
++namespace llvm {
++  ModulePass *createNameStringLiteralsPass() { return new NameStringLiterals(); }
++}
++
+Index: lib/Transforms/Utils/StaticVarSections.cpp
+===================================================================
+--- lib/Transforms/Utils/StaticVarSections.cpp	(nonexistent)
++++ lib/Transforms/Utils/StaticVarSections.cpp	(working copy)
+@@ -0,0 +1,90 @@
++#include "llvm/Pass.h"
++#include "llvm/IR/Module.h"
++#include "llvm/IR/GlobalVariable.h"
++#include "llvm/IR/GlobalValue.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "static-var-sections"
++
++using namespace llvm;
++
++namespace
++{
++
++/**
++ * This pass searches for static, i.e., module-private, global variables and
++ * modifies their linkage to be in their own sections similarly to other
++ * global variables with the -fdata-sections switch.  By default, LLVM doesn't
++ * apply -fdata-sections to static global variables.
++ */
++class StaticVarSections : public ModulePass
++{
++public:
++	static char ID;
++
++	StaticVarSections() : ModulePass(ID) {}
++	~StaticVarSections() {}
++
++	/* ModulePass virtual methods */
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const { AU.setPreservesCFG(); }
++	virtual bool runOnModule(Module &M)
++  {
++    bool modified = false;
++    Module::iterator it, ite;
++    Module::global_iterator gl, gle; // for global variables
++  
++    DEBUG(errs() << "StaticVarSections: entering module " << M.getName() << "\n");
++  
++    // Iterate over all static globals and place them in their own section
++    for(gl = M.global_begin(), gle = M.global_end(); gl != gle; gl++) {
++      std::string secName = ".";
++      if(gl->isThreadLocal()) secName += "t";
++  
++      if(gl->hasCommonLinkage() &&
++         gl->getName().find(".cache.") != std::string::npos) {
++        gl->setLinkage(GlobalValue::InternalLinkage);
++      }
++  
++      // InternalLinkage is specifically for STATIC variables
++      if(gl->hasInternalLinkage()) {
++        if(gl->isConstant()) {
++          //Belongs in RODATA
++          assert(!gl->isThreadLocal() && "TLS data should not be in .rodata");
++          secName += "rodata.";
++        }
++        else if(gl->getInitializer()->isZeroValue()) {
++          //Belongs in BSS
++          secName += "bss.";
++        }
++        else {
++          //Belongs in DATA
++          secName += "data.";
++        }
++
++        secName += gl->getName().str();
++        gl->setSection(secName);
++        modified = true;
++
++        DEBUG(errs() << *gl << " - new section: " << secName << "\n");
++      } else {
++        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
++                     << gl->getLinkage() << "\n");
++        continue;
++      }
++    }
++    
++    return modified;
++  }
++};
++
++} /* end anonymous namespace */
++
++char StaticVarSections::ID = 0;
++INITIALIZE_PASS(StaticVarSections, "static-var-sections",
++  "Put static variables into separate sections", false, false)
++
++namespace llvm {
++  ModulePass *createStaticVarSectionsPass() { return new StaticVarSections(); }
++}
++
+Index: lib/Transforms/Utils/Utils.cpp
+===================================================================
+--- lib/Transforms/Utils/Utils.cpp	(revision 277823)
++++ lib/Transforms/Utils/Utils.cpp	(working copy)
+@@ -28,7 +28,9 @@
+   initializeLoopSimplifyPass(Registry);
+   initializeLowerInvokePass(Registry);
+   initializeLowerSwitchPass(Registry);
++  initializeNameStringLiteralsPass(Registry);
+   initializePromotePassPass(Registry);
++  initializeStaticVarSectionsPass(Registry);
+   initializeUnifyFunctionExitNodesPass(Registry);
+   initializeInstSimplifierPass(Registry);
+   initializeMetaRenamerPass(Registry);
