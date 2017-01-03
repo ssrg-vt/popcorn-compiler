@@ -11,7 +11,11 @@ Installing clang/LLVM
 
   $ patch -p0 -d /usr/local/popcorn/src/llvm < llvm-3.7.1.patch
 
-3. Build & install LLVM (see [1] for more details)
+3. Patch clang:
+
+  $ patch -p0 -d /usr/local/popcorn/src/llvm/tools/clang < clang-3.7.1.patch
+
+4. Build & install LLVM (see [1] for more details)
 
   $ cd /usr/local/popcorn/src/llvm
   $ mkdir build && cd build
@@ -21,7 +25,7 @@ Installing clang/LLVM
           ..
   $ make install
 
-4. Go get a cup of coffee, this might take an hour or so.  You can speed it up
+5. Go get a cup of coffee, this might take an hour or so.  You can speed it up
    by enabling a parallel build:
 
   $ make -j<# of parallel jobs> install

@@ -137,7 +137,8 @@ def check_for_prerequisites():
         out = _check_for_prerequisite(prereq)
         if out:
             major, minor, micro = [int(v) for v in out.split()[3].split('.')]
-            if not ((major >= 4) and (minor >= 8)):
+            version = major * 10 + minor
+            if not (version >= 48):
                 print('{} 4.8 or higher required to continue'.format(prereq))
                 success = False
         else:
@@ -156,7 +157,8 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
     clang_download_path = os.path.join(llvm_download_path, 'tools/clang')
 
 
-    patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
+    llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
+    clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
 
     cmake_flags = ['-DCMAKE_BUILD_TYPE=Release',
                    '-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
@@ -203,7 +205,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                 sys.exit(1)   
 
         # PATCH LLVM
-        with open(patch_path, 'r') as patch_file:
+        with open(llvm_patch_path, 'r') as patch_file:
 
             try:
                 print("Patching LLVM...")
@@ -220,6 +222,23 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                     print('LLVM patch failed.')
                     sys.exit(1)
 
+        # PATCH CLANG
+        with open(clang_patch_path, 'r') as patch_file:
+
+            try:
+                print("Patching clang...")
+                rv = subprocess.check_call(['patch', '-p0', '-d', 
+                                            clang_download_path],
+                                            stdin=patch_file,
+                                            #stdout=FNULL, 
+                                            stderr=subprocess.STDOUT)
+            except Exception as e:
+                print('Could not patch clang({})!'.format(e))
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('clang patch failed.')
+                    sys.exit(1)
         
         # BUILD AND INSTALL LLVM
         cur_dir = os.getcwd()
