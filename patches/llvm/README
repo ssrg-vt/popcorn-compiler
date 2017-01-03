@@ -12,6 +12,11 @@ below.
 
 # TODO compile the IR once for each architecture?
 
+Note: there are several new files included in the patch.  These are kept
+separately in the src folder (which mimics the LLVM source hierarchy) for ease
+of development, but are also included in the patch (and thus added to LLVM
+during the patch process).
+
 -----------------
 Middle-end passes
 -----------------
