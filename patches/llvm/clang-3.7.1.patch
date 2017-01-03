@@ -1,0 +1,101 @@
+Index: include/clang/Driver/Options.td
+===================================================================
+--- include/clang/Driver/Options.td	(revision 277850)
++++ include/clang/Driver/Options.td	(working copy)
+@@ -1538,6 +1538,7 @@
+ def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
+ def pipe : Flag<["-", "--"], "pipe">,
+   HelpText<"Use pipes between commands, when possible">;
++def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux">, Flags<[CC1Option]>;
+ def prebind__all__twolevel__modules : Flag<["-"], "prebind_all_twolevel_modules">;
+ def prebind : Flag<["-"], "prebind">;
+ def preload : Flag<["-"], "preload">;
+Index: include/clang/Frontend/CodeGenOptions.def
+===================================================================
+--- include/clang/Frontend/CodeGenOptions.def	(revision 277850)
++++ include/clang/Frontend/CodeGenOptions.def	(working copy)
+@@ -158,6 +158,9 @@
+ 
+ CODEGENOPT(EmitLLVMUseLists, 1, 0) ///< Control whether to serialize use-lists.
+ 
++/// Instrument code for migration on Popcorn Linux
++CODEGENOPT(PopcornMigratable, 1, 0)
++
+ /// The user specified number of registers to be used for integral arguments,
+ /// or 0 if unspecified.
+ VALUE_CODEGENOPT(NumRegisterParameters, 32, 0)
+Index: lib/CodeGen/BackendUtil.cpp
+===================================================================
+--- lib/CodeGen/BackendUtil.cpp	(revision 277850)
++++ lib/CodeGen/BackendUtil.cpp	(working copy)
+@@ -39,6 +39,7 @@
+ #include "llvm/Transforms/Instrumentation.h"
+ #include "llvm/Transforms/ObjCARC.h"
+ #include "llvm/Transforms/Scalar.h"
++#include "llvm/Transforms/Utils.h"
+ #include "llvm/Transforms/Utils/SymbolRewriter.h"
+ #include <memory>
+ using namespace clang;
+@@ -271,6 +272,13 @@
+   MPM->add(createRewriteSymbolsPass(DL));
+ }
+ 
++static void addPopcornMigrationPasses(const PassManagerBuilder &Builder,
++                                      legacy::PassManagerBase &PM) {
++  PM.add(createNameStringLiteralsPass());
++  PM.add(createStaticVarSectionsPass());
++  PM.add(createInsertStackMapsPass());
++}
++
+ void EmitAssemblyHelper::CreatePasses() {
+   unsigned OptLevel = CodeGenOpts.OptimizationLevel;
+   CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
+@@ -420,6 +428,20 @@
+     MPM->add(createInstrProfilingPass(Options));
+   }
+ 
++  if (CodeGenOpts.PopcornMigratable) {
++    // If we're optimizing, make sure adding names to string literals, linkage
++    // changes and stackmap insertions happen after all IR optimizations.
++    if(OptLevel > 0) {
++      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
++                             addPopcornMigrationPasses);
++    }
++    else { // Otherwise, add the passes right now
++      MPM->add(createNameStringLiteralsPass());
++      MPM->add(createStaticVarSectionsPass());
++      MPM->add(createInsertStackMapsPass());
++    }
++  }
++
+   PMBuilder.populateModulePassManager(*MPM);
+ }
+ 
+Index: lib/Driver/Tools.cpp
+===================================================================
+--- lib/Driver/Tools.cpp	(revision 277850)
++++ lib/Driver/Tools.cpp	(working copy)
+@@ -4934,6 +4934,10 @@
+       A->render(Args, CmdArgs);
+   }
+ 
++  // Forward Popcorn flags to -cc1
++  if(Args.hasArg(options::OPT_popcorn_migratable))
++    CmdArgs.push_back("-popcorn-migratable");
++
+   // With -save-temps, we want to save the unoptimized bitcode output from the
+   // CompileJobAction, so disable optimizations if they are not already
+   // disabled.
+Index: lib/Frontend/CompilerInvocation.cpp
+===================================================================
+--- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
++++ lib/Frontend/CompilerInvocation.cpp	(working copy)
+@@ -675,6 +675,8 @@
+   Opts.CudaGpuBinaryFileNames =
+       Args.getAllArgValues(OPT_fcuda_include_gpubinary);
+ 
++  Opts.PopcornMigratable = Args.hasArg(OPT_popcorn_migratable);
++
+   return Success;
+ }
+ 

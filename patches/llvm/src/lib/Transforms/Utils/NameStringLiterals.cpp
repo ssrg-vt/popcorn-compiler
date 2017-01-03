@@ -67,7 +67,7 @@ public:
 
         DEBUG(errs() << "New anonymous string name: " << newName << "\n";);
       } else {
-        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
+        DEBUG(errs() << "> " <<  *gl << ", linkage: "
                      << gl->getLinkage() << "\n");
       }
     }

@@ -68,7 +68,7 @@ public:
 
         DEBUG(errs() << *gl << " - new section: " << secName << "\n");
       } else {
-        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
+        DEBUG(errs() << "> " <<  *gl << ", linkage: "
                      << gl->getLinkage() << "\n");
         continue;
       }

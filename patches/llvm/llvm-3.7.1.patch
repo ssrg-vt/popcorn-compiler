@@ -3347,13 +3347,14 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64TargetMachine.cpp	(working copy)
-@@ -61,11 +61,14 @@
+@@ -61,11 +61,15 @@
  EnableLoadStoreOpt("aarch64-load-store-opt", cl::desc("Enable the load/store pair"
                     " optimization pass"), cl::init(true), cl::Hidden);
  
 +// Note: this optimization invalidates stackmaps inserted in the middle-end,
 +// meaning AArch64 binaries are generated with different numbers of stackmaps
 +// versus other backends
++// TODO is this still true with new integrated Popcorn passes?
  static cl::opt<bool>
  EnableAtomicTidy("aarch64-atomic-cfg-tidy", cl::Hidden,
                   cl::desc("Run SimplifyCFG after expanding atomic operations"
@@ -3465,7 +3466,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,233 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -3498,10 +3499,14 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  size_t callSiteID;
 +  size_t numInstrumented;
 +
-+  InsertStackMaps() : ModulePass(ID), callSiteID(0), numInstrumented(0) {}
++  InsertStackMaps() : ModulePass(ID), callSiteID(0), numInstrumented(0) {
++    initializeInsertStackMapsPass(*PassRegistry::getPassRegistry());
++  }
 +  ~InsertStackMaps() {}
 +
 +  /* ModulePass virtual methods */
++  virtual const char *getPassName() const { return "InsertStackMaps"; }
++
 +  virtual void getAnalysisUsage(AnalysisUsage &AU) const
 +  {
 +    AU.addRequired<LiveValues>();
@@ -3534,7 +3539,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  
 +      DEBUG(errs() << "InsertStackMaps: entering function "
 +                   << f->getName() << "\n\r");
-+  
++
 +      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
 +      std::set<const Value *>::const_iterator v, ve;
@@ -3681,6 +3686,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +char InsertStackMaps::ID = 0;
 +const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
++
 +INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
 +                      "Instrument equivalence points with stack maps ",
 +                      false, false)
@@ -3800,7 +3806,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +
 +        DEBUG(errs() << "New anonymous string name: " << newName << "\n";);
 +      } else {
-+        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
++        DEBUG(errs() << "> " <<  *gl << ", linkage: "
 +                     << gl->getLinkage() << "\n");
 +      }
 +    }
@@ -3902,7 +3908,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +
 +        DEBUG(errs() << *gl << " - new section: " << secName << "\n");
 +      } else {
-+        DEBUG(errs() << "> " <<  *gl << "\nLinkage: "
++        DEBUG(errs() << "> " <<  *gl << ", linkage: "
 +                     << gl->getLinkage() << "\n");
 +        continue;
 +      }

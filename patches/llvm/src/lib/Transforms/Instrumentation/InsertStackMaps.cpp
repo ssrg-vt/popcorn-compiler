@@ -30,10 +30,14 @@ public:
   size_t callSiteID;
   size_t numInstrumented;
 
-  InsertStackMaps() : ModulePass(ID), callSiteID(0), numInstrumented(0) {}
+  InsertStackMaps() : ModulePass(ID), callSiteID(0), numInstrumented(0) {
+    initializeInsertStackMapsPass(*PassRegistry::getPassRegistry());
+  }
   ~InsertStackMaps() {}
 
   /* ModulePass virtual methods */
+  virtual const char *getPassName() const { return "InsertStackMaps"; }
+
   virtual void getAnalysisUsage(AnalysisUsage &AU) const
   {
     AU.addRequired<LiveValues>();
@@ -66,7 +70,7 @@ public:
   
       DEBUG(errs() << "InsertStackMaps: entering function "
                    << f->getName() << "\n\r");
-  
+
       LiveValues &liveVals = getAnalysis<LiveValues>(*f);
       DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
       std::set<const Value *>::const_iterator v, ve;
@@ -213,6 +217,7 @@ private:
 
 char InsertStackMaps::ID = 0;
 const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
+
 INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
                       "Instrument equivalence points with stack maps ",
                       false, false)
