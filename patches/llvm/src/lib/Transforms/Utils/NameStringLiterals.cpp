@@ -35,7 +35,8 @@ public:
     Module::iterator it, ite;
     Module::global_iterator gl, gle; //for global variables
 
-    DEBUG(errs() << "NameStringLiterals: entering module " << M.getName() << "\n");
+    DEBUG(errs() << "\n********** Begin NameStringLiterals **********\n"
+                 << "********** Module: " << M.getName() << " **********\n\n");
 
     // Iterate over all globals and generate symbol for anonymous string
     // literals in each module

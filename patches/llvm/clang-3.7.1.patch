@@ -1,3 +1,87 @@
+Index: include/clang/CodeGen/BackendUtil.h
+===================================================================
+--- include/clang/CodeGen/BackendUtil.h	(revision 277850)
++++ include/clang/CodeGen/BackendUtil.h	(working copy)
+@@ -28,7 +28,8 @@
+     Backend_EmitLL,        ///< Emit human-readable LLVM assembly
+     Backend_EmitNothing,   ///< Don't emit anything (benchmarking mode)
+     Backend_EmitMCNull,    ///< Run CodeGen, but don't emit anything
+-    Backend_EmitObj        ///< Emit native object files
++    Backend_EmitObj,       ///< Emit native object files
++    Backend_EmitMultiObj   ///< Emit native object files for multiple ISAs
+   };
+ 
+   void EmitBackendOutput(DiagnosticsEngine &Diags, const CodeGenOptions &CGOpts,
+Index: include/clang/CodeGen/CodeGenAction.h
+===================================================================
+--- include/clang/CodeGen/CodeGenAction.h	(revision 277850)
++++ include/clang/CodeGen/CodeGenAction.h	(working copy)
+@@ -11,6 +11,7 @@
+ #define LLVM_CLANG_CODEGEN_CODEGENACTION_H
+ 
+ #include "clang/Frontend/FrontendAction.h"
++#include "clang/CodeGen/BackendUtil.h"
+ #include <memory>
+ 
+ namespace llvm {
+@@ -20,9 +21,10 @@
+ 
+ namespace clang {
+ class BackendConsumer;
++class CoverageSourceInfo;
+ 
+ class CodeGenAction : public ASTFrontendAction {
+-private:
++protected:
+   unsigned Act;
+   std::unique_ptr<llvm::Module> TheModule;
+   llvm::Module *LinkModule;
+@@ -29,7 +31,6 @@
+   llvm::LLVMContext *VMContext;
+   bool OwnsVMContext;
+ 
+-protected:
+   /// Create a new code generation action.  If the optional \p _VMContext
+   /// parameter is supplied, the action uses it without taking ownership,
+   /// otherwise it creates a fresh LLVM context and takes ownership.
+@@ -37,6 +38,14 @@
+ 
+   bool hasIRSupport() const override;
+ 
++  /// Helpers called in CreateASTConsumer
++  llvm::Module *getLinkModuleToUse(CompilerInstance &CI);
++  CoverageSourceInfo *getCoverageInfo(CompilerInstance &CI);
++
++  /// Helper called in ExecuteAction.  Returns true if the compilation is
++  /// invalid and should therefore be aborted.
++  bool ExecuteActionIRCommon(BackendAction &BA, CompilerInstance &CI);
++
+   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
+                                                  StringRef InFile) override;
+ 
+@@ -98,6 +107,22 @@
+   EmitObjAction(llvm::LLVMContext *_VMContext = nullptr);
+ };
+ 
++/// Emit multiple object files using a single set of IR.  Used by the Popcorn
++/// Linux compiler toolchain.
++class EmitMultiObjAction : public CodeGenAction {
++  virtual void anchor();
++  SmallVector<std::string, 2> Targets;
++  SmallVector<raw_pwrite_stream *, 2> OutFiles;
++  SmallVector<std::shared_ptr<TargetOptions>, 2> TargetOpts;
++  SmallVector<TargetInfo *, 2> TargetInfos;
++protected:
++  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
++                                                 StringRef InFile) override;
++  void ExecuteAction() override;
++public:
++  EmitMultiObjAction(llvm::LLVMContext *_VMContext = nullptr);
++};
++
+ }
+ 
+ #endif
 Index: include/clang/Driver/Options.td
 ===================================================================
 --- include/clang/Driver/Options.td	(revision 277850)
@@ -24,6 +108,18 @@ Index: include/clang/Frontend/CodeGenOptions.def
  /// The user specified number of registers to be used for integral arguments,
  /// or 0 if unspecified.
  VALUE_CODEGENOPT(NumRegisterParameters, 32, 0)
+Index: include/clang/Frontend/FrontendOptions.h
+===================================================================
+--- include/clang/Frontend/FrontendOptions.h	(revision 277850)
++++ include/clang/Frontend/FrontendOptions.h	(working copy)
+@@ -37,6 +37,7 @@
+     EmitLLVMOnly,           ///< Generate LLVM IR, but do not emit anything.
+     EmitCodeGenOnly,        ///< Generate machine code, but don't emit anything.
+     EmitObj,                ///< Emit a .o file.
++    EmitMultiObj,           ///< Emit a .o file for multiple ISAs.
+     FixIt,                  ///< Parse and apply any fixits to the source.
+     GenerateModule,         ///< Generate pre-compiled module.
+     GeneratePCH,            ///< Generate pre-compiled header.
 Index: lib/CodeGen/BackendUtil.cpp
 ===================================================================
 --- lib/CodeGen/BackendUtil.cpp	(revision 277850)
@@ -50,13 +146,12 @@ Index: lib/CodeGen/BackendUtil.cpp
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
-@@ -420,6 +428,20 @@
+@@ -420,6 +428,19 @@
      MPM->add(createInstrProfilingPass(Options));
    }
  
 +  if (CodeGenOpts.PopcornMigratable) {
-+    // If we're optimizing, make sure adding names to string literals, linkage
-+    // changes and stackmap insertions happen after all IR optimizations.
++    // If we're optimizing, add Popcorn passes after all IR optimizations.
 +    if(OptLevel > 0) {
 +      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
 +                             addPopcornMigrationPasses);
@@ -71,6 +166,371 @@ Index: lib/CodeGen/BackendUtil.cpp
    PMBuilder.populateModulePassManager(*MPM);
  }
  
+@@ -570,7 +591,7 @@
+   // Normal mode, emit a .s or .o file by running the code generator. Note,
+   // this also adds codegenerator level optimization passes.
+   TargetMachine::CodeGenFileType CGFT = TargetMachine::CGFT_AssemblyFile;
+-  if (Action == Backend_EmitObj)
++  if (Action == Backend_EmitObj || Action == Backend_EmitMultiObj)
+     CGFT = TargetMachine::CGFT_ObjectFile;
+   else if (Action == Backend_EmitMCNull)
+     CGFT = TargetMachine::CGFT_Null;
+Index: lib/CodeGen/CodeGenAction.cpp
+===================================================================
+--- lib/CodeGen/CodeGenAction.cpp	(revision 277850)
++++ lib/CodeGen/CodeGenAction.cpp	(working copy)
+@@ -41,6 +41,7 @@
+ namespace clang {
+   class BackendConsumer : public ASTConsumer {
+     virtual void anchor();
++  protected:
+     DiagnosticsEngine &Diags;
+     BackendAction Action;
+     const CodeGenOptions &CodeGenOpts;
+@@ -129,7 +130,7 @@
+         LLVMIRGeneration.stopTimer();
+     }
+ 
+-    void HandleTranslationUnit(ASTContext &C) override {
++    void HandleTranslationUnitCommon(ASTContext &C) {
+       {
+         PrettyStackTraceString CrashInfo("Per-file LLVM IR generation");
+         if (llvm::TimePassesIsEnabled)
+@@ -165,7 +166,11 @@
+                 [=](const DiagnosticInfo &DI) { linkerDiagnosticHandler(DI); }))
+           return;
+       }
++    }
+ 
++    void HandleTranslationUnit(ASTContext &C) override {
++      HandleTranslationUnitCommon(C);
++
+       // Install an inline asm handler so that diagnostics get printed through
+       // our diagnostics hooks.
+       LLVMContext &Ctx = TheModule->getContext();
+@@ -261,6 +266,66 @@
+   };
+   
+   void BackendConsumer::anchor() {}
++
++  class MultiBackendConsumer : public BackendConsumer {
++  private:
++    virtual void anchor() override;
++    SmallVector<raw_pwrite_stream *, 2> &AsmOutStreams;
++    const SmallVector<std::shared_ptr<TargetOptions>, 2> &AsmTargetOpts;
++    const SmallVector<TargetInfo *, 2> &AsmTargetInfos;
++  public:
++    MultiBackendConsumer(DiagnosticsEngine &Diags,
++                    const HeaderSearchOptions &HeaderSearchOpts,
++                    const PreprocessorOptions &PPOpts,
++                    const CodeGenOptions &CodeGenOpts,
++                    const SmallVector<std::shared_ptr<TargetOptions>, 2> &TargetOpts,
++                    const LangOptions &LangOpts, bool TimePasses,
++                    const std::string &InFile, llvm::Module *LinkModule,
++                    SmallVector<raw_pwrite_stream *, 2> &OSs, LLVMContext &C,
++                    const SmallVector<TargetInfo *, 2> &TargetInfos,
++                    CoverageSourceInfo *CoverageInfo = nullptr)
++        : BackendConsumer(Backend_EmitMultiObj, Diags, HeaderSearchOpts,
++                          PPOpts, CodeGenOpts, *TargetOpts[0], LangOpts,
++                          TimePasses, InFile, LinkModule, OSs[0], C,
++                          CoverageInfo),
++          AsmOutStreams(OSs), AsmTargetOpts(TargetOpts),
++          AsmTargetInfos(TargetInfos) {}
++
++    void HandleTranslationUnit(ASTContext &C) override {
++      HandleTranslationUnitCommon(C);
++
++      // Install an inline asm handler so that diagnostics get printed through
++      // our diagnostics hooks.
++      LLVMContext &Ctx = TheModule->getContext();
++      LLVMContext::InlineAsmDiagHandlerTy OldHandler =
++        Ctx.getInlineAsmDiagnosticHandler();
++      void *OldContext = Ctx.getInlineAsmDiagnosticContext();
++      Ctx.setInlineAsmDiagnosticHandler(InlineAsmDiagHandler, this);
++
++      LLVMContext::DiagnosticHandlerTy OldDiagnosticHandler =
++          Ctx.getDiagnosticHandler();
++      void *OldDiagnosticContext = Ctx.getDiagnosticContext();
++      Ctx.setDiagnosticHandler(DiagnosticHandler, this);
++
++      for(size_t i = 0; i < AsmTargetOpts.size(); i++) {
++        // Set the module's triple & data layout
++        TheModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
++        TheModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
++
++        // Generate output for the current target
++        EmitBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
++                          AsmTargetInfos[i]->getTargetDescription(),
++                          TheModule.get(), Action, AsmOutStreams[i]);
++      }
++
++      Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
++
++      Ctx.setDiagnosticHandler(OldDiagnosticHandler, OldDiagnosticContext);
++
++    }
++  };
++
++  void MultiBackendConsumer::anchor() {}
+ }
+ 
+ /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
+@@ -626,6 +691,7 @@
+   case Backend_EmitMCNull:
+     return CI.createNullOutputFile();
+   case Backend_EmitObj:
++  case Backend_EmitMultiObj:
+     return CI.createDefaultOutputFile(true, InFile, "o");
+   }
+ 
+@@ -632,13 +698,7 @@
+   llvm_unreachable("Invalid action!");
+ }
+ 
+-std::unique_ptr<ASTConsumer>
+-CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
+-  BackendAction BA = static_cast<BackendAction>(Act);
+-  raw_pwrite_stream *OS = GetOutputStream(CI, InFile, BA);
+-  if (BA != Backend_EmitNothing && !OS)
+-    return nullptr;
+-
++llvm::Module *CodeGenAction::getLinkModuleToUse(CompilerInstance &CI) {
+   llvm::Module *LinkModuleToUse = LinkModule;
+ 
+   // If we were not given a link module, and the user requested that one be
+@@ -662,6 +722,10 @@
+     LinkModuleToUse = ModuleOrErr.get().release();
+   }
+ 
++  return LinkModuleToUse;
++}
++
++CoverageSourceInfo *CodeGenAction::getCoverageInfo(CompilerInstance &CI) {
+   CoverageSourceInfo *CoverageInfo = nullptr;
+   // Add the preprocessor callback only when the coverage mapping is generated.
+   if (CI.getCodeGenOpts().CoverageMapping) {
+@@ -669,6 +733,19 @@
+     CI.getPreprocessor().addPPCallbacks(
+                                     std::unique_ptr<PPCallbacks>(CoverageInfo));
+   }
++  return CoverageInfo;
++}
++
++std::unique_ptr<ASTConsumer>
++CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
++  BackendAction BA = static_cast<BackendAction>(Act);
++  raw_pwrite_stream *OS = GetOutputStream(CI, InFile, BA);
++  if (BA != Backend_EmitNothing && !OS)
++    return nullptr;
++
++  llvm::Module *LinkModuleToUse = getLinkModuleToUse(CI);
++  CoverageSourceInfo *CoverageInfo = getCoverageInfo(CI);
++
+   std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
+       BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
+       CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
+@@ -684,6 +761,42 @@
+   SM.print(nullptr, llvm::errs());
+ }
+ 
++bool CodeGenAction::ExecuteActionIRCommon(BackendAction &BA,
++                                          CompilerInstance &CI) {
++  bool Invalid;
++  SourceManager &SM = CI.getSourceManager();
++  FileID FID = SM.getMainFileID();
++  llvm::MemoryBuffer *MainFile = SM.getBuffer(FID, &Invalid);
++  if (Invalid)
++    return true;
++
++  llvm::SMDiagnostic Err;
++  TheModule = parseIR(MainFile->getMemBufferRef(), Err, *VMContext);
++  if (!TheModule) {
++    // Translate from the diagnostic info to the SourceManager location if
++    // available.
++    // TODO: Unify this with ConvertBackendLocation()
++    SourceLocation Loc;
++    if (Err.getLineNo() > 0) {
++      assert(Err.getColumnNo() >= 0);
++      Loc = SM.translateFileLineCol(SM.getFileEntryForID(FID),
++                                    Err.getLineNo(), Err.getColumnNo() + 1);
++    }
++
++    // Strip off a leading diagnostic code if there is one.
++    StringRef Msg = Err.getMessage();
++    if (Msg.startswith("error: "))
++      Msg = Msg.substr(7);
++
++    unsigned DiagID =
++        CI.getDiagnostics().getCustomDiagID(DiagnosticsEngine::Error, "%0");
++
++    CI.getDiagnostics().Report(Loc, DiagID) << Msg;
++    return true;
++  }
++  return false;
++}
++
+ void CodeGenAction::ExecuteAction() {
+   // If this is an IR file, we have to treat it specially.
+   if (getCurrentFileKind() == IK_LLVM_IR) {
+@@ -693,37 +806,9 @@
+     if (BA != Backend_EmitNothing && !OS)
+       return;
+ 
+-    bool Invalid;
+-    SourceManager &SM = CI.getSourceManager();
+-    FileID FID = SM.getMainFileID();
+-    llvm::MemoryBuffer *MainFile = SM.getBuffer(FID, &Invalid);
+-    if (Invalid)
++    if(ExecuteActionIRCommon(BA, CI))
+       return;
+ 
+-    llvm::SMDiagnostic Err;
+-    TheModule = parseIR(MainFile->getMemBufferRef(), Err, *VMContext);
+-    if (!TheModule) {
+-      // Translate from the diagnostic info to the SourceManager location if
+-      // available.
+-      // TODO: Unify this with ConvertBackendLocation()
+-      SourceLocation Loc;
+-      if (Err.getLineNo() > 0) {
+-        assert(Err.getColumnNo() >= 0);
+-        Loc = SM.translateFileLineCol(SM.getFileEntryForID(FID),
+-                                      Err.getLineNo(), Err.getColumnNo() + 1);
+-      }
+-
+-      // Strip off a leading diagnostic code if there is one.
+-      StringRef Msg = Err.getMessage();
+-      if (Msg.startswith("error: "))
+-        Msg = Msg.substr(7);
+-
+-      unsigned DiagID =
+-          CI.getDiagnostics().getCustomDiagID(DiagnosticsEngine::Error, "%0");
+-
+-      CI.getDiagnostics().Report(Loc, DiagID) << Msg;
+-      return;
+-    }
+     const TargetOptions &TargetOpts = CI.getTargetOpts();
+     if (TheModule->getTargetTriple() != TargetOpts.Triple) {
+       CI.getDiagnostics().Report(SourceLocation(),
+@@ -769,3 +854,119 @@
+ void EmitObjAction::anchor() { }
+ EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
+   : CodeGenAction(Backend_EmitObj, _VMContext) {}
++
++void EmitMultiObjAction::anchor() { }
++EmitMultiObjAction::EmitMultiObjAction(llvm::LLVMContext *_VMContext)
++  : CodeGenAction(Backend_EmitMultiObj, _VMContext) {
++  // TODO make Popcorn targets selectable from command line
++  Targets.push_back("aarch64--linux-gnu");
++  Targets.push_back("x86_64-unknown-linux-gnu");
++}
++
++/// Populate TargetOptions struct for a given triple with Popcorn-compliant
++/// options.
++static void SetupPopcornTargetOps(std::shared_ptr<TargetOptions> &Opts,
++                                  StringRef TripleStr) {
++  llvm::Triple Triple(llvm::Triple::normalize(TripleStr));
++  assert(!Triple.getTriple().empty() && "Invalid target triple");
++
++  Opts->Triple = Triple.getTriple();
++  Opts->ABI = "";
++  Opts->FPMath = "";
++  Opts->FeaturesAsWritten.clear();
++  Opts->LinkerVersion = "";
++  Opts->Reciprocals.clear();
++
++  switch(Triple.getArch()) {
++  case llvm::Triple::ArchType::aarch64:
++    Opts->ABI = "aapcs";
++    Opts->CPU = "generic";
++    Opts->FeaturesAsWritten.push_back("+neon");
++    break;
++  case llvm::Triple::ArchType::x86_64:
++    Opts->CPU = "x86-64";
++    Opts->FeaturesAsWritten.push_back("+sse");
++    Opts->FeaturesAsWritten.push_back("+sse2");
++    break;
++  default: llvm_unreachable("Triple not currently supported on Popcorn");
++  }
++}
++
++static std::string AppendArchName(StringRef File, const TargetInfo *TI) {
++  size_t dot = File.rfind('.');
++  std::string NewFile = File.substr(0, dot);
++  NewFile += "_";
++  NewFile += TI->getTriple().getArchName();
++  NewFile += File.substr(dot, StringRef::npos);
++  return NewFile;
++}
++
++/// Initialize target information & open output streams for each target.
++std::unique_ptr<ASTConsumer>
++EmitMultiObjAction::CreateASTConsumer(CompilerInstance &CI,
++                                      StringRef InFile) {
++  BackendAction BA = Backend_EmitMultiObj;
++
++  // Create target information & output streams for each target.
++  // Note: remove output filename from frontend args, as it will override any
++  // special names we try to specify.
++  CI.getFrontendOpts().OutputFile = ""; // TODO restore this after?
++  for(size_t i = 0; i < Targets.size(); i++) {
++    // Create TargetOptions & TargetInfo for each target
++    std::shared_ptr<TargetOptions> Opts(new TargetOptions);
++    SetupPopcornTargetOps(Opts, Targets[i]);
++    TargetOpts.push_back(Opts);
++    TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
++
++    raw_pwrite_stream *OS;
++    if(i) OS = GetOutputStream(CI, AppendArchName(InFile, TargetInfos[i]), BA);
++    else OS = GetOutputStream(CI, InFile, BA);
++
++    if (!OS) return nullptr;
++    OutFiles.push_back(OS);
++  }
++
++  llvm::Module *LinkModuleToUse = getLinkModuleToUse(CI);
++  CoverageSourceInfo *CoverageInfo = getCoverageInfo(CI);
++
++  // Create a MultiBackendConsumer, which is identical to a BackendConsumer
++  // except that it runs the generated IR through multiple backends.
++  std::unique_ptr<MultiBackendConsumer> Result(new MultiBackendConsumer(
++      CI.getDiagnostics(), CI.getHeaderSearchOpts(),
++      CI.getPreprocessorOpts(), CI.getCodeGenOpts(), TargetOpts,
++      CI.getLangOpts(), CI.getFrontendOpts().ShowTimers, InFile,
++      LinkModuleToUse, OutFiles, *VMContext, TargetInfos, CoverageInfo));
++  BEConsumer = Result.get();
++  return std::move(Result);
++}
++
++void EmitMultiObjAction::ExecuteAction() {
++  // If this is an IR file, we have to treat it specially.
++  if (getCurrentFileKind() == IK_LLVM_IR) {
++    BackendAction BA = Backend_EmitMultiObj;
++    CompilerInstance &CI = getCompilerInstance();
++
++    if(ExecuteActionIRCommon(BA, CI))
++      return;
++
++    for(size_t i = 0; i < Targets.size(); i++) {
++      // Set the module's triple & data layout
++      TheModule->setTargetTriple(Targets[i]);
++      TheModule->setDataLayout(TargetInfos[i]->getTargetDescription());
++
++      // Set up handlers & generate backend output
++      LLVMContext &Ctx = TheModule->getContext();
++      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
++      EmitBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
++                        *TargetOpts[i], CI.getLangOpts(),
++                        TargetInfos[i]->getTargetDescription(),
++                        TheModule.get(), BA, OutFiles[i]);
++    }
++
++    return;
++  }
++
++  // Otherwise follow the normal AST path.
++  this->ASTFrontendAction::ExecuteAction();
++}
++
 Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
@@ -104,3 +564,36 @@ Index: lib/Frontend/CompilerInvocation.cpp
    return Success;
  }
  
+@@ -856,7 +858,11 @@
+     case OPT_emit_codegen_only:
+       Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
+     case OPT_emit_obj:
+-      Opts.ProgramAction = frontend::EmitObj; break;
++      if(Args.hasArg(OPT_popcorn_migratable))
++        Opts.ProgramAction = frontend::EmitMultiObj;
++      else
++        Opts.ProgramAction = frontend::EmitObj;
++      break;
+     case OPT_fixit_EQ:
+       Opts.FixItSuffix = A->getValue();
+       // fall-through!
+@@ -1803,6 +1809,7 @@
+   case frontend::EmitLLVMOnly:
+   case frontend::EmitCodeGenOnly:
+   case frontend::EmitObj:
++  case frontend::EmitMultiObj:
+   case frontend::FixIt:
+   case frontend::GenerateModule:
+   case frontend::GeneratePCH:
+Index: lib/FrontendTool/ExecuteCompilerInvocation.cpp
+===================================================================
+--- lib/FrontendTool/ExecuteCompilerInvocation.cpp	(revision 277850)
++++ lib/FrontendTool/ExecuteCompilerInvocation.cpp	(working copy)
+@@ -50,6 +50,7 @@
+   case EmitLLVMOnly:           return new EmitLLVMOnlyAction();
+   case EmitCodeGenOnly:        return new EmitCodeGenOnlyAction();
+   case EmitObj:                return new EmitObjAction();
++  case EmitMultiObj:           return new EmitMultiObjAction();
+   case FixIt:                  return new FixItAction();
+   case GenerateModule:         return new GenerateModuleAction;
+   case GeneratePCH:            return new GeneratePCHAction;

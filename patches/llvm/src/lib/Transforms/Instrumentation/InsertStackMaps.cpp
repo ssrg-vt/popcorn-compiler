@@ -57,8 +57,9 @@ public:
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
     std::set<const AllocaInst *> allocas;
-  
-    DEBUG(errs() << "InsertStackMaps: entering module " << M.getName() << "\n\r");
+
+    DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
+                 << "********** Module: " << M.getName() << "**********\n\n");
   
     this->createSMType(M);
     if(this->addSMDeclaration(M)) modified = true;
@@ -69,7 +70,7 @@ public:
       if(f->isDeclaration()) continue;
   
       DEBUG(errs() << "InsertStackMaps: entering function "
-                   << f->getName() << "\n\r");
+                   << f->getName() << "\n");
 
       LiveValues &liveVals = getAnalysis<LiveValues>(*f);
       DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
@@ -103,7 +104,7 @@ public:
         DEBUG(
           errs() << "InsertStackMaps: entering basic block ";
           b->printAsOperand(errs(), false);
-          errs() << "\n\r"
+          errs() << "\n"
         );
   
         for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
@@ -136,12 +137,12 @@ public:
               }
               else errs() << this->callSiteID;
   
-              errs() << ", " << sortedLive.size() << " live value(s)\n\r   ";
+              errs() << ", " << sortedLive.size() << " live value(s)\n   ";
               for(const Value *val : sortedLive) {
                 errs() << " ";
                 val->printAsOperand(errs(), false);
               }
-              errs() << "\n\r";
+              errs() << "\n";
             );
   
             IRBuilder<> builder(CI->getNextNode());
@@ -160,7 +161,7 @@ public:
   
     DEBUG(
       errs() << "InsertStackMaps: finished module " << M.getName() << ", added "
-             << this->numInstrumented << " stackmaps\n\r";
+             << this->numInstrumented << " stackmaps\n\n";
     );
   
     if(numInstrumented > 0) modified = true;
@@ -203,7 +204,7 @@ private:
   {
     if(!(this->SMFunc = M.getFunction(this->SMName)))
     {
-      DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n\r");
+      DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n");
       this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
       this->SMFunc->setCallingConv(CallingConv::C);
       return true;

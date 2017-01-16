@@ -34,7 +34,8 @@ public:
     Module::iterator it, ite;
     Module::global_iterator gl, gle; // for global variables
   
-    DEBUG(errs() << "StaticVarSections: entering module " << M.getName() << "\n");
+    DEBUG(errs() << "\n********** Beginning StaticVarSections **********\n"
+                 << "********** Module: " << M.getName() << " **********\n\n");
   
     // Iterate over all static globals and place them in their own section
     for(gl = M.global_begin(), gle = M.global_end(); gl != gle; gl++) {

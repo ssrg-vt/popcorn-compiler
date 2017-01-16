@@ -54,25 +54,26 @@ void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const
 
 bool LiveValues::runOnFunction(Function &F)
 {
-  DEBUG(errs() << "LiveValues: beginning live-value analysis\n\r"
-                  "LiveValues: performing bottom-up dataflow analysis\n\r");
+  DEBUG(errs() << "\n********** Beginning LiveValues **********\n"
+               << "********** Function: " << F.getName() << "\n\n"
+                  "LiveValues: performing bottom-up dataflow analysis\n");
 
   /* 1. Compute partial liveness sets using a postorder traversal. */
   dagDFS(F);
 
-  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n\r");
+  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n");
 
   /* 2. Construct loop-nesting forest. */
   constructLoopNestingForest(F);
 
-  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n\r");
+  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n");
 
   /* 3. Propagate live variables within loop bodies. */
   loopTreeDFS();
 
   DEBUG(
     print(errs(), F.getParent());
-    errs() << "LiveValues: finished analysis\n\r"
+    errs() << "LiveValues: finished analysis\n"
   );
 
   return false;
@@ -85,7 +86,7 @@ void LiveValues::print(raw_ostream &O, const Module *M) const
   const BasicBlock *bb;
   const std::set<const Value *> *vals;
 
-  O << "LiveValues: results of live-value analysis\n\r";
+  O << "LiveValues: results of live-value analysis\n";
 
   for(bbIt = liveIn.cbegin(); bbIt != liveIn.cend(); bbIt++)
   {
@@ -94,14 +95,14 @@ void LiveValues::print(raw_ostream &O, const Module *M) const
 
     bbIt->first->printAsOperand(O, false, M);
 
-    O << "\n\r  Live-in:";
+    O << "\n  Live-in:";
     for(valIt = vals->cbegin(); valIt != vals->cend(); valIt++)
     {
       O << " ";
       (*valIt)->printAsOperand(O, false, M);
     }
 
-    O << "\n\r  Live-out:";
+    O << "\n  Live-out:";
     for(valIt = liveOut.at(bb)->cbegin();
         valIt != liveOut.at(bb)->cend();
         valIt++)
@@ -110,7 +111,7 @@ void LiveValues::print(raw_ostream &O, const Module *M) const
       (*valIt)->printAsOperand(O, false, M);
     }
 
-    O << "\n\r";
+    O << "\n";
   }
 }
 
@@ -277,7 +278,7 @@ void LiveValues::dagDFS(Function &F)
     DEBUG(
       errs() << "  ";
       (*B)->printAsOperand(errs(), false);
-      errs() << ":\n\r";
+      errs() << ":\n";
       errs() << "    Live-in:";
       std::set<const Value *>::const_iterator it;
       for(it = liveIn[*B]->begin(); it != liveIn[*B]->end(); it++)
@@ -285,13 +286,13 @@ void LiveValues::dagDFS(Function &F)
         errs() << " ";
         (*it)->printAsOperand(errs(), false);
       }
-      errs() << "\n\r    Live-out:";
+      errs() << "\n    Live-out:";
       for(it = liveOut[*B]->begin(); it != liveOut[*B]->end(); it++)
       {
         errs() << " ";
         (*it)->printAsOperand(errs(), false);
       }
-      errs() << "\n\r";
+      errs() << "\n";
     );
   }
 }
@@ -312,9 +313,9 @@ void LiveValues::constructLoopNestingForest(Function &F)
     DEBUG(
       errs() << "Loop nesting tree: "
              << loopNest->size() << " node(s), loop-nesting depth: "
-             << loopNest->depth() << "\n\r";
+             << loopNest->depth() << "\n";
       loopNest->print(errs());
-      errs() << "\n\r"
+      errs() << "\n"
     );
   }
 }

@@ -1000,7 +1000,7 @@ Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
 +++ lib/Analysis/LiveValues.cpp	(working copy)
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,363 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -1057,25 +1057,26 @@ Index: lib/Analysis/LiveValues.cpp
 +
 +bool LiveValues::runOnFunction(Function &F)
 +{
-+  DEBUG(errs() << "LiveValues: beginning live-value analysis\n\r"
-+                  "LiveValues: performing bottom-up dataflow analysis\n\r");
++  DEBUG(errs() << "\n********** Beginning LiveValues **********\n"
++               << "********** Function: " << F.getName() << "\n\n"
++                  "LiveValues: performing bottom-up dataflow analysis\n");
 +
 +  /* 1. Compute partial liveness sets using a postorder traversal. */
 +  dagDFS(F);
 +
-+  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n\r");
++  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n");
 +
 +  /* 2. Construct loop-nesting forest. */
 +  constructLoopNestingForest(F);
 +
-+  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n\r");
++  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n");
 +
 +  /* 3. Propagate live variables within loop bodies. */
 +  loopTreeDFS();
 +
 +  DEBUG(
 +    print(errs(), F.getParent());
-+    errs() << "LiveValues: finished analysis\n\r"
++    errs() << "LiveValues: finished analysis\n"
 +  );
 +
 +  return false;
@@ -1088,7 +1089,7 @@ Index: lib/Analysis/LiveValues.cpp
 +  const BasicBlock *bb;
 +  const std::set<const Value *> *vals;
 +
-+  O << "LiveValues: results of live-value analysis\n\r";
++  O << "LiveValues: results of live-value analysis\n";
 +
 +  for(bbIt = liveIn.cbegin(); bbIt != liveIn.cend(); bbIt++)
 +  {
@@ -1097,14 +1098,14 @@ Index: lib/Analysis/LiveValues.cpp
 +
 +    bbIt->first->printAsOperand(O, false, M);
 +
-+    O << "\n\r  Live-in:";
++    O << "\n  Live-in:";
 +    for(valIt = vals->cbegin(); valIt != vals->cend(); valIt++)
 +    {
 +      O << " ";
 +      (*valIt)->printAsOperand(O, false, M);
 +    }
 +
-+    O << "\n\r  Live-out:";
++    O << "\n  Live-out:";
 +    for(valIt = liveOut.at(bb)->cbegin();
 +        valIt != liveOut.at(bb)->cend();
 +        valIt++)
@@ -1113,7 +1114,7 @@ Index: lib/Analysis/LiveValues.cpp
 +      (*valIt)->printAsOperand(O, false, M);
 +    }
 +
-+    O << "\n\r";
++    O << "\n";
 +  }
 +}
 +
@@ -1280,7 +1281,7 @@ Index: lib/Analysis/LiveValues.cpp
 +    DEBUG(
 +      errs() << "  ";
 +      (*B)->printAsOperand(errs(), false);
-+      errs() << ":\n\r";
++      errs() << ":\n";
 +      errs() << "    Live-in:";
 +      std::set<const Value *>::const_iterator it;
 +      for(it = liveIn[*B]->begin(); it != liveIn[*B]->end(); it++)
@@ -1288,13 +1289,13 @@ Index: lib/Analysis/LiveValues.cpp
 +        errs() << " ";
 +        (*it)->printAsOperand(errs(), false);
 +      }
-+      errs() << "\n\r    Live-out:";
++      errs() << "\n    Live-out:";
 +      for(it = liveOut[*B]->begin(); it != liveOut[*B]->end(); it++)
 +      {
 +        errs() << " ";
 +        (*it)->printAsOperand(errs(), false);
 +      }
-+      errs() << "\n\r";
++      errs() << "\n";
 +    );
 +  }
 +}
@@ -1315,9 +1316,9 @@ Index: lib/Analysis/LiveValues.cpp
 +    DEBUG(
 +      errs() << "Loop nesting tree: "
 +             << loopNest->size() << " node(s), loop-nesting depth: "
-+             << loopNest->depth() << "\n\r";
++             << loopNest->depth() << "\n";
 +      loopNest->print(errs());
-+      errs() << "\n\r"
++      errs() << "\n"
 +    );
 +  }
 +}
@@ -1471,11 +1472,11 @@ Index: lib/Analysis/LoopNestingTree.cpp
 +{
 +  for(unsigned i = 0; i < depth; i++) O << " ";
 +  node->bb->printAsOperand(O, false);
-+  O << "\n\r";
++  O << "\n";
 +  if(node->children.size())
 +  {
 +    for(unsigned i = 0; i < depth; i++) O << " ";
-+    O << "\\\n\r";
++    O << "\\\n";
 +
 +    for(std::list<Node *>::const_iterator it = node->children.begin();
 +        it != node->children.end();
@@ -1486,7 +1487,7 @@ Index: lib/Analysis/LoopNestingTree.cpp
 +      {
 +        for(unsigned i = 0; i < depth + 1; i++) O << " ";
 +        (*it)->bb->printAsOperand(O, false);
-+        O << "\n\r";
++        O << "\n";
 +      }
 +    }
 +  }
@@ -3466,7 +3467,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,234 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -3526,8 +3527,9 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    std::set<const Value *> *live;
 +    std::set<const Value *, ValueComp> sortedLive;
 +    std::set<const AllocaInst *> allocas;
-+  
-+    DEBUG(errs() << "InsertStackMaps: entering module " << M.getName() << "\n\r");
++
++    DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
++                 << "********** Module: " << M.getName() << "**********\n\n");
 +  
 +    this->createSMType(M);
 +    if(this->addSMDeclaration(M)) modified = true;
@@ -3538,7 +3540,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +      if(f->isDeclaration()) continue;
 +  
 +      DEBUG(errs() << "InsertStackMaps: entering function "
-+                   << f->getName() << "\n\r");
++                   << f->getName() << "\n");
 +
 +      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
@@ -3572,7 +3574,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +        DEBUG(
 +          errs() << "InsertStackMaps: entering basic block ";
 +          b->printAsOperand(errs(), false);
-+          errs() << "\n\r"
++          errs() << "\n"
 +        );
 +  
 +        for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
@@ -3605,12 +3607,12 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +              }
 +              else errs() << this->callSiteID;
 +  
-+              errs() << ", " << sortedLive.size() << " live value(s)\n\r   ";
++              errs() << ", " << sortedLive.size() << " live value(s)\n   ";
 +              for(const Value *val : sortedLive) {
 +                errs() << " ";
 +                val->printAsOperand(errs(), false);
 +              }
-+              errs() << "\n\r";
++              errs() << "\n";
 +            );
 +  
 +            IRBuilder<> builder(CI->getNextNode());
@@ -3629,7 +3631,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  
 +    DEBUG(
 +      errs() << "InsertStackMaps: finished module " << M.getName() << ", added "
-+             << this->numInstrumented << " stackmaps\n\r";
++             << this->numInstrumented << " stackmaps\n\n";
 +    );
 +  
 +    if(numInstrumented > 0) modified = true;
@@ -3672,7 +3674,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  {
 +    if(!(this->SMFunc = M.getFunction(this->SMName)))
 +    {
-+      DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n\r");
++      DEBUG(errs() << "Adding stackmap function declaration to " << M.getName() << "\n");
 +      this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
 +      this->SMFunc->setCallingConv(CallingConv::C);
 +      return true;
@@ -3736,7 +3738,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 ===================================================================
 --- lib/Transforms/Utils/NameStringLiterals.cpp	(nonexistent)
 +++ lib/Transforms/Utils/NameStringLiterals.cpp	(working copy)
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,97 @@
 +#include <ctime>
 +#include "llvm/Pass.h"
 +#include "llvm/IR/Module.h"
@@ -3774,7 +3776,8 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +    Module::iterator it, ite;
 +    Module::global_iterator gl, gle; //for global variables
 +
-+    DEBUG(errs() << "NameStringLiterals: entering module " << M.getName() << "\n");
++    DEBUG(errs() << "\n********** Begin NameStringLiterals **********\n"
++                 << "********** Module: " << M.getName() << " **********\n\n");
 +
 +    // Iterate over all globals and generate symbol for anonymous string
 +    // literals in each module
@@ -3837,7 +3840,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 ===================================================================
 --- lib/Transforms/Utils/StaticVarSections.cpp	(nonexistent)
 +++ lib/Transforms/Utils/StaticVarSections.cpp	(working copy)
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,91 @@
 +#include "llvm/Pass.h"
 +#include "llvm/IR/Module.h"
 +#include "llvm/IR/GlobalVariable.h"
@@ -3874,7 +3877,8 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +    Module::iterator it, ite;
 +    Module::global_iterator gl, gle; // for global variables
 +  
-+    DEBUG(errs() << "StaticVarSections: entering module " << M.getName() << "\n");
++    DEBUG(errs() << "\n********** Beginning StaticVarSections **********\n"
++                 << "********** Module: " << M.getName() << " **********\n\n");
 +  
 +    // Iterate over all static globals and place them in their own section
 +    for(gl = M.global_begin(), gle = M.global_end(); gl != gle; gl++) {

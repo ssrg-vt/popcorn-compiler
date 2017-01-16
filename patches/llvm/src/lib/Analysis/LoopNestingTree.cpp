@@ -101,11 +101,11 @@ void LoopNestingTree::print(raw_ostream &O, Node *node, unsigned depth) const
 {
   for(unsigned i = 0; i < depth; i++) O << " ";
   node->bb->printAsOperand(O, false);
-  O << "\n\r";
+  O << "\n";
   if(node->children.size())
   {
     for(unsigned i = 0; i < depth; i++) O << " ";
-    O << "\\\n\r";
+    O << "\\\n";
 
     for(std::list<Node *>::const_iterator it = node->children.begin();
         it != node->children.end();
@@ -116,7 +116,7 @@ void LoopNestingTree::print(raw_ostream &O, Node *node, unsigned depth) const
       {
         for(unsigned i = 0; i < depth + 1; i++) O << " ";
         (*it)->bb->printAsOperand(O, false);
-        O << "\n\r";
+        O << "\n";
       }
     }
   }
