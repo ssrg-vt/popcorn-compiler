@@ -55,7 +55,7 @@ void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const
 bool LiveValues::runOnFunction(Function &F)
 {
   DEBUG(errs() << "\n********** Beginning LiveValues **********\n"
-               << "********** Function: " << F.getName() << "\n\n"
+               << "********** Function: " << F.getName() << " **********\n\n"
                   "LiveValues: performing bottom-up dataflow analysis\n");
 
   /* 1. Compute partial liveness sets using a postorder traversal. */
@@ -98,7 +98,7 @@ void LiveValues::print(raw_ostream &O, const Module *M) const
     O << "\n  Live-in:";
     for(valIt = vals->cbegin(); valIt != vals->cend(); valIt++)
     {
-      O << " ";
+      O << "\n    ";
       (*valIt)->printAsOperand(O, false, M);
     }
 
@@ -107,7 +107,7 @@ void LiveValues::print(raw_ostream &O, const Module *M) const
         valIt != liveOut.at(bb)->cend();
         valIt++)
     {
-      O << " ";
+      O << "\n    ";
       (*valIt)->printAsOperand(O, false, M);
     }
 
@@ -283,13 +283,13 @@ void LiveValues::dagDFS(Function &F)
       std::set<const Value *>::const_iterator it;
       for(it = liveIn[*B]->begin(); it != liveIn[*B]->end(); it++)
       {
-        errs() << " ";
+        errs() << "\n      ";
         (*it)->printAsOperand(errs(), false);
       }
       errs() << "\n    Live-out:";
       for(it = liveOut[*B]->begin(); it != liveOut[*B]->end(); it++)
       {
-        errs() << " ";
+        errs() << "\n      ";
         (*it)->printAsOperand(errs(), false);
       }
       errs() << "\n";

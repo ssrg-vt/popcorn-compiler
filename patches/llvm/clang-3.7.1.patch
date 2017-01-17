@@ -59,7 +59,7 @@ Index: include/clang/CodeGen/CodeGenAction.h
    std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                   StringRef InFile) override;
  
-@@ -98,6 +107,22 @@
+@@ -98,6 +107,23 @@
    EmitObjAction(llvm::LLVMContext *_VMContext = nullptr);
  };
  
@@ -72,6 +72,7 @@ Index: include/clang/CodeGen/CodeGenAction.h
 +  SmallVector<std::shared_ptr<TargetOptions>, 2> TargetOpts;
 +  SmallVector<TargetInfo *, 2> TargetInfos;
 +protected:
++  bool InitializeTargets(CompilerInstance &CI, StringRef InFile);
 +  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
 +                                                 StringRef InFile) override;
 +  void ExecuteAction() override;
@@ -82,15 +83,54 @@ Index: include/clang/CodeGen/CodeGenAction.h
  }
  
  #endif
+Index: include/clang/CodeGen/PopcornUtil.h
+===================================================================
+--- include/clang/CodeGen/PopcornUtil.h	(nonexistent)
++++ include/clang/CodeGen/PopcornUtil.h	(working copy)
+@@ -0,0 +1,33 @@
++//===--- PopcornUtil.h - Popcorn Linux Utilities ----------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_CLANG_CODEGEN_POPCORNUTIL_H
++#define LLVM_CLANG_CODEGEN_POPCORNUTIL_H
++
++#include <llvm/ADT/StringRef.h>
++#include <llvm/IR/Module.h>
++#include <clang/Basic/TargetOptions.h>
++#include <memory>
++
++namespace clang {
++namespace Popcorn {
++
++/// Return a TargetOptions with features appropriate for Popcorn Linux
++std::shared_ptr<TargetOptions> GetPopcornTargetOpts(llvm::StringRef TripleStr);
++
++/// Strip target-specific CPUs & features from function attributes in all
++/// functions in the module.  This silences warnings from the compiler about
++/// unsupported target features when compiling the IR for multiple
++/// architectures.
++void StripTargetAttributes(llvm::Module &M);
++
++} /* end Popcorn namespace */
++} /* end clang namespace */
++
++#endif
 Index: include/clang/Driver/Options.td
 ===================================================================
 --- include/clang/Driver/Options.td	(revision 277850)
 +++ include/clang/Driver/Options.td	(working copy)
-@@ -1538,6 +1538,7 @@
+@@ -1538,6 +1538,8 @@
  def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
  def pipe : Flag<["-", "--"], "pipe">,
    HelpText<"Use pipes between commands, when possible">;
-+def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux">, Flags<[CC1Option]>;
++def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux (implies -popcorn-alignment)">, Flags<[CC1Option]>;
++def popcorn_alignment : Flag<["-"], "popcorn-alignment">, HelpText<"Run Popcorn passes to prepare for link-time symbol alignment">, Flags<[CC1Option]>;
  def prebind__all__twolevel__modules : Flag<["-"], "prebind_all_twolevel_modules">;
  def prebind : Flag<["-"], "prebind">;
  def preload : Flag<["-"], "preload">;
@@ -98,12 +138,15 @@ Index: include/clang/Frontend/CodeGenOptions.def
 ===================================================================
 --- include/clang/Frontend/CodeGenOptions.def	(revision 277850)
 +++ include/clang/Frontend/CodeGenOptions.def	(working copy)
-@@ -158,6 +158,9 @@
+@@ -158,6 +158,12 @@
  
  CODEGENOPT(EmitLLVMUseLists, 1, 0) ///< Control whether to serialize use-lists.
  
 +/// Instrument code for migration on Popcorn Linux
 +CODEGENOPT(PopcornMigratable, 1, 0)
++
++/// Adjust linkage of global values for symbol alignment
++CODEGENOPT(PopcornAlignment, 1, 0)
 +
  /// The user specified number of registers to be used for integral arguments,
  /// or 0 if unspecified.
@@ -132,41 +175,53 @@ Index: lib/CodeGen/BackendUtil.cpp
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include <memory>
  using namespace clang;
-@@ -271,6 +272,13 @@
+@@ -271,6 +272,17 @@
    MPM->add(createRewriteSymbolsPass(DL));
  }
  
 +static void addPopcornMigrationPasses(const PassManagerBuilder &Builder,
 +                                      legacy::PassManagerBase &PM) {
++  PM.add(createInsertStackMapsPass());
++}
++
++static void addPopcornAlignmentPasses(const PassManagerBuilder &Builder,
++                                      legacy::PassManagerBase &PM) {
 +  PM.add(createNameStringLiteralsPass());
 +  PM.add(createStaticVarSectionsPass());
-+  PM.add(createInsertStackMapsPass());
 +}
 +
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
-@@ -420,6 +428,19 @@
+@@ -420,6 +432,27 @@
      MPM->add(createInstrProfilingPass(Options));
    }
  
++  // Popcorn Compiler Toolchain passes -- add after IR optimization passes
++
++  // Passes to instrument the IR to generate stack transformation metadata.
 +  if (CodeGenOpts.PopcornMigratable) {
-+    // If we're optimizing, add Popcorn passes after all IR optimizations.
-+    if(OptLevel > 0) {
++    if (OptLevel > 0)
 +      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
 +                             addPopcornMigrationPasses);
-+    }
-+    else { // Otherwise, add the passes right now
++    else MPM->add(createInsertStackMapsPass());
++  }
++
++  // Passes adjust global symbol linkage for alignment.
++  if (CodeGenOpts.PopcornAlignment) {
++    if (OptLevel > 0)
++      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
++                             addPopcornAlignmentPasses);
++    else {
 +      MPM->add(createNameStringLiteralsPass());
 +      MPM->add(createStaticVarSectionsPass());
-+      MPM->add(createInsertStackMapsPass());
 +    }
 +  }
 +
    PMBuilder.populateModulePassManager(*MPM);
  }
  
-@@ -570,7 +591,7 @@
+@@ -570,7 +603,7 @@
    // Normal mode, emit a .s or .o file by running the code generator. Note,
    // this also adds codegenerator level optimization passes.
    TargetMachine::CodeGenFileType CGFT = TargetMachine::CGFT_AssemblyFile;
@@ -175,11 +230,31 @@ Index: lib/CodeGen/BackendUtil.cpp
      CGFT = TargetMachine::CGFT_ObjectFile;
    else if (Action == Backend_EmitMCNull)
      CGFT = TargetMachine::CGFT_Null;
+Index: lib/CodeGen/CMakeLists.txt
+===================================================================
+--- lib/CodeGen/CMakeLists.txt	(revision 277850)
++++ lib/CodeGen/CMakeLists.txt	(working copy)
+@@ -73,6 +73,7 @@
+   MicrosoftCXXABI.cpp
+   ModuleBuilder.cpp
+   ObjectFilePCHContainerOperations.cpp
++  PopcornUtil.cpp
+   SanitizerMetadata.cpp
+   TargetInfo.cpp
+ 
 Index: lib/CodeGen/CodeGenAction.cpp
 ===================================================================
 --- lib/CodeGen/CodeGenAction.cpp	(revision 277850)
 +++ lib/CodeGen/CodeGenAction.cpp	(working copy)
-@@ -41,6 +41,7 @@
+@@ -18,6 +18,7 @@
+ #include "clang/CodeGen/BackendUtil.h"
+ #include "clang/CodeGen/CodeGenAction.h"
+ #include "clang/CodeGen/ModuleBuilder.h"
++#include "clang/CodeGen/PopcornUtil.h"
+ #include "clang/Frontend/CompilerInstance.h"
+ #include "clang/Frontend/FrontendDiagnostic.h"
+ #include "clang/Lex/Preprocessor.h"
+@@ -41,6 +42,7 @@
  namespace clang {
    class BackendConsumer : public ASTConsumer {
      virtual void anchor();
@@ -187,7 +262,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      DiagnosticsEngine &Diags;
      BackendAction Action;
      const CodeGenOptions &CodeGenOpts;
-@@ -129,7 +130,7 @@
+@@ -129,7 +131,7 @@
          LLVMIRGeneration.stopTimer();
      }
  
@@ -196,7 +271,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        {
          PrettyStackTraceString CrashInfo("Per-file LLVM IR generation");
          if (llvm::TimePassesIsEnabled)
-@@ -165,7 +166,11 @@
+@@ -165,7 +167,11 @@
                  [=](const DiagnosticInfo &DI) { linkerDiagnosticHandler(DI); }))
            return;
        }
@@ -208,7 +283,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +266,66 @@
+@@ -261,6 +267,66 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -253,12 +328,12 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      void *OldDiagnosticContext = Ctx.getDiagnosticContext();
 +      Ctx.setDiagnosticHandler(DiagnosticHandler, this);
 +
++      // Remove target-specific attributes from all functions
++      Popcorn::StripTargetAttributes(*TheModule);
++
 +      for(size_t i = 0; i < AsmTargetOpts.size(); i++) {
-+        // Set the module's triple & data layout
 +        TheModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
 +        TheModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
-+
-+        // Generate output for the current target
 +        EmitBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
 +                          AsmTargetInfos[i]->getTargetDescription(),
 +                          TheModule.get(), Action, AsmOutStreams[i]);
@@ -275,7 +350,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +691,7 @@
+@@ -626,6 +692,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -283,7 +358,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +698,7 @@
+@@ -632,13 +699,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -298,7 +373,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +722,10 @@
+@@ -662,6 +723,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -309,7 +384,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +733,19 @@
+@@ -669,6 +734,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -329,7 +404,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +761,42 @@
+@@ -684,6 +762,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -372,7 +447,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +806,9 @@
+@@ -693,37 +807,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -411,7 +486,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +854,119 @@
+@@ -769,3 +855,103 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -424,35 +499,6 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  Targets.push_back("x86_64-unknown-linux-gnu");
 +}
 +
-+/// Populate TargetOptions struct for a given triple with Popcorn-compliant
-+/// options.
-+static void SetupPopcornTargetOps(std::shared_ptr<TargetOptions> &Opts,
-+                                  StringRef TripleStr) {
-+  llvm::Triple Triple(llvm::Triple::normalize(TripleStr));
-+  assert(!Triple.getTriple().empty() && "Invalid target triple");
-+
-+  Opts->Triple = Triple.getTriple();
-+  Opts->ABI = "";
-+  Opts->FPMath = "";
-+  Opts->FeaturesAsWritten.clear();
-+  Opts->LinkerVersion = "";
-+  Opts->Reciprocals.clear();
-+
-+  switch(Triple.getArch()) {
-+  case llvm::Triple::ArchType::aarch64:
-+    Opts->ABI = "aapcs";
-+    Opts->CPU = "generic";
-+    Opts->FeaturesAsWritten.push_back("+neon");
-+    break;
-+  case llvm::Triple::ArchType::x86_64:
-+    Opts->CPU = "x86-64";
-+    Opts->FeaturesAsWritten.push_back("+sse");
-+    Opts->FeaturesAsWritten.push_back("+sse2");
-+    break;
-+  default: llvm_unreachable("Triple not currently supported on Popcorn");
-+  }
-+}
-+
 +static std::string AppendArchName(StringRef File, const TargetInfo *TI) {
 +  size_t dot = File.rfind('.');
 +  std::string NewFile = File.substr(0, dot);
@@ -462,20 +508,15 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  return NewFile;
 +}
 +
-+/// Initialize target information & open output streams for each target.
-+std::unique_ptr<ASTConsumer>
-+EmitMultiObjAction::CreateASTConsumer(CompilerInstance &CI,
-+                                      StringRef InFile) {
-+  BackendAction BA = Backend_EmitMultiObj;
-+
-+  // Create target information & output streams for each target.
++/// Create target information & output streams for each target.
++bool EmitMultiObjAction::InitializeTargets(CompilerInstance &CI,
++                                           StringRef InFile) {
 +  // Note: remove output filename from frontend args, as it will override any
 +  // special names we try to specify.
 +  CI.getFrontendOpts().OutputFile = ""; // TODO restore this after?
++  BackendAction BA = Backend_EmitMultiObj;
 +  for(size_t i = 0; i < Targets.size(); i++) {
-+    // Create TargetOptions & TargetInfo for each target
-+    std::shared_ptr<TargetOptions> Opts(new TargetOptions);
-+    SetupPopcornTargetOps(Opts, Targets[i]);
++    std::shared_ptr<TargetOptions> Opts = Popcorn::GetPopcornTargetOpts(Targets[i]);
 +    TargetOpts.push_back(Opts);
 +    TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
 +
@@ -483,10 +524,18 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    if(i) OS = GetOutputStream(CI, AppendArchName(InFile, TargetInfos[i]), BA);
 +    else OS = GetOutputStream(CI, InFile, BA);
 +
-+    if (!OS) return nullptr;
++    if (!OS) return false;
 +    OutFiles.push_back(OS);
 +  }
 +
++  return true;
++}
++
++/// Initialize target information & open output streams for each target.
++std::unique_ptr<ASTConsumer>
++EmitMultiObjAction::CreateASTConsumer(CompilerInstance &CI,
++                                      StringRef InFile) {
++  if(!InitializeTargets(CI, InFile)) return nullptr;
 +  llvm::Module *LinkModuleToUse = getLinkModuleToUse(CI);
 +  CoverageSourceInfo *CoverageInfo = getCoverageInfo(CI);
 +
@@ -504,18 +553,28 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +void EmitMultiObjAction::ExecuteAction() {
 +  // If this is an IR file, we have to treat it specially.
 +  if (getCurrentFileKind() == IK_LLVM_IR) {
-+    BackendAction BA = Backend_EmitMultiObj;
++    // Initialize targets here because we never called CreateASTConsumer
 +    CompilerInstance &CI = getCompilerInstance();
++    StringRef OutFile = getCurrentFile();
++    BackendAction BA = Backend_EmitMultiObj;
 +
-+    if(ExecuteActionIRCommon(BA, CI))
++    if(!InitializeTargets(CI, OutFile)) {
++      // TODO add diagnostics saying we couldn't initialize targets
 +      return;
++    }
 +
++    if(ExecuteActionIRCommon(BA, CI)) {
++      // TODO add diagnostics saying we couldn't do common IR work
++      return;
++    }
++
++    // Remove target-specific attributes from all functions
++    Popcorn::StripTargetAttributes(*TheModule);
++
++    // Emit machine code for all specified architectures
 +    for(size_t i = 0; i < Targets.size(); i++) {
-+      // Set the module's triple & data layout
 +      TheModule->setTargetTriple(Targets[i]);
 +      TheModule->setDataLayout(TargetInfos[i]->getTargetDescription());
-+
-+      // Set up handlers & generate backend output
 +      LLVMContext &Ctx = TheModule->getContext();
 +      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
 +      EmitBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
@@ -531,21 +590,100 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  this->ASTFrontendAction::ExecuteAction();
 +}
 +
+Index: lib/CodeGen/PopcornUtil.cpp
+===================================================================
+--- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
++++ lib/CodeGen/PopcornUtil.cpp	(working copy)
+@@ -0,0 +1,64 @@
++//===--- PopcornUtil.cpp - LLVM Popcorn Linux Utilities -------------------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#include <clang/CodeGen/PopcornUtil.h>
++#include <llvm/ADT/Triple.h>
++#include <llvm/ADT/SmallVector.h>
++
++using namespace clang;
++using namespace llvm;
++
++/// Target-specific function attributes
++SmallVector<std::string, 2> TargetAttributes = {
++  "target-cpu",
++  "target-features"
++};
++
++std::shared_ptr<TargetOptions>
++Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
++  Triple Triple(Triple::normalize(TripleStr));
++  assert(!Triple.getTriple().empty() && "Invalid target triple");
++
++  std::shared_ptr<TargetOptions> Opts(new TargetOptions);
++  Opts->Triple = Triple.getTriple();
++  Opts->ABI = "";
++  Opts->FPMath = "";
++  Opts->FeaturesAsWritten.clear();
++  Opts->LinkerVersion = "";
++  Opts->Reciprocals.clear();
++
++  switch(Triple.getArch()) {
++  case Triple::ArchType::aarch64:
++    Opts->ABI = "aapcs";
++    Opts->CPU = "generic";
++    Opts->FeaturesAsWritten.push_back("+neon");
++    break;
++  case Triple::ArchType::x86_64:
++    Opts->CPU = "x86-64";
++    Opts->FeaturesAsWritten.push_back("+sse");
++    Opts->FeaturesAsWritten.push_back("+sse2");
++    break;
++  default: llvm_unreachable("Triple not currently supported on Popcorn");
++  }
++
++  return Opts;
++}
++
++void Popcorn::StripTargetAttributes(Module &M) {
++  for(Function &F : M) {
++    AttrBuilder AB(F.getAttributes(), AttributeSet::FunctionIndex);
++    for(std::string &Attr : TargetAttributes) {
++      if(F.hasFnAttribute(Attr))
++        AB.removeAttribute(Attr);
++    }
++    F.setAttributes(
++      AttributeSet::get(F.getContext(), AttributeSet::FunctionIndex, AB));
++  }
++}
++
 Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,15 @@
+@@ -4934,6 +4934,25 @@
        A->render(Args, CmdArgs);
    }
  
-+  // Forward Popcorn flags to -cc1 and add -finstrument-functions to insert
-+  // migration points
++  // Forward Popcorn & other standard compiler flags to -cc1 to generate
++  // multi-ISA binaries
 +  if(Args.hasArg(options::OPT_popcorn_migratable)) {
++    // Forward Popcorn migratable flag and add -finstrument-functions to insert
++    // migration points
++    CmdArgs.push_back("-finstrument-functions");
 +    CmdArgs.push_back("-ffunction-sections");
 +    CmdArgs.push_back("-fdata-sections");
-+    CmdArgs.push_back("-finstrument-functions");
 +    CmdArgs.push_back("-popcorn-migratable");
++    CmdArgs.push_back("-popcorn-alignment");
++  }
++  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
++    // Forward Popcorn alignment flag and add -f*-sections flags for symbol
++    // alignment
++    CmdArgs.push_back("-ffunction-sections");
++    CmdArgs.push_back("-fdata-sections");
++    CmdArgs.push_back("-popcorn-alignment");
 +  }
 +
    // With -save-temps, we want to save the unoptimized bitcode output from the
@@ -555,16 +693,17 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -675,6 +675,8 @@
+@@ -675,6 +675,9 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
 +  Opts.PopcornMigratable = Args.hasArg(OPT_popcorn_migratable);
++  Opts.PopcornAlignment = Args.hasArg(OPT_popcorn_alignment);
 +
    return Success;
  }
  
-@@ -856,7 +858,11 @@
+@@ -856,7 +859,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -577,7 +716,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1809,7 @@
+@@ -1803,6 +1810,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:
