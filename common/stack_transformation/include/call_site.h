@@ -10,7 +10,11 @@
 
 #include <stdint.h>
 
-/* Function address & starting offset in unwind information section. */
+/*
+ * Function address & starting offset in unwind information section.  Used for
+ * finding unwinding information for PCs which do not directly correspond to a
+ * call site.
+ */
 typedef struct __attribute__((__packed__)) unwind_addr {
   uint64_t addr; /* function address */
   uint32_t num_unwind;
@@ -18,10 +22,19 @@ typedef struct __attribute__((__packed__)) unwind_addr {
 } unwind_addr;
 
 /* Stack location for callee-saved register. Encodes offset from FBP. */
+// Note: these records are referenced both by unwind_addr and call_site
+// structures
 typedef struct __attribute__((__packed__)) unwind_loc {
   uint16_t reg; /* which register is saved onto the stack */
   int16_t offset; /* offset from FBP where register contents were spilled */
 } unwind_loc;
+
+// TODO currently we encode some function-specific information into the call
+// site record (e.g., fbp_offset).  This information is duplicated when there
+// are multiple stack maps in a given function.  Should we offload fbp_offset,
+// num_unwind & unwind_offset into a separate section and store an index into
+// that section here?  It may adversely affect cache behavior in terms of
+// pointer chasing but will reduce the size of these records.
 
 #define EMPTY_CALL_SITE \
   ((call_site){ \
@@ -31,24 +44,23 @@ typedef struct __attribute__((__packed__)) unwind_loc {
     .num_unwind = 0, \
     .unwind_offset = 0, \
     .num_live = 0, \
-    .live_offset = 0 \
+    .live_offset = 0, \
+    .num_arch_const = 0, \
+    .arch_const_offset = 0, \
+    .padding = UINT16_MAX \
   })
-
-// TODO currently we encode some function-specific information into the call
-// site record (e.g., fbp_offset).  This information is duplicated when there
-// are multiple stack maps in a given function.  Should we offload fbp_offset,
-// num_unwind & unwind_offset into a separate section and store an index into
-// that section here?  It may adversely affect cache behavior in terms of
-// pointer chasing but will reduce the size of these records.
 
 typedef struct __attribute__((__packed__)) call_site {
   uint64_t id; /* call site ID -- maps sites across binaries */
   uint64_t addr; /* call site return address */
   uint32_t fbp_offset; /* frame pointer offset from top of stack */
-  uint32_t num_unwind; /* number of registers saved by the function */
-  uint32_t unwind_offset; /* beginning of unwinding info records in unwind info section */
-  uint32_t num_live; /* number of live values at site */
+  uint16_t num_unwind; /* number of registers saved by the function */
+  uint64_t unwind_offset; /* beginning of unwinding info records in unwind info section */
+  uint16_t num_live; /* number of live values at site */
   uint64_t live_offset; /* beginning of live value location records in live value section */
+  uint16_t num_arch_const; /* number of arch-specific constants at site */
+  uint64_t arch_const_offset; /* beginning of arch-specific constant records in constant section */
+  uint16_t padding; /* Make 4-byte aligned */
 } call_site;
 
 /* Type of location where live value lives. */
@@ -73,8 +85,26 @@ typedef struct __attribute__((__packed__)) call_site_value {
   uint8_t size;
   uint16_t regnum;
   int32_t offset_or_constant;
-  uint32_t pointed_size;
+  uint32_t alloca_size;
 } call_site_value;
+
+/*
+ * An architecture-specific constant's location & value at a call site.  These
+ * are conceptually a reduced version of a call_site_value, but it also
+ * contains the value used to populate the location.
+ */
+typedef struct __attribute__((__packed__)) arch_const_value {
+  /* Location */
+  uint8_t is_ptr : 1;
+  uint8_t bit_pad : 3;
+  uint8_t type : 4;
+  uint8_t size;
+  uint16_t regnum;
+  uint32_t offset;
+
+  /* Value */
+  uint64_t value;
+} arch_const_value;
 
 #endif /* _CALL_SITE_H */
 

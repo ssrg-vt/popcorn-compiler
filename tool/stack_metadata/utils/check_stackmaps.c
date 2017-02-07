@@ -134,21 +134,27 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
     num_records = MIN(sm_a[i].num_records, sm_b[i].num_records);
     for(j = 0; j < num_records; j++)
     {
-      func_a = sm_a[i].stack_sizes[sm_a[i].stack_maps[j].func_idx].func_addr;
+      const stack_size_record *ssr;
+
+      ssr = &sm_a[i].stack_size_records[sm_a[i].stack_map_records[j].func_idx];
+      func_a = ssr->func_addr;
       sym_a = get_sym_by_addr(a->e, func_a, STT_FUNC);
       sym_a_name = get_sym_name(a->e, sym_a);
-      func_b = sm_b[i].stack_sizes[sm_b[i].stack_maps[j].func_idx].func_addr;
+
+      ssr = &sm_b[i].stack_size_records[sm_b[i].stack_map_records[j].func_idx];
+      func_b = ssr->func_addr;
       sym_b = get_sym_by_addr(b->e, func_b, STT_FUNC);
       sym_b_name = get_sym_name(b->e, sym_b);
 
       /*
-       * Errors here indicate stackmaps inside of different functions.
+       * Errors here indicate stackmaps inside of different functions, or
+       * function misalignments.
        */
       if(func_a != func_b)
       {
         snprintf(buf, BUF_SIZE,
                  "stackmap %lu corresponds to different functions "
-                 "(%s/%lx vs. %s/%lx)", sm_a[i].stack_maps[j].id,
+                 "(%s/%lx vs. %s/%lx)", sm_a[i].stack_map_records[j].id,
                  sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
         ret = INVALID_METADATA;
@@ -160,12 +166,12 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          * non-duplicated records, i.e., ignore backing stack slot locations.
          */
         unsigned num_a = 0, num_b = 0;
-        for(k = 0; k < sm_a[i].stack_maps[j].locations->num; k++)
-          if(!sm_a[i].stack_maps[j].locations->record[k].is_duplicate)
+        for(k = 0; k < sm_a[i].stack_map_records[j].num_locations; k++)
+          if(!sm_a[i].stack_map_records[j].locations[k].is_duplicate)
             num_a++;
 
-        for(k = 0; k < sm_b[i].stack_maps[j].locations->num; k++)
-          if(!sm_b[i].stack_maps[j].locations->record[k].is_duplicate)
+        for(k = 0; k < sm_b[i].stack_map_records[j].num_locations; k++)
+          if(!sm_b[i].stack_map_records[j].locations[k].is_duplicate)
             num_b++;
 
         /*
@@ -176,7 +182,8 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
         {
           snprintf(buf, BUF_SIZE,
                    "stackmap %lu has different numbers of location records "
-                   "(%u vs. %u)", sm_a[i].stack_maps[j].id, num_a, num_b);
+                   "(%u vs. %u)",
+                   sm_a[i].stack_map_records[j].id, num_a, num_b);
           warn(buf);
           ret = INVALID_METADATA;
         }
@@ -188,37 +195,37 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          */
         for(k = 0, l = 0; k < num_a && l < num_b; k++, l++)
         {
-          flag_a = sm_a[i].stack_maps[j].locations->record[k].size;
-          flag_b = sm_b[i].stack_maps[j].locations->record[l].size;
+          flag_a = sm_a[i].stack_map_records[j].locations[k].size;
+          flag_b = sm_b[i].stack_map_records[j].locations[l].size;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "different size (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
 
-          flag_a = sm_a[i].stack_maps[j].locations->record[k].is_ptr;
-          flag_b = sm_b[i].stack_maps[j].locations->record[l].is_ptr;
+          flag_a = sm_a[i].stack_map_records[j].locations[k].is_ptr;
+          flag_b = sm_b[i].stack_map_records[j].locations[l].is_ptr;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched pointer flag (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
 
-          flag_a = sm_a[i].stack_maps[j].locations->record[k].is_alloca;
-          flag_b = sm_b[i].stack_maps[j].locations->record[l].is_alloca;
+          flag_a = sm_a[i].stack_map_records[j].locations[k].is_alloca;
+          flag_b = sm_b[i].stack_map_records[j].locations[l].is_alloca;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched alloca flag (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
@@ -226,22 +233,22 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
 
           if(flag_a && flag_b)
           {
-            size_a = sm_a[i].stack_maps[j].locations->record[k].pointed_size;
-            size_b = sm_b[i].stack_maps[j].locations->record[l].pointed_size;
+            size_a = sm_a[i].stack_map_records[j].locations[k].alloca_size;
+            size_b = sm_b[i].stack_map_records[j].locations[l].alloca_size;
             if(size_a != size_b)
             {
               snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                       "different size (%u vs. %u)",
-                       sym_a_name, sm_a[i].stack_maps[j].id, k, l, flag_a,
-                       flag_b);
+                       sym_a_name, sm_a[i].stack_map_records[j].id, k, l,
+                       flag_a, flag_b);
               warn(buf);
               ret = INVALID_METADATA;
             }
           }
 
           /* Skip backing stack slot records */
-          while(sm_a[i].stack_maps[j].locations->record[k+1].is_duplicate) k++;
-          while(sm_b[i].stack_maps[j].locations->record[l+1].is_duplicate) l++;
+          while(sm_a[i].stack_map_records[j].locations[k+1].is_duplicate) k++;
+          while(sm_b[i].stack_map_records[j].locations[l+1].is_duplicate) l++;
         }
       }
     }

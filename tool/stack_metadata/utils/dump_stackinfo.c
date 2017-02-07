@@ -133,11 +133,13 @@ bool dump_callsite_section(Elf_Scn *scn)
   sites = (call_site *)data->d_buf;
   printf("found %lu entries\n", num_sites);
   for(i = 0; i < num_sites; i++)
-    printf("%lu: 0x%lx, %u, %u unwind entries (offset=%u), "
-           "%u live value(s) (offset=%lu)\n",
+    printf("%lu: 0x%lx, %u, %u unwind entries (offset=%lu), "
+           "%u live value(s) (offset=%lu), "
+           "%u arch-specific constants (offset=%lu)\n",
       sites[i].id, sites[i].addr, sites[i].fbp_offset,
       sites[i].num_unwind, sites[i].unwind_offset,
-      sites[i].num_live, sites[i].live_offset);
+      sites[i].num_live, sites[i].live_offset,
+      sites[i].num_arch_const, sites[i].arch_const_offset);
   printf("\n");
 
   return true;
@@ -165,6 +167,7 @@ bool print_loc_record(call_site_value record)
           record.offset_or_constant);
     break;
   default:
+    printf("unknown type %x\n", record.type);
     return false;
   }
 
@@ -173,11 +176,10 @@ bool print_loc_record(call_site_value record)
 
   if(record.is_ptr)
   {
-    printf(", points to data of size %u byte(s)", record.pointed_size);
     if(record.is_alloca)
-      printf(", is an alloca\n");
+      printf(", is an alloca of size %u byte(s)\n", record.alloca_size);
     else
-      printf("\n");
+      printf(", is a pointer\n");
   }
   else
     printf("\n");
@@ -203,6 +205,46 @@ bool dump_livelocs_section(Elf_Scn *scn)
   {
     printf("%lu: value is ", i);
     if(!print_loc_record(locs[i])) return false;
+  }
+  printf("\n");
+
+  return true;
+}
+
+bool print_const_record(arch_const_value record)
+{
+  switch(record.type) {
+  case SM_REGISTER:
+    printf("in register %u", record.regnum);
+    break;
+  case SM_DIRECT:
+    printf("at register %u + %d", record.regnum, record.offset);
+    break;
+  default:
+    return false;
+  }
+  printf(", value = %ld / 0x%lx\n", record.value, record.value);
+  return true;
+}
+
+bool dump_archconsts_section(Elf_Scn *scn)
+{
+  uint64_t num_consts, i;
+  Elf_Data *data = NULL;
+  GElf_Shdr shdr;
+  arch_const_value *consts;
+
+  if(gelf_getshdr(scn, &shdr) != &shdr) return false;
+  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(!(data = elf_getdata(scn, data))) return false;
+
+  num_consts = shdr.sh_size / shdr.sh_entsize;
+  consts = (arch_const_value *)data->d_buf;
+  printf("found %lu entries\n", num_consts);
+  for(i = 0; i < num_consts; i++)
+  {
+    printf("%lu: value is ", i);
+    if(!print_const_record(consts[i])) return false;
   }
   printf("\n");
 
@@ -272,6 +314,19 @@ ret_t dump_metadata(bin *thebin)
   {
     printf("Reading section %s: ", sec_name);
     if(!dump_livelocs_section(scn))
+    {
+      printf("failed.\n");
+      return READ_ELF_FAILED;
+    }
+  }
+  else return FIND_SECTION_FAILED;
+
+  /* Architecture-specific live value location records */
+  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_ARCH);
+  if((scn = get_section_by_name(thebin->e, sec_name)))
+  {
+    printf("Reading section %s: ", sec_name);
+    if(!dump_archconsts_section(scn))
     {
       printf("failed.\n");
       return READ_ELF_FAILED;

@@ -105,7 +105,7 @@ extern FILE* __log;
 typedef call_site_value variable;
 
 /* Get a variable's size. */
-#define VAR_SIZE( var ) (var->is_alloca ? var->pointed_size : var->size)
+#define VAR_SIZE( var ) (var->is_alloca ? var->alloca_size : var->size)
 
 /* Type of location where value is stored. */
 enum loc_type {

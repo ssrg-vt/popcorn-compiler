@@ -429,11 +429,11 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 
   // TODO hack -- va_list is implemented as a different type for aarch64 &
   // x86-64, and thus has a different size.  Need to handle more gracefully.
-  if(var_src->is_alloca && var_src->pointed_size == 24 &&
-     var_dest->is_alloca && var_dest->pointed_size == 32)
+  if(var_src->is_alloca && VAR_SIZE(var_src) == 24 &&
+     var_dest->is_alloca && VAR_SIZE(var_dest) == 32)
     skip = true;
-  else if(var_src->is_alloca && var_src->pointed_size == 32 &&
-          var_dest->is_alloca && var_dest->pointed_size == 24)
+  else if(var_src->is_alloca && VAR_SIZE(var_src) == 32 &&
+          var_dest->is_alloca && VAR_SIZE(var_dest) == 24)
     skip = true;
   if(skip)
   {

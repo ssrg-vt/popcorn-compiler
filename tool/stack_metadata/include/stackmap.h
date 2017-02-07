@@ -15,63 +15,66 @@
 #include "bin.h"
 #include "call_site.h"
 
-/* Stack map section header. */
-typedef struct __attribute__((__packed__)) sm_header {
-  uint8_t version;
-  uint8_t reserved;
-  uint16_t reserved2;
-} sm_header;
-
 /* A stack size record for a function. */
-typedef struct __attribute__((__packed__)) sm_stack_size_record {
+typedef struct __attribute__((__packed__)) stack_size_record {
   uint64_t func_addr;
   uint64_t stack_size;
-  uint32_t unwind_offset;
   uint32_t num_unwind;
-} sm_stack_size_record;
-
-/* A set of location descriptions. */
-// Note: sizeof(struct sm_locations) will return invalid value
-typedef struct __attribute__((__packed__)) sm_locations {
-  uint16_t num;
-  call_site_value record[0]; /* variable number of records */
-} sm_locations;
+  uint32_t unwind_offset;
+} stack_size_record;
 
 /* A live register across the stack map call. */
-typedef struct __attribute__((__packed__)) sm_live_out_record {
+typedef struct __attribute__((__packed__)) live_out_record {
   uint16_t regnum;
   uint8_t reserved;
   uint8_t size; /* in bytes */
-} sm_live_out_record;
+} live_out_record;
 
-/* A set of live-out records. */
-// Note: sizeof(struct sm_locations) will return invalid value
-typedef struct __attribute__((__packed__)) sm_live_outs {
-  uint16_t num;
-  sm_live_out_record record[0]; /* variable number of records */
-} sm_live_outs;
-
-/* A stack map record. */
-typedef struct __attribute__((__packed__)) sm_stack_map_record {
-  uint64_t id;
-  uint32_t func_idx; /* index into stack_sizes for function information */
+/* A stack map record for a call site. */
+// Note: this doesn't directly mirror on-disk layout, as the on-disk records
+// are variably sized.
+typedef struct __attribute__((__packed__)) stack_map_record {
+  /* Call site header */
+  uint64_t id; /* per-call site ID */
+  uint32_t func_idx; /* index into stack_size_records for function information */
   uint32_t offset; /* offset from beginning of function */
   uint16_t reserved;
-  sm_locations *locations;
-  sm_live_outs *live_outs;
-} sm_stack_map_record;
+
+  /* Live value locations */
+  uint16_t num_locations;
+  call_site_value *locations;
+  uint16_t padding;
+
+  /* Register live-outs */
+  uint16_t num_live_outs;
+  live_out_record *live_outs;
+  uint16_t padding2;
+
+  /* Architecture-specific constants */
+  uint16_t num_arch_consts;
+  arch_const_value *arch_consts;
+} stack_map_record;
 
 /* Per-module stack map information. */
 typedef struct stack_map {
-  struct sm_header header;
+  /* Header */
+  uint8_t version;
+  uint8_t reserved;
+  uint16_t reserved2;
 
+  /* Counts of encoded functions, constants and call site records. */
   uint32_t num_functions;
   uint32_t num_constants;
   uint32_t num_records;
 
-  sm_stack_size_record *stack_sizes;
+  /* Function records */
+  stack_size_record *stack_size_records;
+
+  /* Constant pool entries */
   uint64_t *constants;
-  sm_stack_map_record *stack_maps;
+
+  /* Stack map call site records */
+  stack_map_record *stack_map_records;
 } stack_map;
 
 /**

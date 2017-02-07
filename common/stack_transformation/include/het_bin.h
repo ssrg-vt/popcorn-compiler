@@ -27,6 +27,9 @@
 /* Live variable location record section postfix. */
 #define SECTION_LIVE "live"
 
+/* Architecture-specific constant locations & values. */
+#define SECTION_ARCH "arch_const"
+
 /* Names of starting functions for the main thread & forked threads. */
 // Note: these are specific to musl-libc
 #define START_MAIN "__libc_start_main"
