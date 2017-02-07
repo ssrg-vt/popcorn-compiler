@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/UnwindInfo.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSymbol.h"
@@ -38,7 +37,7 @@ void UnwindInfo::recordUnwindInfo(const MachineFunction &MF) {
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
   CalleeSavedRegisters SavedRegs(CSI.size());
   for(unsigned i = 0; i < CSI.size(); i++) {
-    SavedRegs[i].DwarfReg = StackMaps::getDwarfRegNum(CSI[i].getReg(), TRI);
+    SavedRegs[i].DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
     SavedRegs[i].Offset = MFI->getObjectOffset(CSI[i].getFrameIdx()) + FBPOff;
   }
 
@@ -59,7 +58,7 @@ void UnwindInfo::addRegisterUnwindInfo(const MachineFunction &MF,
          "Cannot add register restore information -- function not found");
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
   FuncCalleeSaved[FuncSym].push_back(
-    RegOffset(StackMaps::getDwarfRegNum(MachineReg, TRI), Offset));
+    RegOffset(TRI->getDwarfRegNum(MachineReg, false), Offset));
 }
 
 void UnwindInfo::emitUnwindInfo(MCStreamer &OS) {
