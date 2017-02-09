@@ -2472,8 +2472,8 @@ Index: lib/CodeGen/StackMaps.cpp
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
-+///   uint32 : Offset into Unwinding Section
 +///   uint32 : Number of Unwinding Entries
++///   uint32 : Offset into Unwinding Section
  /// }
 -void StackMaps::emitFunctionFrameRecords(MCStreamer &OS) {
 +void StackMaps::emitFunctionFrameRecords(MCStreamer &OS,
@@ -2490,8 +2490,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +      const UnwindInfo::FuncUnwindInfo &FUI = UI->getUnwindInfo(FR.first);
 +      DEBUG(dbgs() << " unwind info start: " << FUI.SecOffset
 +                   << " (" << FUI.NumUnwindRecord << " entries)\n");
-+      OS.EmitIntValue(FUI.SecOffset, 4);
 +      OS.EmitIntValue(FUI.NumUnwindRecord, 4);
++      OS.EmitIntValue(FUI.SecOffset, 4);
 +    }
 +    else OS.EmitIntValue(0, 8);
    }

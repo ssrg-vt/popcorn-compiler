@@ -486,7 +486,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +855,103 @@
+@@ -769,3 +855,109 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -513,7 +513,12 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +                                           StringRef InFile) {
 +  // Note: remove output filename from frontend args, as it will override any
 +  // special names we try to specify.
-+  CI.getFrontendOpts().OutputFile = ""; // TODO restore this after?
++  std::string OutFile(InFile);
++  if(CI.getFrontendOpts().OutputFile != "") {
++    OutFile = CI.getFrontendOpts().OutputFile;
++    CI.getFrontendOpts().OutputFile = "";
++  }
++
 +  BackendAction BA = Backend_EmitMultiObj;
 +  for(size_t i = 0; i < Targets.size(); i++) {
 +    std::shared_ptr<TargetOptions> Opts = Popcorn::GetPopcornTargetOpts(Targets[i]);
@@ -521,12 +526,13 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
 +
 +    raw_pwrite_stream *OS;
-+    if(i) OS = GetOutputStream(CI, AppendArchName(InFile, TargetInfos[i]), BA);
-+    else OS = GetOutputStream(CI, InFile, BA);
++    if(i) OS = GetOutputStream(CI, AppendArchName(OutFile, TargetInfos[i]), BA);
++    else OS = GetOutputStream(CI, OutFile, BA);
 +
 +    if (!OS) return false;
 +    OutFiles.push_back(OS);
 +  }
++  CI.getFrontendOpts().OutputFile = OutFile;
 +
 +  return true;
 +}
@@ -693,17 +699,24 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -675,6 +675,9 @@
+@@ -675,6 +675,16 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
 +  Opts.PopcornMigratable = Args.hasArg(OPT_popcorn_migratable);
 +  Opts.PopcornAlignment = Args.hasArg(OPT_popcorn_alignment);
 +
++  // TODO: the Popcorn compiler doesn't currently support vectorization
++  if(Opts.PopcornMigratable) {
++    Opts.VectorizeBB = 0;
++    Opts.VectorizeLoop = 0;
++    Opts.VectorizeSLP = 0;
++  }
++
    return Success;
  }
  
-@@ -856,7 +859,11 @@
+@@ -856,7 +866,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -716,7 +729,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1810,7 @@
+@@ -1803,6 +1817,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:
