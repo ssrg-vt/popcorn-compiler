@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/CodeGen/VirtRegMap.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -744,7 +745,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
       unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
       MachineConstant *MC;
-      MachineLiveReg MLR(0, false, true);
+      MachineLiveReg MLR(0, false);
 
       // Detect virtual registers live across but not included in the stackmap
       if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
@@ -778,6 +779,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
               def->dump();
             }
           );
+          llvm_unreachable("Unhandled architecture-specific register");
         }
       }
       // Detect virtual registers mapped to stack slots not in stackmap
@@ -795,6 +797,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
           }
         );
         // TODO add arch-specific stack slot information to machine function
+        llvm_unreachable("Unhandled architecture-specific stack slot (vreg)");
       }
     }
 
@@ -808,6 +811,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
         // TODO add arch-specific stack slot information to machine function
         // TODO does this imply an alloca that wasn't captured in the stackmap?
         // I think this is a live value analysis bug...
+        llvm_unreachable("Unhandled architecture-specific stack slot");
       }
     }
 

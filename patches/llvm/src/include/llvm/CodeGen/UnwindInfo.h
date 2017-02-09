@@ -66,6 +66,7 @@ public:
 
   /// \bried Clear all saved unwinding information
   void reset() {
+    Emitted = false;
     FuncCalleeSaved.clear();
     FuncUnwindMetadata.clear();
   }

@@ -481,7 +481,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
  #include "llvm/IR/DebugLoc.h"
  #include "llvm/IR/Metadata.h"
  #include "llvm/Support/Allocator.h"
-@@ -145,6 +147,16 @@
+@@ -145,6 +147,12 @@
    /// True if the function includes any inline assembly.
    bool HasInlineAsm;
  
@@ -491,14 +491,10 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +  /// Architecture-specific live value locations for each stackmap
 +  InstToArchLiveValues SMArchSpecificLocs;
 +
-+  // TODO do we want to keep a separate list of stack slots in SMDuplicateLocs
-+  // & SMArchSpecificLocs so we don't have to search through them but can
-+  // instead update the values transparently?
-+
    MachineFunction(const MachineFunction &) = delete;
    void operator=(const MachineFunction&) = delete;
  public:
-@@ -457,6 +469,9 @@
+@@ -457,6 +465,9 @@
      return Mask;
    }
  
@@ -508,7 +504,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
    /// allocateMemRefsArray - Allocate an array to hold MachineMemOperand
    /// pointers.  This array is owned by the MachineFunction.
    MachineInstr::mmo_iterator allocateMemRefsArray(unsigned long Num);
-@@ -488,6 +503,39 @@
+@@ -488,6 +499,39 @@
    /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
    /// base.
    MCSymbol *getPICBaseSymbol() const;
@@ -642,11 +638,12 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +229,21 @@
+@@ -213,10 +229,22 @@
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
  
-+  // TODO create API to abstract out Register location creation code
++  /// Get stackmap information for register location
++  void getRegLocation(unsigned Phys, unsigned &Dwarf, unsigned &Offset) const;
 +
 +  /// Get pointer typing information for stackmap operand
 +  void getPointerInfo(const Value *Op, const DataLayout &DL, bool &isPtr,
@@ -665,7 +662,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
-@@ -226,6 +253,9 @@
+@@ -226,6 +254,9 @@
    /// registers that need to be recorded in the stackmap.
    LiveOutVec parseRegisterLiveOutMask(const uint32_t *Mask) const;
  
@@ -675,7 +672,7 @@ Index: include/llvm/CodeGen/StackMaps.h
    /// This should be called by the MC lowering code _immediately_ before
    /// lowering the MI to an MCInst. It records where the operands for the
    /// instruction are stored, and outputs a label to record the offset of
-@@ -240,7 +270,7 @@
+@@ -240,7 +271,7 @@
    void emitStackmapHeader(MCStreamer &OS);
  
    /// \brief Emit the function frame record for each function.
@@ -688,7 +685,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,267 @@
+@@ -0,0 +1,259 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -701,7 +698,6 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +#ifndef LLVM_CODEGEN_STACKTRANFORMTYPES_H
 +#define LLVM_CODEGEN_STACKTRANFORMTYPES_H
 +
-+#include <llvm/MC/MCSymbol.h>
 +#include <cstdint>
 +#include <map>
 +#include <memory>
@@ -844,14 +840,11 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  /// Types & attributes
 +  enum Type Type;
 +  bool Duplicate;
-+  bool ArchSpecific;
 +
-+  MachineLiveLoc(enum Type Type = None,
-+                 bool Duplicate = false,
-+                 bool ArchSpecific = false)
-+    : Type(Type), Duplicate(Duplicate), ArchSpecific(ArchSpecific) {}
++  MachineLiveLoc(enum Type Type = None, bool Duplicate = false)
++    : Type(Type), Duplicate(Duplicate) {}
 +  MachineLiveLoc(const MachineLiveLoc &M)
-+    : Type(M.Type), Duplicate(M.Duplicate), ArchSpecific(M.ArchSpecific) {}
++    : Type(M.Type), Duplicate(M.Duplicate) {}
 +};
 +
 +/// MachineLiveReg - a live value stored in a register.  Stores the register
@@ -859,10 +852,8 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +class MachineLiveReg : public MachineLiveLoc {
 +public:
 +  MachineLiveReg(unsigned Reg = UINT32_MAX,
-+                 bool Duplicate = false,
-+                 bool ArchSpecific = false)
-+    : MachineLiveLoc(MachineLiveLoc::Register, Duplicate, ArchSpecific),
-+      Reg(Reg) {}
++                 bool Duplicate = false)
++    : MachineLiveLoc(MachineLiveLoc::Register, Duplicate), Reg(Reg) {}
 +  MachineLiveReg(const MachineLiveReg &M) : MachineLiveLoc(M), Reg(M.Reg) {}
 +
 +  virtual MachineLiveLoc *copy() const
@@ -891,10 +882,8 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +class MachineLiveStackSlot : public MachineLiveLoc {
 +public:
 +  MachineLiveStackSlot(int StackSlot = INT32_MIN,
-+                       bool Duplicate = false,
-+                       bool ArchSpecific = false)
-+    : MachineLiveLoc(MachineLiveLoc::StackSlot, Duplicate, ArchSpecific),
-+      StackSlot(StackSlot) {}
++                       bool Duplicate = false)
++    : MachineLiveLoc(MachineLiveLoc::StackSlot, Duplicate), StackSlot(StackSlot) {}
 +  MachineLiveStackSlot(const MachineLiveStackSlot &M)
 +    : MachineLiveLoc(M), StackSlot(M.StackSlot) {}
 +
@@ -960,7 +949,7 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 ===================================================================
 --- include/llvm/CodeGen/UnwindInfo.h	(nonexistent)
 +++ include/llvm/CodeGen/UnwindInfo.h	(working copy)
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,112 @@
 +//===----------------- UnwindInfo.h - UnwindInfo ---------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1029,6 +1018,7 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +
 +  /// \bried Clear all saved unwinding information
 +  void reset() {
++    Emitted = false;
 +    FuncCalleeSaved.clear();
 +    FuncUnwindMetadata.clear();
 +  }
@@ -2114,13 +2104,25 @@ Index: lib/CodeGen/StackMaps.cpp
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
-@@ -84,32 +86,107 @@
+@@ -29,6 +31,12 @@
+ 
+ #define DEBUG_TYPE "stackmaps"
+ 
++#define TYPE_AND_FLAGS(type, ptr, alloca, dup) \
++  ((uint8_t)type) << 4 | ((uint8_t)ptr) << 2 | \
++  ((uint8_t)alloca) << 1 | ((uint8_t)dup)
++
++#define ARCH_TYPE_AND_FLAGS(type, ptr) ((unsigned)type) << 4 | ((unsigned)ptr);
++
+ static cl::opt<int> StackMapVersion(
+     "stackmap-version", cl::init(1),
+     cl::desc("Specify the stackmap encoding version (default = 1)"));
+@@ -84,32 +92,112 @@
    return (unsigned)RegNum;
  }
  
 +/// Get pointer typing information for a stackmap operand
-+void StackMaps::getPointerInfo(const Value *Op,
-+                               const DataLayout &DL,
++void StackMaps::getPointerInfo(const Value *Op, const DataLayout &DL,
 +                               bool &isPtr, bool &isAlloca,
 +                               unsigned &AllocaSize) const {
 +  isPtr = false;
@@ -2131,16 +2133,26 @@ Index: lib/CodeGen/StackMaps.cpp
 +  Type *Ty = Op->getType();
 +  if(Ty->isPointerTy())
 +  {
++    isPtr = true;
 +    PointerType *PTy = cast<PointerType>(Ty);
-+    if(PTy->getElementType()->isSized())
-+    {
-+      isPtr = true;
-+      if(isa<AllocaInst>(Op)) {
-+        isAlloca = true;
-+        AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
-+      }
++    if(PTy->getElementType()->isSized() && isa<AllocaInst>(Op)) {
++      isAlloca = true;
++      AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
 +    }
 +  }
++}
++
++/// Get stackmap information for register location 
++void StackMaps::getRegLocation(unsigned Phys,
++                               unsigned &Dwarf,
++                               unsigned &Offset) const {
++  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
++  Offset = 0;
++  Dwarf = getDwarfRegNum(Phys, TRI);
++  unsigned LLVMRegNum = TRI->getLLVMRegNum(Dwarf, false);
++  unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, Phys);
++  if(SubRegIdx)
++    Offset = TRI->getSubRegIdxOffset(SubRegIdx);
 +}
 +
 +/// Add duplicate target-specific locations for a stackmap operand
@@ -2154,17 +2166,13 @@ Index: lib/CodeGen/StackMaps.cpp
 +    for(const MachineLiveLocPtr &LL : Dups) {
 +      if(LL->isReg()) {
 +        const MachineLiveReg &MR = (const MachineLiveReg &)*LL;
-+        unsigned Offset = 0;
-+        unsigned DwarfRegNum = getDwarfRegNum(MR.getReg(), TRI);
-+        unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
-+        unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MR.getReg());
-+        if (SubRegIdx)
-+          Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++        unsigned Offset, DwarfRegNum;
++        getRegLocation(MR.getReg(), DwarfRegNum, Offset);
 +
 +        DEBUG(Oper->printAsOperand(dbgs());
 +              dbgs() << ": duplicate in " << MR.toString() << "\n";);
 +
-+        Locs.emplace_back(Location::Register, Size, MR.getReg(), Offset,
++        Locs.emplace_back(Location::Register, Size, DwarfRegNum, Offset,
 +                          Ptr, Alloca, true, AllocaSize);
 +      }
 +      else if(LL->isStackSlot()) {
@@ -2227,7 +2235,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +193,24 @@
+@@ -116,17 +204,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -2255,20 +2263,22 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,9 +218,9 @@
+@@ -134,17 +229,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
 -    const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(MOI->getReg());
      assert(!MOI->getSubReg() && "Physical subreg still around.");
  
+-    unsigned Offset = 0;
+-    unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
+-    unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
+-    unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
+-    if (SubRegIdx)
+-      Offset = TRI->getSubRegIdxOffset(SubRegIdx);
 +    size_t ValSize = DL.getTypeAllocSize(IROp->getType());
-     unsigned Offset = 0;
-     unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
-     unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
-@@ -144,7 +228,10 @@
-     if (SubRegIdx)
-       Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++    unsigned Offset, DwarfRegNum;
++    getRegLocation(MOI->getReg(), DwarfRegNum, Offset);
  
 -    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
 +    Locs.emplace_back(Location::Register, ValSize, DwarfRegNum, Offset,
@@ -2278,7 +2288,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +248,7 @@
+@@ -161,6 +255,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2286,7 +2296,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -203,8 +291,16 @@
+@@ -203,8 +298,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -2295,17 +2305,16 @@ Index: lib/CodeGen/StackMaps.cpp
 +      OS << ", pointer? " << Loc.Ptr << ", alloca? " << Loc.Alloca
 +         << ", duplicate? " << Loc.Duplicate;
 +
-+      unsigned TypeAndFlags = ((unsigned)Loc.Type) << 4 |
-+                              ((unsigned)Loc.Ptr) << 2 |
-+                              ((unsigned)Loc.Alloca) << 1 |
-+                              ((unsigned)Loc.Duplicate);
++      unsigned TypeAndFlags =
++        TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca, Loc.Duplicate);
++
 +      OS << "\t[encoding: .byte " << TypeAndFlags << ", .byte " << Loc.Size
 +         << ", .short " << Loc.Reg << ", .int " << Loc.Offset
 +         << ", .uint " << Loc.AllocaSize << "]\n";
        Idx++;
      }
  
-@@ -221,6 +317,44 @@
+@@ -221,6 +323,43 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -2339,10 +2348,9 @@ Index: lib/CodeGen/StackMaps.cpp
 +        OS << "<Unknown constant type>";
 +        break;
 +      }
-+      OS << ", " << Val->toString() << ", pointer? " << Loc.Ptr << ", alloca? "
-+         << Loc.Alloca << ", duplicate? " << Loc.Duplicate;
++      OS << ", " << Val->toString() << ", pointer? " << Loc.Ptr;
 +
-+      unsigned TypeAndFlags = ((unsigned)Loc.Type) << 4 | ((unsigned)Loc.Ptr);
++      unsigned TypeAndFlags = ARCH_TYPE_AND_FLAGS(Loc.Type, Loc.Ptr);
 +      OS << "\t[encoding: .byte " << TypeAndFlags << ", .byte " << Loc.Size
 +         << ", .short " << Loc.Reg << ", .int " << Loc.Offset
 +         << ", .ulong <value>]\n";
@@ -2350,7 +2358,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +411,56 @@
+@@ -277,6 +416,52 @@
    return LiveOuts;
  }
  
@@ -2369,14 +2377,10 @@ Index: lib/CodeGen/StackMaps.cpp
 +      // Parse the location
 +      if(Val.first->isReg()) {
 +        const MachineLiveReg &MR = (const MachineLiveReg &)*Val.first;
-+        unsigned Reg = MR.getReg();
-+        const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
-+        unsigned Offset = 0;
-+        unsigned DwarfRegNum = getDwarfRegNum(Reg, TRI);
-+        unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
-+        unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, Reg);
-+        if (SubRegIdx)
-+          Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++        unsigned Offset, DwarfRegNum;
++        const TargetRegisterClass *RC =
++          TRI->getMinimalPhysRegClass(MR.getReg());
++        getRegLocation(MR.getReg(), DwarfRegNum, Offset);
 +
 +        Loc.Type = Location::Register;
 +        Loc.Size = RC->getSize();
@@ -2407,7 +2411,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +469,46 @@
+@@ -285,21 +470,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -2456,7 +2460,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +536,9 @@
+@@ -327,8 +537,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -2468,7 +2472,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +621,11 @@
+@@ -411,8 +622,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -2481,7 +2485,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +633,15 @@
+@@ -420,6 +634,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -2497,7 +2501,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +661,20 @@
+@@ -439,14 +662,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -2522,7 +2526,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +683,19 @@
+@@ -455,6 +684,19 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -2542,7 +2546,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +711,29 @@
+@@ -470,23 +712,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2573,14 +2577,13 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +741,14 @@
+@@ -494,10 +742,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
 -      OS.EmitIntValue(Loc.Type, 1);
-+      uint8_t TypeAndFlags = 0;
-+      TypeAndFlags = ((uint8_t)Loc.Type) << 4 | ((uint8_t)Loc.Ptr) << 2
-+                   | ((uint8_t)Loc.Alloca) << 1 | ((uint8_t)Loc.Duplicate);
++      uint8_t TypeAndFlags =
++        TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca, Loc.Duplicate);
 +      OS.EmitIntValue(TypeAndFlags, 1);
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
@@ -2600,7 +2603,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +
 +    for (const auto &C : Consts) {
 +      const Location &Loc = C.first;
-+      uint8_t TypeAndFlags = ((uint8_t)Loc.Type) << 4 | ((uint8_t)Loc.Ptr);
++      uint8_t TypeAndFlags = ARCH_TYPE_AND_FLAGS(Loc.Type, Loc.Ptr);
 +      OS.EmitIntValue(TypeAndFlags, 1);
 +      OS.EmitIntValue(Loc.Size, 1);
 +      OS.EmitIntValue(Loc.Reg, 2);
@@ -2666,7 +2669,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,817 @@
+@@ -0,0 +1,821 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2691,6 +2694,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/CodeGen/VirtRegMap.h"
 +#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Target/TargetInstrInfo.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -3413,7 +3417,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
 +      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
 +      MachineConstant *MC;
-+      MachineLiveReg MLR(0, false, true);
++      MachineLiveReg MLR(0, false);
 +
 +      // Detect virtual registers live across but not included in the stackmap
 +      if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
@@ -3447,6 +3451,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +              def->dump();
 +            }
 +          );
++          llvm_unreachable("Unhandled architecture-specific register");
 +        }
 +      }
 +      // Detect virtual registers mapped to stack slots not in stackmap
@@ -3464,6 +3469,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          }
 +        );
 +        // TODO add arch-specific stack slot information to machine function
++        llvm_unreachable("Unhandled architecture-specific stack slot (vreg)");
 +      }
 +    }
 +
@@ -3477,6 +3483,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        // TODO add arch-specific stack slot information to machine function
 +        // TODO does this imply an alloca that wasn't captured in the stackmap?
 +        // I think this is a live value analysis bug...
++        llvm_unreachable("Unhandled architecture-specific stack slot");
 +      }
 +    }
 +

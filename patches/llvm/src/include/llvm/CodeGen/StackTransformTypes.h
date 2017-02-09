@@ -10,7 +10,6 @@
 #ifndef LLVM_CODEGEN_STACKTRANFORMTYPES_H
 #define LLVM_CODEGEN_STACKTRANFORMTYPES_H
 
-#include <llvm/MC/MCSymbol.h>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -153,14 +152,11 @@ protected:
   /// Types & attributes
   enum Type Type;
   bool Duplicate;
-  bool ArchSpecific;
 
-  MachineLiveLoc(enum Type Type = None,
-                 bool Duplicate = false,
-                 bool ArchSpecific = false)
-    : Type(Type), Duplicate(Duplicate), ArchSpecific(ArchSpecific) {}
+  MachineLiveLoc(enum Type Type = None, bool Duplicate = false)
+    : Type(Type), Duplicate(Duplicate) {}
   MachineLiveLoc(const MachineLiveLoc &M)
-    : Type(M.Type), Duplicate(M.Duplicate), ArchSpecific(M.ArchSpecific) {}
+    : Type(M.Type), Duplicate(M.Duplicate) {}
 };
 
 /// MachineLiveReg - a live value stored in a register.  Stores the register
@@ -168,10 +164,8 @@ protected:
 class MachineLiveReg : public MachineLiveLoc {
 public:
   MachineLiveReg(unsigned Reg = UINT32_MAX,
-                 bool Duplicate = false,
-                 bool ArchSpecific = false)
-    : MachineLiveLoc(MachineLiveLoc::Register, Duplicate, ArchSpecific),
-      Reg(Reg) {}
+                 bool Duplicate = false)
+    : MachineLiveLoc(MachineLiveLoc::Register, Duplicate), Reg(Reg) {}
   MachineLiveReg(const MachineLiveReg &M) : MachineLiveLoc(M), Reg(M.Reg) {}
 
   virtual MachineLiveLoc *copy() const
@@ -200,10 +194,8 @@ private:
 class MachineLiveStackSlot : public MachineLiveLoc {
 public:
   MachineLiveStackSlot(int StackSlot = INT32_MIN,
-                       bool Duplicate = false,
-                       bool ArchSpecific = false)
-    : MachineLiveLoc(MachineLiveLoc::StackSlot, Duplicate, ArchSpecific),
-      StackSlot(StackSlot) {}
+                       bool Duplicate = false)
+    : MachineLiveLoc(MachineLiveLoc::StackSlot, Duplicate), StackSlot(StackSlot) {}
   MachineLiveStackSlot(const MachineLiveStackSlot &M)
     : MachineLiveLoc(M), StackSlot(M.StackSlot) {}
 
