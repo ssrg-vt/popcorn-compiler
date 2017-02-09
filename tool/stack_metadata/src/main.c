@@ -30,7 +30,9 @@ Options:\n\
 \t-f name : object file or executable to post-process\n\
 \t-s name : section name prefix added to object file (default is '" SECTION_PREFIX "')\n\
 \t-i num  : number at which to begin generating call site IDs\n\
-\t-v      : be verbose";
+\t-v      : be verbose\n\n\
+\
+Note: this tool should be run after symbol alignment!";
 
 static const char *file = NULL;
 static char unwind_addr_name[512];
