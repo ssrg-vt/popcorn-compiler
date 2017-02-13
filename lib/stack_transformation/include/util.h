@@ -29,7 +29,7 @@ const char* arch_name(uint16_t arch);
  * @param arch an architecture number
  * @return a register operations struct
  */
-regset_t get_regops(uint16_t arch);
+regops_t get_regops(uint16_t arch);
 
 /*
  * Get stack properties for the specified architecture.

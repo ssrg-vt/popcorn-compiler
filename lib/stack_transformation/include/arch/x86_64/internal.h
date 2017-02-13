@@ -9,7 +9,7 @@
 #define _X86_64_INTERNAL_H
 
 extern struct properties_t properties_x86_64;
-extern struct regset_t regs_x86_64;
+extern struct regops_t regs_x86_64;
 
 #endif /* _X86_64_INTERNAL_H */
 

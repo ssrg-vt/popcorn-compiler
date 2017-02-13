@@ -63,7 +63,9 @@ void pop_frame(rewrite_context ctx)
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
   /* Initialize next activation's regset */
-  NEXT_ACT(ctx).regs = REGOPS(ctx)->regset_clone(ACT(ctx).regs);
+  NEXT_ACT(ctx).regs =
+    &ctx->regset_pool[(ctx->act + 1) * REGOPS(ctx)->regset_size];
+  REGOPS(ctx)->regset_clone(ACT(ctx).regs, NEXT_ACT(ctx).regs);
 
   /* Get offsets into unwinding information section & unwind the frame */
   locs = ctx->handle->unwind_locs;
@@ -112,7 +114,9 @@ void pop_frame_funcentry(rewrite_context ctx)
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
   /* Initialize next activation's regset */
-  NEXT_ACT(ctx).regs = REGOPS(ctx)->regset_clone(ACT(ctx).regs);
+  NEXT_ACT(ctx).regs =
+    &ctx->regset_pool[(ctx->act + 1) * REGOPS(ctx)->regset_size];
+  REGOPS(ctx)->regset_clone(ACT(ctx).regs, NEXT_ACT(ctx).regs);
 
   /*
    * We only have to worry about restoring the PC, since the function hasn't
@@ -178,10 +182,10 @@ void free_activation(st_handle handle, activation* act)
 {
   ASSERT(act, "invalid arguments to free_activation()\n");
 
-  act->regs->free(act->regs);
 #ifdef _CHECKS
   memset(&act->site, 0, sizeof(call_site));
   act->cfa = NULL;
+  memset(act->regs, 0, handle->regops->regset_size);
   act->regs = NULL;
   memset(&act->callee_saved, 0, sizeof(bitmap));
 #endif

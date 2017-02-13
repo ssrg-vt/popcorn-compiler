@@ -180,7 +180,7 @@ struct _st_handle
   uint16_t arch; /* target architecture for the binary */
   uint16_t ptr_size; /* size of pointers on the architecture */
 
-  regset_t regops; /* architecture-specific register access operations */
+  regops_t regops; /* architecture-specific register access operations */
   properties_t props; /* architecture-specific stack properties */
 
   /////////////////////////////////////////////////////////////////////////////
@@ -229,7 +229,8 @@ struct rewrite_context
   list_t(fixup) stack_pointers; /* stack pointers to be resolved */
 
   /* Pools for constant-time allocation of per-frame/runtime-dependent data */
-  STORAGE_TYPE* callee_saved_pool;
+  void* regset_pool; /* Register sets */
+  STORAGE_TYPE* callee_saved_pool; /* Callee-saved registers (bitmaps) */
 };
 
 typedef struct rewrite_context* rewrite_context;

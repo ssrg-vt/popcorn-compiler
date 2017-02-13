@@ -32,7 +32,7 @@ const char* arch_name(uint16_t arch)
 /*
  * Get architecture-specific register operations.
  */
-regset_t get_regops(uint16_t arch)
+regops_t get_regops(uint16_t arch)
 {
   switch(arch)
   {

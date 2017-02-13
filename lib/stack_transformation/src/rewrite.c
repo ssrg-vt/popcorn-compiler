@@ -45,7 +45,7 @@ static rewrite_context init_dest_context(st_handle handle,
 /*
  * Initialize data pools for constant-time allocation.
  */
-static void init_data_pools(rewrite_context ctx, size_t num_regs);
+static void init_data_pools(rewrite_context ctx);
 
 /*
  * Free previously-allocated context information.
@@ -225,12 +225,13 @@ static rewrite_context init_src_context(st_handle handle,
   ctx->handle = handle;
   ctx->num_acts = 0;
   ctx->act = 0;
+  init_data_pools(ctx);
   list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = REGOPS(ctx)->regset_init(regset);
+  ACT(ctx).regs = ctx->regset_pool;
+  REGOPS(ctx)->regset_copyin(ACT(ctx).regs, regset);
   ctx->regs = regset;
   ctx->stack_base = sp_base;
   ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
-  init_data_pools(ctx, REGOPS(ctx)->num_regs);
   setup_frame_info(ctx);
 
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
@@ -276,14 +277,14 @@ static rewrite_context init_dest_context(st_handle handle,
   ctx->handle = handle;
   ctx->num_acts = 0;
   ctx->act = 0;
+  init_data_pools(ctx);
   list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = REGOPS(ctx)->regset_default();
+  ACT(ctx).regs = ctx->regset_pool;
   REGOPS(ctx)->set_pc(ACT(ctx).regs, pc);
   ACT(ctx).site = EMPTY_CALL_SITE;
 
   ctx->regs = regset;
   ctx->stack_base = sp_base;
-  init_data_pools(ctx, ACT(ctx).regs->num_regs);
   // Note: cannot setup frame information because CFA will be invalid (need to
   // set up SP first)
 
@@ -294,10 +295,13 @@ static rewrite_context init_dest_context(st_handle handle,
 /*
  * Initialize the context's data pools.
  */
-static void init_data_pools(rewrite_context ctx, size_t num_regs)
+static void init_data_pools(rewrite_context ctx)
 {
+  size_t num_regs = REGOPS(ctx)->num_regs;
   ctx->callee_saved_pool = malloc(bitmap_size(num_regs) * MAX_FRAMES);
-  ASSERT(ctx->callee_saved_pool, "could not initialize data pools\n");
+  ctx->regset_pool = malloc(REGOPS(ctx)->regset_size * MAX_FRAMES);
+  ASSERT(ctx->callee_saved_pool && ctx->regset_pool,
+         "could not initialize data pools");
 }
 
 /*
@@ -334,6 +338,7 @@ static void free_context(rewrite_context ctx)
 static void free_data_pools(rewrite_context ctx)
 {
   free(ctx->callee_saved_pool);
+  free(ctx->regset_pool);
 }
 
 /*
@@ -401,13 +406,13 @@ static void unwind_and_size(rewrite_context src,
   dest->stack = dest->stack_base - stack_size;
   if(dest->handle->props->sp_needs_align)
     dest->stack = dest->handle->props->align_sp(dest->stack);
-  ACT(dest).regs->set_sp(ACT(dest).regs, dest->stack);
+  REGOPS(dest)->set_sp(ACT(dest).regs, dest->stack);
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
 
   /* Clear the callee-saved bitmaps for all destination frames. */
   memset(dest->callee_saved_pool, 0, sizeof(STORAGE_TYPE) *
-                                     bitmap_size(ACT(dest).regs->num_regs) *
+                                     bitmap_size(REGOPS(dest)->num_regs) *
                                      dest->num_acts);
 
   /* Set up outermost activation for destination since we have a SP. */

@@ -22,9 +22,10 @@
 
 static regset_t regset_default_aarch64(void);
 static regset_t regset_init_aarch64(const void* regs);
-static regset_t regset_clone_aarch64(const_regset_t regset);
+static void regset_free_aarch64(regset_t regset);
+static void regset_clone_aarch64(const_regset_t src, regset_t dest);
+static void regset_copyin_aarch64(regset_t regset, const void* regs);
 static void regset_copyout_aarch64(const_regset_t regset, void* regs);
-static void free_aarch64(regset_t regset);
 
 static void* pc_aarch64(const_regset_t regset);
 static void* sp_aarch64(const_regset_t regset);
@@ -40,18 +41,30 @@ static uint16_t reg_size_aarch64(uint16_t reg);
 static void* reg_aarch64(regset_t regset, uint16_t reg);
 
 /*
+ * Internal definition of aarch64 object, contains aarch64 registers in
+ * addition to common fields & functions.
+ */
+typedef struct regset_obj_aarch64
+{
+  struct regset_t common;
+  struct regset_aarch64 regs;
+} regset_obj_aarch64;
+
+/*
  * aarch64 register operations (externally visible), used to construct new
  * objects.
  */
-const struct regset_t regs_aarch64 = {
+const struct regops_t regs_aarch64 = {
   .num_regs = AARCH64_NUM_REGS,
   .has_ra_reg = true,
+  .regset_size = sizeof(regset_obj_aarch64),
 
   .regset_default = regset_default_aarch64,
   .regset_init = regset_init_aarch64,
+  .regset_free = regset_free_aarch64,
   .regset_clone = regset_clone_aarch64,
+  .regset_copyin = regset_copyin_aarch64,
   .regset_copyout = regset_copyout_aarch64,
-  .free = free_aarch64,
 
   .pc = pc_aarch64,
   .sp = sp_aarch64,
@@ -67,16 +80,6 @@ const struct regset_t regs_aarch64 = {
   .reg = reg_aarch64,
 };
 
-/*
- * Internal definition of aarch64 object, contains aarch64 registers in
- * addition to common fields & functions.
- */
-typedef struct regset_obj_aarch64
-{
-  struct regset_t common;
-  struct regset_aarch64 regs;
-} regset_obj_aarch64;
-
 ///////////////////////////////////////////////////////////////////////////////
 // aarch64 APIs
 ///////////////////////////////////////////////////////////////////////////////
@@ -85,7 +88,7 @@ static regset_t regset_default_aarch64()
 {
   regset_obj_aarch64* new = calloc(1, sizeof(regset_obj_aarch64));
   ASSERT(new, "could not allocate regset (aarch64)\n");
-  memcpy(&new->common, &regs_aarch64, sizeof(struct regset_t));
+  new->common.initialized = true;
   return (regset_t)new;
 }
 
@@ -93,30 +96,34 @@ static regset_t regset_init_aarch64(const void* regs)
 {
   regset_obj_aarch64* new = malloc(sizeof(regset_obj_aarch64));
   ASSERT(new, "could not allocate regset (aarch64)\n");
-  memcpy(&new->common, &regs_aarch64, sizeof(struct regset_t));
+  new->common.initialized = true;
   new->regs = *(struct regset_aarch64*)regs;
   return (regset_t)new;
 }
 
-static regset_t regset_clone_aarch64(const_regset_t regset)
+static void regset_free_aarch64(regset_t regset)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  regset_obj_aarch64* new = malloc(sizeof(regset_obj_aarch64));
-  ASSERT(new, "could not allocate regset (aarch64)\n");
-  memcpy(&new->common, &regs_aarch64, sizeof(struct regset_t));
-  new->regs = cur->regs;
-  return (regset_t)new;
+  free(regset);
+}
+
+static void regset_clone_aarch64(const_regset_t src, regset_t dest)
+{
+  const regset_obj_aarch64* srcregs = (const regset_obj_aarch64*)src;
+  regset_obj_aarch64* destregs = (regset_obj_aarch64*)dest;
+  *destregs = *srcregs;
+}
+
+static void regset_copyin_aarch64(regset_t regset, const void* regs)
+{
+  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
+  cur->common.initialized = true;
+  cur->regs = *(struct regset_aarch64*)regs;
 }
 
 static void regset_copyout_aarch64(const_regset_t regset, void* regs)
 {
   const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  memcpy(regs, &cur->regs, sizeof(struct regset_aarch64));
-}
-
-static void free_aarch64(regset_t regset)
-{
-  free(regset);
+  *(struct regset_aarch64*)regs = cur->regs;
 }
 
 static void* pc_aarch64(const_regset_t regset)

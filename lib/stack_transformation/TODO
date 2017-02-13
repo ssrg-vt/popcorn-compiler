@@ -19,14 +19,6 @@ Implementation
 Optimization
 ------------
 
-1. Remove copy of register operations from per-activation regsets (use regular
-   per-architecture regsets)
-
-2. Malloc pool of regsets rather than copying on malloc'ing when popping frame
-
-2. Rather than re-generating list of local variables when a local fix-up is
+1. Rather than re-generating list of local variables when a local fix-up is
    detected, store until finished transforming the current activation
-
-3. De-duplicate function information by storing function-specific information
-   in separate section and storing pointer in call site record
 

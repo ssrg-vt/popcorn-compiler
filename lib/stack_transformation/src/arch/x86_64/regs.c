@@ -17,9 +17,10 @@
 
 static regset_t regset_default_x86_64(void);
 static regset_t regset_init_x86_64(const void* regs);
-static regset_t regset_clone_x86_64(const_regset_t regset);
+static void regset_free_x86_64(regset_t regset);
+static void regset_clone_x86_64(const_regset_t src, regset_t dest);
+static void regset_copyin_x86_64(regset_t regset, const void* regs);
 static void regset_copyout_x86_64(const_regset_t regset, void* regs);
-static void free_x86_64(regset_t regset);
 
 static void* pc_x86_64(const_regset_t regset);
 static void* sp_x86_64(const_regset_t regset);
@@ -35,18 +36,30 @@ static uint16_t reg_size_x86_64(uint16_t reg);
 static void* reg_x86_64(regset_t regset, uint16_t reg);
 
 /*
+ * Internal definition of x86-64 object, contains x86-64 registers in addition
+ * to common fields & functions.
+ */
+typedef struct regset_obj_x86_64
+{
+  struct regset_t common;
+  struct regset_x86_64 regs;
+} regset_obj_x86_64;
+
+/*
  * x86-64 register operations (externally visible), used to construct new
  * objects.
  */
-const struct regset_t regs_x86_64 = {
+const struct regops_t regs_x86_64 = {
   .num_regs = X86_64_NUM_REGS,
   .has_ra_reg = false,
+  .regset_size = sizeof(regset_obj_x86_64),
 
   .regset_default = regset_default_x86_64,
   .regset_init = regset_init_x86_64,
+  .regset_free = regset_free_x86_64,
   .regset_clone = regset_clone_x86_64,
+  .regset_copyin = regset_copyin_x86_64,
   .regset_copyout = regset_copyout_x86_64,
-  .free = free_x86_64,
 
   .pc = pc_x86_64,
   .sp = sp_x86_64,
@@ -62,16 +75,6 @@ const struct regset_t regs_x86_64 = {
   .reg = reg_x86_64,
 };
 
-/*
- * Internal definition of x86-64 object, contains x86-64 registers in addition
- * to common fields & functions.
- */
-typedef struct regset_obj_x86_64
-{
-  struct regset_t common;
-  struct regset_x86_64 regs;
-} regset_obj_x86_64;
-
 ///////////////////////////////////////////////////////////////////////////////
 // x86-64 APIs
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,7 +83,7 @@ static regset_t regset_default_x86_64()
 {
   regset_obj_x86_64* new = calloc(1, sizeof(regset_obj_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
-  memcpy(&new->common, &regs_x86_64, sizeof(struct regset_t));
+  new->common.initialized = true;
   return (regset_t)new;
 }
 
@@ -88,30 +91,34 @@ static regset_t regset_init_x86_64(const void* regs)
 {
   regset_obj_x86_64* new = malloc(sizeof(regset_obj_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
-  memcpy(&new->common, &regs_x86_64, sizeof(struct regset_t));
+  new->common.initialized = true;
   new->regs = *(struct regset_x86_64*)regs;
   return (regset_t)new;
 }
 
-static regset_t regset_clone_x86_64(const_regset_t regset)
+static void regset_free_x86_64(regset_t regset)
 {
-  const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  regset_obj_x86_64* new = malloc(sizeof(regset_obj_x86_64));
-  ASSERT(new, "could not allocate regset (x86-64)\n");
-  memcpy(&new->common, &regs_x86_64, sizeof(struct regset_t));
-  new->regs = cur->regs;
-  return (regset_t)new;
+  free(regset);
+}
+
+static void regset_clone_x86_64(const_regset_t src, regset_t dest)
+{
+  const regset_obj_x86_64* srcregs = (const regset_obj_x86_64*)src;
+  regset_obj_x86_64* destregs = (regset_obj_x86_64*)dest;
+  *destregs = *srcregs;
+}
+
+static void regset_copyin_x86_64(regset_t regset, const void* regs)
+{
+  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
+  cur->common.initialized = true;
+  cur->regs = *(struct regset_x86_64*)regs;
 }
 
 static void regset_copyout_x86_64(const_regset_t regset, void* regs)
 {
   const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  memcpy(regs, &cur->regs, sizeof(struct regset_x86_64));
-}
-
-static void free_x86_64(regset_t regset)
-{
-  free(regset);
+  *(struct regset_x86_64*)regs = cur->regs;
 }
 
 static void* pc_x86_64(const_regset_t regset)
