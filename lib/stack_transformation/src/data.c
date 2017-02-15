@@ -26,7 +26,7 @@ static void* callee_saved_loc(rewrite_context ctx, const value val);
 /*
  * Evaluate stack map location record VAR and return a value location.
  */
-value get_var_val(rewrite_context ctx, const variable* var)
+value get_var_val(rewrite_context ctx, const call_site_value* var)
 {
   value loc;
 
@@ -117,7 +117,7 @@ void put_val(rewrite_context src,
     // This is cheap & supports both eager & on-demand rewriting.
     ST_INFO("Destination value in register %u\n", dest_val.reg);
     dest_addr = REGOPS(dest)->reg(dest->acts[dest_val.act].regs, dest_val.reg);
-    if(dest->handle->props->is_callee_saved(dest_val.reg))
+    if(PROPS(dest)->is_callee_saved(dest_val.reg))
       callee_addr = callee_saved_loc(dest, dest_val);
     break;
   case CONSTANT:
@@ -130,6 +130,53 @@ void put_val(rewrite_context src,
 
   memcpy(dest_addr, src_addr, size);
   if(callee_addr) memcpy(callee_addr, src_addr, size);
+
+  TIMER_FG_STOP(put_val);
+}
+
+/*
+ * Evaluate architecture-specific location record VAL and set the appropriate
+ * value in CTX.
+ */
+void put_val_arch(rewrite_context ctx, const arch_const_value* val)
+{
+  void* dest_addr, *callee_addr = NULL;
+  value loc; // Needed to generate callee-saved information
+
+  TIMER_FG_START(eval_location);
+
+  // First, parse the location in the rewriting context
+  switch(val->type)
+  {
+  case SM_REGISTER: // Value is in register
+    dest_addr = REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
+    if(PROPS(ctx)->is_callee_saved(val->regnum))
+    {
+      loc.is_valid = true;
+      loc.act = ctx->act;
+      loc.type = REGISTER;
+      loc.reg = val->regnum;
+      callee_addr = callee_saved_loc(ctx, loc);
+    }
+    ST_INFO("Architecture-specific value in register %u\n", val->regnum);
+    break;
+  case SM_DIRECT: // Value is allocated on stack
+    dest_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
+                val->offset;
+    ST_INFO("Architecture-specific value at %p\n", dest_addr);
+    break;
+  default:
+    ST_ERR(1, "invalid architecture-specific live value "
+              "location record type (%u)\n", val->type);
+    break;
+  }
+
+  TIMER_FG_STOP(eval_location);
+  TIMER_FG_START(put_val)
+
+  // Second, set the value
+  memcpy(dest_addr, &val->value, val->size);
+  if(callee_addr) memcpy(callee_addr, &val->value, val->size);
 
   TIMER_FG_STOP(put_val);
 }

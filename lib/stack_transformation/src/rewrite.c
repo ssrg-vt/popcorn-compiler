@@ -68,8 +68,8 @@ static void unwind_and_size(rewrite_context src,
  * Rewrite an individual variable from the source to destination call frame.
  * Returns true if there's a fixup needed within this stack frame.
  */
-static bool rewrite_var(rewrite_context src, const variable* var_src,
-                        rewrite_context dest, const variable* var_dest);
+static bool rewrite_var(rewrite_context src, const call_site_value* var_src,
+                        rewrite_context dest, const call_site_value* var_dest);
 
 /*
  * Re-write an individual frame from the source to destination stack.
@@ -404,8 +404,8 @@ static void unwind_and_size(rewrite_context src,
 
   /* Set destination stack pointer (align if necessary). */
   dest->stack = dest->stack_base - stack_size;
-  if(dest->handle->props->sp_needs_align)
-    dest->stack = dest->handle->props->align_sp(dest->stack);
+  if(PROPS(dest)->sp_needs_align)
+    dest->stack = PROPS(dest)->align_sp(dest->stack);
   REGOPS(dest)->set_sp(ACT(dest).regs, dest->stack);
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
@@ -424,8 +424,8 @@ static void unwind_and_size(rewrite_context src,
 /*
  * Rewrite an individual variable from the source to destination call frame.
  */
-static bool rewrite_var(rewrite_context src, const variable* var_src,
-                        rewrite_context dest, const variable* var_dest)
+static bool rewrite_var(rewrite_context src, const call_site_value* var_src,
+                        rewrite_context dest, const call_site_value* var_dest)
 {
   value val_src, val_dest, fixup_val;
   bool skip = false, needs_fixup = false, needs_local_fixup = false;
@@ -555,7 +555,7 @@ static bool rewrite_var(rewrite_context src, const variable* var_src,
 static void rewrite_frame(rewrite_context src, rewrite_context dest)
 {
   size_t i, j;
-  const variable* var_src, *var_dest;
+  const call_site_value* var_src, *var_dest;
   size_t src_offset, dest_offset;
   bool needs_local_fixup = false;
   list_t(varval) var_list;
@@ -603,6 +603,11 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   }
   ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
         "did not handle all live values\n");
+
+  /* Set architecture-specific live values */
+  dest_offset = ACT(dest).site.arch_const_offset;
+  for(i = 0; i < ACT(dest).site.num_arch_const; i++)
+    put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
 
   /*
    * Fix up pointers to arguments or local variables. This is assumed to *not*

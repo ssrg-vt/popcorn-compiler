@@ -20,7 +20,7 @@ LIBS   := /lib/crt1.o \
           /lib/libc.a
 
 OPT       := opt
-OPT_FLAGS := -O3 -load $(POPCORN)/lib/libStackInfo.so -stack-info
+OPT_FLAGS := -O3 -insert-stackmaps
 
 # Post-processing
 POST_PROCESS := $(POPCORN)/bin/gen-stackinfo

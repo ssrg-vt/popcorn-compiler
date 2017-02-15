@@ -82,7 +82,7 @@ bool dump_unwind_funcs(Elf_Scn *scn)
   unwind_addr *funcs;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
   num_funcs = shdr.sh_size / shdr.sh_entsize;
@@ -104,7 +104,7 @@ bool dump_unwind_locs(Elf_Scn *scn)
   unwind_loc *locs;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
   num_locs = shdr.sh_size / shdr.sh_entsize;
@@ -126,7 +126,7 @@ bool dump_callsite_section(Elf_Scn *scn)
   call_site *sites;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
   num_sites = shdr.sh_size / shdr.sh_entsize;
@@ -195,7 +195,7 @@ bool dump_livelocs_section(Elf_Scn *scn)
   call_site_value *locs;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
   num_locs = shdr.sh_size / shdr.sh_entsize;
@@ -235,7 +235,7 @@ bool dump_archconsts_section(Elf_Scn *scn)
   arch_const_value *consts;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size == 0 || shdr.sh_entsize == 0) return false;
+  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
   num_consts = shdr.sh_size / shdr.sh_entsize;

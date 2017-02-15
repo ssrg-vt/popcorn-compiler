@@ -13,8 +13,6 @@ Implementation
 
 5. Cleanup list definition & where fixup/varval are defined
 
-6. Remove typedef that hides call_site_value
-
 ------------
 Optimization
 ------------

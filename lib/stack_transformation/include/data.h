@@ -23,7 +23,7 @@
  * @param var a variable whose value to read
  * @return a value for the variable in the current frame of the context
  */
-value get_var_val(rewrite_context ctx, const variable* var);
+value get_var_val(rewrite_context ctx, const call_site_value* var);
 
 /*
  * Copy a value from its location in the source context to its location in the
@@ -41,6 +41,14 @@ void put_val(rewrite_context src,
              rewrite_context dest,
              value dest_val,
              uint64_t size);
+
+/*
+ * Put an architecture-specific constant value into a location.
+ *
+ * @param ctx the rewriting context
+ * @param var the architecture-specific constant value
+ */
+void put_val_arch(rewrite_context ctx, const arch_const_value *val);
 
 /*
  * Set the return address in the current stack frame of a rewriting context.

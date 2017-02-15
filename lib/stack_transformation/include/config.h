@@ -67,6 +67,7 @@
 #define SECTION_ST_ID SECTION_PREFIX "." SECTION_ID
 #define SECTION_ST_ADDR SECTION_PREFIX "." SECTION_ADDR
 #define SECTION_ST_LIVE SECTION_PREFIX "." SECTION_LIVE
+#define SECTION_ST_ARCH_LIVE SECTION_PREFIX "." SECTION_ARCH
 
 ///////////////////////////////////////////////////////////////////////////////
 // Userspace rewriting configuration
@@ -79,7 +80,7 @@
 #define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*
- * Stack limits.
+ * Stack limits -- Linux defaults to 8MB.
  */
 #define MAX_STACK_SIZE (8 * 1024 * 1024)
 #define B_STACK_OFFSET (4 * 1024 * 1024)

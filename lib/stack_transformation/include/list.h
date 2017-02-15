@@ -130,7 +130,7 @@ static inline node_t(type)* list_prev_##type(const node_t(type)* node) \
  * Append a new node to the end of the list with the specified values.
  *
  * @param list a list object
- * @param name the name of the variable that needs the fixup (debug only)
+ * @param data the data to be added to the list
  * @return node the newly created node
  */
 #define list_add( type, list, data ) list_add_##type(list, data)
@@ -246,7 +246,7 @@ typedef struct fixup {
 
 /* Variable location & values. */
 typedef struct varval {
-  const variable* var;
+  const call_site_value* var;
   value val_src;
   value val_dest;
 } varval;

@@ -82,12 +82,12 @@ st_handle st_init(const char* fn)
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
   /* Read unwinding addresses */
-  handle->unwind_addr_count =
-    get_num_entries(handle->elf, SECTION_ST_UNWIND_ADDR);
+  handle->unwind_addr_count = get_num_entries(handle->elf,
+                                              SECTION_ST_UNWIND_ADDR);
   if(handle->unwind_addr_count > 0)
   {
-    handle->unwind_addrs =
-      get_section_data(handle->elf, SECTION_ST_UNWIND_ADDR);
+    handle->unwind_addrs = get_section_data(handle->elf,
+                                            SECTION_ST_UNWIND_ADDR);
     if(!handle->unwind_addrs) goto close_elf;
     ST_INFO("Found %lu per-function unwinding metadata entries\n",
             handle->unwind_addr_count);
@@ -141,6 +141,22 @@ st_handle st_init(const char* fn)
     ST_WARN("no live value location records\n");
     goto close_elf;
   }
+
+  /* Read architecture-specific live value location records */
+  // Note: unlike other sections, we may not have any architecture-specific
+  // live value records
+  handle->arch_live_vals_count = get_num_entries(handle->elf,
+                                                 SECTION_ST_ARCH_LIVE);
+  if(handle->arch_live_vals_count > 0)
+  {
+    handle->arch_live_vals = get_section_data(handle->elf,
+                                              SECTION_ST_ARCH_LIVE);
+    if(!handle->arch_live_vals) goto close_elf;
+    ST_INFO("Found %lu architecture-specific live value location records\n",
+            handle->arch_live_vals_count);
+  }
+  else
+    ST_INFO("no architecture-specific live value location records\n");
 
   /* Get architecture-specific register operations & stack properties. */
   if(!(handle->regops = get_regops(handle->arch))) goto close_elf;
