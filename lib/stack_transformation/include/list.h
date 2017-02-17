@@ -238,22 +238,5 @@ _LIST_ADD(type) \
 _LIST_REMOVE(type) \
 _LIST_CLEAR(type)
 
-/* A fixup record. */
-typedef struct fixup {
-  void* src_addr;
-  value dest_loc;
-} fixup;
-
-/* Variable location & values. */
-typedef struct varval {
-  const call_site_value* var;
-  value val_src;
-  value val_dest;
-} varval;
-
-/* Define list types. */
-define_list_type(fixup);
-define_list_type(varval);
-
 #endif /*_LIST_H */
 

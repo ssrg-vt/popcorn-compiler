@@ -182,6 +182,40 @@ void put_val_arch(rewrite_context ctx, const arch_const_value* val)
 }
 
 /*
+ * Return whether or not a pointer refers to a variable on the stack.
+ */
+void* points_to_stack(const rewrite_context ctx,
+                      const call_site_value* var,
+                      const value val)
+{
+  void* stack_addr = NULL;
+
+  /* Is it a pointer (NOT an alloca/stack variable)? */
+  if(var->is_ptr && !var->is_alloca)
+  {
+    /* Get the pointed-to address */
+    switch(val.type)
+    {
+    case ADDRESS: stack_addr = *(void**)val.addr; break;
+    case REGISTER:
+      // Note: we assume that we're doing offsets from 64-bit registers
+      ASSERT(REGOPS(ctx)->reg_size(val.reg) == 8,
+             "invalid register size for pointer\n");
+      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val.reg);
+      break;
+    case CONSTANT: stack_addr = (void*)val.cnst; break;
+    default: ST_ERR(1, "invalid value type (%d)", val.type); break;
+    }
+
+    /* Check if we're within the stack's bounds.  If not, wipe the pointer */
+    if(stack_addr < ctx->stack || ctx->stack_base <= stack_addr)
+      stack_addr = NULL;
+  }
+
+  return stack_addr;
+}
+
+/*
  * Set return address of current frame in CTX to RETADDR.
  */
 void set_return_address(rewrite_context ctx, void* retaddr)

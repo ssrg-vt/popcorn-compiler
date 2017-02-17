@@ -21,7 +21,9 @@
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/CodeGen/VirtRegMap.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Support/Debug.h"
@@ -779,7 +781,12 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
               def->dump();
             }
           );
-          llvm_unreachable("Unhandled architecture-specific register");
+          DiagnosticInfoOptimizationFailure DI(
+            *IRSM->getParent()->getParent(),
+            IRSM->getDebugLoc(),
+            "Unhandled architecture-specific register "
+            "for stack transformation");
+          MF->getFunction()->getContext().diagnose(DI);
         }
       }
       // Detect virtual registers mapped to stack slots not in stackmap
@@ -796,8 +803,12 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
             def->dump();
           }
         );
-        // TODO add arch-specific stack slot information to machine function
-        llvm_unreachable("Unhandled architecture-specific stack slot (vreg)");
+        DiagnosticInfoOptimizationFailure DI(
+          *IRSM->getParent()->getParent(),
+          IRSM->getDebugLoc(),
+          "Unhandled architecture-specific stack slot/register "
+          "for stack transformation");
+        MF->getFunction()->getContext().diagnose(DI);
       }
     }
 
@@ -811,7 +822,12 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
         // TODO add arch-specific stack slot information to machine function
         // TODO does this imply an alloca that wasn't captured in the stackmap?
         // I think this is a live value analysis bug...
-        llvm_unreachable("Unhandled architecture-specific stack slot");
+        DiagnosticInfoOptimizationFailure DI(
+          *IRSM->getParent()->getParent(),
+          IRSM->getDebugLoc(),
+          "Unhandled architecture-specific stack slot "
+          "for stack transformation");
+        MF->getFunction()->getContext().diagnose(DI);
       }
     }
 

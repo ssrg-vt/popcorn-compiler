@@ -14,6 +14,17 @@
 // File-local API & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
+// TODO remove varval types
+/* Variable location & values. */
+typedef struct varval {
+  const call_site_value* var;
+  value val_src;
+  value val_dest;
+} varval;
+
+/* Define list types. */
+define_list_type(varval);
+
 #if _TLS_IMPL == COMPILER_TLS
 
 /*
@@ -427,8 +438,11 @@ static void unwind_and_size(rewrite_context src,
 static bool rewrite_var(rewrite_context src, const call_site_value* var_src,
                         rewrite_context dest, const call_site_value* var_dest)
 {
+  bool skip = false, needs_local_fixup = false;
+  void* stack_addr;
   value val_src, val_dest, fixup_val;
-  bool skip = false, needs_fixup = false, needs_local_fixup = false;
+  fixup fixup_data;
+  node_t(fixup)* fixup_node;
 
   ASSERT(var_src && var_dest, "invalid variables\n");
 
@@ -447,9 +461,8 @@ static bool rewrite_var(rewrite_context src, const call_site_value* var_src,
   }
 
   ASSERT(VAR_SIZE(var_src) == VAR_SIZE(var_dest),
-        "variable has different size (%llu vs. %llu)\n",
-        (long long unsigned)VAR_SIZE(var_src),
-        (long long unsigned)VAR_SIZE(var_dest));
+        "variable has different size (%u vs. %u)\n",
+        VAR_SIZE(var_src), VAR_SIZE(var_dest));
   ASSERT(!(var_src->is_ptr ^ var_dest->is_ptr),
         "variable does not have same type (%s vs. %s)\n",
         (var_src->is_ptr ? "pointer" : "non-pointer"),
@@ -462,87 +475,62 @@ static bool rewrite_var(rewrite_context src, const call_site_value* var_src,
   /* Read variable's source value & perform appropriate action. */
   val_src = get_var_val(src, var_src);
   val_dest = get_var_val(dest, var_dest);
-  if(val_src.is_valid && val_dest.is_valid)
+  if(!val_src.is_valid || !val_dest.is_valid) return false;
+
+  /*
+   * If variable is a pointer to the stack, record a fixup.  Otherwise, copy
+   * the variable into the destination frame.
+   */
+  if((stack_addr = points_to_stack(src, var_src, val_src)))
   {
-    fixup fixup_data;
-    node_t(fixup)* fixup_node;
-    void* stack_addr;
+    skip = true;
 
-    /*
-     * If variable is a pointer to the stack, record a fixup.  Otherwise, copy
-     * the variable into the destination frame.
-     */
-    if(!var_src->is_alloca && var_src->is_ptr)
+    // Note: it is an error for a pointer to point to frames down the call
+    // chain.  This is a sanity check to ignore things like uninitialized data
+    // or data left over from a previous call.
+    if(src->act == 0 || stack_addr > PREV_ACT(src).cfa)
     {
-      /* Read the pointer's value */
-      switch(val_src.type)
-      {
-      case ADDRESS: stack_addr = *(void**)val_src.addr; break;
-      case REGISTER:
-        // Note: we assume that we're doing offsets from 64-bit registers 
-        ASSERT(REGOPS(src)->reg_size(val_src.reg) == 8,
-               "invalid register size for pointer\n");
-        stack_addr = *(void**)REGOPS(src)->reg(ACT(src).regs, val_src.reg);
-        break;
-      case CONSTANT: stack_addr = (void*)val_src.cnst; break;
-      }
+      ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
+      fixup_data.src_addr = stack_addr;
+      fixup_data.dest_loc = val_dest;
+      list_add(fixup, &dest->stack_pointers, fixup_data);
 
-      /* Check if it points to a value on the stack */
-      if(src->stack_base > stack_addr && stack_addr >= src->stack)
-      {
-        if(src->act > 0 && stack_addr <= PREV_ACT(src).cfa)
-        {
-          // Note: it is an error for a pointer to point to frames down the
-          // call chain.  This is probably something like uninitialized data,
-          // so we'll let it slide.
-          ST_WARN("pointing to variable in called function (%p)\n", stack_addr);
-          skip = true;
-        }
-        else
-        {
-          ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
-          needs_fixup = true;
-          fixup_data.src_addr = stack_addr;
-          fixup_data.dest_loc = val_dest;
-          list_add(fixup, &dest->stack_pointers, fixup_data);
-
-          /* Are we pointing to a variable within the same frame? */
-          if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
-        }
-      }
+      /* Are we pointing to a variable within the same frame? */
+      if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
     }
+    else
+      ST_WARN("pointing to variable in called function (%p)\n", stack_addr);
+  }
 
-    /* If we don't point to the stack, do the copy. */
-    if(!skip && !needs_fixup)
-      put_val(src, val_src, dest, val_dest, VAR_SIZE(var_src));
+  /* If we don't point to the stack, do the copy. */
+  if(!skip) put_val(src, val_src, dest, val_dest, VAR_SIZE(var_src));
 
-    /* Check if variable is pointed to by other variables & fix up if so. */
-    // Note: can only be pointed to if value is in memory, so optimize by
-    // filtering out illegal types
-    if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
+  /* Check if variable is pointed to by other variables & fix up if so. */
+  // Note: can only be pointed to if value is in memory, so optimize by
+  // filtering out illegal types
+  if(val_src.type == ADDRESS && val_dest.type == ADDRESS)
+  {
+    fixup_node = list_begin(fixup, &dest->stack_pointers);
+    while(fixup_node)
     {
-      fixup_node = list_begin(fixup, &dest->stack_pointers);
-      while(fixup_node)
+      if(val_src.addr <= fixup_node->data.src_addr &&
+         fixup_node->data.src_addr < val_src.addr + VAR_SIZE(var_src))
       {
-        if(val_src.addr <= fixup_node->data.src_addr &&
-           fixup_node->data.src_addr < val_src.addr + VAR_SIZE(var_src))
-        {
-          ST_INFO("Found fixup for %p (in frame %d)\n",
-                  fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
+        ST_INFO("Found fixup for %p (in frame %d)\n",
+                fixup_node->data.src_addr, fixup_node->data.dest_loc.act);
 
-          fixup_val.is_valid = true;
-          fixup_val.type = CONSTANT;
-          fixup_val.cnst = (uint64_t)(val_dest.addr +
-                           (fixup_node->data.src_addr - val_src.addr));
-          put_val(src,
-                  fixup_val,
-                  dest,
-                  fixup_node->data.dest_loc,
-                  dest->handle->ptr_size);
-          fixup_node = list_remove(fixup, &dest->stack_pointers, fixup_node);
-        }
-        else fixup_node = list_next(fixup, fixup_node);
+        fixup_val.is_valid = true;
+        fixup_val.type = CONSTANT;
+        fixup_val.cnst = (uint64_t)(val_dest.addr +
+                         (fixup_node->data.src_addr - val_src.addr));
+        put_val(src,
+                fixup_val,
+                dest,
+                fixup_node->data.dest_loc,
+                dest->handle->ptr_size);
+        fixup_node = list_remove(fixup, &dest->stack_pointers, fixup_node);
       }
+      else fixup_node = list_next(fixup, fixup_node);
     }
   }
 

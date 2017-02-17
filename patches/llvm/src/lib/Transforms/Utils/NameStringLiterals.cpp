@@ -9,17 +9,12 @@
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "name-string-literals"
+#define CHARS_FOR_NAME 10
 
 using namespace llvm;
 
 namespace
 {
-
-bool FilterChar(char c)
-{
-  if(isalnum(c)) return false;
-  else return true;
-}
 
 /**
  * Generate unique name for private anonymous string literals.  Uses the
@@ -30,23 +25,25 @@ std::string UniquifySymbol(const Module &M, GlobalVariable &Sym)
 {
   std::string newName;
   std::string::size_type loc;
+  auto filter = [](char c){ return !isalnum(c); };
 
-  loc = M.getName().find_last_of('/');
-  newName = M.getName().substr(loc + 1);
+  newName = M.getName();
   loc = newName.find_last_of('.');
   newName = newName.substr(0, loc) + "_" + Sym.getName().str() + "_";
+  std::replace_if(newName.begin(), newName.end(), filter, '_');
+
+  // Check if it's a string, and if so use string content to uniquify
   if(Sym.hasInitializer()) {
     Constant *Initializer = Sym.getInitializer();
     if(isa<ConstantDataSequential>(Initializer)) {
       ConstantDataSequential *CDS = cast<ConstantDataSequential>(Initializer);
-      assert(CDS->isString() && "Unhandled global variable initializer");
-      std::string data = CDS->getAsString().substr(0, 10);
-      std::replace_if(data.begin(), data.end(), FilterChar, '_');
-      newName += data;
+      if(CDS->isString()) {
+        std::string data = CDS->getAsString().substr(0, CHARS_FOR_NAME);
+        std::replace_if(data.begin(), data.end(), filter, '_');
+        newName += data;
+      }
     }
-    else llvm_unreachable("Unhandled global variable initializer");
   }
-  else llvm_unreachable("Private variable with no initializer?");
 
   return newName;
 }

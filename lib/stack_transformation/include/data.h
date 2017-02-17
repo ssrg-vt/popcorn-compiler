@@ -51,6 +51,20 @@ void put_val(rewrite_context src,
 void put_val_arch(rewrite_context ctx, const arch_const_value *val);
 
 /*
+ * Return whether or not a pointer refers to a variable on the stack.  If so,
+ * return the pointer's value.  If not, return NULL.
+ *
+ * @param ctx the rewriting context
+ * @param var a variable's metadata
+ * @param val a previously-parsed value from var
+ * @return the pointed-to address on the stack, or NULL if it is not a pointer
+ *         to the stack
+ */
+void* points_to_stack(const rewrite_context ctx,
+                      const call_site_value* var,
+                      const value val);
+
+/*
  * Set the return address in the current stack frame of a rewriting context.
  *
  * @param ctx a rewriting context

@@ -11,8 +11,6 @@ Implementation
 
 4. Implement correct error handling/reporting
 
-5. Cleanup list definition & where fixup/varval are defined
-
 ------------
 Optimization
 ------------

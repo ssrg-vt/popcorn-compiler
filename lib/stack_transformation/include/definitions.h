@@ -20,6 +20,7 @@
 #include "config.h"
 #include "retvals.h"
 #include "bitmap.h"
+#include "list.h"
 #include "timer.h"
 #include "regs.h"
 #include "properties.h"
@@ -131,8 +132,17 @@ typedef struct value
 /* An empty value/value that is not defined. */
 #define VAL_NOT_DEFINED ((value){0, 0, 0, 0, {0}})
 
-// TODO Here because list needs struct variable/struct value definitions
-#include "list.h"
+/*
+ * A fixup record for reifying pointers to the stack when pointed-to data is
+ * found.
+ */
+typedef struct fixup {
+  void* src_addr; // pointed-to address on the source stack
+  value dest_loc; // pointer to reify on destination stack
+} fixup;
+
+/* List of fixup records. */
+define_list_type(fixup);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Rewriting metadata
@@ -218,7 +228,7 @@ struct rewrite_context
   int num_acts; /* number of activations */
   int act; /* current activation */
   activation acts[MAX_FRAMES]; /* all activations currently processed */
-  list_t(fixup) stack_pointers; /* stack pointers to be resolved */
+  list_t(fixup) stack_pointers; /* pointers to the stack, to be resolved */
 
   /* Pools for constant-time allocation of per-frame/runtime-dependent data */
   void* regset_pool; /* Register sets */

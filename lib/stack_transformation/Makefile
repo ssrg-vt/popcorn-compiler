@@ -3,7 +3,7 @@
 ###############################################################################
 
 VER_MAJ := 0
-VER_MIN := 6
+VER_MIN := 7
 
 POPCORN := /usr/local/popcorn
 COMMON  := $(shell readlink -f ../../common/stack_transformation)
@@ -14,11 +14,7 @@ SRC   := src
 UTILS := utils
 
 CC     := clang
-CFLAGS := -g -Wall -D_GNU_SOURCE -ffunction-sections -fdata-sections
-
-OPT       := opt
-OPT_FLAGS := -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
-             -load $(POPCORN)/lib/libSectionStatic.so -section-static
+CFLAGS := -g -Wall -D_GNU_SOURCE -popcorn-alignment
 
 AR  := ar
 LOC := -I$(INC) -I$(COMMON)/include
@@ -85,21 +81,15 @@ clean:
 
 build/aarch64/arch/aarch64/%.o: src/arch/aarch64/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_AARCH64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 build/aarch64/arch/x86_64/%.o: src/arch/x86_64/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_AARCH64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 build/aarch64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_AARCH64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 $(LIB_AARCH64): $(BUILD_AARCH64)/arch/aarch64/.dir \
                 $(BUILD_AARCH64)/arch/x86_64/.dir \
@@ -123,21 +113,15 @@ install-aarch64: $(LIB_AARCH64)
 
 build/x86_64/arch/aarch64/%.o: src/arch/aarch64/%.c $(LIB_HDR)
 	@echo " [CC-x86_64] $<"
-	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_X86_64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@ -c $<
 
 build/x86_64/arch/x86_64/%.o: src/arch/x86_64/%.c $(LIB_HDR)
 	@echo " [CC-x86_64] $<"
-	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_X86_64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@ -c $<
 
 build/x86_64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-x86_64] $<"
-	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@.bc -c -emit-llvm $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC_X86_64) $(CFLAGS) -o $@ -c $@.bc
+	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@ -c $<
 
 $(LIB_X86_64): $(BUILD_X86_64)/arch/aarch64/.dir \
                 $(BUILD_X86_64)/arch/x86_64/.dir \
