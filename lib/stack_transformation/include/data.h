@@ -1,6 +1,6 @@
 /*
- * APIs for accessing frame-specific data, i.e. arguments/local variables/live
- * values, return address, and saved frame pointer location.
+ * APIs for accessing frame-specific data, i.e. live values, return address,
+ * and saved frame pointer location.
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 1/25/2016
@@ -16,53 +16,74 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Get the value of the specified variable in the current stack frame from the
- * rewrite context.
- *
- * @param ctx a rewriting context
- * @param var a variable whose value to read
- * @return a value for the variable in the current frame of the context
- */
-value get_var_val(rewrite_context ctx, const call_site_value* var);
-
-/*
  * Copy a value from its location in the source context to its location in the
  * destination context.  This function implicitly uses the current stack frame
  * in the source & destination rewriting context.
  *
  * @param src the source rewriting context
- * @param src_val a value in the source context
+ * @param src_val a live value's location in the source context
  * @param dest the destination rewriting context
- * @param dest_val a value's location in the destination context
+ * @param dest_val a live value's location in the destination context
  * @param size the size of the data to copy between contexts
  */
 void put_val(rewrite_context src,
-             const value src_val,
+             const call_site_value* src_val,
              rewrite_context dest,
-             value dest_val,
-             uint64_t size);
+             const call_site_value* dest_val);
 
 /*
- * Put an architecture-specific constant value into a location.
+ * Put an architecture-specific constant value into a location.  This function
+ * implicitly uses the current stack frame in the rewriting context.
  *
  * @param ctx the rewriting context
- * @param var the architecture-specific constant value
+ * @param val the architecture-specific constant value
  */
 void put_val_arch(rewrite_context ctx, const arch_const_value *val);
 
 /*
- * Return whether or not a pointer refers to a variable on the stack.  If so,
- * return the pointer's value.  If not, return NULL.
+ * Put data into a location.  Used for general-purpose touch-ups, such as
+ * fixing-up pointers to the stack.
  *
  * @param ctx the rewriting context
- * @param var a variable's metadata
- * @param val a previously-parsed value from var
+ * @param val a live value's location in the context
+ * @param act the activation in which the value is live
+ * @param data the live value's new data
+ */
+void put_val_data(rewrite_context ctx,
+                  const call_site_value* val,
+                  int act,
+                  uint64_t data);
+
+/*
+ * Return whether or not a pointer points to some location on the stack.  If
+ * so, return the pointer's value.  If not, return NULL.
+ *
+ * @param ctx the rewriting context
+ * @param val a values's metadata
  * @return the pointed-to address on the stack, or NULL if it is not a pointer
  *         to the stack
  */
 void* points_to_stack(const rewrite_context ctx,
-                      const call_site_value* var,
-                      const value val);
+                      const call_site_value* val);
+
+/*
+ * Return whether or not a pointer refers to the specified live value in the
+ * rewriting context.  If so, return the pointer's translated value for the
+ * destination context.  If not, return NULL.
+ *
+ * @param src the source rewriting context
+ * @param src_val the pointed-to live value on the source stack
+ * @param dest the destination rewriting context
+ * @param dest_val the pointed-to live value on the destination stack
+ * @param src_ptr the source pointer which refers to the source stack
+ * @return the translated pointer for the destination if src_ptr points to
+ *         src_val, or NULL otherwise
+ */
+void* points_to_data(const rewrite_context src,
+                     const call_site_value* src_val,
+                     const rewrite_context dest,
+                     const call_site_value* dest_val,
+                     void* src_ptr);
 
 /*
  * Set the return address in the current stack frame of a rewriting context.

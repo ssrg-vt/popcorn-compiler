@@ -1,8 +1,7 @@
 /*
- * A linked list for storing to-be-fixed pointers to stack variables.  The list
- * needs to only support forward traversal and doesn't require sorting.  The
- * list's implementation is generated via macros so that it can encapsulate
- * various types of data -- a C version of polymorphism.
+ * A linked list.  The list needs to only support forward traversal and doesn't
+ * require sorting.  The list's implementation is generated via macros so that
+ * it can encapsulate various types of data -- a C version of polymorphism.
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 5/2/2016

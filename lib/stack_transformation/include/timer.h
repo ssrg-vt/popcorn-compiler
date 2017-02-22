@@ -44,7 +44,6 @@ typedef struct timer* timer;
 #define FINE_TIMERS \
   X(rewrite_frame) \
   X(pop_frame) \
-  X(eval_location) \
   X(put_val) \
   X(get_site_by_addr) \
   X(get_site_by_id) \

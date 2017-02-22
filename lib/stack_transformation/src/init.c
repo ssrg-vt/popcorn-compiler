@@ -178,7 +178,7 @@ return_null:
 
 /*
  * Destroy a previously opened handle.  No bugs are checked when cleaning up
- * DWARF and ELF resources, so internally things may fail silently.
+ * ELF resources, so internally things may fail silently.
  */
 void st_destroy(st_handle handle)
 {

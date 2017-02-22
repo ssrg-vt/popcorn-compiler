@@ -42,8 +42,7 @@ typedef struct stack_bounds {
 st_handle st_init(const char* fn);
 
 /*
- * Clean up and free a stack transformation handle.  Releases DWARF and ELF
- * information.
+ * Clean up and free a stack transformation handle.  Releases ELF information.
  *
  * @param handle a stack transformation handle
  */

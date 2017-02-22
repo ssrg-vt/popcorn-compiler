@@ -62,9 +62,9 @@ void pop_frame_funcentry(rewrite_context ctx);
  * @param ctx a rewriting context
  * @param act an activation in which the register is saved
  * @param reg a saved register
- * @return the location of the saved register
+ * @return the memory of the saved register
  */
-value get_register_save_loc(rewrite_context ctx,
+void* get_register_save_loc(rewrite_context ctx,
                             activation* act,
                             uint16_t reg);
 

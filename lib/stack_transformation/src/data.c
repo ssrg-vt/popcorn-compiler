@@ -1,6 +1,6 @@
 /*
- * APIs for accessing frame-specific data, i.e. arguments/local variables/live
- * values, return address, and saved frame pointer.
+ * APIs for accessing frame-specific data, i.e. live values, return address,
+ * and saved frame pointer.
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
  * Date: 11/12/2015
@@ -14,122 +14,83 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
+ * Get a pointer to a value's location.  Returns the memory address needed to
+ * read/write a register or the value's location in memory.
+ */
+static inline void* get_val_loc(rewrite_context ctx,
+                                uint8_t type,
+                                uint16_t regnum,
+                                int32_t offset_or_constant,
+                                int act);
+
+/*
+ * Get the location for a call site value.  Used for the source call site
+ * values, and will return addresses for constants.
+ */
+static const void* get_src_loc(rewrite_context ctx,
+                               const call_site_value* val,
+                               int act);
+
+/*
+ * Get the location for a call site value.  Used for the destination call site
+ * value (doesn't return addresses for constants).
+ */
+static void* get_dest_loc(rewrite_context ctx,
+                          const call_site_value* val,
+                          int act);
+
+/*
  * Get pointer to the stack save slot or the register in the outer-most
  * activation in which a callee-saved register is saved.
  */
-static void* callee_saved_loc(rewrite_context ctx, const value val);
+static void* callee_saved_loc(rewrite_context ctx,
+                              uint16_t regnum,
+                              int act);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Data access
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Evaluate stack map location record VAR and return a value location.
- */
-value get_var_val(rewrite_context ctx, const call_site_value* var)
-{
-  value loc;
-
-  TIMER_FG_START(eval_location);
-
-  loc.is_valid = true;
-  loc.act = ctx->act;
-  loc.num_bytes = var->size;
-
-  switch(var->type)
-  {
-  case SM_REGISTER: // Value is in register
-    loc.type = REGISTER;
-    loc.reg = var->regnum;
-    break;
-  // Note: these value types are fundamentally different, but their values are
-  // generated in an identical manner
-  case SM_DIRECT: // Value is allocated on stack
-  case SM_INDIRECT: // Value is in register, but spilled to the stack
-    loc.type = ADDRESS;
-    loc.addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, var->regnum) +
-               var->offset_or_constant;
-    break;
-  case SM_CONSTANT: // Value is constant
-    loc.type = CONSTANT;
-    loc.cnst = var->offset_or_constant;
-    break;
-  case SM_CONST_IDX:
-    ASSERT(false, "constants in constant pool not supported\n");
-    loc.is_valid = false;
-    break;
-  default:
-    ST_ERR(1, "invalid live value location record type (%u)\n", var->type);
-    break;
-  }
-
-  TIMER_FG_STOP(eval_location);
-
-  return loc;
-}
-
-/*
- * Put SRC_VAL from SRC at DEST_VAL from DEST.
+ * Put SRC_VAL from SRC at DEST_VAL from DEST (copying SIZE bytes).
  */
 void put_val(rewrite_context src,
-             const value src_val,
+             const call_site_value* src_val,
              rewrite_context dest,
-             value dest_val,
-             uint64_t size)
+             const call_site_value* dest_val)
 {
   const void* src_addr;
   void* dest_addr, *callee_addr = NULL;
 
-  ASSERT(src_val.is_valid && dest_val.is_valid, "invalid value(s)\n");
-
   TIMER_FG_START(put_val);
-  ST_INFO("Putting value (size=%lu)\n", size);
+  ASSERT(src->act == dest->act, "non-matching activations (%u vs. %u)\n",
+         src->act, dest->act);
 
-  switch(src_val.type)
+  // Avoid the copy if destination value is constant
+  if(dest_val->type == SM_CONSTANT || dest_val->type == SM_CONST_IDX)
   {
-  case ADDRESS:
-    ST_INFO("Source value at %p\n", src_val.addr);
-    src_addr = src_val.addr;
-    break;
-  case REGISTER:
-    ST_INFO("Source value in register %u\n", src_val.reg);
-    src_addr = REGOPS(src)->reg(src->acts[src_val.act].regs, src_val.reg);
-    break;
-  case CONSTANT:
-    ST_INFO("Source value: %ld / %lu / %lx\n",
-            src_val.cnst, src_val.cnst, src_val.cnst);
-    src_addr = &src_val.cnst;
-    break;
-  default:
-    ST_ERR(1, "unknown source value location type %u\n", src_val.type);
-    break;
+    ST_INFO("Skipping value (destination value is constant)\n");
+    return;
   }
 
-  switch(dest_val.type)
-  {
-  case ADDRESS:
-    ST_INFO("Destination value at %p\n", dest_val.addr);
-    dest_addr = dest_val.addr;
-    break;
-  case REGISTER:
-    // Note: we're copying callee-saved registers into the current frame's
-    // register set & the activation where it is saved (or is still alive).
-    // This is cheap & supports both eager & on-demand rewriting.
-    ST_INFO("Destination value in register %u\n", dest_val.reg);
-    dest_addr = REGOPS(dest)->reg(dest->acts[dest_val.act].regs, dest_val.reg);
-    if(PROPS(dest)->is_callee_saved(dest_val.reg))
-      callee_addr = callee_saved_loc(dest, dest_val);
-    break;
-  case CONSTANT:
-    dest_addr = &dest_val.cnst;
-    break;
-  default:
-    ST_ERR(1, "unknown destination value location type %u\n", dest_val.type);
-    break;
-  }
+  ASSERT(VAL_SIZE(src_val) == VAL_SIZE(dest_val),
+         "value sizes don't match (%u vs. %u)\n",
+         VAL_SIZE(src_val), VAL_SIZE(dest_val));
 
-  memcpy(dest_addr, src_addr, size);
-  if(callee_addr) memcpy(callee_addr, src_addr, size);
+  ST_INFO("Getting source value: ");
+  src_addr = get_src_loc(src, src_val, src->act);
+  ST_INFO("Putting destination value (size=%u): ", VAL_SIZE(dest_val));
+  dest_addr = get_dest_loc(dest, dest_val, src->act);
+
+  // Note: we're copying callee-saved registers into the current frame's
+  // register set & the activation where it is saved (or is still alive).
+  // This is cheap & supports both eager & on-demand rewriting.
+  if(dest_val->type == SM_REGISTER &&
+     PROPS(dest)->is_callee_saved(dest_val->regnum))
+    callee_addr = callee_saved_loc(dest, dest_val->regnum, dest->act);
+
+  memcpy(dest_addr, src_addr, VAL_SIZE(dest_val));
+  if(callee_addr) memcpy(callee_addr, src_addr, VAL_SIZE(dest_val));
 
   TIMER_FG_STOP(put_val);
 }
@@ -141,40 +102,16 @@ void put_val(rewrite_context src,
 void put_val_arch(rewrite_context ctx, const arch_const_value* val)
 {
   void* dest_addr, *callee_addr = NULL;
-  value loc; // Needed to generate callee-saved information
 
-  TIMER_FG_START(eval_location);
-
-  // First, parse the location in the rewriting context
-  switch(val->type)
-  {
-  case SM_REGISTER: // Value is in register
-    dest_addr = REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
-    if(PROPS(ctx)->is_callee_saved(val->regnum))
-    {
-      loc.is_valid = true;
-      loc.act = ctx->act;
-      loc.type = REGISTER;
-      loc.reg = val->regnum;
-      callee_addr = callee_saved_loc(ctx, loc);
-    }
-    ST_INFO("Architecture-specific value in register %u\n", val->regnum);
-    break;
-  case SM_DIRECT: // Value is allocated on stack
-    dest_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
-                val->offset;
-    ST_INFO("Architecture-specific value at %p\n", dest_addr);
-    break;
-  default:
-    ST_ERR(1, "invalid architecture-specific live value "
-              "location record type (%u)\n", val->type);
-    break;
-  }
-
-  TIMER_FG_STOP(eval_location);
   TIMER_FG_START(put_val)
+  ASSERT(val->type == SM_REGISTER || val->type == SM_DIRECT,
+         "Invalid architecture-specific value type (%u)\n", val->type);
 
-  // Second, set the value
+  ST_INFO("Putting architecture-specific destination value\n");
+  dest_addr = get_val_loc(ctx, val->type, val->regnum, val->offset, ctx->act);
+  if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
+    callee_addr = callee_saved_loc(ctx, val->regnum, ctx->act);
+
   memcpy(dest_addr, &val->value, val->size);
   if(callee_addr) memcpy(callee_addr, &val->value, val->size);
 
@@ -182,29 +119,63 @@ void put_val_arch(rewrite_context ctx, const arch_const_value* val)
 }
 
 /*
- * Return whether or not a pointer refers to a variable on the stack.
+ * Set the live value VAL's in activation ACT and context CTX to DATA.
+ */
+void put_val_data(rewrite_context ctx,
+                  const call_site_value* val,
+                  int act,
+                  uint64_t data)
+{
+  void* addr;
+
+  TIMER_FG_START(put_val);
+
+  addr = get_dest_loc(ctx, val, act);
+  memcpy(addr, &data, sizeof(uint64_t));
+
+  TIMER_FG_STOP(put_val);
+}
+
+/*
+ * Return whether or not a pointer refers to a value on the stack.
  */
 void* points_to_stack(const rewrite_context ctx,
-                      const call_site_value* var,
-                      const value val)
+                      const call_site_value* val)
 {
   void* stack_addr = NULL;
 
-  /* Is it a pointer (NOT an alloca/stack variable)? */
-  if(var->is_ptr && !var->is_alloca)
+  /* Is it a pointer (NOT an alloca/stack value)? */
+  if(val->is_ptr && !val->is_alloca)
   {
     /* Get the pointed-to address */
-    switch(val.type)
+    switch(val->type)
     {
-    case ADDRESS: stack_addr = *(void**)val.addr; break;
-    case REGISTER:
+    case SM_REGISTER:
       // Note: we assume that we're doing offsets from 64-bit registers
-      ASSERT(REGOPS(ctx)->reg_size(val.reg) == 8,
+      ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
              "invalid register size for pointer\n");
-      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val.reg);
+
+      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
       break;
-    case CONSTANT: stack_addr = (void*)val.cnst; break;
-    default: ST_ERR(1, "invalid value type (%d)", val.type); break;
+    case SM_DIRECT:
+      // Note: SM_DIRECT live values are allocated to the stack (allocas) and
+      // thus should have been weeded out in the if-statement above
+      ST_ERR(1, "incorrectly encoded live value\n");
+      break;
+    case SM_INDIRECT:
+      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
+                   val->offset_or_constant;
+      stack_addr = *(void**)stack_addr;
+      break;
+    case SM_CONSTANT:
+      ST_ERR(1, "directly-encoded constants too small to store pointers\n");
+      break;
+    case SM_CONST_IDX:
+      ST_ERR(1, "constant pool entries not supported\n");
+      break;
+    default:
+      ST_ERR(1, "invalid value type (%d)", val->type);
+      break;
     }
 
     /* Check if we're within the stack's bounds.  If not, wipe the pointer */
@@ -213,6 +184,36 @@ void* points_to_stack(const rewrite_context ctx,
   }
 
   return stack_addr;
+}
+
+/*
+ * Return whether or not a pointer refers to the specified live value.
+ */
+void* points_to_data(const rewrite_context src,
+                     const call_site_value* src_val,
+                     const rewrite_context dest,
+                     const call_site_value* dest_val,
+                     void* src_ptr)
+{
+  void* src_addr, *dest_addr = NULL;
+
+  ASSERT(src_val->type == SM_DIRECT && dest_val->type == SM_DIRECT,
+         "invalid value types (must be allocas for pointed-to analysis)\n");
+
+  src_addr = get_val_loc(src, src_val->type,
+                         src_val->regnum,
+                         src_val->offset_or_constant,
+                         src->act);
+  if(src_addr <= src_ptr && src_ptr < (src_addr + VAL_SIZE(src_val)))
+  {
+    dest_addr = get_val_loc(dest, dest_val->type,
+                            dest_val->regnum,
+                            dest_val->offset_or_constant,
+                            dest->act);
+    dest_addr += (src_ptr - src_addr);
+  }
+
+  return dest_addr;
 }
 
 /*
@@ -251,14 +252,84 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx)
 // File-local API (implementation)
 ///////////////////////////////////////////////////////////////////////////////
 
-static void* callee_saved_loc(rewrite_context ctx, const value val)
+static inline void* get_val_loc(rewrite_context ctx,
+                                uint8_t type,
+                                uint16_t regnum,
+                                int32_t offset_or_constant,
+                                int act)
 {
-  int act = val.act;
-  value loc;
+  void* val_loc = NULL;
 
-  ASSERT(val.is_valid, "cannot get callee-saved location for invalid value\n");
-  ASSERT(val.type == REGISTER,
-         "cannot get callee-saved location for non-register value type\n");
+  switch(type)
+  {
+  case SM_REGISTER: // Value is in register
+    val_loc = REGOPS(ctx)->reg(ctx->acts[act].regs, regnum);
+    ST_RAW_INFO("Live value in register %u\n", regnum);
+    break;
+  // Note: these value types are fundamentally different, but their locations
+  // are generated in an identical manner
+  case SM_DIRECT: // Value is allocated on stack
+  case SM_INDIRECT: // Value is in register, but spilled to the stack
+    val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
+              offset_or_constant;
+    ST_RAW_INFO("Live value at %p\n", val_loc);
+    break;
+  case SM_CONSTANT: // Value is constant
+  case SM_CONST_IDX: // Value is in constant pool
+    ST_ERR(1, "cannot get location for constant/constant index\n");
+    break;
+  default:
+    ST_ERR(1, "invalid live value location type (%u)\n", type);
+    break;
+  }
+
+  return val_loc;
+}
+
+static const void* get_src_loc(rewrite_context ctx,
+                               const call_site_value* val,
+                               int act)
+{
+  switch(val->type)
+  {
+  case SM_REGISTER: case SM_DIRECT: case SM_INDIRECT:
+    return get_val_loc(ctx,
+                       val->type,
+                       val->regnum,
+                       val->offset_or_constant,
+                       act);
+  case SM_CONSTANT:
+    ST_RAW_INFO("Constant live value: %d / %u / %x\n",
+            val->offset_or_constant,
+            val->offset_or_constant,
+            val->offset_or_constant);
+    return &val->offset_or_constant;
+  case SM_CONST_IDX:
+    ST_ERR(1, "constant pool entries not supported\n");
+    break;
+  default:
+    ST_ERR(1, "invalid live value location type (%u)\n", val->type);
+    break;
+  }
+  return NULL;
+}
+
+static void* get_dest_loc(rewrite_context ctx,
+                          const call_site_value* val,
+                          int act)
+{
+  return get_val_loc(ctx,
+                     val->type,
+                     val->regnum,
+                     val->offset_or_constant,
+                     act);
+}
+
+static void* callee_saved_loc(rewrite_context ctx,
+                              uint16_t regnum,
+                              int act)
+{
+  void* saved_addr;
 
   /* Nothing to propagate from outermost frame */
   if(act <= 0) return NULL;
@@ -266,18 +337,18 @@ static void* callee_saved_loc(rewrite_context ctx, const value val)
   /* Walk call chain to check if register has been saved. */
   for(act--; act >= 0; act--)
   {
-    if(bitmap_is_set(ctx->acts[act].callee_saved, val.reg))
+    if(bitmap_is_set(ctx->acts[act].callee_saved, regnum))
     {
-      loc = get_register_save_loc(ctx, &ctx->acts[act], val.reg);
-      ASSERT(loc.type == ADDRESS, "invalid callee-saved slot\n");
+      saved_addr = get_register_save_loc(ctx, &ctx->acts[act], regnum);
+      ASSERT(saved_addr, "invalid callee-saved slot\n");
       ST_INFO("Saving callee-saved register %u at %p (frame %d)\n",
-              val.reg, loc.addr, act);
-      return loc.addr;
+              regnum, saved_addr, act);
+      return saved_addr;
     }
   }
 
   /* Register is still live in outermost frame. */
-  ST_INFO("Callee-saved register %u live in outer-most frame\n", val.reg);
-  return REGOPS(ctx)->reg(ctx->acts[0].regs, val.reg);
+  ST_INFO("Callee-saved register %u live in outer-most frame\n", regnum);
+  return REGOPS(ctx)->reg(ctx->acts[0].regs, regnum);
 }
 

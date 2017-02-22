@@ -96,41 +96,8 @@ extern FILE* __log;
 // Data access structures
 ///////////////////////////////////////////////////////////////////////////////
 
-/* Get a variable's size. */
-#define VAR_SIZE( var ) (var->is_alloca ? var->alloca_size : var->size)
-
-/* Type of location where value is stored. */
-enum loc_type {
-  ADDRESS = 0, // In memory
-  REGISTER, // In a register
-  CONSTANT // Constant value
-};
-
-/*
- * Where a value is located -- can be in memory, a register or is constant.
- * The size field indicates different values depending on the type:
- *   ADDRESS  - the size of the pointer (does *NOT* indicate the size of the
- *              pointed-to value)
- *   REGISTER - the size of the register, or the number of bytes in the
- *              register to use (e.g., an int uses 4 bytes of 64-bit register)
- *   CONSTANT - the size of the constant (no larger than 8 bytes)
- */
-typedef struct value
-{
-  bool is_valid;
-  int act;
-  enum loc_type type;
-  uint32_t num_bytes;
-  union
-  {
-    void* addr;
-    uint16_t reg;
-    uint64_t cnst;
-  };
-} value;
-
-/* An empty value/value that is not defined. */
-#define VAL_NOT_DEFINED ((value){0, 0, 0, 0, {0}})
+/* Get a value's size. */
+#define VAL_SIZE( val ) (val->is_alloca ? val->alloca_size : val->size)
 
 /*
  * A fixup record for reifying pointers to the stack when pointed-to data is
@@ -138,7 +105,8 @@ typedef struct value
  */
 typedef struct fixup {
   void* src_addr; // pointed-to address on the source stack
-  value dest_loc; // pointer to reify on destination stack
+  int act; // in which activation we must apply the fixup
+  const call_site_value* dest_loc; // pointer to reify on destination stack
 } fixup;
 
 /* List of fixup records. */

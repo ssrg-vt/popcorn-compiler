@@ -30,7 +30,6 @@ static __thread stack_bounds bounds = { .high = NULL, .low = NULL };
 #else /* PTHREAD_TLS */
 static pthread_key_t stack_bounds_key = 0;
 #endif
-static pthread_mutex_t rewrite_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * Get main thread's stack information from procfs.
@@ -321,6 +320,13 @@ void __st_userspace_dtor(void)
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
+#ifdef _POPCORN_BUILD
+  // TODO hack -- Popcorn currently returns an incorrect PID, so hard-code in
+  // assuming we're at the top of the address space
+  bool found = true;
+  bounds->high = (void*)0x7ffffff000;
+  bounds->low = (void*)0x7ffffde000;
+#else
   /* /proc/<id>/maps fields */
   bool found = false;
   int fields;
@@ -355,6 +361,7 @@ static bool get_main_stack(stack_bounds* bounds)
   }
   free(lineptr);
   fclose(proc_fp);
+#endif
 
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
@@ -443,7 +450,6 @@ static int userspace_rewrite_internal(void* sp,
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
   new_stack = (sp >= stack_b) ? stack_b : stack_a;
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
-  pthread_mutex_lock(&rewrite_lock);
   if(st_rewrite_stack(handle_a,
                       regs,
                       cur_stack,
@@ -455,7 +461,6 @@ static int userspace_rewrite_internal(void* sp,
             arch_name(handle_a->arch), arch_name(handle_b->arch));
     retval = 1;
   }
-  pthread_mutex_unlock(&rewrite_lock);
 
   return retval;
 }

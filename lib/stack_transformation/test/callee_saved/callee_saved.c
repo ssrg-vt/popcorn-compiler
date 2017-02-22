@@ -31,6 +31,8 @@ int recurse(int depth)
 
 int main(int argc, char** argv)
 {
+  // Note: clang/LLVM ignores the register specification, but by default will
+  // allocate live values to callee-saved registers first anyway
 #ifdef __aarch64__
   register uint64_t magic __asm__("x19");
 #elif defined(__x86_64__)

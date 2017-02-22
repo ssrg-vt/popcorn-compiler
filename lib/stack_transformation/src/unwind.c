@@ -145,15 +145,11 @@ void pop_frame_funcentry(rewrite_context ctx)
 /*
  * Process unwinding rule to get the saved location for the register.
  */
-value get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
+void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
 {
   const unwind_loc* unwind_locs;
   uint32_t unwind_start, unwind_end;
-  value loc = {
-    .is_valid = false,
-    .act = ctx->act,
-    .type = ADDRESS,
-  };
+  void* addr = NULL;
 
   ASSERT(act, "invalid arguments to get_stored_loc()\n");
   ASSERT(bitmap_is_set(act->callee_saved, reg),
@@ -166,13 +162,12 @@ value get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
   {
     if(unwind_locs[i].reg == reg)
     {
-      loc.is_valid = true;
-      loc.addr = REGOPS(ctx)->fbp(act->regs) + unwind_locs[i].offset;
+      addr = REGOPS(ctx)->fbp(act->regs) + unwind_locs[i].offset;
       break;
     }
   }
 
-  return loc;
+  return addr;
 }
 
 /*
