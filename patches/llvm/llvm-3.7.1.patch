@@ -1936,7 +1936,7 @@ Index: lib/CodeGen/MachineFunction.cpp
 +      for(auto &IRIt : InstIt.second) {
 +        for(auto &MLL : IRIt.second) {
 +          if(MLL->isStackSlot()) {
-+            MachineLiveStackSlot &LSS = (MachineLiveStackSlot &)MLL;
++            MachineLiveStackSlot &LSS = (MachineLiveStackSlot &)*MLL;
 +            int SS = LSS.getStackSlot();
 +            Change = Changes.find(SS);
 +            if(Change != Changes.end())
@@ -1950,7 +1950,7 @@ Index: lib/CodeGen/MachineFunction.cpp
 +    for(auto &InstIt : SMArchSpecificLocs) {
 +      for(auto &MLL : InstIt.second) {
 +        if(MLL.first->isStackSlot()) {
-+          MachineLiveStackSlot &LSS = (MachineLiveStackSlot &)MLL.first;
++          MachineLiveStackSlot &LSS = (MachineLiveStackSlot &)*MLL.first;
 +          int SS = LSS.getStackSlot();
 +          Change = Changes.find(SS);
 +          if(Change != Changes.end())
@@ -2117,7 +2117,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +92,112 @@
+@@ -84,32 +92,114 @@
    return (unsigned)RegNum;
  }
  
@@ -2142,7 +2142,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +  }
 +}
 +
-+/// Get stackmap information for register location 
++/// Get stackmap information for register location
 +void StackMaps::getRegLocation(unsigned Phys,
 +                               unsigned &Dwarf,
 +                               unsigned &Offset) const {
@@ -2178,6 +2178,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +      else if(LL->isStackSlot()) {
 +        const MachineLiveStackSlot &MSS = (const MachineLiveStackSlot &)*LL;
 +        const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
++        assert(!MFI->isDeadObjectIndex(MSS.getStackSlot()) &&
++               "Attempting to add a dead stack slot");
 +        int64_t Offset = MFI->getObjectOffset(MSS.getStackSlot());
 +
 +        DEBUG(Oper->printAsOperand(dbgs());
@@ -2235,7 +2237,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +204,24 @@
+@@ -116,17 +206,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -2263,7 +2265,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +229,16 @@
+@@ -134,17 +231,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -2288,7 +2290,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +255,7 @@
+@@ -161,6 +257,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2296,7 +2298,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -203,8 +298,15 @@
+@@ -203,8 +300,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -2314,7 +2316,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +323,43 @@
+@@ -221,6 +325,43 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -2358,7 +2360,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +416,52 @@
+@@ -277,6 +418,52 @@
    return LiveOuts;
  }
  
@@ -2411,7 +2413,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +470,46 @@
+@@ -285,21 +472,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -2460,7 +2462,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +537,9 @@
+@@ -327,8 +539,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -2472,7 +2474,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +622,11 @@
+@@ -411,8 +624,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -2485,7 +2487,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +634,15 @@
+@@ -420,6 +636,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -2501,7 +2503,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +662,20 @@
+@@ -439,14 +664,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -2526,7 +2528,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +684,19 @@
+@@ -455,6 +686,19 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -2546,7 +2548,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +712,29 @@
+@@ -470,23 +714,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2577,7 +2579,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +742,13 @@
+@@ -494,10 +744,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -2592,7 +2594,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +760,32 @@
+@@ -509,6 +762,32 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -2625,7 +2627,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +792,7 @@
+@@ -515,7 +794,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -2634,7 +2636,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +816,7 @@
+@@ -539,7 +818,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -2669,7 +2671,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,821 @@
+@@ -0,0 +1,864 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2693,7 +2695,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +#include "llvm/CodeGen/StackMaps.h"
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/CodeGen/VirtRegMap.h"
++#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/IR/LLVMContext.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Target/TargetInstrInfo.h"
 +#include "llvm/Support/Debug.h"
@@ -3330,6 +3334,19 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // values
 +    mapOpsToIR(IRSM, MISM);
 +
++    // TODO the rest of the logic in the loop needs to be replaced with a
++    // forward/backward sweep to find equivalent values
++    //
++    // - For all locations in the map:
++    //    1. Do a forward sweep through the vreg/stack slot's uses
++    //    2. Do a backward sweep the defining instructions
++    //      - Does this apply to stack slots?
++    //
++    // - Add duplicate locations for each location discovered that:
++    //    1. Is equivalent, i.e., is a copy from another vreg or is a
++    //       load from/store to a stack slot
++    //    2. Is live either across the stackmap or call machine instruction
++
 +    // Stackmap machine instructions may not appear directly after function
 +    // call, and stackmap operands may be created during this interlude.  Walk
 +    // from the call to the stackmap, reversing stackmap operand movement.
@@ -3349,7 +3366,11 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          );
 +          MF->addSMOpLocation(IRSM, vregIt->second[sz],
 +                              MachineLiveStackSlot(StackSlot, true));
++
 +        }
++
++        // Record handling for the backing stack slot
++        SMStackSlots[MISM][StackSlot] = vregIt->second;
 +      }
 +    }
 +  }
@@ -3426,12 +3447,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                     << " is live in register but not in stackmap\n";);
 +
 +        // TODO need to handle when >1 definition
-+        assert(MRI->hasOneDef(Vreg) && "More than one definition for vreg");
-+        for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-+            def != end; def++) {
-+          if((MC = getTargetValue(&*def)) != nullptr) {
-+            DEBUG(dbgs() << "      Defining instruction: "; def->dump(););
-+            break;
++        if(!MRI->hasOneDef(Vreg)) {
++          DEBUG( dbgs() << "More than one definition for vreg");
++          MC = nullptr;
++        }
++        else {
++          for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
++              def != end; def++) {
++            if((MC = getTargetValue(&*def)) != nullptr) {
++              DEBUG(dbgs() << "      Defining instruction: "; def->dump(););
++              break;
++            }
 +          }
 +        }
 +
@@ -3451,25 +3477,38 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +              def->dump();
 +            }
 +          );
-+          llvm_unreachable("Unhandled architecture-specific register");
++          DiagnosticInfoOptimizationFailure DI(
++            *IRSM->getParent()->getParent(),
++            IRSM->getDebugLoc(),
++            "Unhandled architecture-specific register "
++            "for stack transformation");
++          MF->getFunction()->getContext().diagnose(DI);
 +        }
 +      }
 +      // Detect virtual registers mapped to stack slots not in stackmap
 +      else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
 +              isVregLiveAcrossInstr(Vreg, MICall) &&
 +              CurVregs.find(Vreg) == CurVregs.end()) {
-+        DEBUG(
++        // Note: this path is a little weird in that we can't detect if this
++        // vreg is actually used by the value returned from VRM->getStackSlot.
++        // Manually check by seeing if there are any definitions.
++        auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
++        if(def != end) {
 +          dbgs() << "    + vreg" << i
 +                 << " is live in stack slot but not in stackmap\n";
-+          // TODO no vregs in this path are printing any defining instructions
-+          for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-+              def != end; def++) {
-+            dbgs() << "    ";
-+            def->dump();
-+          }
-+        );
-+        // TODO add arch-specific stack slot information to machine function
-+        llvm_unreachable("Unhandled architecture-specific stack slot (vreg)");
++          DEBUG(
++            for(; def != end; def++) {
++              dbgs() << "    ";
++              def->dump();
++            }
++          );
++          DiagnosticInfoOptimizationFailure DI(
++            *IRSM->getParent()->getParent(),
++            IRSM->getDebugLoc(),
++            "Unhandled architecture-specific stack slot/register "
++            "for stack transformation");
++          MF->getFunction()->getContext().diagnose(DI);
++        }
 +      }
 +    }
 +
@@ -3477,13 +3516,19 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // TODO handle function arguments on the stack (negative stack slots)
 +    for(int SS = MFI->getObjectIndexBegin(), e = MFI->getObjectIndexEnd();
 +        SS < e; SS++) {
-+      if(isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
++      if(!MFI->isDeadObjectIndex(SS) &&
++         isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
 +        DEBUG(dbgs() << "    + stack slot " << SS
 +                     << " is live but not in stackmap\n";);
 +        // TODO add arch-specific stack slot information to machine function
 +        // TODO does this imply an alloca that wasn't captured in the stackmap?
 +        // I think this is a live value analysis bug...
-+        llvm_unreachable("Unhandled architecture-specific stack slot");
++        DiagnosticInfoOptimizationFailure DI(
++          *IRSM->getParent()->getParent(),
++          IRSM->getDebugLoc(),
++          "Unhandled architecture-specific stack slot "
++          "for stack transformation");
++        MF->getFunction()->getContext().diagnose(DI);
 +      }
 +    }
 +
@@ -3934,8 +3979,8 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    std::set<const AllocaInst *> allocas;
 +
 +    DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
-+                 << "********** Module: " << M.getName() << "**********\n\n");
-+  
++                 << "********** Module: " << M.getName() << " **********\n\n");
++
 +    this->createSMType(M);
 +    if(this->addSMDeclaration(M)) modified = true;
 +  
@@ -4143,7 +4188,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 ===================================================================
 --- lib/Transforms/Utils/NameStringLiterals.cpp	(nonexistent)
 +++ lib/Transforms/Utils/NameStringLiterals.cpp	(working copy)
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,118 @@
 +#include <algorithm>
 +#include <cctype>
 +#include "llvm/Pass.h"
@@ -4155,17 +4200,12 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +#include "llvm/Support/raw_ostream.h"
 +
 +#define DEBUG_TYPE "name-string-literals"
++#define CHARS_FOR_NAME 10
 +
 +using namespace llvm;
 +
 +namespace
 +{
-+
-+bool FilterChar(char c)
-+{
-+  if(isalnum(c)) return false;
-+  else return true;
-+}
 +
 +/**
 + * Generate unique name for private anonymous string literals.  Uses the
@@ -4176,23 +4216,25 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +{
 +  std::string newName;
 +  std::string::size_type loc;
++  auto filter = [](char c){ return !isalnum(c); };
 +
-+  loc = M.getName().find_last_of('/');
-+  newName = M.getName().substr(loc + 1);
++  newName = M.getName();
 +  loc = newName.find_last_of('.');
 +  newName = newName.substr(0, loc) + "_" + Sym.getName().str() + "_";
++  std::replace_if(newName.begin(), newName.end(), filter, '_');
++
++  // Check if it's a string, and if so use string content to uniquify
 +  if(Sym.hasInitializer()) {
 +    Constant *Initializer = Sym.getInitializer();
 +    if(isa<ConstantDataSequential>(Initializer)) {
 +      ConstantDataSequential *CDS = cast<ConstantDataSequential>(Initializer);
-+      assert(CDS->isString() && "Unhandled global variable initializer");
-+      std::string data = CDS->getAsString().substr(0, 10);
-+      std::replace_if(data.begin(), data.end(), FilterChar, '_');
-+      newName += data;
++      if(CDS->isString()) {
++        std::string data = CDS->getAsString().substr(0, CHARS_FOR_NAME);
++        std::replace_if(data.begin(), data.end(), filter, '_');
++        newName += data;
++      }
 +    }
-+    else llvm_unreachable("Unhandled global variable initializer");
 +  }
-+  else llvm_unreachable("Private variable with no initializer?");
 +
 +  return newName;
 +}
