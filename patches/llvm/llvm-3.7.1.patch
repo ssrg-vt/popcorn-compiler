@@ -2117,7 +2117,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +92,114 @@
+@@ -84,32 +92,115 @@
    return (unsigned)RegNum;
  }
  
@@ -2162,6 +2162,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +  if(AP.MF->hasSMOpLocations(StackMap, Oper)) {
 +    const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
 +    const MachineLiveLocs &Dups = AP.MF->getSMOpLocations(StackMap, Oper);
++    const unsigned FBPOff = AP.getFBPOffset();
 +
 +    for(const MachineLiveLocPtr &LL : Dups) {
 +      if(LL->isReg()) {
@@ -2180,7 +2181,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +        const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
 +        assert(!MFI->isDeadObjectIndex(MSS.getStackSlot()) &&
 +               "Attempting to add a dead stack slot");
-+        int64_t Offset = MFI->getObjectOffset(MSS.getStackSlot());
++        int64_t Offset = MFI->getObjectOffset(MSS.getStackSlot()) + FBPOff;
 +
 +        DEBUG(Oper->printAsOperand(dbgs());
 +              dbgs() << ": duplicate in " << MSS.toString() << "\n";);
@@ -2237,7 +2238,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +206,24 @@
+@@ -116,17 +207,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -2265,7 +2266,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +231,16 @@
+@@ -134,17 +232,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -2290,7 +2291,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +257,7 @@
+@@ -161,6 +258,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2298,7 +2299,16 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -203,8 +300,15 @@
+@@ -194,7 +292,7 @@
+           OS << TRI->getName(Loc.Reg);
+         else
+           OS << Loc.Reg;
+-        OS << "+" << Loc.Offset;
++        OS << " + " << Loc.Offset;
+         break;
+       case Location::Constant:
+         OS << "Constant " << Loc.Offset;
+@@ -203,8 +301,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -2316,7 +2326,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +325,43 @@
+@@ -221,6 +326,43 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -2360,7 +2370,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +418,52 @@
+@@ -277,6 +419,53 @@
    return LiveOuts;
  }
  
@@ -2372,6 +2382,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +
 +  if(AP.MF->hasSMArchSpecificLocations(SM)) {
 +    const ArchLiveValues &Vals = AP.MF->getSMArchSpecificLocations(SM);
++    const unsigned FBPOff = AP.getFBPOffset();
 +
 +    for(auto &Val : Vals) {
 +      Location Loc;
@@ -2399,7 +2410,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +        Loc.Type = Location::Direct;
 +        Loc.Size = 8;
 +        Loc.Reg = getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI);
-+        Loc.Offset = MFI->getObjectOffset(StackSlot);
++        Loc.Offset = MFI->getObjectOffset(StackSlot) + FBPOff;
 +      }
 +
 +      // If we're referencing a symbol, then we're a pointer
@@ -2413,7 +2424,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +472,46 @@
+@@ -285,21 +474,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -2462,7 +2473,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +539,9 @@
+@@ -327,8 +541,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -2474,7 +2485,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +624,11 @@
+@@ -411,8 +626,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -2487,7 +2498,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +636,15 @@
+@@ -420,6 +638,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -2503,7 +2514,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +664,20 @@
+@@ -439,14 +666,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -2528,7 +2539,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +686,19 @@
+@@ -455,6 +688,19 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -2548,7 +2559,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +714,29 @@
+@@ -470,23 +716,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -2579,7 +2590,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +744,13 @@
+@@ -494,10 +746,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -2594,7 +2605,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +762,32 @@
+@@ -509,6 +764,32 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -2627,7 +2638,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +794,7 @@
+@@ -515,7 +796,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -2636,7 +2647,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +818,7 @@
+@@ -539,7 +820,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);

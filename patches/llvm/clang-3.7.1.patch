@@ -407,7 +407,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +267,71 @@
+@@ -261,6 +267,70 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -471,7 +471,6 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
 +
 +      Ctx.setDiagnosticHandler(OldDiagnosticHandler, OldDiagnosticContext);
-+
 +    }
 +  };
 +
@@ -479,7 +478,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +697,7 @@
+@@ -626,6 +696,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -487,7 +486,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +704,7 @@
+@@ -632,13 +703,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -502,7 +501,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +728,10 @@
+@@ -662,6 +727,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -513,7 +512,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +739,19 @@
+@@ -669,6 +738,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -533,7 +532,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +767,42 @@
+@@ -684,6 +766,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -576,7 +575,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +812,9 @@
+@@ -693,37 +811,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -615,7 +614,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +860,114 @@
+@@ -769,3 +859,114 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}

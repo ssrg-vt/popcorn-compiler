@@ -59,8 +59,8 @@ public:
     std::set<const AllocaInst *> allocas;
 
     DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
-                 << "********** Module: " << M.getName() << "**********\n\n");
-  
+                 << "********** Module: " << M.getName() << " **********\n\n");
+
     this->createSMType(M);
     if(this->addSMDeclaration(M)) modified = true;
   

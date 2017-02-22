@@ -660,6 +660,19 @@ void StackTransformMetadata::findAlternateOpLocs()
     // values
     mapOpsToIR(IRSM, MISM);
 
+    // TODO the rest of the logic in the loop needs to be replaced with a
+    // forward/backward sweep to find equivalent values
+    //
+    // - For all locations in the map:
+    //    1. Do a forward sweep through the vreg/stack slot's uses
+    //    2. Do a backward sweep the defining instructions
+    //      - Does this apply to stack slots?
+    //
+    // - Add duplicate locations for each location discovered that:
+    //    1. Is equivalent, i.e., is a copy from another vreg or is a
+    //       load from/store to a stack slot
+    //    2. Is live either across the stackmap or call machine instruction
+
     // Stackmap machine instructions may not appear directly after function
     // call, and stackmap operands may be created during this interlude.  Walk
     // from the call to the stackmap, reversing stackmap operand movement.
@@ -679,7 +692,11 @@ void StackTransformMetadata::findAlternateOpLocs()
           );
           MF->addSMOpLocation(IRSM, vregIt->second[sz],
                               MachineLiveStackSlot(StackSlot, true));
+
         }
+
+        // Record handling for the backing stack slot
+        SMStackSlots[MISM][StackSlot] = vregIt->second;
       }
     }
   }
@@ -756,12 +773,17 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
                      << " is live in register but not in stackmap\n";);
 
         // TODO need to handle when >1 definition
-        assert(MRI->hasOneDef(Vreg) && "More than one definition for vreg");
-        for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-            def != end; def++) {
-          if((MC = getTargetValue(&*def)) != nullptr) {
-            DEBUG(dbgs() << "      Defining instruction: "; def->dump(););
-            break;
+        if(!MRI->hasOneDef(Vreg)) {
+          DEBUG( dbgs() << "More than one definition for vreg");
+          MC = nullptr;
+        }
+        else {
+          for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
+              def != end; def++) {
+            if((MC = getTargetValue(&*def)) != nullptr) {
+              DEBUG(dbgs() << "      Defining instruction: "; def->dump(););
+              break;
+            }
           }
         }
 
@@ -793,22 +815,26 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
       else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
               isVregLiveAcrossInstr(Vreg, MICall) &&
               CurVregs.find(Vreg) == CurVregs.end()) {
-        DEBUG(
+        // Note: this path is a little weird in that we can't detect if this
+        // vreg is actually used by the value returned from VRM->getStackSlot.
+        // Manually check by seeing if there are any definitions.
+        auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
+        if(def != end) {
           dbgs() << "    + vreg" << i
                  << " is live in stack slot but not in stackmap\n";
-          // TODO no vregs in this path are printing any defining instructions
-          for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-              def != end; def++) {
-            dbgs() << "    ";
-            def->dump();
-          }
-        );
-        DiagnosticInfoOptimizationFailure DI(
-          *IRSM->getParent()->getParent(),
-          IRSM->getDebugLoc(),
-          "Unhandled architecture-specific stack slot/register "
-          "for stack transformation");
-        MF->getFunction()->getContext().diagnose(DI);
+          DEBUG(
+            for(; def != end; def++) {
+              dbgs() << "    ";
+              def->dump();
+            }
+          );
+          DiagnosticInfoOptimizationFailure DI(
+            *IRSM->getParent()->getParent(),
+            IRSM->getDebugLoc(),
+            "Unhandled architecture-specific stack slot/register "
+            "for stack transformation");
+          MF->getFunction()->getContext().diagnose(DI);
+        }
       }
     }
 
@@ -816,7 +842,8 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     // TODO handle function arguments on the stack (negative stack slots)
     for(int SS = MFI->getObjectIndexBegin(), e = MFI->getObjectIndexEnd();
         SS < e; SS++) {
-      if(isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
+      if(!MFI->isDeadObjectIndex(SS) &&
+         isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
         DEBUG(dbgs() << "    + stack slot " << SS
                      << " is live but not in stackmap\n";);
         // TODO add arch-specific stack slot information to machine function
