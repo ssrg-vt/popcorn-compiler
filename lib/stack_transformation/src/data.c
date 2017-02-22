@@ -89,6 +89,7 @@ void put_val(rewrite_context src,
      PROPS(dest)->is_callee_saved(dest_val->regnum))
     callee_addr = callee_saved_loc(dest, dest_val->regnum, dest->act);
 
+  ASSERT(dest_addr, "invalid destination location\n");
   memcpy(dest_addr, src_addr, VAL_SIZE(dest_val));
   if(callee_addr) memcpy(callee_addr, src_addr, VAL_SIZE(dest_val));
 
@@ -112,6 +113,7 @@ void put_val_arch(rewrite_context ctx, const arch_const_value* val)
   if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
     callee_addr = callee_saved_loc(ctx, val->regnum, ctx->act);
 
+  ASSERT(dest_addr, "invalid destination location\n");
   memcpy(dest_addr, &val->value, val->size);
   if(callee_addr) memcpy(callee_addr, &val->value, val->size);
 
@@ -126,12 +128,18 @@ void put_val_data(rewrite_context ctx,
                   int act,
                   uint64_t data)
 {
-  void* addr;
+  void* dest_addr, *callee_addr = NULL;
 
   TIMER_FG_START(put_val);
 
-  addr = get_dest_loc(ctx, val, act);
-  memcpy(addr, &data, sizeof(uint64_t));
+  ST_INFO("Setting data: ");
+  dest_addr = get_dest_loc(ctx, val, act);
+  if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
+    callee_addr = callee_saved_loc(ctx, val->regnum, act);
+
+  ASSERT(dest_addr, "invalid destination location\n");
+  memcpy(dest_addr, &data, sizeof(uint64_t));
+  if(callee_addr) memcpy(callee_addr, &data, sizeof(data));
 
   TIMER_FG_STOP(put_val);
 }
@@ -200,12 +208,14 @@ void* points_to_data(const rewrite_context src,
   ASSERT(src_val->type == SM_DIRECT && dest_val->type == SM_DIRECT,
          "invalid value types (must be allocas for pointed-to analysis)\n");
 
+  ST_INFO("Checking if %p points to: ", src_ptr);
   src_addr = get_val_loc(src, src_val->type,
                          src_val->regnum,
                          src_val->offset_or_constant,
                          src->act);
   if(src_addr <= src_ptr && src_ptr < (src_addr + VAL_SIZE(src_val)))
   {
+    ST_INFO("Reifying address of source value %p to: ", src_addr);
     dest_addr = get_val_loc(dest, dest_val->type,
                             dest_val->regnum,
                             dest_val->offset_or_constant,

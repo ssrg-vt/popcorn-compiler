@@ -471,22 +471,18 @@ static bool rewrite_val(rewrite_context src, const call_site_value* val_src,
    */
   if((stack_addr = points_to_stack(src, val_src)))
   {
-    // Note: it is an error for a pointer to point to frames down the call
-    // chain.  This is a sanity check to ignore things like uninitialized data
-    // or data left over from a previous call.
-    if(src->act == 0 || stack_addr > PREV_ACT(src).cfa)
-    {
-      ST_INFO("Adding fixup for stack pointer %p\n", stack_addr);
-      fixup_data.src_addr = stack_addr;
-      fixup_data.act = dest->act;
-      fixup_data.dest_loc = val_dest;
-      list_add(fixup, &dest->stack_pointers, fixup_data);
+    // Note: it's an error for a pointer to point to frames down the call chain
+    ASSERT(src->act == 0 || stack_addr > PREV_ACT(src).cfa,
+           "Pointer-to-stack points to called functions");
 
-      /* Are we pointing to a value within the same frame? */
-      if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
-    }
-    else
-      ST_WARN("pointing to value in called function (%p)\n", stack_addr);
+    ST_INFO("Adding fixup for pointer-to-stack %p\n", stack_addr);
+    fixup_data.src_addr = stack_addr;
+    fixup_data.act = dest->act;
+    fixup_data.dest_loc = val_dest;
+    list_add(fixup, &dest->stack_pointers, fixup_data);
+
+    /* Are we pointing to a value within the same frame? */
+    if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
   }
   else put_val(src, val_src, dest, val_dest);
 
