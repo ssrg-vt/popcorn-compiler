@@ -2,7 +2,7 @@ Index: include/clang/CodeGen/BackendUtil.h
 ===================================================================
 --- include/clang/CodeGen/BackendUtil.h	(revision 277850)
 +++ include/clang/CodeGen/BackendUtil.h	(working copy)
-@@ -28,7 +28,8 @@
+@@ -28,13 +28,32 @@
      Backend_EmitLL,        ///< Emit human-readable LLVM assembly
      Backend_EmitNothing,   ///< Don't emit anything (benchmarking mode)
      Backend_EmitMCNull,    ///< Run CodeGen, but don't emit anything
@@ -11,7 +11,31 @@ Index: include/clang/CodeGen/BackendUtil.h
 +    Backend_EmitMultiObj   ///< Emit native object files for multiple ISAs
    };
  
++  /// Run both IR optimization passes and backend passes to generate code
    void EmitBackendOutput(DiagnosticsEngine &Diags, const CodeGenOptions &CGOpts,
+                          const TargetOptions &TOpts, const LangOptions &LOpts,
+                          StringRef TDesc, llvm::Module *M, BackendAction Action,
+                          raw_pwrite_stream *OS);
++
++  /// Run IR optimization passes
++  void ApplyIROptimizations(DiagnosticsEngine &Diags,
++                            const CodeGenOptions &CGOpts,
++                            const TargetOptions &TOpts,
++                            const LangOptions &LOpts,
++                            llvm::Module *M, BackendAction Action,
++                            raw_pwrite_stream *OS);
++
++  /// Run backend code-generation passes
++  void CodegenBackendOutput(DiagnosticsEngine &Diags,
++                            const CodeGenOptions &CGOpts,
++                            const TargetOptions &TOpts,
++                            const LangOptions &LOpts,
++                            StringRef TDesc, llvm::Module *M,
++                            BackendAction Action,
++                            raw_pwrite_stream *OS);
+ }
+ 
+ #endif
 Index: include/clang/CodeGen/CodeGenAction.h
 ===================================================================
 --- include/clang/CodeGen/CodeGenAction.h	(revision 277850)
@@ -175,7 +199,23 @@ Index: lib/CodeGen/BackendUtil.cpp
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include <memory>
  using namespace clang;
-@@ -271,6 +272,17 @@
+@@ -132,6 +133,15 @@
+ 
+   std::unique_ptr<TargetMachine> TM;
+ 
++  /// Set up the assembly helper, including gathering passes
++  void SetupAssemblyHelper(BackendAction Action, raw_pwrite_stream *OS);
++
++  /// Run only IR optimization passes on a module
++  void ApplyIROptPasses(Module* TheModule);
++
++  /// Run backend passes to generate code
++  void ApplyCodegenPasses(Module* TheModule);
++
+   void EmitAssembly(BackendAction Action, raw_pwrite_stream *OS);
+ };
+ 
+@@ -271,6 +281,17 @@
    MPM->add(createRewriteSymbolsPass(DL));
  }
  
@@ -193,7 +233,7 @@ Index: lib/CodeGen/BackendUtil.cpp
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
-@@ -420,6 +432,27 @@
+@@ -420,6 +441,27 @@
      MPM->add(createInstrProfilingPass(Options));
    }
  
@@ -221,7 +261,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    PMBuilder.populateModulePassManager(*MPM);
  }
  
-@@ -570,7 +603,7 @@
+@@ -570,7 +612,7 @@
    // Normal mode, emit a .s or .o file by running the code generator. Note,
    // this also adds codegenerator level optimization passes.
    TargetMachine::CodeGenFileType CGFT = TargetMachine::CGFT_AssemblyFile;
@@ -230,6 +270,90 @@ Index: lib/CodeGen/BackendUtil.cpp
      CGFT = TargetMachine::CGFT_ObjectFile;
    else if (Action == Backend_EmitMCNull)
      CGFT = TargetMachine::CGFT_Null;
+@@ -592,8 +634,8 @@
+   return true;
+ }
+ 
+-void EmitAssemblyHelper::EmitAssembly(BackendAction Action,
+-                                      raw_pwrite_stream *OS) {
++void EmitAssemblyHelper::SetupAssemblyHelper(BackendAction Action,
++                                             raw_pwrite_stream *OS) {
+   TimeRegion Region(llvm::TimePassesIsEnabled ? &CodeGenerationTime : nullptr);
+ 
+   bool UsesCodeGen = (Action != Backend_EmitNothing &&
+@@ -629,7 +671,9 @@
+ 
+   // Before executing passes, print the final values of the LLVM options.
+   cl::PrintOptionValues();
++}
+ 
++void EmitAssemblyHelper::ApplyIROptPasses(Module* M) {
+   // Run passes. For now we do all passes at once, but eventually we
+   // would like to have the option of streaming code generation.
+ 
+@@ -647,7 +691,9 @@
+     PrettyStackTraceString CrashInfo("Per-module optimization passes");
+     PerModulePasses->run(*TheModule);
+   }
++}
+ 
++void EmitAssemblyHelper::ApplyCodegenPasses(Module* M) {
+   if (CodeGenPasses) {
+     PrettyStackTraceString CrashInfo("Code generation");
+     CodeGenPasses->run(*TheModule);
+@@ -654,6 +700,13 @@
+   }
+ }
+ 
++void EmitAssemblyHelper::EmitAssembly(BackendAction Action,
++                                      raw_pwrite_stream *OS) {
++  SetupAssemblyHelper(Action, OS);
++  ApplyIROptPasses(TheModule);
++  ApplyCodegenPasses(TheModule);
++}
++
+ void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
+                               const CodeGenOptions &CGOpts,
+                               const clang::TargetOptions &TOpts,
+@@ -677,3 +730,38 @@
+     }
+   }
+ }
++
++void clang::ApplyIROptimizations(DiagnosticsEngine &Diags,
++                                 const CodeGenOptions &CGOpts,
++                                 const clang::TargetOptions &TOpts,
++                                 const LangOptions &LOpts, Module *M,
++                                 BackendAction Action, raw_pwrite_stream *OS) {
++  EmitAssemblyHelper AsmHelper(Diags, CGOpts, TOpts, LOpts, M);
++  AsmHelper.SetupAssemblyHelper(Action, OS);
++  AsmHelper.ApplyIROptPasses(M);
++}
++
++void clang::CodegenBackendOutput(DiagnosticsEngine &Diags,
++                                 const CodeGenOptions &CGOpts,
++                                 const clang::TargetOptions &TOpts,
++                                 const LangOptions &LOpts, StringRef TDesc,
++                                 Module *M, BackendAction Action,
++                                 raw_pwrite_stream *OS) {
++  EmitAssemblyHelper AsmHelper(Diags, CGOpts, TOpts, LOpts, M);
++  AsmHelper.SetupAssemblyHelper(Action, OS);
++
++  // If an optional clang TargetInfo description string was passed in, use it to
++  // verify the LLVM TargetMachine's DataLayout.
++  if (AsmHelper.TM && !TDesc.empty()) {
++    std::string DLDesc =
++        AsmHelper.TM->getDataLayout()->getStringRepresentation();
++    if (DLDesc != TDesc) {
++      unsigned DiagID = Diags.getCustomDiagID(
++          DiagnosticsEngine::Error, "backend data layout '%0' does not match "
++                                    "expected target description '%1'");
++      Diags.Report(DiagID) << DLDesc << TDesc;
++    }
++  }
++
++  AsmHelper.ApplyCodegenPasses(M);
++}
 Index: lib/CodeGen/CMakeLists.txt
 ===================================================================
 --- lib/CodeGen/CMakeLists.txt	(revision 277850)
@@ -283,7 +407,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +267,66 @@
+@@ -261,6 +267,71 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -331,12 +455,17 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      // Remove target-specific attributes from all functions
 +      Popcorn::StripTargetAttributes(*TheModule);
 +
++      // Apply IR optimizations
++      ApplyIROptimizations(Diags, CodeGenOpts, *AsmTargetOpts[0], LangOpts,
++                           TheModule.get(), Action, AsmOutStreams[0]);
++
++      // Generate machine code for each target
 +      for(size_t i = 0; i < AsmTargetOpts.size(); i++) {
 +        TheModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
 +        TheModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
-+        EmitBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
-+                          AsmTargetInfos[i]->getTargetDescription(),
-+                          TheModule.get(), Action, AsmOutStreams[i]);
++        CodegenBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
++                             AsmTargetInfos[i]->getTargetDescription(),
++                             TheModule.get(), Action, AsmOutStreams[i]);
 +      }
 +
 +      Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
@@ -350,7 +479,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +692,7 @@
+@@ -626,6 +697,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -358,7 +487,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +699,7 @@
+@@ -632,13 +704,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -373,7 +502,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +723,10 @@
+@@ -662,6 +728,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -384,7 +513,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +734,19 @@
+@@ -669,6 +739,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -404,7 +533,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +762,42 @@
+@@ -684,6 +767,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -447,7 +576,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +807,9 @@
+@@ -693,37 +812,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -486,7 +615,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +855,109 @@
+@@ -769,3 +860,114 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -577,16 +706,21 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    // Remove target-specific attributes from all functions
 +    Popcorn::StripTargetAttributes(*TheModule);
 +
++    // Apply IR optimizations
++    ApplyIROptimizations(CI.getDiagnostics(), CI.getCodeGenOpts(),
++                         *TargetOpts[0], CI.getLangOpts(),
++                         TheModule.get(), BA, OutFiles[0]);
++
 +    // Emit machine code for all specified architectures
 +    for(size_t i = 0; i < Targets.size(); i++) {
 +      TheModule->setTargetTriple(Targets[i]);
 +      TheModule->setDataLayout(TargetInfos[i]->getTargetDescription());
 +      LLVMContext &Ctx = TheModule->getContext();
 +      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
-+      EmitBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
-+                        *TargetOpts[i], CI.getLangOpts(),
-+                        TargetInfos[i]->getTargetDescription(),
-+                        TheModule.get(), BA, OutFiles[i]);
++      CodegenBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
++                           *TargetOpts[i], CI.getLangOpts(),
++                           TargetInfos[i]->getTargetDescription(),
++                           TheModule.get(), BA, OutFiles[i]);
 +    }
 +
 +    return;
