@@ -162,7 +162,6 @@ void* points_to_stack(const rewrite_context ctx,
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
              "invalid register size for pointer\n");
-
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
       break;
     case SM_DIRECT:
@@ -171,6 +170,9 @@ void* points_to_stack(const rewrite_context ctx,
       ST_ERR(1, "incorrectly encoded live value\n");
       break;
     case SM_INDIRECT:
+      // Note: we assume that we're doing offsets from 64-bit registers
+      ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
+             "invalid register size for pointer\n");
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
                    val->offset_or_constant;
       stack_addr = *(void**)stack_addr;

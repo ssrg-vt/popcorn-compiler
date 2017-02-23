@@ -11,10 +11,3 @@ Implementation
 
 4. Implement correct error handling/reporting
 
-------------
-Optimization
-------------
-
-1. Rather than re-generating list of local variables when a local fix-up is
-   detected, store until finished transforming the current activation
-

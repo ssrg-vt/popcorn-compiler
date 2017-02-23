@@ -32,6 +32,13 @@ static pthread_key_t stack_bounds_key = 0;
 #endif
 
 /*
+ * Touch stack pages up to the OS-defined stack size limit, so that the OS
+ * allocates them and we can divide the stack in half for rewriting.  Also,
+ * calculate stack bounds for main thread.
+ */
+static bool prep_stack(void);
+
+/*
  * Get main thread's stack information from procfs.
  */
 static bool get_main_stack(stack_bounds* bounds);
@@ -56,69 +63,6 @@ static int userspace_rewrite_internal(void* sp,
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Touch stack pages up to the OS-defined stack size limit, so that the OS
- * allocates them and we can divide the stack in half for rewriting.  Also,
- * calculate stack bounds for main thread.
- */
-bool __st_prep_stack(void)
-{
-  int ret;
-  long page_size;
-  size_t stack_size, num_touched = 0, offset;
-  struct rlimit rlim;
-#if _TLS_IMPL == PTHREAD_TLS
-  stack_bounds bounds;
-  stack_bounds* bounds_ptr;
-
-  bounds_ptr = (stack_bounds*)malloc(sizeof(stack_bounds));
-  ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-  ret = pthread_key_create(&stack_bounds_key, free);
-  ret |= pthread_setspecific(stack_bounds_key, bounds_ptr);
-  ASSERT(!ret, "could not allocate TLS data for main thread\n");
-#endif
-
-  if((page_size = sysconf(_SC_PAGESIZE)) < 0) return false;
-  if(!get_main_stack(&bounds)) return false;
-  if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
-  bounds.low = bounds.high;
-  stack_size = rlim.rlim_cur;
-  if(!ret)
-  {
-    while(stack_size > 0)
-    {
-      bounds.low -= page_size;
-      stack_size -= page_size;
-
-      // Note: assembly memory read to prevent optimization, equivalent to:
-      // ret = *(uint64_t*)bounds.low;
-#ifdef __aarch64__
-      asm volatile("ldr %0, [%1]" : "=r" (ret) : "r" (bounds.low) : );
-#elif defined(__x86_64__)
-      asm volatile("mov (%1), %0" : "=r" (ret) : "r" (bounds.low) : );
-#endif
-      num_touched++;
-    }
-  }
-
-  ST_INFO("Prepped %lu stack pages for main thread, addresses %p -> %p\n",
-          num_touched, bounds.low, bounds.high);
-
-  /*
-   * Get offset of main thread's stack pointer from stack base so we can avoid
-   * clobbering argv & environment variables.
-   */
-  // Note: __builtin_frame_address needs to be adjusted depending on where the
-  // function is called from, we need the FBP of the first function, e.g. main
-  offset = (uint64_t)(bounds.high - __builtin_frame_address(2));
-  offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
-  bounds.high -= offset;
-#if _TLS_IMPL == PTHREAD_TLS
-  *bounds_ptr = bounds;
-#endif
-  return true;
-}
-
-/*
  * Program name, as invoked by the shell.
  */
 // Note: set by glibc/musl-libc, non-portable!
@@ -129,7 +73,82 @@ extern const char *__progname;
  * definitions in order to provide the names transparently.
  */
 char* __attribute__((weak)) aarch64_fn = NULL;
+static bool alloc_aarch64_fn = false;
 char* __attribute__((weak)) x86_64_fn = NULL;
+static bool alloc_x86_64_fn = false;
+
+/*
+ * Initialize rewriting meta-data on program startup.  Users *must* set the
+ * names of binaries using one of the three methods described below.
+ */
+void __st_userspace_ctor(void)
+{
+  /* Initialize the stack for the main thread. */
+  if(!prep_stack())
+  {
+    ST_WARN("could not prepare stack for user-space rewriting\n");
+    return;
+  }
+
+  /* Prepare libELF. */
+  if(elf_version(EV_CURRENT) == EV_NONE)
+  {
+    ST_WARN("could not prepare libELF for reading binary\n");
+    return;
+  }
+
+  /*
+   * Initialize ST handles - tries the following approaches to finding the
+   * binaries:
+   *
+   * 1. Check environment variables (defined in config.h)
+   * 2. Check if application has overridden file name symbols (defined above)
+   * 3. Add architecture suffixes to current binary name (defined by libc)
+   */
+  if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
+  else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
+  else {
+    aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", __progname);
+    aarch64_handle = st_init(aarch64_fn);
+    alloc_aarch64_fn = true;
+  }
+
+  if(!aarch64_handle) {
+    ST_WARN("could not initialize aarch64 handle\n");
+  }
+
+  if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
+  else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
+  else {
+    x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", __progname);
+    x86_64_handle = st_init(x86_64_fn);
+    alloc_x86_64_fn = true;
+  }
+
+  if(!x86_64_handle) {
+    ST_WARN("could not initialize x86-64 handle\n");
+  }
+}
+
+/*
+ * Free stack-transformation memory.
+ */
+void __st_userspace_dtor(void)
+{
+  if(aarch64_handle)
+  {
+    st_destroy(aarch64_handle);
+    if(alloc_aarch64_fn) free(aarch64_fn);
+  }
+
+  if(x86_64_handle)
+  {
+    st_destroy(x86_64_handle);
+    if(alloc_x86_64_fn) free(x86_64_fn);
+  }
+}
 
 /*
  * Get stack bounds for a thread.
@@ -243,78 +262,70 @@ int st_userspace_rewrite_x86_64(void* sp,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// File-local API (implementation
+// File-local API (implementation)
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Initialize rewriting meta-data on program startup.  Users *must* set the
- * names of binaries using one of the three methods described below.
+ * Touch stack pages up to the OS-defined stack size limit, so that the OS
+ * allocates them and we can divide the stack in half for rewriting.  Also,
+ * calculate stack bounds for main thread.
  */
-void __st_userspace_ctor(void)
+static bool prep_stack(void)
 {
-  /* Initialize the stack for the main thread. */
-  if(!__st_prep_stack())
+  long ret;
+  long page_size;
+  size_t stack_size, num_touched = 0, offset;
+  struct rlimit rlim;
+#if _TLS_IMPL == PTHREAD_TLS
+  stack_bounds bounds;
+  stack_bounds* bounds_ptr;
+
+  bounds_ptr = (stack_bounds*)malloc(sizeof(stack_bounds));
+  ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
+  ret = pthread_key_create(&stack_bounds_key, free);
+  ret |= pthread_setspecific(stack_bounds_key, bounds_ptr);
+  ASSERT(!ret, "could not allocate TLS data for main thread\n");
+#endif
+
+  if((page_size = sysconf(_SC_PAGESIZE)) < 0) return false;
+  if(!get_main_stack(&bounds)) return false;
+  if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
+  bounds.low = bounds.high;
+  stack_size = rlim.rlim_cur;
+  if(!ret)
   {
-    ST_WARN("could not prepare stack for user-space rewriting\n");
-    return;
+    while(stack_size > 0)
+    {
+      bounds.low -= page_size;
+      stack_size -= page_size;
+
+      // Note: assembly memory read to prevent optimization, equivalent to:
+      // ret = *(uint64_t*)bounds.low;
+#ifdef __aarch64__
+      asm volatile("ldr %0, [%1]" : "=r" (ret) : "r" (bounds.low) : );
+#elif defined(__x86_64__)
+      asm volatile("mov (%1), %0" : "=r" (ret) : "r" (bounds.low) : );
+#endif
+      num_touched++;
+    }
   }
 
-  /* Prepare libELF. */
-  if(elf_version(EV_CURRENT) == EV_NONE)
-  {
-    ST_WARN("could not prepare libELF for reading binary\n");
-    return;
-  }
+  ST_INFO("Prepped %lu stack pages for main thread, addresses %p -> %p\n",
+          num_touched, bounds.low, bounds.high);
 
   /*
-   * Initialize ST handles - tries the following approaches to finding the
-   * binaries:
-   *
-   * 1. Check environment variables (defined in config.h)
-   * 2. Check if application has overridden file name symbols (defined above)
-   * 3. Add architecture suffixes to current binary name (defined by libc)
+   * Get offset of main thread's stack pointer from stack base so we can avoid
+   * clobbering argv & environment variables.
    */
-  if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
-  else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
-  else {
-    aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", __progname);
-    aarch64_handle = st_init(aarch64_fn);
-  }
-
-  if(!aarch64_handle) {
-    ST_WARN("could not initialize aarch64 handle\n");
-  }
-
-  if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
-  else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
-  else {
-    x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", __progname);
-    x86_64_handle = st_init(x86_64_fn);
-  }
-
-  if(!x86_64_handle) {
-    ST_WARN("could not initialize x86-64 handle\n");
-  }
-}
-
-/*
- * Free stack-transformation memory.
- */
-void __st_userspace_dtor(void)
-{
-  if(aarch64_handle)
-  {
-    st_destroy(aarch64_handle);
-    free(aarch64_fn);
-  }
-
-  if(x86_64_handle)
-  {
-    st_destroy(x86_64_handle);
-    free(x86_64_fn);
-  }
+  // Note: __builtin_frame_address needs to be adjusted depending on where the
+  // function is called from, we need the FBP of the first function, e.g. main
+  offset = (uint64_t)(bounds.high - __builtin_frame_address(2));
+  offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
+  bounds.high -= offset;
+#if _TLS_IMPL == PTHREAD_TLS
+  *bounds_ptr = bounds;
+#endif
+  return true;
 }
 
 /* Read stack information for the main thread from the procfs. */
@@ -450,12 +461,8 @@ static int userspace_rewrite_internal(void* sp,
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
   new_stack = (sp >= stack_b) ? stack_b : stack_a;
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
-  if(st_rewrite_stack(handle_a,
-                      regs,
-                      cur_stack,
-                      handle_b,
-                      dest_regs,
-                      new_stack))
+  if(st_rewrite_stack(handle_a, regs, cur_stack,
+                      handle_b, dest_regs, new_stack))
   {
     ST_WARN("stack transformation failed (%s -> %s)\n",
             arch_name(handle_a->arch), arch_name(handle_b->arch));

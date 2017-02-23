@@ -2,10 +2,10 @@ POPCORN := /usr/local/popcorn
 POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 
+# Although we disable IR optimizations, use -O3 to get backend optimizations
 CC         := clang
-CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -gdwarf-aranges \
-              -fno-vectorize -ffunction-sections -fdata-sections \
-              -Wno-unused-variable -D_GNU_SOURCE
+CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
+              -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE
 endif
@@ -27,9 +27,7 @@ INC_X86 := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := opt
 OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
-             -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
-             -load $(POPCORN)/lib/libSectionStatic.so -section-static \
-             -load $(POPCORN)/lib/libStackInfo.so -stack-info
+             -insert-stackmaps
 
 AR := ar
 ARFLAGS := -cq

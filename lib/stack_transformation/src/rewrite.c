@@ -532,8 +532,6 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
   fixup_node = list_begin(fixup, &dest->stack_pointers);
   while(fixup_node)
   {
-    found_fixup = false;
-
     if(fixup_node->data.src_addr <= ACT(src).cfa) // Is fixup in this frame?
     {
       // Note: we should have resolved all fixups for this frame from frames
@@ -548,6 +546,7 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
       }
 
       // Find the same-frame data which corresponds to the fixup
+      found_fixup = false;
       src_offset = ACT(src).site.live_offset;
       dest_offset = ACT(dest).site.live_offset;
       for(i = 0, j = 0; j < ACT(dest).site.num_live; i++, j++)
