@@ -53,8 +53,11 @@ const struct properties_t properties_x86_64 = {
 
 static void* align_sp_x86_64(void* sp)
 {
-  ASSERT(!((uint64_t)sp % X86_64_STACK_ALIGNMENT), "invalid stack pointer\n");
-  return sp - X86_64_SP_FIXUP;
+  uint64_t stack_ptr = (uint64_t)sp;
+  stack_ptr &= ~(X86_64_SP_FIXUP - 1);
+  if(!(stack_ptr & X86_64_STACK_ALIGNMENT))
+    stack_ptr -= X86_64_SP_FIXUP;
+  return (void*)stack_ptr;
 }
 
 static bool is_callee_saved_x86_64(uint16_t reg)

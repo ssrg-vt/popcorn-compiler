@@ -82,7 +82,7 @@
 /*
  * Stack limits -- Linux defaults to 8MB.
  */
-#define MAX_STACK_SIZE (8 * 1024 * 1024)
+#define MAX_STACK_SIZE (8UL * 1024UL * 1024UL)
 #define B_STACK_OFFSET (4 * 1024 * 1024)
 
 #endif /* _CONFIG_H */

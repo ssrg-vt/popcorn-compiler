@@ -4,11 +4,11 @@
 #include "llvm/Pass.h"
 #include "llvm/Analysis/LiveValues.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Module.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -56,13 +56,16 @@ public:
     bool modified = false;
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
-    std::set<const AllocaInst *> allocas;
+    std::set<const Instruction *> hiddenInst;
+    std::set<const Argument *> hiddenArgs;
 
     DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
                  << "********** Module: " << M.getName() << " **********\n\n");
 
     this->createSMType(M);
     if(this->addSMDeclaration(M)) modified = true;
+
+    modified |= removeOldStackmaps(M);
   
     /* Iterate over all functions/basic blocks/instructions. */
     for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
@@ -75,28 +78,7 @@ public:
       LiveValues &liveVals = getAnalysis<LiveValues>(*f);
       DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
       std::set<const Value *>::const_iterator v, ve;
-  
-      /*
-       * Gather all allocas because the stack transformation runtime must copy
-       * over all local data, and hence they should be recorded in the
-       * stackmaps.  If we're not careful allocas can slip through the cracks
-       * in liveness analysis, e.g.:
-       *
-       *  %arr = alloca [4 x double], align 8
-       *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
-       *  call void (i64, i32, ...) @llvm.experimental.stackmap(i64 1, i32 0, %arrayidx)
-       *
-       * After getting an element pointer, all subsequent accesses to %arr happen
-       * through %arrayidx, hence %arr is not caught by liveness analysis and is
-       * not copied to the destination stack.
-       */
-      allocas.clear();
-      BasicBlock &entry = f->getEntryBlock();
-      for(BasicBlock::iterator i = entry.begin(), ie = entry.end(); i != ie; i++)
-      {
-        const AllocaInst *inst = dyn_cast<AllocaInst>(&*i);
-        if(inst) allocas.insert(inst);
-      }
+      getHiddenVals(*f, hiddenInst, hiddenArgs);
   
       /* Find call sites in the function. */
       for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
@@ -115,9 +97,9 @@ public:
              !isa<IntrinsicInst>(CI))
           {
             live = liveVals.getLiveValues(&*i);
-            sortedLive.clear();
             for(const Value *val : *live) sortedLive.insert(val);
-            for(const AllocaInst *val : allocas)
+            for(const Argument *val : hiddenArgs) sortedLive.insert(val);
+            for(const Instruction *val : hiddenInst)
               if(DT.dominates(val, CI))
                 sortedLive.insert(val);
             delete live;
@@ -152,10 +134,14 @@ public:
             for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
               args.push_back((Value*)*v);
             builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
+            sortedLive.clear();
             this->numInstrumented++;
           }
         }
       }
+
+      hiddenInst.clear();
+      hiddenArgs.clear();
       this->callSiteID = 0;
     }
   
@@ -180,7 +166,10 @@ private:
   /* Sort values based on name */
   struct ValueComp {
     bool operator() (const Value *lhs, const Value *rhs) const
-    { return lhs->getName().compare(rhs->getName()) < 0; }
+    {
+      if(lhs->hasName()) return lhs->getName().compare(rhs->getName()) < 0;
+      else return 1;
+    }
   };
 
   /**
@@ -210,6 +199,86 @@ private:
       return true;
     }
     else return false;
+  }
+
+  /**
+   * Iterate over all instructions, removing previously found stackmaps.
+   */
+  bool removeOldStackmaps(Module &M)
+  {
+    bool modified = false;
+    IntrinsicInst* CI;
+
+    DEBUG(dbgs() << "Searching for/removing old stackmaps\n";);
+
+    for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++) {
+      for(Function::iterator bb = f->begin(), bbe = f->end(); bb != bbe; bb++) {
+        for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
+          if((CI = dyn_cast<IntrinsicInst>(&*i)) &&
+             CI->hasName() && CI->getName() == SMName) {
+              i = i->eraseFromParent()->getPrevNode();
+              modified = true;
+          }
+        }
+      }
+    }
+
+    return modified;
+  }
+
+  /**
+   * Gather a list of instructions or arguments which may be "hidden" from live
+   * value analysis.
+   *
+   * Some instructions, like getelementptr, can interfere with the live value
+   * analysis to "hide" the backing values passed to getelementptr.  For
+   * example, the following IR obscures %arr from the live value analysis:
+   *
+   *  %arr = alloca [4 x double], align 8
+   *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
+   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
+   *  -> be considered live any more
+   *
+   * This function collects the values used in these instructions, which are later
+   * added to the appropriate stackmaps.
+   */
+  void getHiddenVals(Function &F,
+                     std::set<const Instruction *> &inst,
+                     std::set<const Argument *> &args)
+  {
+    /* Does the instruction potentially hide values from liveness analysis? */
+    auto isExtractType = [](const Instruction *I) {
+      if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
+         isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
+         isa<GetElementPtrInst>(I))
+        return true ;
+      else return false;
+    };
+
+    /* Is the value an argument to the function? */
+    auto isArg = [](const Function &F, const Value *V) {
+      for(auto arg = F.arg_begin(), e = F.arg_end(); arg != e; arg++)
+        if(V == &*arg) return true;
+      return false;
+    };
+
+    /* Search for instructions that obscure live values & record operands */
+    for(Function::const_iterator bb = F.begin(), bbe = F.end();
+        bb != bbe; bb++) {
+      for(BasicBlock::const_iterator i = bb->begin(), ie = bb->end();
+          i != ie; i++) {
+        if(isExtractType(&*i))
+        {
+          for(unsigned op = 0; op < i->getNumOperands(); op++)
+          {
+            if(isa<Instruction>(i->getOperand(op)))
+              inst.insert(cast<Instruction>(i->getOperand(op)));
+            else if(isArg(F, i->getOperand(op)))
+              args.insert(cast<Argument>(i->getOperand(op)));
+          }
+        }
+      }
+    }
   }
 };
 
