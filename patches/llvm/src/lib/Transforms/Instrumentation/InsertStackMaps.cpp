@@ -65,7 +65,7 @@ public:
     this->createSMType(M);
     if(this->addSMDeclaration(M)) modified = true;
 
-    modified |= removeOldStackmaps(M);
+    modified |= this->removeOldStackmaps(M);
   
     /* Iterate over all functions/basic blocks/instructions. */
     for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
@@ -222,6 +222,9 @@ private:
         }
       }
     }
+
+    DEBUG(if(modified)
+            dbgs() << "WARNING: found previous run of Popcorn passes!\n";);
 
     return modified;
   }

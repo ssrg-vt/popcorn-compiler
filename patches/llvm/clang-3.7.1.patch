@@ -407,7 +407,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +267,70 @@
+@@ -261,6 +267,71 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -452,12 +452,13 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      void *OldDiagnosticContext = Ctx.getDiagnosticContext();
 +      Ctx.setDiagnosticHandler(DiagnosticHandler, this);
 +
-+      // Remove target-specific attributes from all functions
++      // Apply IR optimizations, but strip target-specific attributes from
++      // all functions added by analyses
++      std::shared_ptr<TargetOptions> IRTargetOpts =
++        Popcorn::GetPopcornTargetOpts(TheModule->getTargetTriple());
++      ApplyIROptimizations(Diags, CodeGenOpts, *IRTargetOpts, LangOpts,
++                           TheModule.get(), Action, nullptr);
 +      Popcorn::StripTargetAttributes(*TheModule);
-+
-+      // Apply IR optimizations
-+      ApplyIROptimizations(Diags, CodeGenOpts, *AsmTargetOpts[0], LangOpts,
-+                           TheModule.get(), Action, AsmOutStreams[0]);
 +
 +      // Generate machine code for each target
 +      for(size_t i = 0; i < AsmTargetOpts.size(); i++) {
@@ -478,7 +479,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +696,7 @@
+@@ -626,6 +697,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -486,7 +487,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +703,7 @@
+@@ -632,13 +704,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -501,7 +502,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +727,10 @@
+@@ -662,6 +728,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -512,7 +513,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +738,19 @@
+@@ -669,6 +739,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -532,7 +533,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +766,42 @@
+@@ -684,6 +767,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -575,7 +576,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +811,9 @@
+@@ -693,37 +812,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -614,7 +615,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +859,114 @@
+@@ -769,3 +860,115 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -702,13 +703,14 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      return;
 +    }
 +
-+    // Remove target-specific attributes from all functions
-+    Popcorn::StripTargetAttributes(*TheModule);
-+
-+    // Apply IR optimizations
++    // Apply IR optimizations, but strip target-specific attributes from all
++    // functions added by analyses
++    std::shared_ptr<TargetOptions> IRTargetOpts =
++      Popcorn::GetPopcornTargetOpts(TheModule->getTargetTriple());
 +    ApplyIROptimizations(CI.getDiagnostics(), CI.getCodeGenOpts(),
-+                         *TargetOpts[0], CI.getLangOpts(),
-+                         TheModule.get(), BA, OutFiles[0]);
++                         *IRTargetOpts, CI.getLangOpts(),
++                         TheModule.get(), BA, nullptr);
++    Popcorn::StripTargetAttributes(*TheModule);
 +
 +    // Emit machine code for all specified architectures
 +    for(size_t i = 0; i < Targets.size(); i++) {
