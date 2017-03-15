@@ -99,17 +99,26 @@ public:
             live = liveVals.getLiveValues(&*i);
             for(const Value *val : *live) sortedLive.insert(val);
             for(const Argument *val : hiddenArgs) sortedLive.insert(val);
-            for(const Instruction *val : hiddenInst)
-              if(DT.dominates(val, CI))
-                sortedLive.insert(val);
+            for(const Instruction *val : hiddenInst) {
+              /*
+               * The two criteria for inclusion of a hidden value are:
+               *   1. The value's definition dominates the call
+               *   2. A use of the definition is included in the stackmap
+               */
+              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
+                  sortedLive.insert(val);
+            }
             delete live;
   
             DEBUG(
               const Function *calledFunc;
   
               errs() << "  ";
-              CI->printAsOperand(errs(), false);
-              errs() << " ";
+              if(!CI->getType()->isVoidTy()) {
+                CI->printAsOperand(errs(), false);
+                errs() << " ";
+              }
+              else errs() << "(void) ";
   
               calledFunc = CI->getCalledFunction();
               if(calledFunc && calledFunc->hasName())
@@ -282,6 +291,21 @@ private:
         }
       }
     }
+  }
+
+  /**
+   * Return whether or not a value's user is in a liveness set.
+   *
+   * @param Val a value whose users are checked against the liveness set
+   * @param Live a set of live values
+   * @return true if a user is in the liveness set, false otherwise
+   */
+  bool hasLiveUser(const Instruction *Val,
+                   const std::set<const Value *> &Live) const {
+    Instruction::const_use_iterator use, e;
+    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
+      if(Live.count(*use)) return true;
+    return false;
   }
 };
 

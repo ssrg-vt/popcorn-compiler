@@ -2681,7 +2681,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,820 @@
+@@ -0,0 +1,937 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2693,6 +2693,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +//
 +// This file accumulates additional data from machine functions needed to do
 +// correct and complete stack transformation.
++//
++// Note: the dataflow analysis in this implementation assumes the ISA cannot
++// perform memory-to-memory copies.
 +//
 +//===----------------------------------------------------------------------===//
 +
@@ -2774,8 +2777,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  public:
 +    enum Type { NONE, VREG, STACK_LOAD, STACK_STORE };
 +    unsigned Vreg;
-+    CopyLoc() : Vreg(VirtRegMap::NO_PHYS_REG) {}
-+    CopyLoc(unsigned Vreg) : Vreg(Vreg) {}
++    const MachineInstr *Instr;
++    CopyLoc() : Vreg(VirtRegMap::NO_PHYS_REG), Instr(nullptr) {}
++    CopyLoc(unsigned Vreg, const MachineInstr *Instr) :
++      Vreg(Vreg), Instr(Instr) {}
 +    virtual CopyLoc *copy() const = 0;
 +    virtual ~CopyLoc() {}
 +    virtual Type getType() const = 0;
@@ -2787,8 +2792,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  public:
 +    int StackSlot;
 +    StackCopyLoc() : StackSlot(VirtRegMap::NO_STACK_SLOT) {}
-+    StackCopyLoc(unsigned Vreg, int StackSlot) :
-+      CopyLoc(Vreg), StackSlot(StackSlot) {}
++    StackCopyLoc(unsigned Vreg, int StackSlot, const MachineInstr *Instr) :
++      CopyLoc(Vreg, Instr), StackSlot(StackSlot) {}
 +    virtual CopyLoc *copy() const = 0;
 +    virtual Type getType() const = 0;
 +  };
@@ -2797,9 +2802,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  class StackLoadLoc : public StackCopyLoc {
 +  public:
 +    StackLoadLoc() {}
-+    StackLoadLoc(unsigned Vreg, int StackSlot) :
-+      StackCopyLoc(Vreg, StackSlot) {}
-+    virtual CopyLoc *copy() const { return new StackLoadLoc(Vreg, StackSlot); }
++    StackLoadLoc(unsigned Vreg, int StackSlot, const MachineInstr *Instr) :
++      StackCopyLoc(Vreg, StackSlot, Instr) {}
++    virtual CopyLoc *copy() const
++    { return new StackLoadLoc(Vreg, StackSlot, Instr); }
 +    virtual Type getType() const { return CopyLoc::STACK_LOAD; }
 +  };
 +
@@ -2807,9 +2813,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  class StackStoreLoc : public StackCopyLoc {
 +  public:
 +    StackStoreLoc() {}
-+    StackStoreLoc(unsigned Vreg, int StackSlot) :
-+      StackCopyLoc(Vreg, StackSlot) {}
-+    virtual CopyLoc *copy() const { return new StackStoreLoc(Vreg, StackSlot); }
++    StackStoreLoc(unsigned Vreg, int StackSlot, const MachineInstr *Instr) :
++      StackCopyLoc(Vreg, StackSlot, Instr) {}
++    virtual CopyLoc *copy() const
++    { return new StackStoreLoc(Vreg, StackSlot, Instr); }
 +    virtual Type getType() const { return CopyLoc::STACK_STORE; }
 +  };
 +
@@ -2818,11 +2825,19 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  public:
 +    unsigned SrcVreg;
 +    RegCopyLoc() : SrcVreg(VirtRegMap::NO_PHYS_REG) {}
-+    RegCopyLoc(unsigned DefVreg, unsigned SrcVreg) :
-+      CopyLoc(DefVreg), SrcVreg(SrcVreg) {}
-+    virtual CopyLoc *copy() const { return new RegCopyLoc(Vreg, SrcVreg); }
++    RegCopyLoc(unsigned DefVreg, unsigned SrcVreg, const MachineInstr *Instr) :
++      CopyLoc(DefVreg, Instr), SrcVreg(SrcVreg) {}
++    virtual CopyLoc *copy() const
++    { return new RegCopyLoc(Vreg, SrcVreg, Instr); }
 +    virtual Type getType() const { return CopyLoc::VREG; }
 +  };
++
++  /// Mapping between stack slots and copy locations (e.g., load from or store
++  /// to the stack slot)
++  typedef SmallVector<CopyLocPtr, 8> CopyLocVec;
++  typedef std::shared_ptr<CopyLocVec> CopyLocVecPtr;
++  typedef std::pair<int, CopyLocVecPtr> StackSlotCopyPair;
++  typedef std::map<int, CopyLocVecPtr> StackSlotCopies;
 +
 +  /* Data */
 +
@@ -2830,6 +2845,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  MachineFunction *MF;
 +  const MachineRegisterInfo *MRI;
 +  const MachineFrameInfo *MFI;
++  const TargetRegisterInfo *TRI;
 +  const TargetInstrInfo *TII;
 +  const LiveIntervals *LI;
 +  const LiveStacks *LS;
@@ -2837,12 +2853,21 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  const VirtRegMap *VRM;
 +
 +  /// Stackmap/call instructions, mapping of virtual registers & stack slots to
-+  /// IR values
++  /// IR values, list of instructions that copy to/from the stack
 +  SmallVector<SMInstBundle, 32> SM;
 +  SMVregsMap SMVregs;
 +  SMStackSlotMap SMStackSlots;
++  StackSlotCopies SSUses;
 +
 +  /* Functions */
++
++  // Reset the analysis for a new function
++  void reset() {
++    SM.clear();
++    SMVregs.clear();
++    SMStackSlots.clear();
++    SSUses.clear();
++  }
 +
 +  /// Print information about a virtual register and it's associated IR value
 +  void dumpReg(unsigned Reg, const Value *IRVal) const;
@@ -2850,23 +2875,25 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  /// Print information about a stack slot and it's associated IR value
 +  void dumpStackSlot(int SS, const Value *IRVal) const;
 +
++  /// Analyze a machine instruction to see if a value is getting copied from
++  /// another location such as a stack slot or register.
++  CopyLocPtr getCopyLocation(const MachineInstr *MI) const;
++
 +  /// Gather stackmap machine instructions, the IR instructions which generated
-+  /// the stackmaps, and their associated call machine instructions
-+  void bundleStackmaps();
++  /// the stackmaps, and their associated call machine instructions.  Also,
++  /// find copies to/from stack slots (since there's no other mechanism to
++  /// find/traverse them).
++  void findStackmapsAndStackSlotCopies();
 +
 +  /// Find all virtual register/stack slot operands in a stackmap and collect
 +  /// virtual register/stack slot <-> IR value mappings
 +  void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 +
-+  /// Analyze a machine instruction to see if a value is getting copied from
-+  /// another location such as a stack slot or register.
-+  CopyLocPtr getCopyLocation(const MachineInstr *MI) const;
-+
 +  /// Is a virtual register live across the machine instruction?
-+  bool isVregLiveAcrossInstr(unsigned Vreg, const MachineInstr *MI);
++  bool isVregLiveAcrossInstr(unsigned Vreg, const MachineInstr *MI) const;
 +
 +  /// Is a stack slot live across the machine instruction?
-+  bool isSSLiveAcrossInstr(int SS, const MachineInstr *MI);
++  bool isSSLiveAcrossInstr(int SS, const MachineInstr *MI) const;
 +
 +  /// Add duplicate location information for a virtual register.  Return true
 +  /// if metadata was added, or false if the virtual register is not live
@@ -2875,10 +2902,21 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                       ValueVecPtr IRVals,
 +                       const SMInstBundle &SM);
 +
-+  /// Add duplicate location information for a virtual register.  Return true
-+  /// if metadata was added, or false if the stack slot is not live across the
++  /// Add duplicate location information for a stack slot.  Return true if
++  /// metadata was added, or false if the stack slot is not live across the
 +  /// call instruction/stackmap.
 +  bool addSSMetadata(int SS, ValueVecPtr IRVals, const SMInstBundle &SM);
++
++  /// Search stack slot copies for additional virtual registers which are live
++  /// across the stackmap.  Will check to see if the copy instructions have
++  /// already been visited, and if appropriate, will add virtual registers to
++  /// work queue.
++  void inline
++  searchStackSlotCopies(int SS,
++                        ValueVecPtr IRVals,
++                        const SMInstBundle &SM,
++                        SmallPtrSet<const MachineInstr *, 32> &Visited,
++                        std::queue<unsigned> &work);
 +
 +  /// Find all alternate locations for virtual registers in a stackmap, and add
 +  /// them to the metadata to be generated.
@@ -2931,26 +2969,25 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
-+  MF = &fn;
-+  TII = MF->getSubtarget().getInstrInfo();
-+  MRI = &MF->getRegInfo();
-+  MFI = MF->getFrameInfo();
-+  Indexes = &getAnalysis<SlotIndexes>();
-+  LI = &getAnalysis<LiveIntervals>();
-+  LS = &getAnalysis<LiveStacks>();
-+  VRM = &getAnalysis<VirtRegMap>();
-+  SM.clear();
-+  SMVregs.clear();
-+  SMStackSlots.clear();
++  if(fn.getFrameInfo()->hasStackMap()) {
++    MF = &fn;
++    TRI = MF->getSubtarget().getRegisterInfo();
++    TII = MF->getSubtarget().getInstrInfo();
++    MRI = &MF->getRegInfo();
++    MFI = MF->getFrameInfo();
++    Indexes = &getAnalysis<SlotIndexes>();
++    LI = &getAnalysis<LiveIntervals>();
++    LS = &getAnalysis<LiveStacks>();
++    VRM = &getAnalysis<VirtRegMap>();
++    reset();
 +
-+  if(MF->getFrameInfo()->hasStackMap()) {
 +    DEBUG(
 +      dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
 +             << "********** Function: " << MF->getName() << '\n';
 +      VRM->dump();
 +    );
 +
-+    bundleStackmaps();
++    findStackmapsAndStackSlotCopies();
 +    findAlternateOpLocs();
 +    findArchSpecificLiveVals();
 +  }
@@ -2980,10 +3017,51 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +         << ")\n";
 +}
 +
++/// Analyze a machine instruction to see if a value is getting copied from
++/// another location such as a stack slot or register.
++StackTransformMetadata::CopyLocPtr
++StackTransformMetadata::getCopyLocation(const MachineInstr *MI) const {
++  unsigned SrcVreg = 0;
++  unsigned DefVreg = 0;
++  int SS;
++
++  assert(MI && "Invalid machine instruction");
++
++  // Is it a copy from another register?
++  if(MI->isCopyLike()) {
++    for(unsigned i = 0, e = MI->getNumOperands(); i != e; i++) {
++      const MachineOperand &MO = MI->getOperand(i);
++      if(MO.isReg()) {
++        if(MO.isDef()) DefVreg = MO.getReg();
++        else SrcVreg = MO.getReg();
++      }
++    }
++
++    // TODO does it have to be a virtual register or can it be a physical one?
++    if(TargetRegisterInfo::isVirtualRegister(SrcVreg) &&
++       TargetRegisterInfo::isVirtualRegister(DefVreg))
++      return CopyLocPtr(new RegCopyLoc(DefVreg, SrcVreg, MI));
++  }
++
++  // Is it a load from the stack?
++  if((DefVreg = TII->isLoadFromStackSlot(MI, SS)) &&
++     TargetRegisterInfo::isVirtualRegister(DefVreg))
++    return CopyLocPtr(new StackLoadLoc(DefVreg, SS, MI));
++
++  // Is it a store to the stack?
++  if((SrcVreg = TII->isStoreToStackSlot(MI, SS)) &&
++     TargetRegisterInfo::isVirtualRegister(SrcVreg))
++    return CopyLocPtr(new StackStoreLoc(SrcVreg, SS, MI));
++
++  // A non-copylike instruction
++  return CopyLocPtr(nullptr);
++}
++
 +/// Gather stackmap machine instructions, the IR instructions which generated
-+/// the stackmaps, and their associated call machine instructions
-+void
-+StackTransformMetadata::bundleStackmaps() {
++/// the stackmaps, and their associated call machine instructions.  Also,
++/// find copies to/from stack slots (since there's no other mechanism to
++/// find/traverse them).
++void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
 +  for(auto MBB = MF->begin(), MBBE = MF->end(); MBB != MBBE; MBB++) {
 +    for(auto MI = MBB->instr_begin(), ME = MBB->instr_end(); MI != ME; MI++) {
 +      if(MI->getOpcode() == TargetOpcode::STACKMAP) {
@@ -2991,18 +3069,18 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        assert(MI->getOperand(0).isImm() && "Invalid stackmap ID");
 +        int64_t ID = MI->getOperand(0).getImm();
 +        const BasicBlock *BB = MI->getParent()->getBasicBlock();
-+        const CallInst *SMIR = nullptr;
++        const CallInst *IRSM = nullptr;
 +        for(auto I = BB->begin(), IE = BB->end(); I != IE; I++)
 +        {
 +          const IntrinsicInst *II;
 +          if((II = dyn_cast<IntrinsicInst>(&*I)) &&
 +             II->getCalledFunction()->getName() == SMName &&
 +             cast<ConstantInt>(II->getArgOperand(0))->getSExtValue() == ID) {
-+            SMIR = cast<CallInst>(II);
++            IRSM = cast<CallInst>(II);
 +            break;
 +          }
 +        }
-+        assert(SMIR && "Could not find stackmap IR instruction");
++        assert(IRSM && "Could not find stackmap IR instruction");
 +
 +        // Find the call instruction
 +        const MachineInstr *MCI = MI->getPrevNode();
@@ -3018,22 +3096,38 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        if(!MCI) {
 +          DEBUG(
 +            dbgs() << "WARNING: stackmap " << ID << " ";
-+            SMIR->printAsOperand(dbgs());
++            IRSM->printAsOperand(dbgs());
 +            dbgs() << ": could not find associated call instruction "
 +                      "(lowered to a native instruction?)\n";
 +          );
 +          continue;
 +        }
 +
-+        SM.push_back(SMInstBundle(SMIR, &*MI, MCI));
++        SM.push_back(SMInstBundle(IRSM, &*MI, MCI));
++      }
++      else {
++        // See if instruction copies to/from stack slot
++        StackSlotCopies::iterator it;
++        CopyLocPtr loc;
++
++        if(!(loc = getCopyLocation(&*MI))) continue;
++        enum CopyLoc::Type type = loc->getType();
++        if(type == CopyLoc::STACK_LOAD || type == CopyLoc::STACK_STORE) {
++          StackCopyLoc *SCL = (StackCopyLoc *)loc.get();
++          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end()) {
++            StackSlotCopyPair ins(SCL->StackSlot,
++                                  CopyLocVecPtr(new CopyLocVec));
++            it = SSUses.insert(std::move(ins)).first;
++          }
++          it->second->push_back(loc);
++        }
 +      }
 +    }
 +  }
 +}
 +
-+/// Find all virtual register/stack slot operands in a stackmap and map them to
-+/// the corresponding IR values.  This is derived from the functionality in
-+/// StackMaps::parseOperand().
++/// Find all virtual register/stack slot operands in a stackmap and collect
++/// virtual register/stack slot <-> IR value mappings
 +void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
 +                                        const MachineInstr *MISM) {
 +  RegValsMap::iterator VregIt;
@@ -3086,7 +3180,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        SSIt = SMStackSlots[MISM].insert(std::move(OpMap)).first;
 +      }
 +      SSIt->second->push_back(IRVal);
-+    } else if(MOit->isReg()) { // Map IR values to virtual registers
++    }
++    else if(MOit->isReg()) { // Map IR values to virtual registers
 +      const Value *IRVal = IRit->get();
 +      unsigned Reg = MOit->getReg();
 +
@@ -3100,7 +3195,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      VregIt = SMVregs[MISM].find(Reg);
 +      if(VregIt == SMVregs[MISM].end()) {
 +        RegValsPair OpMap(Reg, ValueVecPtr(new ValueVec));
-+        VregIt = SMVregs[MISM].insert(OpMap).first;
++        VregIt = SMVregs[MISM].insert(std::move(OpMap)).first;
 +      }
 +      VregIt->second->push_back(IRVal);
 +    } else {
@@ -3110,49 +3205,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
 +}
 +
-+/// Analyze a machine instruction to see if a value is getting copied from
-+/// another location such as a stack slot or register.
-+StackTransformMetadata::CopyLocPtr
-+StackTransformMetadata::getCopyLocation(const MachineInstr *MI) const {
-+  unsigned SrcVreg = 0;
-+  unsigned DefVreg = 0;
-+  int SS;
-+
-+  assert(MI && "Invalid machine instruction");
-+
-+  // Is it a copy from another register?
-+  if(MI->isCopyLike()) {
-+    for(unsigned i = 0, e = MI->getNumOperands(); i != e; i++) {
-+      const MachineOperand &MO = MI->getOperand(i);
-+      if(MO.isReg()) {
-+        if(MO.isDef()) DefVreg = MO.getReg();
-+        else SrcVreg = MO.getReg();
-+      }
-+    }
-+
-+    // TODO does it have to be a virtual register or can it be a physical one?
-+    if(TargetRegisterInfo::isVirtualRegister(SrcVreg) &&
-+       TargetRegisterInfo::isVirtualRegister(DefVreg))
-+      return CopyLocPtr(new RegCopyLoc(DefVreg, SrcVreg));
-+  }
-+
-+  // Is it a load from the stack?
-+  if((DefVreg = TII->isLoadFromStackSlot(MI, SS)) &&
-+     TargetRegisterInfo::isVirtualRegister(DefVreg))
-+    return CopyLocPtr(new StackLoadLoc(DefVreg, SS));
-+
-+  // Is it a store to the stack?
-+  if((SrcVreg = TII->isStoreToStackSlot(MI, SS)) &&
-+     TargetRegisterInfo::isVirtualRegister(SrcVreg))
-+    return CopyLocPtr(new StackStoreLoc(SrcVreg, SS));
-+
-+  // A non-copylike instruction
-+  return CopyLocPtr(nullptr);
-+}
-+
 +/// Is a virtual register live across the machine instruction?
-+bool StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
-+                                                   const MachineInstr *MI) {
++bool
++StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
++                                              const MachineInstr *MI) const {
 +  if(LI->hasInterval(Vreg)) {
 +    const LiveInterval &TheLI = LI->getInterval(Vreg);
 +    SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
@@ -3164,8 +3220,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +/// Is a stack slot live across the machine instruction?
-+bool StackTransformMetadata::isSSLiveAcrossInstr(int SS,
-+                                                 const MachineInstr *MI) {
++bool
++StackTransformMetadata::isSSLiveAcrossInstr(int SS,
++                                            const MachineInstr *MI) const {
 +  if(LS->hasInterval(SS)) {
 +    const LiveInterval &TheLI = LS->getInterval(SS);
 +    SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
@@ -3229,13 +3286,41 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  else return false;
 +}
 +
++/// Search stack slot copies for additional virtual registers which are live
++/// across the stackmap.  Will check to see if the copy instructions have
++/// already been visited, and if appropriate, will add virtual registers to
++/// work queue.
++void inline
++StackTransformMetadata::searchStackSlotCopies(int SS,
++                                       ValueVecPtr IRVals,
++                                       const SMInstBundle &SM,
++                                       SmallPtrSet<const MachineInstr *, 32> &Visited,
++                                       std::queue<unsigned> &work) {
++  StackSlotCopies::const_iterator Copies;
++  CopyLocVecPtr CL;
++  CopyLocVec::const_iterator Copy, CE;
++
++  if((Copies = SSUses.find(SS)) != SSUses.end()) {
++    CL = Copies->second;
++    for(Copy = CL->begin(), CE = CL->end(); Copy != CE; Copy++) {
++      unsigned Vreg = (*Copy)->Vreg;
++      const MachineInstr *Instr = (*Copy)->Instr;
++
++      if(!Visited.count(Instr) && addVregMetadata(Vreg, IRVals, SM)) {
++        Visited.insert(Instr);
++        work.push(Vreg);
++      }
++    }
++  }
++}
++
 +/// Find all alternate locations for virtual registers in a stackmap, and add
 +/// them to the metadata to be generated.
 +void
 +StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
 +  RegValsMap &Vregs = SMVregs[getMISM(SM)];
 +  std::queue<unsigned> work;
-+  SmallPtrSet<MachineInstr *, 32> Visited;
++  SmallPtrSet<const MachineInstr *, 32> Visited;
 +  StackCopyLoc *SCL;
 +  RegCopyLoc *RCL;
 +
@@ -3261,10 +3346,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    while(!work.empty()) {
 +      unsigned cur, vreg;
 +      int ss;
-+      cur = work.front();
-+      work.pop();
 +
 +      // Walk over definitions
++      cur = work.front();
++      work.pop();
 +      for(auto instr = MRI->def_instr_begin(cur), ei = MRI->def_instr_end();
 +          instr != ei;
 +          instr++) {
@@ -3285,7 +3370,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          ss = SCL->StackSlot;
 +          if(!Visited.count(&*instr) && addSSMetadata(ss, IRVals, SM)) {
 +            Visited.insert(&*instr);
-+            // TODO add to work queue?
++            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
 +          }
 +          break;
 +        default: llvm_unreachable("Unknown/invalid location type"); break;
@@ -3312,7 +3397,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          ss = SCL->StackSlot;
 +          if(!Visited.count(&*instr) && addSSMetadata(ss, IRVals, SM)) {
 +            Visited.insert(&*instr);
-+            // TODO add to work queue?
++            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
 +          }
 +          break;
 +        default: llvm_unreachable("Unknown/invalid location type"); break;
@@ -3381,9 +3466,20 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  return nullptr;
 +}
 +
++/// Find IR call instruction which generated the stackmap
++static inline const CallInst *findCalledFunc(const llvm::CallInst *IRSM) {
++  const Instruction *Func = IRSM->getPrevNode();
++  while(Func && !isa<CallInst>(Func)) Func = Func->getPrevNode();
++  return dyn_cast<CallInst>(Func);
++}
++
 +/// Find architecture-specific live values added by the backend
 +// TODO break up
 +void StackTransformMetadata::findArchSpecificLiveVals() {
++  std::string Msg;
++  const CallInst *IRCall;
++  const Function *CalledFunc;
++
 +  DEBUG(dbgs() << "\n*** Finding architecture-specific live values ***\n\n";);
 +
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
@@ -3391,8 +3487,12 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const MachineInstr *MISM = getMISM(*S);
 +    const MachineInstr *MICall = getMICall(*S);
 +    const CallInst *IRSM = getIRSM(*S);
++    IRCall = findCalledFunc(IRSM);
++    CalledFunc = IRCall->getCalledFunction();
 +    RegValsMap &CurVregs = SMVregs[MISM];
 +    StackValsMap &CurSS = SMStackSlots[MISM];
++
++    assert(IRCall && CalledFunc && "No call instruction for stackmap");
 +
 +    DEBUG(
 +      MISM->dump();
@@ -3446,10 +3546,15 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +              def->dump();
 +            }
 +          );
-+          DiagnosticInfoOptimizationFailure DI(
-+            *IRSM->getParent()->getParent(),
-+            IRSM->getDebugLoc(),
-+            "Unhandled register for stack transformation");
++
++          Msg = "Unhandled register ";
++          Msg += TRI->getName(VRM->getPhys(Vreg));
++          if(CalledFunc->hasName()) {
++            Msg += " across call to ";
++            Msg += CalledFunc->getName();
++          }
++          DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
++                                               IRCall->getDebugLoc(), Msg);
 +          MF->getFunction()->getContext().diagnose(DI);
 +        }
 +      }
@@ -3470,10 +3575,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +              def->dump();
 +            }
 +          );
-+          DiagnosticInfoOptimizationFailure DI(
-+            *IRSM->getParent()->getParent(),
-+            IRSM->getDebugLoc(),
-+            "Unhandled stack slot/register for stack transformation");
++
++          Msg = "Unhandled virtual register ";
++          Msg += std::to_string(Vreg);
++          Msg += " in stack slot ";
++          Msg += std::to_string(VRM->getStackSlot(Vreg));
++          if(CalledFunc->hasName()) {
++            Msg += " across call to ";
++            Msg += CalledFunc->getName();
++          }
++          DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
++                                               IRCall->getDebugLoc(), Msg);
 +          MF->getFunction()->getContext().diagnose(DI);
 +        }
 +      }
@@ -3487,13 +3599,18 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +         isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
 +        DEBUG(dbgs() << "    + stack slot " << SS
 +                     << " is live but not in stackmap\n";);
++
 +        // TODO add arch-specific stack slot information to machine function
 +        // TODO does this imply an alloca that wasn't captured in the stackmap?
 +        // I think this is a live value analysis bug...
-+        DiagnosticInfoOptimizationFailure DI(
-+          *IRSM->getParent()->getParent(),
-+          IRSM->getDebugLoc(),
-+          "Unhandled stack slot for stack transformation");
++        Msg = "Unhandled stack slot ";
++        Msg += std::to_string(SS);
++        if(CalledFunc->hasName()) {
++          Msg += " across call to ";
++          Msg += CalledFunc->getName();
++        }
++        DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
++                                             IRCall->getDebugLoc(), Msg);
 +        MF->getFunction()->getContext().diagnose(DI);
 +      }
 +    }
@@ -3883,7 +4000,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,306 @@
+@@ -0,0 +1,330 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -3985,17 +4102,26 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +            live = liveVals.getLiveValues(&*i);
 +            for(const Value *val : *live) sortedLive.insert(val);
 +            for(const Argument *val : hiddenArgs) sortedLive.insert(val);
-+            for(const Instruction *val : hiddenInst)
-+              if(DT.dominates(val, CI))
-+                sortedLive.insert(val);
++            for(const Instruction *val : hiddenInst) {
++              /*
++               * The two criteria for inclusion of a hidden value are:
++               *   1. The value's definition dominates the call
++               *   2. A use of the definition is included in the stackmap
++               */
++              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
++                  sortedLive.insert(val);
++            }
 +            delete live;
 +  
 +            DEBUG(
 +              const Function *calledFunc;
 +  
 +              errs() << "  ";
-+              CI->printAsOperand(errs(), false);
-+              errs() << " ";
++              if(!CI->getType()->isVoidTy()) {
++                CI->printAsOperand(errs(), false);
++                errs() << " ";
++              }
++              else errs() << "(void) ";
 +  
 +              calledFunc = CI->getCalledFunction();
 +              if(calledFunc && calledFunc->hasName())
@@ -4168,6 +4294,21 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +        }
 +      }
 +    }
++  }
++
++  /**
++   * Return whether or not a value's user is in a liveness set.
++   *
++   * @param Val a value whose users are checked against the liveness set
++   * @param Live a set of live values
++   * @return true if a user is in the liveness set, false otherwise
++   */
++  bool hasLiveUser(const Instruction *Val,
++                   const std::set<const Value *> &Live) const {
++    Instruction::const_use_iterator use, e;
++    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
++      if(Live.count(*use)) return true;
++    return false;
 +  }
 +};
 +
