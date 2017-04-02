@@ -10,8 +10,8 @@
 // This file accumulates additional data from machine functions needed to do
 // correct and complete stack transformation.
 //
-// Note: the dataflow analysis in this implementation assumes the ISA cannot
-// perform memory-to-memory copies.
+// Note: the dataflow analysis in this implementation assumes the ISA does not
+// allow memory-to-memory copies.
 //
 //===----------------------------------------------------------------------===//
 
@@ -30,6 +30,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetValueGenerator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -159,10 +160,11 @@ class StackTransformMetadata : public MachineFunctionPass {
 
   /// LLVM-provided analysis & metadata
   MachineFunction *MF;
-  const MachineRegisterInfo *MRI;
   const MachineFrameInfo *MFI;
-  const TargetRegisterInfo *TRI;
+  const MachineRegisterInfo *MRI;
   const TargetInstrInfo *TII;
+  const TargetRegisterInfo *TRI;
+  const TargetValueGenerator *TVG;
   const LiveIntervals *LI;
   const LiveStacks *LS;
   const SlotIndexes *Indexes;
@@ -242,10 +244,13 @@ class StackTransformMetadata : public MachineFunctionPass {
   void findAlternateOpLocs();
 
   /// Analyze a machine instruction to find the value being used
-  MachineConstant *getTargetValue(const MachineInstr *MI) const;
+  MachineLiveValPtr getTargetValue(const MachineInstr *MI) const;
 
   /// Find architecture-specific live values added by the backend
   void findArchSpecificLiveVals();
+
+  /// Warn about unhandled registers & stack slots
+  void warnUnhandled() const;
 
 public:
   static char ID;
@@ -287,10 +292,11 @@ void StackTransformMetadata::getAnalysisUsage(AnalysisUsage &AU) const {
 bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
   if(fn.getFrameInfo()->hasStackMap()) {
     MF = &fn;
-    TRI = MF->getSubtarget().getRegisterInfo();
-    TII = MF->getSubtarget().getInstrInfo();
-    MRI = &MF->getRegInfo();
     MFI = MF->getFrameInfo();
+    MRI = &MF->getRegInfo();
+    TII = MF->getSubtarget().getInstrInfo();
+    TRI = MF->getSubtarget().getRegisterInfo();
+    TVG = MF->getSubtarget().getValueGenerator();
     Indexes = &getAnalysis<SlotIndexes>();
     LI = &getAnalysis<LiveIntervals>();
     LS = &getAnalysis<LiveStacks>();
@@ -306,6 +312,7 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
     findStackmapsAndStackSlotCopies();
     findAlternateOpLocs();
     findArchSpecificLiveVals();
+    warnUnhandled();
   }
 
   return false;
@@ -315,11 +322,11 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
 void StackTransformMetadata::dumpReg(unsigned Reg, const Value *IRVal) const {
   IRVal->printAsOperand(dbgs());
   if(TargetRegisterInfo::isPhysicalRegister(Reg))
-    dbgs() << ": in register " << PrintReg(Reg, &VRM->getTargetRegInfo());
+    dbgs() << ": in register " << PrintReg(Reg, TRI);
   else {
     assert(VRM->hasPhys(Reg) && "Invalid virtual register");
     unsigned Phys = VRM->getPhys(Reg);
-    dbgs() << ": in register " << PrintReg(Phys, &VRM->getTargetRegInfo())
+    dbgs() << ": in register " << PrintReg(Phys, TRI)
            << " (vreg " << TargetRegisterInfo::virtReg2Index(Reg) << ")";
   }
   dbgs() << "\n";
@@ -354,6 +361,7 @@ StackTransformMetadata::getCopyLocation(const MachineInstr *MI) const {
     }
 
     // TODO does it have to be a virtual register or can it be a physical one?
+    // Liveness analysis seems to apply only to virtual registers.
     if(TargetRegisterInfo::isVirtualRegister(SrcVreg) &&
        TargetRegisterInfo::isVirtualRegister(DefVreg))
       return CopyLocPtr(new RegCopyLoc(DefVreg, SrcVreg, MI));
@@ -559,7 +567,7 @@ bool StackTransformMetadata::addVregMetadata(unsigned Vreg,
   RegValsMap &Vregs = SMVregs[MISM];
 
   assert(TargetRegisterInfo::isVirtualRegister(Vreg) && VRM->hasPhys(Vreg) &&
-         "Cannot add virtual register metadta -- invalid virtual register");
+         "Cannot add virtual register metadata -- invalid virtual register");
 
   if(Vregs.find(Vreg) == Vregs.end() &&
      (isVregLiveAcrossInstr(Vreg, MISM) || isVregLiveAcrossInstr(Vreg, MICall)))
@@ -567,8 +575,7 @@ bool StackTransformMetadata::addVregMetadata(unsigned Vreg,
     unsigned Phys = VRM->getPhys(Vreg);
     for(size_t sz = 0; sz < IRVals->size(); sz++) {
       DEBUG(dumpReg(Vreg, IRVals->operator[](sz)););
-      MF->addSMOpLocation(IRSM, IRVals->operator[](sz),
-                          MachineLiveReg(Phys, true));
+      MF->addSMOpLocation(IRSM, IRVals->operator[](sz), MachineLiveReg(Phys));
     }
     Vregs[Vreg] = IRVals;
     return true;
@@ -594,7 +601,7 @@ bool StackTransformMetadata::addSSMetadata(int SS,
     for(size_t sz = 0; sz < IRVals->size(); sz++) {
       DEBUG(dumpStackSlot(SS, IRVals->operator[](sz)););
       MF->addSMOpLocation(IRSM, IRVals->operator[](sz),
-                          MachineLiveStackSlot(SS, true));
+                          MachineLiveStackSlot(SS));
     }
     SSlots[SS] = IRVals;
     return true;
@@ -642,7 +649,7 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
 
   DEBUG(dbgs() << "\nDuplicate operand locations:\n\n";);
 
-  // Iterate over all vregs for the stackmap
+  // Iterate over all vregs in the stackmap
   for(RegValsMap::iterator it = Vregs.begin(), end = Vregs.end();
       it != end; it++) {
     unsigned origVreg = it->first;
@@ -744,12 +751,16 @@ void StackTransformMetadata::findAlternateOpLocs() {
     // Find alternate locations for vregs in stack map
     findAlternateVregLocs(*S);
 
-    // TODO search stack slot copies
+    // TODO Find alternate locations for stack slots in stack map
   }
 }
 
-MachineConstant *
+/// Analyze a machine instruction to find the value being used
+MachineLiveValPtr
 StackTransformMetadata::getTargetValue(const MachineInstr *MI) const {
+  if(!MI) return MachineLiveValPtr(nullptr);
+
+  // Immediates can be handled in an architecture-agnostic way
   if(MI->isMoveImmediate()) {
     unsigned Size = 8;
     uint64_t Value = UINT64_MAX;
@@ -764,38 +775,13 @@ StackTransformMetadata::getTargetValue(const MachineInstr *MI) const {
         Value = Bits.getZExtValue();
       }
     }
-    return new MachineImmediate(Size, Value);
+    return MachineLiveValPtr(new MachineImmediate(Size, Value, MI));
   }
-  else {
-    // TODO there's not any generic interface for detecting instructions like
-    // MOVaddr, do we need an architecture-specific instruction filter?
-    std::string Symbol("");
-    for(unsigned i = 0, e = MI->getNumOperands(); i < e; i++) {
-      const MachineOperand &MO = MI->getOperand(i);
-      if(MO.isMCSymbol()) Symbol = MO.getMCSymbol()->getName();
-      else if(MO.isGlobal()) Symbol = MO.getGlobal()->getName();
-      else if(MO.isSymbol()) Symbol = MO.getSymbolName();
-    }
-    if(Symbol != "") return new MachineSymbol(Symbol);
-  }
-
-  return nullptr;
-}
-
-/// Find IR call instruction which generated the stackmap
-static inline const CallInst *findCalledFunc(const llvm::CallInst *IRSM) {
-  const Instruction *Func = IRSM->getPrevNode();
-  while(Func && !isa<CallInst>(Func)) Func = Func->getPrevNode();
-  return dyn_cast<CallInst>(Func);
+  else return TVG->getMachineValue(MI);
 }
 
 /// Find architecture-specific live values added by the backend
-// TODO break up
 void StackTransformMetadata::findArchSpecificLiveVals() {
-  std::string Msg;
-  const CallInst *IRCall;
-  const Function *CalledFunc;
-
   DEBUG(dbgs() << "\n*** Finding architecture-specific live values ***\n\n";);
 
   for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
@@ -803,12 +789,8 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     const MachineInstr *MISM = getMISM(*S);
     const MachineInstr *MICall = getMICall(*S);
     const CallInst *IRSM = getIRSM(*S);
-    IRCall = findCalledFunc(IRSM);
-    CalledFunc = IRCall->getCalledFunction();
     RegValsMap &CurVregs = SMVregs[MISM];
     StackValsMap &CurSS = SMStackSlots[MISM];
-
-    assert(IRCall && CalledFunc && "No call instruction for stackmap");
 
     DEBUG(
       MISM->dump();
@@ -822,8 +804,8 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     // Search for virtual registers not handled by the stackmap
     for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
       unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
-      MachineConstant *MC;
-      MachineLiveReg MLR(0, false);
+      MachineLiveValPtr MC;
+      MachineLiveReg MLR(0);
 
       // Detect virtual registers live across but not included in the stackmap
       if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
@@ -831,79 +813,32 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
         DEBUG(dbgs() << "    + vreg" << i
                      << " is live in register but not in stackmap\n";);
 
-        // TODO need to handle when >1 definition
-        if(!MRI->hasOneDef(Vreg)) {
-          DEBUG( dbgs() << "More than one definition for vreg");
-          MC = nullptr;
-        }
-        else {
-          for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-              def != end; def++) {
-            if((MC = getTargetValue(&*def)) != nullptr) {
-              DEBUG(dbgs() << "      Defining instruction: "; def->dump(););
-              break;
-            }
-          }
-        }
-
+        assert(++(MRI->def_instr_begin(Vreg)) == MRI->def_instr_end() &&
+               "Multiple definitions for virtual register");
+        MC = getTargetValue(&*MRI->def_instr_begin(Vreg));
         if(MC) {
-          MLR.setReg(VRM->getPhys(Vreg));
-          MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
-          DEBUG(dbgs() << "      Value: " << MC->toString() << "\n";);
-          delete MC;
-        }
-        else {
           DEBUG(
-            dbgs() << "      WARNING: could not get defining value.  "
-                      "Defining instructions:\n";
-            for(auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-                def != end; def++) {
-              dbgs() << "      ";
-              def->dump();
-            }
+            dbgs() << "      Defining instruction: ";
+            MC->getDefiningInst()->print(dbgs());
+            dbgs() << "      Value: " << MC->toString() << "\n";
           );
 
-          Msg = "Unhandled register ";
-          Msg += TRI->getName(VRM->getPhys(Vreg));
-          if(CalledFunc->hasName()) {
-            Msg += " across call to ";
-            Msg += CalledFunc->getName();
-          }
-          DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
-                                               IRCall->getDebugLoc(), Msg);
-          MF->getFunction()->getContext().diagnose(DI);
+          MLR.setReg(VRM->getPhys(Vreg));
+          MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
+          CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
         }
       }
       // Detect virtual registers mapped to stack slots not in stackmap
+      // Note: we can't detect if this vreg is actually in use judging by the
+      // value returned from VRM->getStackSlot.  Therefore, manually check by
+      // seeing if there are any definitions.
       else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
+              (MRI->def_instr_begin(Vreg) != MRI->def_instr_end()) &&
               isVregLiveAcrossInstr(Vreg, MICall) &&
               CurVregs.find(Vreg) == CurVregs.end()) {
-        // Note: this path is a little weird in that we can't detect if this
-        // vreg is actually used by the value returned from VRM->getStackSlot.
-        // Manually check by seeing if there are any definitions.
-        auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-        if(def != end) {
-          dbgs() << "    + vreg" << i
-                 << " is live in stack slot but not in stackmap\n";
-          DEBUG(
-            for(; def != end; def++) {
-              dbgs() << "    ";
-              def->dump();
-            }
-          );
-
-          Msg = "Unhandled virtual register ";
-          Msg += std::to_string(Vreg);
-          Msg += " in stack slot ";
-          Msg += std::to_string(VRM->getStackSlot(Vreg));
-          if(CalledFunc->hasName()) {
-            Msg += " across call to ";
-            Msg += CalledFunc->getName();
-          }
-          DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
-                                               IRCall->getDebugLoc(), Msg);
-          MF->getFunction()->getContext().diagnose(DI);
-        }
+        DEBUG(dbgs() << "    + vreg" << i
+                     << " is live in stack slot but not in stackmap\n");
+        // TODO handle vreg spilled to stack slot
       }
     }
 
@@ -915,23 +850,91 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
          isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
         DEBUG(dbgs() << "    + stack slot " << SS
                      << " is live but not in stackmap\n";);
-
         // TODO add arch-specific stack slot information to machine function
         // TODO does this imply an alloca that wasn't captured in the stackmap?
         // I think this is a live value analysis bug...
-        Msg = "Unhandled stack slot ";
-        Msg += std::to_string(SS);
-        if(CalledFunc->hasName()) {
-          Msg += " across call to ";
-          Msg += CalledFunc->getName();
-        }
-        DiagnosticInfoOptimizationFailure DI(*IRSM->getParent()->getParent(),
-                                             IRCall->getDebugLoc(), Msg);
-        MF->getFunction()->getContext().diagnose(DI);
       }
     }
 
     DEBUG(dbgs() << "\n";);
+  }
+}
+
+/// Find IR call instruction which generated the stackmap
+static inline const CallInst *findCalledFunc(const llvm::CallInst *IRSM) {
+  const Instruction *Func = IRSM->getPrevNode();
+  while(Func && !isa<CallInst>(Func)) Func = Func->getPrevNode();
+  return dyn_cast<CallInst>(Func);
+}
+
+/// Display a warning about unhandled values
+static inline void displayWarning(std::string &Msg,
+                                  const CallInst *CI,
+                                  const Function *F) {
+  assert(CI && F && "Invalid arguments");
+
+  const Function *CurF = CI->getParent()->getParent();
+  if(F->hasName()) {
+    Msg += " across call to ";
+    Msg += F->getName();
+  }
+  DiagnosticInfoOptimizationFailure DI(*CurF, CI->getDebugLoc(), Msg);
+  CurF->getContext().diagnose(DI);
+}
+
+/// Warn about unhandled registers & stack slots
+void StackTransformMetadata::warnUnhandled() const {
+  std::string Msg;
+  const CallInst *IRCall;
+  const Function *CalledFunc;
+
+  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
+  {
+    const MachineInstr *MISM = getMISM(*S);
+    const MachineInstr *MICall = getMICall(*S);
+    const RegValsMap &CurVregs = SMVregs.at(MISM);
+    const StackValsMap &CurSS = SMStackSlots.at(MISM);
+    IRCall = findCalledFunc(getIRSM(*S));
+    CalledFunc = IRCall->getCalledFunction();
+
+    assert(IRCall && CalledFunc && "No call instruction for stackmap");
+
+    // Search for virtual registers not handled by the stackmap
+    for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
+      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
+
+      // Virtual register allocated to physical register
+      if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
+         CurVregs.find(Vreg) == CurVregs.end()) {
+        Msg = "Unhandled register ";
+        Msg += TRI->getName(VRM->getPhys(Vreg));
+        displayWarning(Msg, IRCall, CalledFunc);
+      }
+      // Virtual register spilled to the stack
+      else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
+              isVregLiveAcrossInstr(Vreg, MICall) &&
+              CurVregs.find(Vreg) == CurVregs.end()) {
+        auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
+        if(def != end) {
+          Msg = "Unhandled virtual register ";
+          Msg += std::to_string(Vreg);
+          Msg += " in stack slot ";
+          Msg += std::to_string(VRM->getStackSlot(Vreg));
+          displayWarning(Msg, IRCall, CalledFunc);
+        }
+      }
+    }
+
+    // Search for all stack slots not handled by the stackmap
+    for(int SS = MFI->getObjectIndexBegin(), e = MFI->getObjectIndexEnd();
+        SS < e; SS++) {
+      if(!MFI->isDeadObjectIndex(SS) &&
+         isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
+        Msg = "Unhandled stack slot ";
+        Msg += std::to_string(SS);
+        displayWarning(Msg, IRCall, CalledFunc);
+      }
+    }
   }
 }
 

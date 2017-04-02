@@ -14,60 +14,72 @@
 #include <map>
 #include <memory>
 #include <string>
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/StackTransformTypes.def"
 
 namespace llvm {
 
-/// MachineConstant - A constant live value.  Note: not to be used with LLVM's
-/// MachineConstantPool machinery!
-class MachineConstant {
+//===----------------------------------------------------------------------===//
+// Machine-specific live values
+//
+
+/// MachineLiveVal - A machine-specific live value
+class MachineLiveVal {
 public:
   /// Constructors & destructors.  Note: create child class objects rather than
   /// objects of this class.
-  MachineConstant() = delete;
-  virtual ~MachineConstant() {}
-  virtual MachineConstant *copy() const = 0;
-  virtual bool operator==(const MachineConstant &RHS) = 0;
+  MachineLiveVal() = delete;
+  virtual ~MachineLiveVal() {}
+  virtual MachineLiveVal *copy() const = 0;
+  virtual bool operator==(const MachineLiveVal &RHS) = 0;
 
   /// Possible constant types
-  enum Type { None, Symbol, Immediate };
+  enum Type { None, Reference, Immediate, Generated };
 
   /// Determine the constant's type
   bool isValid() const { return Type == None; }
-  bool isSymbol() const { return Type == Symbol; }
+  bool isReference() const { return Type == Reference; }
   bool isImm() const { return Type == Immediate; }
+  bool isGenerated() const { return Type == Generated; }
 
   virtual std::string toString() const {
     switch(Type) {
     case None: return "none";
-    case Symbol: return "symbol reference";
+    case Reference: return "symbol reference";
     case Immediate: return "immediate";
+    case Generated: return "generated value";
     default: return "unknown";
     }
   }
 
-protected:
-  /// Types
-  enum Type Type;
+  /// Getters/setters for fields
+  const MachineInstr *getDefiningInst() const { return DefMI; }
+  void setDefiningInst(const MachineInstr *DefMI) { this->DefMI = DefMI; }
 
-  MachineConstant(enum Type Type = None) : Type(Type) {}
-  MachineConstant(const MachineConstant &C) : Type(C.Type) {}
+protected:
+  const enum Type Type;
+  const MachineInstr *DefMI;
+
+  MachineLiveVal(enum Type Type = None, const MachineInstr *DefMI = nullptr)
+    : Type(Type), DefMI(DefMI) {}
+  MachineLiveVal(const MachineLiveVal &C) : Type(C.Type), DefMI(C.DefMI) {}
 };
 
-/// MachineSymbol - a machine constant referencing a symbol
-class MachineSymbol : public MachineConstant {
+/// MachineReference - a reference to a symbol
+class MachineReference : public MachineLiveVal {
 public:
-  MachineSymbol(const std::string &Symbol)
-    : MachineConstant(MachineConstant::Symbol), Symbol(Symbol) {}
-  MachineSymbol(const MachineSymbol &C)
-    : MachineConstant(C), Symbol(C.Symbol) {}
+  MachineReference(const std::string &Symbol, const MachineInstr *DefMI)
+    : MachineLiveVal(Reference, DefMI), Symbol(Symbol) {}
+  MachineReference(const MachineReference &C)
+    : MachineLiveVal(C), Symbol(C.Symbol) {}
 
-  virtual MachineConstant *copy() const
-  { return new MachineSymbol(*this); }
+  virtual MachineLiveVal *copy() const
+  { return new MachineReference(*this); }
 
-  virtual bool operator==(const MachineConstant &RHS) {
-    if(RHS.isSymbol()) {
-      const MachineSymbol &MSR = (const MachineSymbol &)RHS;
-      if(MSR.Symbol == Symbol) return true;
+  virtual bool operator==(const MachineLiveVal &RHS) {
+    if(RHS.isReference()) {
+      const MachineReference &MR = (const MachineReference &)RHS;
+      if(MR.Symbol == Symbol) return true;
     }
     return false;
   }
@@ -76,7 +88,7 @@ public:
   void setSymbol(const std::string &Symbol) { this->Symbol = Symbol; }
 
   virtual std::string toString() const {
-    std::string Str = MachineConstant::toString() + " '" + Symbol + "'";
+    std::string Str = MachineLiveVal::toString() + " '" + Symbol + "'";
     return Str;
   }
 
@@ -86,18 +98,20 @@ private:
   std::string Symbol;
 };
 
-/// MachineImmediate - an immediate machine constant
-class MachineImmediate : public MachineConstant {
+/// MachineImmediate - an immediate value
+class MachineImmediate : public MachineLiveVal {
 public:
-  MachineImmediate(unsigned int Size = 8, uint64_t Value = UINT64_MAX)
-    : MachineConstant(MachineConstant::Immediate), Size(Size), Value(Value) {}
+  MachineImmediate(unsigned int Size,
+                   uint64_t Value,
+                   const MachineInstr *DefMI)
+    : MachineLiveVal(Immediate, DefMI), Size(Size), Value(Value) {}
   MachineImmediate(const MachineImmediate &C)
-    : MachineConstant(C), Size(C.Size), Value(C.Value) {}
+    : MachineLiveVal(C), Size(C.Size), Value(C.Value) {}
 
-  virtual MachineConstant *copy() const
+  virtual MachineLiveVal *copy() const
   { return new MachineImmediate(*this); }
 
-  virtual bool operator==(const MachineConstant &RHS) {
+  virtual bool operator==(const MachineLiveVal &RHS) {
     if(RHS.isImm()) {
       const MachineImmediate &MI = (const MachineImmediate &)RHS;
       if(MI.Size == Size && MI.Value == Value) return true;
@@ -106,7 +120,7 @@ public:
   }
 
   virtual std::string toString() const {
-    std::string Str = MachineConstant::toString() +
+    std::string Str = MachineLiveVal::toString() +
                       ", value: " + std::to_string(Value);
     return Str;
   }
@@ -120,6 +134,84 @@ private:
   unsigned Size; // in bytes
   uint64_t Value;
 };
+
+/// MachineGeneratedVal - a value generated through a set of small operations
+class MachineGeneratedVal : MachineLiveVal {
+public:
+  class ValueGenInst {
+  public:
+    // Available instructions
+    enum InstType {
+      #define X(type) type
+      VALUE_GEN_INST
+      #undef X
+    };
+    static const char *InstTypeStr[];
+
+    // Available operand types
+    enum OpType { Register, Immediate };
+
+    virtual ~ValueGenInst() {}
+
+    virtual InstType type() const = 0;
+    virtual OpType opType() const = 0;
+    virtual std::string str() const = 0;
+  };
+
+  // Wrap raw pointers to ValueGenInst in smart pointers.  Use shared_ptr so we
+  // can use copy constructors for containers of these instructions.
+  typedef std::shared_ptr<ValueGenInst> ValueGenInstPtr;
+
+  // Register-based instructions
+  template<ValueGenInst::InstType Type>
+  class RegInstruction : public ValueGenInst {
+    static_assert(Type == Set || Type == Add || Type == Subtract ||
+                  Type == Multiply || Type == Divide,
+                  "Invalid instruction type for register instruction");
+  public:
+    // The *physical* register used in the instruction
+    // Note: will be converted to DWARF during metadata emission
+    uint16_t Reg;
+
+    virtual InstType type() const { return Type; }
+    virtual OpType opType() const { return Register; }
+    virtual std::string str() const {
+      std::string buf = std::string(InstTypeStr[Type]) + " register " +
+                        std::to_string(Reg);
+      return buf;
+    }
+  };
+
+  // Immediate-based instructions
+  template<ValueGenInst::InstType Type>
+  class ImmInstruction : public ValueGenInst {
+  public:
+    // The immediate value used in the instruction & its size
+    uint64_t Imm;
+    unsigned int Size; // in bytes
+
+    virtual InstType type() const { return Type; }
+    virtual OpType opType() const { return Immediate; }
+    virtual std::string str() const {
+      std::string buf = std::string(InstTypeStr[Type]) + " immediate " +
+                        std::to_string(Imm);
+      return buf;
+    }
+  };
+
+  // A list of instructions used to generate a value
+  typedef std::vector<ValueGenInstPtr> ValueGenInstList;
+
+  MachineGeneratedVal(const ValueGenInstList &VG, const MachineInstr *DefMI)
+    : MachineLiveVal(Generated, DefMI), VG(VG) {}
+
+private:
+  ValueGenInstList VG;
+};
+
+//===----------------------------------------------------------------------===//
+// Machine-specific locations
+//
 
 /// MachineLiveLoc - an architecture-specific location for a live value
 class MachineLiveLoc {
@@ -151,21 +243,17 @@ public:
 protected:
   /// Types & attributes
   enum Type Type;
-  bool Duplicate;
 
-  MachineLiveLoc(enum Type Type = None, bool Duplicate = false)
-    : Type(Type), Duplicate(Duplicate) {}
-  MachineLiveLoc(const MachineLiveLoc &M)
-    : Type(M.Type), Duplicate(M.Duplicate) {}
+  MachineLiveLoc(enum Type Type = None) : Type(Type){}
+  MachineLiveLoc(const MachineLiveLoc &M) : Type(M.Type) {}
 };
 
 /// MachineLiveReg - a live value stored in a register.  Stores the register
 /// number as an architecture-specific physical register.
 class MachineLiveReg : public MachineLiveLoc {
 public:
-  MachineLiveReg(unsigned Reg = UINT32_MAX,
-                 bool Duplicate = false)
-    : MachineLiveLoc(MachineLiveLoc::Register, Duplicate), Reg(Reg) {}
+  MachineLiveReg(unsigned Reg = UINT32_MAX)
+    : MachineLiveLoc(MachineLiveLoc::Register), Reg(Reg) {}
   MachineLiveReg(const MachineLiveReg &M) : MachineLiveLoc(M), Reg(M.Reg) {}
 
   virtual MachineLiveLoc *copy() const
@@ -193,9 +281,8 @@ private:
 /// MachineLiveStackSlot - a live value stored in a stack slot
 class MachineLiveStackSlot : public MachineLiveLoc {
 public:
-  MachineLiveStackSlot(int StackSlot = INT32_MIN,
-                       bool Duplicate = false)
-    : MachineLiveLoc(MachineLiveLoc::StackSlot, Duplicate), StackSlot(StackSlot) {}
+  MachineLiveStackSlot(int StackSlot = INT32_MIN)
+    : MachineLiveLoc(MachineLiveLoc::StackSlot), StackSlot(StackSlot) {}
   MachineLiveStackSlot(const MachineLiveStackSlot &M)
     : MachineLiveLoc(M), StackSlot(M.StackSlot) {}
 
@@ -225,7 +312,7 @@ private:
 /// transformation metadata not captured in the stackmap instructions.
 
 // Tidy up objects defined above into smart pointers
-typedef std::unique_ptr<MachineConstant> MachineConstantPtr;
+typedef std::unique_ptr<MachineLiveVal> MachineLiveValPtr;
 typedef std::unique_ptr<MachineLiveLoc> MachineLiveLocPtr;
 
 // A wrapper & vector of architecture-specific live value locations
@@ -247,7 +334,7 @@ typedef std::pair<const Instruction *, IRToMachineLocs> InstOperandPair;
 // Architecture-specific live values are more complicated because we have to
 // store the live value in addition to the location.  A pair and vector for
 // encapsulating instances of architecture-specific live values.
-typedef std::pair<MachineLiveLocPtr, MachineConstantPtr> ArchLiveValue;
+typedef std::pair<MachineLiveLocPtr, MachineLiveValPtr> ArchLiveValue;
 typedef SmallVector<ArchLiveValue, 8> ArchLiveValues;
 
 // Map an IR instruction to architecture-specific live values
@@ -257,3 +344,4 @@ typedef std::pair<const Instruction *, ArchLiveValues> InstArchLiveValuePair;
 }
 
 #endif
+
