@@ -1,0 +1,31 @@
+//===-- llvm/Target/StackTransformTypes.def - Generator Opcodes -*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// Macros which define the set of available instructions for the ISA-agnostic
+// value generator.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_CODEGEN_STACKTRANSFORMTYPES_DEF
+#define LLVM_CODEGEN_STACKTRANSFORMTYPES_DEF
+
+// TODO generate using TableGen rather than X macros
+
+#define VALUE_GEN_INST \
+  X(Set), /* Set the generated value to another value */ \
+  X(Add), /* Add a value to the generated value */ \
+  X(Subtract), /* Subtract a value from the generated value */ \
+  X(Multiply), /* Multiply the generated value by another value */ \
+  X(Divide), /* Divide the generated value by another value */ \
+  X(LeftShiftLogical), /* Left-shift (logical) the generated value */ \
+  X(LeftShiftArith), /* Left-shift (arithmetic) the generated value */ \
+  X(RightShift) /* Right-shift the generated value */
+
+#endif
+

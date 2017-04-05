@@ -28,7 +28,7 @@ namespace llvm {
 ///////////////////////////////////////////////////////////////////////////////
 
 LiveValues::LiveValues(void)
-  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(false),
+  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(true),
     constants(false), metadata(false) {}
 
 LiveValues::~LiveValues(void)
@@ -154,8 +154,6 @@ std::set<const Value *>
 
 bool LiveValues::includeVal(const llvm::Value *val) const
 {
-  IntegerType *IntTy;
-
   // TODO other values that should be filtered out?
   if(isa<BasicBlock>(val))
     return false;
@@ -169,11 +167,6 @@ bool LiveValues::includeVal(const llvm::Value *val) const
     return false;
   else if(isa<MetadataAsValue>(val) && !metadata)
     return false;
-  else if((IntTy = dyn_cast<IntegerType>(val->getType())))
-  {
-    if(IntTy->getBitWidth() == 1)
-      return false;
-  }
   return true;
 }
 

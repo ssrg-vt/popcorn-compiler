@@ -871,10 +871,12 @@ static inline const CallInst *findCalledFunc(const llvm::CallInst *IRSM) {
 static inline void displayWarning(std::string &Msg,
                                   const CallInst *CI,
                                   const Function *F) {
-  assert(CI && F && "Invalid arguments");
+  assert(CI && "Invalid arguments");
 
+  // Note: it may be possible for us to not have a called function, for example
+  // if we call a function using a function pointer
   const Function *CurF = CI->getParent()->getParent();
-  if(F->hasName()) {
+  if(F && F->hasName()) {
     Msg += " across call to ";
     Msg += F->getName();
   }
@@ -896,8 +898,7 @@ void StackTransformMetadata::warnUnhandled() const {
     const StackValsMap &CurSS = SMStackSlots.at(MISM);
     IRCall = findCalledFunc(getIRSM(*S));
     CalledFunc = IRCall->getCalledFunction();
-
-    assert(IRCall && CalledFunc && "No call instruction for stackmap");
+    assert(IRCall && "No call instruction for stackmap");
 
     // Search for virtual registers not handled by the stackmap
     for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {

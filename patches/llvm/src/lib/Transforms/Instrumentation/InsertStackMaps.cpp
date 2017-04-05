@@ -106,7 +106,7 @@ public:
                *   2. A use of the definition is included in the stackmap
                */
               if(DT.dominates(val, CI) && hasLiveUser(val, *live))
-                  sortedLive.insert(val);
+                sortedLive.insert(val);
             }
             delete live;
   
