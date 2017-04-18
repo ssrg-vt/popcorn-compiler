@@ -1448,7 +1448,7 @@ Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
 +++ lib/Analysis/LiveValues.cpp	(working copy)
-@@ -0,0 +1,363 @@
+@@ -0,0 +1,356 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -1479,7 +1479,7 @@ Index: lib/Analysis/LiveValues.cpp
 +///////////////////////////////////////////////////////////////////////////////
 +
 +LiveValues::LiveValues(void)
-+  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(false),
++  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(true),
 +    constants(false), metadata(false) {}
 +
 +LiveValues::~LiveValues(void)
@@ -1605,8 +1605,6 @@ Index: lib/Analysis/LiveValues.cpp
 +
 +bool LiveValues::includeVal(const llvm::Value *val) const
 +{
-+  IntegerType *IntTy;
-+
 +  // TODO other values that should be filtered out?
 +  if(isa<BasicBlock>(val))
 +    return false;
@@ -1620,11 +1618,6 @@ Index: lib/Analysis/LiveValues.cpp
 +    return false;
 +  else if(isa<MetadataAsValue>(val) && !metadata)
 +    return false;
-+  else if((IntTy = dyn_cast<IntegerType>(val->getType())))
-+  {
-+    if(IntTy->getBitWidth() == 1)
-+      return false;
-+  }
 +  return true;
 +}
 +
@@ -2261,7 +2254,7 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
    }
  
    // If the result is null, the sub-method took care of registering results etc.
-@@ -1131,6 +1134,22 @@
+@@ -1131,6 +1134,23 @@
                                  SExtPromotedInteger(N->getOperand(0))), 0);
  }
  
@@ -2271,9 +2264,10 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
 +
 +  for(unsigned i = 0; i < N->getNumOperands(); i++) {
 +    if(i == OpNo) {
-+      if(N->getOperand(i).getValueType() == MVT::i8 ||
++      if(N->getOperand(i).getValueType() == MVT::i1 ||
++         N->getOperand(i).getValueType() == MVT::i8 ||
 +         N->getOperand(i).getValueType() == MVT::i16)
-+        Ops[i] = std::move(DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i32, N->getOperand(i)));
++        Ops[i] = DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i32, N->getOperand(i));
 +    }
 +    else Ops[i] = N->getOperand(i);
 +  }
@@ -2888,7 +2882,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,940 @@
+@@ -0,0 +1,941 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3762,10 +3756,12 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +static inline void displayWarning(std::string &Msg,
 +                                  const CallInst *CI,
 +                                  const Function *F) {
-+  assert(CI && F && "Invalid arguments");
++  assert(CI && "Invalid arguments");
 +
++  // Note: it may be possible for us to not have a called function, for example
++  // if we call a function using a function pointer
 +  const Function *CurF = CI->getParent()->getParent();
-+  if(F->hasName()) {
++  if(F && F->hasName()) {
 +    Msg += " across call to ";
 +    Msg += F->getName();
 +  }
@@ -3787,8 +3783,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const StackValsMap &CurSS = SMStackSlots.at(MISM);
 +    IRCall = findCalledFunc(getIRSM(*S));
 +    CalledFunc = IRCall->getCalledFunction();
-+
-+    assert(IRCall && CalledFunc && "No call instruction for stackmap");
++    assert(IRCall && "No call instruction for stackmap");
 +
 +    // Search for virtual registers not handled by the stackmap
 +    for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
@@ -4609,7 +4604,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +               *   2. A use of the definition is included in the stackmap
 +               */
 +              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
-+                  sortedLive.insert(val);
++                sortedLive.insert(val);
 +            }
 +            delete live;
 +  
