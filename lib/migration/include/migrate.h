@@ -12,7 +12,6 @@ extern "C" {
 #ifndef _GNU_SOURCE
 # define _GNU_SOURCE
 #endif
-#include <stdio.h>
 #include <sched.h>
 
 /* Supported architectures */
@@ -50,7 +49,17 @@ cpu_set_t select_arch();
  *                 on destination architecture
  * @param callback_data data to be passed to the callback function
  */
-void migrate_shim(void (*callback)(void*), void *callback_data);
+void check_migrate(void (*callback)(void*), void *callback_data);
+
+/**
+ * Migrate thread.  The optional callback function will be invoked before
+ * execution resumes on destination architecture.
+ *
+ * @param callback a callback function to be invoked before execution resumes
+ *                 on destination architecture
+ * @param callback_data data to be passed to the callback function
+ */
+void migrate(void (*callback)(void*), void *callback_data);
 
 /**
  * Register a function to be used for migration points inserted by

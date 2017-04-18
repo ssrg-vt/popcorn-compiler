@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
@@ -199,16 +200,14 @@ static volatile int __hold = 1;
 #endif
 
 /* Check & invoke migration if requested. */
-// Note: arguments are saved to this stack frame, and a pointer to them is
-// saved by the pthread library.  Arguments can then be accessed post-migration
-// by reading this pointer.  This method for saving/restoring arguments is
-// necessary because saving argument locations in the LLVM backend is tricky.
+// Note: a pointer to data necessary to bootstrap execution after migration is
+// saved by the pthread library.
 static void inline __migrate_shim_internal(void (*callback)(void *),
-                                           void *callback_data,
-                                           void *pc)
+                                           void *callback_data)
 {
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
+
   if(data_ptr) // Post-migration
   {
 #ifdef _DEBUG
@@ -223,48 +222,50 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
     // manually copy them over in userspace
     SET_FP_REGS;
   }
-  else // Check & do migration if requested
+  else // Invoke migration
   { 
-    if(do_migrate(pc))
-    {
-      struct regset_aarch64 regs_aarch64;
-      struct regset_x86_64 regs_x86_64;
+    struct regset_aarch64 regs_aarch64;
+    struct regset_x86_64 regs_x86_64;
 #ifdef _TIME_REWRITE
-      struct timespec start, end;
-      unsigned long start_ns, end_ns;
+    struct timespec start, end;
+    unsigned long start_ns, end_ns;
 #endif
-      cpu_set_t cpus;
+    cpu_set_t cpus;
 
-      data.callback = callback;
-      data.callback_data = callback_data;
-      *pthread_migrate_args() = &data;
-      cpus = select_arch();
+    data.callback = callback;
+    data.callback_data = callback_data;
+    *pthread_migrate_args() = &data;
+    cpus = select_arch();
 #ifdef _TIME_REWRITE
-      clock_gettime(CLOCK_MONOTONIC, &start);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
-      if(REWRITE_STACK)
-      {
+    if(REWRITE_STACK)
+    {
 #ifdef _TIME_REWRITE
-        clock_gettime(CLOCK_MONOTONIC, &end);
-        start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
-        end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
-        printf("Stack transformation time: %ldns\n", end_ns - start_ns);
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
+      end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
+      printf("Stack transformation time: %ldns\n", end_ns - start_ns);
 #endif
-        SAVE_REGSET;
-        MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus,
-                (void *)__migrate_shim_internal);
-        assert(0 && "Couldn't migrate!");
-      }
+      SAVE_REGSET;
+      MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus,
+              (void *)__migrate_shim_internal);
+      assert(0 && "Couldn't migrate!");
     }
   }
 }
 
-/* Externally visible shim, funnel to internal function to do dirty work. */
-void migrate_shim(void (*callback)(void *), void *callback_data)
+/* Check if we should migrate, and invoke migration. */
+void check_migrate(void (*callback)(void *), void *callback_data)
 {
-  __migrate_shim_internal(callback,
-                          callback_data,
-                          __builtin_return_address(0));
+  if(do_migrate(__builtin_return_address(0)))
+    __migrate_shim_internal(callback, callback_data);
+}
+
+/* Externally-visible function to invoke migration. */
+void migrate(void (*callback)(void *), void *callback_data)
+{
+  __migrate_shim_internal(callback, callback_data);
 }
 
 /* Callback function & data for migration points inserted via compiler. */
@@ -281,12 +282,14 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 /* Hook inserted by compiler at the beginning of a function. */
 void __cyg_profile_func_enter(void *this_fn, void *call_site)
 {
-  __migrate_shim_internal(migrate_callback, migrate_callback_data, this_fn);
+  if(do_migrate(this_fn))
+    __migrate_shim_internal(migrate_callback, migrate_callback_data);
 }
 
 /* Hook inserted by compiler at the end of a function. */
 void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
-  __migrate_shim_internal(migrate_callback, migrate_callback_data, this_fn);
+  if(do_migrate(this_fn))
+    __migrate_shim_internal(migrate_callback, migrate_callback_data);
 }
 
