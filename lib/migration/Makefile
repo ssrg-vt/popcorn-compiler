@@ -26,10 +26,10 @@ INC_ARM := $(INC) -I$(POPCORN_ARM)/include
 INC_X86 := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := opt
-OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
+OPT_FLAGS := -O1 -disable-loop-vectorization -disable-slp-vectorization \
              -insert-stackmaps
 
-AR := ar
+AR      := ar
 ARFLAGS := -cq
 
 HDR := $(shell ls include/*.h)

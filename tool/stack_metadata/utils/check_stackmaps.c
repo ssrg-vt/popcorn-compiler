@@ -240,7 +240,7 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
               snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                       "different size (%u vs. %u)",
                        sym_a_name, sm_a[i].stack_map_records[j].id, k, l,
-                       flag_a, flag_b);
+                       size_a, size_b);
               warn(buf);
               ret = INVALID_METADATA;
             }

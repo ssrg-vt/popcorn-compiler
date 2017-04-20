@@ -471,10 +471,7 @@ static bool rewrite_val(rewrite_context src, const call_site_value* val_src,
    */
   if((stack_addr = points_to_stack(src, val_src)))
   {
-    // Note: it's an error for a pointer to point to frames down the call chain
-    if(src->act == 0 || stack_addr > PREV_ACT(src).cfa)
-      ST_WARN("Pointer-to-stack points to called functions");
-    else
+    if(src->act == 0 || stack_addr >= PREV_ACT(src).cfa)
     {
       ST_INFO("Adding fixup for pointer-to-stack %p\n", stack_addr);
       fixup_data.src_addr = stack_addr;
@@ -485,6 +482,10 @@ static bool rewrite_val(rewrite_context src, const call_site_value* val_src,
       /* Are we pointing to a value within the same frame? */
       if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
     }
+    // Note: it's an error for a pointer to point to frames down the call
+    // chain, this is most likely garbage pointer data
+    else
+      ST_WARN("Pointer-to-stack points to called functions");
   }
   else put_val(src, val_src, dest, val_dest);
 
