@@ -13,7 +13,7 @@ INC   := include
 SRC   := src
 UTILS := utils
 
-CC     := clang
+CC     := $(POPCORN)/bin/clang
 CFLAGS := -g -Wall -D_GNU_SOURCE -popcorn-alignment
 
 AR  := ar

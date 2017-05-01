@@ -19,7 +19,7 @@ LIBS   := /lib/crt1.o \
           /lib/libelf.a \
           /lib/libc.a
 
-OPT       := opt
+OPT       := $(POPCORN)/bin/opt
 OPT_FLAGS := -O3 -insert-stackmaps
 
 # Post-processing

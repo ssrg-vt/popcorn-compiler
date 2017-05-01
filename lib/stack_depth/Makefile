@@ -1,14 +1,14 @@
-POPCORN	:= /usr/local/popcorn
+POPCORN := /usr/local/popcorn
 
-BIN		:= libstack-depth.a
-BUILD	:= build
+BIN   := libstack-depth.a
+BUILD := build
 
-CXX				:= g++
-CXXFLAGS	:= -O3 -Wall -std=c++11 
+CXX      := g++
+CXXFLAGS := -O3 -Wall -std=c++11
 
-HDR	:= $(shell ls *.h)
-SRC	:= $(shell ls *.cpp)
-OBJ	:= $(addprefix $(BUILD)/,$(SRC:.cpp=.o))
+HDR := $(shell ls *.h)
+SRC := $(shell ls *.cpp)
+OBJ := $(addprefix $(BUILD)/,$(SRC:.cpp=.o))
 
 all: $(BIN)
 

@@ -3,7 +3,7 @@ POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 
 # Although we disable IR optimizations, use -O3 to get backend optimizations
-CC         := clang
+CC         := $(POPCORN)/bin/clang
 CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
               -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE
 ifneq ($(findstring env_select,$(type)),)
@@ -25,7 +25,7 @@ INC     := -I./include
 INC_ARM := $(INC) -I$(POPCORN_ARM)/include
 INC_X86 := $(INC) -I$(POPCORN_X86)/include
 
-OPT       := opt
+OPT       := $(POPCORN)/bin/opt
 OPT_FLAGS := -O1 -disable-loop-vectorization -disable-slp-vectorization \
              -insert-stackmaps
 

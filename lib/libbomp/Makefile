@@ -10,12 +10,12 @@
 
 POPCORN = /usr/local/popcorn
 
-CC     = clang
+CC     = $(POPCORN)/bin/clang
 CFLAGS = -O0 -Wall -g -gdwarf-aranges -DPOSIX -fno-stack-protector \
          -ffunction-sections -fdata-sections -fno-vectorize \
          -Wno-override-module -mllvm -optimize-regalloc -nostdinc
 
-OPT       = opt
+OPT       = $(POPCORN)/bin/opt
 OPT_FLAGS = -O3 -disable-loop-vectorization -disable-slp-vectorization \
             -load $(POPCORN)/lib/libAssociateLiteral.so -associate-literal \
             -load $(POPCORN)/lib/libSectionStatic.so -section-static \

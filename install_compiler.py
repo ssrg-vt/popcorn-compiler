@@ -130,7 +130,10 @@ def check_for_prerequisites():
     success = True
 
     print('Checking for prerequisites (see README for more info)...')
-    gcc_prerequisites = ['gcc', 'aarch64-linux-gnu-gcc', 'g++']
+    gcc_prerequisites = ['aarch64-linux-gnu-gcc',
+                         'sparc64-linux-gnu-gcc',
+                         'x86_64-linux-gnu-gcc',
+                         'x86_64-linux-gnu-g++']
     other_prequisites = ['flex', 'bison']
 
     for prereq in gcc_prerequisites:
@@ -165,7 +168,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                    '-DLLVM_ENABLE_RTTI=ON']
 
     if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86']
+        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86;Sparc']
 
     with open(os.devnull, 'wb') as FNULL:
 
@@ -359,6 +362,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
+    sparc64_install_path = os.path.join(install_path, 'sparc64')
     x86_64_install_path = os.path.join(install_path, 'x86_64')
 
     with open(os.devnull, 'wb') as FNULL:
@@ -481,7 +485,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         print("Configuring libelf (aarch64)...")
         try:
             cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-                     '-specs {}"'.format(os.path.join(aarch64_install_path, 
+                     '-specs {}"'.format(os.path.join(aarch64_install_path,
                                                      'lib/musl-gcc.specs'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
@@ -571,7 +575,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
             print('Running Make...')
             rv = subprocess.check_call(['make', '-j', str(num_threads),
                                         'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -611,7 +615,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
-        
+
         os.chdir(cur_dir)
 
         #=====================================================
@@ -788,10 +792,6 @@ def build_namespace(base_path):
             print('make failed')
 
 def main(args):
-    # Add to path temporarily
-    os.environ['PATH'] = os.path.join(args.install_path, 'bin') + ':' \
-                            + os.environ['PATH']
-
     if not args.skip_llvm_clang_install:
         install_clang_llvm(args.base_path, args.install_path, args.threads,
                            args.make_all_targets)
