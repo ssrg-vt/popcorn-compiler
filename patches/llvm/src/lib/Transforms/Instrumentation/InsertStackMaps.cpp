@@ -71,7 +71,7 @@ public:
     for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
     {
       if(f->isDeclaration()) continue;
-  
+
       DEBUG(errs() << "InsertStackMaps: entering function "
                    << f->getName() << "\n");
 
@@ -124,9 +124,9 @@ public:
               if(calledFunc && calledFunc->hasName())
               {
                 StringRef name = CI->getCalledFunction()->getName();
-                errs() << name << " " << this->callSiteID;
+                errs() << name << " ";
               }
-              else errs() << this->callSiteID;
+              errs() << "ID: " << this->callSiteID;
   
               errs() << ", " << sortedLive.size() << " live value(s)\n   ";
               for(const Value *val : sortedLive) {
@@ -177,7 +177,7 @@ private:
     bool operator() (const Value *lhs, const Value *rhs) const
     {
       if(lhs->hasName()) return lhs->getName().compare(rhs->getName()) < 0;
-      else return 1;
+      else return lhs < rhs;
     }
   };
 

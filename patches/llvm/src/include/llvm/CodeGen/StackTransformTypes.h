@@ -31,17 +31,19 @@ public:
   MachineLiveVal() = delete;
   virtual ~MachineLiveVal() {}
   virtual MachineLiveVal *copy() const = 0;
-  virtual bool operator==(const MachineLiveVal &RHS) = 0;
+  virtual bool operator==(const MachineLiveVal &RHS) const = 0;
 
-  /// Possible constant types
+  /// Possible value types
   enum Type { None, Reference, Immediate, Generated };
 
-  /// Determine the constant's type
+  /// Determine the value's type
+  enum Type getType() const { return Type; }
   bool isValid() const { return Type == None; }
   bool isReference() const { return Type == Reference; }
   bool isImm() const { return Type == Immediate; }
   bool isGenerated() const { return Type == Generated; }
 
+  /// Generate a human-readable string describing the value
   virtual std::string toString() const {
     switch(Type) {
     case None: return "none";
@@ -76,7 +78,7 @@ public:
   virtual MachineLiveVal *copy() const
   { return new MachineReference(*this); }
 
-  virtual bool operator==(const MachineLiveVal &RHS) {
+  virtual bool operator==(const MachineLiveVal &RHS) const {
     if(RHS.isReference()) {
       const MachineReference &MR = (const MachineReference &)RHS;
       if(MR.Symbol == Symbol) return true;
@@ -101,8 +103,7 @@ private:
 /// MachineImmediate - an immediate value
 class MachineImmediate : public MachineLiveVal {
 public:
-  MachineImmediate(unsigned int Size,
-                   uint64_t Value,
+  MachineImmediate(unsigned int Size, uint64_t Value,
                    const MachineInstr *DefMI)
     : MachineLiveVal(Immediate, DefMI), Size(Size), Value(Value) {}
   MachineImmediate(const MachineImmediate &C)
@@ -111,7 +112,7 @@ public:
   virtual MachineLiveVal *copy() const
   { return new MachineImmediate(*this); }
 
-  virtual bool operator==(const MachineLiveVal &RHS) {
+  virtual bool operator==(const MachineLiveVal &RHS) const {
     if(RHS.isImm()) {
       const MachineImmediate &MI = (const MachineImmediate &)RHS;
       if(MI.Size == Size && MI.Value == Value) return true;
@@ -135,67 +136,154 @@ private:
   uint64_t Value;
 };
 
+#define INV_INST_TYPE "Invalid instruction type"
+
 /// MachineGeneratedVal - a value generated through a set of small operations
-class MachineGeneratedVal : MachineLiveVal {
+class MachineGeneratedVal : public MachineLiveVal {
 public:
   class ValueGenInst {
   public:
-    // Available instructions
+    // Instruction mnemonics or types
     enum InstType {
-      #define X(type) type
+      #define X(type, pseudo) type
       VALUE_GEN_INST
       #undef X
     };
+
+    // Human-readable instruction names
     static const char *InstTypeStr[];
 
-    // Available operand types
-    enum OpType { Register, Immediate };
+    // Is the instruction a pseudo-instruction?  Access using InstType values.
+    static const bool PseudoInst[];
+
+    // Operand types
+    enum OpType { Register, Immediate, None };
 
     virtual ~ValueGenInst() {}
-
-    virtual InstType type() const = 0;
     virtual OpType opType() const = 0;
+    virtual InstType type() const = 0;
     virtual std::string str() const = 0;
+    virtual bool operator==(const ValueGenInst &RHS) const = 0;
   };
 
   // Wrap raw pointers to ValueGenInst in smart pointers.  Use shared_ptr so we
   // can use copy constructors for containers of these instructions.
   typedef std::shared_ptr<ValueGenInst> ValueGenInstPtr;
 
-  // Register-based instructions
-  template<ValueGenInst::InstType Type>
-  class RegInstruction : public ValueGenInst {
-    static_assert(Type == Set || Type == Add || Type == Subtract ||
-                  Type == Multiply || Type == Divide,
-                  "Invalid instruction type for register instruction");
+  // Base class for register operand instructions
+  class RegInstructionBase : public ValueGenInst {
   public:
     // The *physical* register used in the instruction
     // Note: will be converted to DWARF during metadata emission
     uint16_t Reg;
 
-    virtual InstType type() const { return Type; }
+    RegInstructionBase(uint16_t Reg) : Reg(Reg) {}
     virtual OpType opType() const { return Register; }
+    uint16_t getReg() const { return Reg; }
+    void setReg(uint16_t Reg) { this->Reg = Reg; }
+  };
+
+  // Register-based instructions
+  template<ValueGenInst::InstType Type>
+  class RegInstruction : public RegInstructionBase {
+    static_assert(Type == Set || Type == Add || Type == Subtract ||
+                  Type == Multiply || Type == Divide,
+                  INV_INST_TYPE " for register instruction");
+  public:
+    RegInstruction(uint16_t Reg) : RegInstructionBase(Reg) {}
+    virtual InstType type() const { return Type; }
     virtual std::string str() const {
       std::string buf = std::string(InstTypeStr[Type]) + " register " +
                         std::to_string(Reg);
       return buf;
     }
+
+    virtual bool operator==(const ValueGenInst &RHS) const {
+      if(RHS.type() == Type && RHS.opType() == Register) {
+        const RegInstruction<Type> &RI = (const RegInstruction<Type> &)RHS;
+        if(RI.Reg == Reg) return true;
+      }
+      return false;
+    }
+  };
+
+  // Base class for immediate operand instructions
+  class ImmInstructionBase : public ValueGenInst {
+  public:
+    // The immediate value used in the instruction & its size
+    unsigned Size; // in bytes
+    int64_t Imm;
+
+    ImmInstructionBase(unsigned Size, int64_t Imm) : Size(Size), Imm(Imm) {}
+    virtual OpType opType() const { return Immediate; }
+    unsigned getImmSize() const { return Size; }
+    int64_t getImm() const { return Imm; }
+    void setImm(unsigned Size, int64_t Imm)
+    { this->Size = Size; this->Imm = Imm; }
   };
 
   // Immediate-based instructions
   template<ValueGenInst::InstType Type>
-  class ImmInstruction : public ValueGenInst {
+  class ImmInstruction : public ImmInstructionBase {
+    static_assert(Type != StackSlot,
+                  INV_INST_TYPE " for immediate instruction");
   public:
-    // The immediate value used in the instruction & its size
-    uint64_t Imm;
-    unsigned int Size; // in bytes
-
+    ImmInstruction(unsigned Size, int64_t Imm)
+      : ImmInstructionBase(Size, Imm) {}
     virtual InstType type() const { return Type; }
-    virtual OpType opType() const { return Immediate; }
     virtual std::string str() const {
       std::string buf = std::string(InstTypeStr[Type]) + " immediate " +
                         std::to_string(Imm);
       return buf;
+    }
+
+    virtual bool operator==(const ValueGenInst &RHS) const {
+      if(RHS.type() == Type && RHS.opType() == Immediate) {
+        const ImmInstruction<Type> &II = (const ImmInstruction<Type> &)RHS;
+        if(II.Imm == Imm && II.Size == Size) return true;
+      }
+      return false;
+    }
+  };
+
+  // Base class for pseudo instructions
+  class PseudoInstructionBase : public ValueGenInst {
+  public:
+    // Whatever data is needed and the operation to be implemented after
+    // rewriting the pseudo-instruction
+    uint64_t Data;
+    InstType GenType;
+
+    PseudoInstructionBase(uint64_t Data, InstType GenType)
+      : Data(Data), GenType(GenType) {}
+    virtual OpType opType() const { return None; }
+    uint64_t getData() const { return Data; }
+    InstType getGenType() const { return GenType; }
+    void setData(uint64_t Data) { this->Data = Data; }
+    void setGenType(InstType GenType) { this->GenType = GenType; }
+  };
+
+  // Pseudo-instructions which must be converted to normal instructions later
+  template<ValueGenInst::InstType Type>
+  class PseudoInstruction : public PseudoInstructionBase {
+    static_assert(Type == StackSlot, INV_INST_TYPE " for pseudo-instruction");
+  public:
+    PseudoInstruction(uint64_t Data, InstType GenType)
+      : PseudoInstructionBase(Data, GenType) {}
+    virtual InstType type() const { return Type; }
+    virtual std::string str() const {
+      std::string buf = std::string(InstTypeStr[Type]) + " (" +
+                        std::to_string(Data) + ")";
+      return buf;
+    }
+
+    virtual bool operator==(const ValueGenInst &RHS) const {
+      if(RHS.type() == Type) {
+        const PseudoInstruction<Type> &PI =
+          (const PseudoInstruction<Type> &)RHS;
+        if(PI.Data == Data) return true;
+      }
+      return false;
     }
   };
 
@@ -205,9 +293,32 @@ public:
   MachineGeneratedVal(const ValueGenInstList &VG, const MachineInstr *DefMI)
     : MachineLiveVal(Generated, DefMI), VG(VG) {}
 
+  virtual MachineLiveVal *copy() const
+  { return new MachineGeneratedVal(*this); }
+
+  virtual bool operator==(const MachineLiveVal &RHS) const {
+    if(!RHS.isGenerated()) return false;
+    const MachineGeneratedVal &MGV = (const MachineGeneratedVal &)RHS;
+
+    if(VG.size() != MGV.VG.size()) return false;
+    for(size_t i = 0, num = VG.size(); i < num; i++)
+      if(VG[i] != MGV.VG[i]) return false;
+    return true;
+  }
+
+  ValueGenInstList &getInstructions() { return VG; }
+
+  virtual std::string toString() const {
+    std::string buf = MachineLiveVal::toString() + ", " +
+                      std::to_string(VG.size()) + " instruction(s)";
+    return buf;
+  }
+
 private:
   ValueGenInstList VG;
 };
+
+#undef INV_INST_TYPE
 
 //===----------------------------------------------------------------------===//
 // Machine-specific locations

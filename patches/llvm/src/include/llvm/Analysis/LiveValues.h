@@ -40,7 +40,7 @@ public:
   /**
    * Default destructor.
    */
-  ~LiveValues(void);
+  ~LiveValues(void) {}
 
   /**
    * Return whether or not a given type should be included in the analysis.
@@ -77,11 +77,17 @@ public:
   virtual bool runOnFunction(Function &F);
 
   /**
+   * Get the human-readable name of the pass.
+   * @return the pass name
+   */
+  virtual const char *getPassName() const { return "Live value analysis"; }
+
+  /**
    * Print a human-readable version of the analysis.
    * @param O an output stream
-   * @param M the module being analyzed
+   * @param F the function for which to print analysis
    */
-  virtual void print(raw_ostream &O, const Module *M) const;
+  virtual void print(raw_ostream &O, const Function *F) const;
 
   /**
    * Return the live-in set for a basic block.
@@ -118,12 +124,16 @@ private:
   bool constants;
   bool metadata;
 
-  /* Per-basic block liveness sets. */
-  std::map<const BasicBlock *, std::set<const Value *> *> liveIn;
-  std::map<const BasicBlock *, std::set<const Value *> *> liveOut;
+  /* A loop nesting forest composed of 0 or more loop nesting trees. */
+  typedef std::list<LoopNestingTree> LoopNestingForest;
 
-  /* Loop-nesting forest, contains all loop-nests for the function. */
-  std::list<LoopNestingTree *> loopNestingForest;
+  /* Maps live values to a basic block. */
+  typedef std::map<const BasicBlock *, std::set<const Value *> > LiveVals;
+  typedef std::pair<const BasicBlock *, std::set<const Value *> > LiveValsPair;
+
+  /* Store analysis for all functions. */
+  std::map<const Function *, LiveVals> FuncBBLiveIn;
+  std::map<const Function *, LiveVals> FuncBBLiveOut;
 
   /**
    * Return whether or not a value is a variable that should be tracked.
@@ -159,26 +169,38 @@ private:
    * liveness sets.
    * @param F a function for which to calculate per-basic block partial
    *          liveness sets
+   * @param liveIn per-basic block live-in values
+   * @param liveOut per-basic block live-out values
    */
-  void dagDFS(Function &F);
+  void dagDFS(Function &F, LiveVals &liveIn, LiveVals &liveOut);
 
   /**
    * Construct the loop-nesting forest for a function.
    * @param F a function for which to calculate the loop-nesting forest.
+   * @param LNF a loop nesting forest to populate with loop nesting trees.
    */
-  void constructLoopNestingForest(Function &F);
+  void constructLoopNestingForest(Function &F, LoopNestingForest &LNF);
 
   /**
    * Propagate live values throughout the loop-nesting tree.
    * @param loopNest a loop-nesting tree
+   * @param liveIn per-basic block live-in values
+   * @param liveOut per-basic block live-out values
    */
-  void propagateValues(const LoopNestingTree *loopNest);
+  void propagateValues(const LoopNestingTree &loopNest,
+                       LiveVals &liveIn,
+                       LiveVals &liveOut);
 
   /**
    * Propagate live values within loops for all loop-nesting trees in the
    * function's loop-nesting forest.
+   * @param LNF a loop nesting forest
+   * @param liveIn per-basic block live-in values
+   * @param liveOut per-basic block live-out values
    */
-  void loopTreeDFS();
+  void loopTreeDFS(LoopNestingForest &LNF,
+                   LiveVals &liveIn,
+                   LiveVals &liveOut);
 };
 
 } /* llvm namespace */

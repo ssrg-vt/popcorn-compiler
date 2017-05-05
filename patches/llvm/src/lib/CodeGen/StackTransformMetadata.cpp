@@ -208,9 +208,13 @@ class StackTransformMetadata : public MachineFunctionPass {
   void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 
   /// Is a virtual register live across the machine instruction?
+  /// Note: returns false if the MI is the last instruction for which the
+  /// virtual register is alive
   bool isVregLiveAcrossInstr(unsigned Vreg, const MachineInstr *MI) const;
 
   /// Is a stack slot live across the machine instruction?
+  /// Note: returns false if the MI is the last instruction for which the stack
+  /// slot is alive
   bool isSSLiveAcrossInstr(int SS, const MachineInstr *MI) const;
 
   /// Add duplicate location information for a virtual register.  Return true
@@ -243,8 +247,14 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// Find stackmap operands that have been spilled to alternate locations
   void findAlternateOpLocs();
 
-  /// Analyze a machine instruction to find the value being used
-  MachineLiveValPtr getTargetValue(const MachineInstr *MI) const;
+  /// Ensure virtual registers used to generate architecture-specific values
+  /// are live across function call & convert to physical registers
+  void sanitizeVregs(MachineLiveValPtr &LV, const MachineInstr *Call) const;
+
+  /// Analyze a machine instruction to find the value being used.  Needs the
+  /// call instruction to ensure values are generated correctly and are valid.
+  MachineLiveValPtr getTargetValue(const MachineInstr *MI,
+                                   const MachineInstr *Call) const;
 
   /// Find architecture-specific live values added by the backend
   void findArchSpecificLiveVals();
@@ -270,13 +280,13 @@ char &llvm::StackTransformMetadataID = StackTransformMetadata::ID;
 const std::string StackTransformMetadata::SMName("llvm.experimental.stackmap");
 
 INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
-  "Analyze functions for additional stack transformation metadata", false, true)
+  "Gather stack transformation metadata", false, true)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
-  "Analyze functions for additional stack transformation metadata", false, true)
+  "Gather stack transformation metadata", false, true)
 
 char StackTransformMetadata::ID = 0;
 
@@ -530,6 +540,8 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
 }
 
 /// Is a virtual register live across the machine instruction?
+/// Note: returns false if the MI is the last instruction for which the virtual
+/// register is alive
 bool
 StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
                                               const MachineInstr *MI) const {
@@ -537,13 +549,16 @@ StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
     const LiveInterval &TheLI = LI->getInterval(Vreg);
     SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
     LiveInterval::const_iterator Seg = TheLI.find(InstrIdx);
-    if(Seg != TheLI.end() && Seg->contains(InstrIdx))
+    if(Seg != TheLI.end() && Seg->contains(InstrIdx) &&
+       InstrIdx.getInstrDistance(Seg->end) != 0)
       return true;
   }
   return false;
 }
 
 /// Is a stack slot live across the machine instruction?
+/// Note: returns false if the MI is the last instruction for which the stack
+/// slot is alive
 bool
 StackTransformMetadata::isSSLiveAcrossInstr(int SS,
                                             const MachineInstr *MI) const {
@@ -551,7 +566,8 @@ StackTransformMetadata::isSSLiveAcrossInstr(int SS,
     const LiveInterval &TheLI = LS->getInterval(SS);
     SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
     LiveInterval::const_iterator Seg = TheLI.find(InstrIdx);
-    if(Seg != TheLI.end() && Seg->contains(InstrIdx))
+    if(Seg != TheLI.end() && Seg->contains(InstrIdx) &&
+       InstrIdx.getInstrDistance(Seg->end) != 0)
       return true;
   }
   return false;
@@ -755,9 +771,35 @@ void StackTransformMetadata::findAlternateOpLocs() {
   }
 }
 
-/// Analyze a machine instruction to find the value being used
+/// Ensure virtual registers used to generate architecture-specific values are
+/// live across function call & convert to physical registers
+void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
+                                           const MachineInstr *Call) const {
+  typedef MachineGeneratedVal::ValueGenInst::OpType OpType;
+  typedef MachineGeneratedVal::RegInstructionBase RegInstruction;
+
+  if(!LV) return;
+  if(LV->isGenerated()) {
+    MachineGeneratedVal *MGV = (MachineGeneratedVal *)LV.get();
+    MachineGeneratedVal::ValueGenInstList &Inst = MGV->getInstructions();
+    for(size_t i = 0, num = Inst.size(); i < num; i++) {
+      if(Inst[i]->opType() == OpType::Register) {
+        RegInstruction *RI = (RegInstruction *)Inst[i].get();
+        if(!isVregLiveAcrossInstr(RI->getReg(), Call))
+          llvm_unreachable("Register for generating live value is not live "
+                           "across instruction");
+        assert(VRM->hasPhys(RI->getReg()) && "Invalid virtual register");
+        RI->setReg(VRM->getPhys(RI->getReg()));
+      }
+    }
+  }
+}
+
+/// Analyze a machine instruction to find the value being used.  Needs the call
+/// instruction to ensure values are generated correctly and are valid.
 MachineLiveValPtr
-StackTransformMetadata::getTargetValue(const MachineInstr *MI) const {
+StackTransformMetadata::getTargetValue(const MachineInstr *MI,
+                                       const MachineInstr *Call) const {
   if(!MI) return MachineLiveValPtr(nullptr);
 
   // Immediates can be handled in an architecture-agnostic way
@@ -777,7 +819,12 @@ StackTransformMetadata::getTargetValue(const MachineInstr *MI) const {
     }
     return MachineLiveValPtr(new MachineImmediate(Size, Value, MI));
   }
-  else return TVG->getMachineValue(MI);
+  // Otherwise, drop to architecture-specific value generator
+  else {
+    MachineLiveValPtr MLV = TVG->getMachineValue(MI);
+    sanitizeVregs(MLV, Call);
+    return MLV;
+  }
 }
 
 /// Find architecture-specific live values added by the backend
@@ -814,8 +861,10 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
                      << " is live in register but not in stackmap\n";);
 
         assert(++(MRI->def_instr_begin(Vreg)) == MRI->def_instr_end() &&
-               "Multiple definitions for virtual register");
-        MC = getTargetValue(&*MRI->def_instr_begin(Vreg));
+               "Multiple definitions for virtual register "
+               "(missed in live-value analysis?)");
+
+        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MICall);
         if(MC) {
           DEBUG(
             dbgs() << "      Defining instruction: ";
@@ -826,6 +875,13 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
           MLR.setReg(VRM->getPhys(Vreg));
           MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
           CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
+        }
+        else {
+          DEBUG(
+            dbgs() << "      Unhandled defining instruction: ";
+            MRI->def_instr_begin(Vreg)->print(dbgs());
+            dbgs() << "\n";
+          );
         }
       }
       // Detect virtual registers mapped to stack slots not in stackmap

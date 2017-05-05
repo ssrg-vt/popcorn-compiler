@@ -17,10 +17,10 @@ LoopNestingTree::LoopNestingTree(const std::vector<BasicBlock *> &SCC,
   std::list<Node *> work;
 
   /* Bootstrap by grabbing the loop of the first basic block encountered. */
-  loop = LI[*SCC.begin()];
+  loop = LI[SCC.front()];
   if(!loop) // Is the SCC actually a loop?
   {
-    _root = new Node(*SCC.begin(), nullptr, true);
+    _root = new Node(SCC.front(), nullptr, true);
     return;
   }
 

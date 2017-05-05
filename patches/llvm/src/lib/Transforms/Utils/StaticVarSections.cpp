@@ -77,6 +77,7 @@ public:
     
     return modified;
   }
+  virtual const char *getPassName() const { return "Static variables in separate sections"; }
 };
 
 } /* end anonymous namespace */

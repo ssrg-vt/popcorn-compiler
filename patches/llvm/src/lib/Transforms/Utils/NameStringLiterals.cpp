@@ -104,6 +104,7 @@ public:
   
     return modified;
   }
+  virtual const char *getPassName() const { return "Name string literals"; }
 };
 
 } /* end anonymous namespace */

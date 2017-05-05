@@ -14,10 +14,11 @@ namespace llvm {
 class AArch64ValueGenerator final : public TargetValueGenerator {
 public:
   AArch64ValueGenerator() {}
-  virtual void
-  getValueGenInstr(const MachineInstr *MI,
-                   MachineGeneratedVal::ValueGenInstList &IL) const;
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
+
+private:
+  void genADDInstructions(const MachineInstr *MI,
+                          MachineGeneratedVal::ValueGenInstList &IL) const;
 };
 
 }

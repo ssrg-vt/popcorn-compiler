@@ -14,10 +14,11 @@ namespace llvm {
 class X86ValueGenerator final : public TargetValueGenerator {
 public:
   X86ValueGenerator() {}
-  virtual void
-  getValueGenInstr(const MachineInstr *MI,
-                   MachineGeneratedVal::ValueGenInstList &IL) const;
-  MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
+  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
+
+private:
+  void genLEAInstructions(const MachineInstr *LEA,
+                          MachineGeneratedVal::ValueGenInstList &IL) const;
 };
 
 }

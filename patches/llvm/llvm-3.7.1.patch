@@ -24,7 +24,7 @@ Index: include/llvm/Analysis/LiveValues.h
 ===================================================================
 --- include/llvm/Analysis/LiveValues.h	(nonexistent)
 +++ include/llvm/Analysis/LiveValues.h	(working copy)
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,209 @@
 +/*
 + * Calculate live-value sets for functions.
 + *
@@ -67,7 +67,7 @@ Index: include/llvm/Analysis/LiveValues.h
 +  /**
 +   * Default destructor.
 +   */
-+  ~LiveValues(void);
++  ~LiveValues(void) {}
 +
 +  /**
 +   * Return whether or not a given type should be included in the analysis.
@@ -104,11 +104,17 @@ Index: include/llvm/Analysis/LiveValues.h
 +  virtual bool runOnFunction(Function &F);
 +
 +  /**
++   * Get the human-readable name of the pass.
++   * @return the pass name
++   */
++  virtual const char *getPassName() const { return "Live value analysis"; }
++
++  /**
 +   * Print a human-readable version of the analysis.
 +   * @param O an output stream
-+   * @param M the module being analyzed
++   * @param F the function for which to print analysis
 +   */
-+  virtual void print(raw_ostream &O, const Module *M) const;
++  virtual void print(raw_ostream &O, const Function *F) const;
 +
 +  /**
 +   * Return the live-in set for a basic block.
@@ -145,12 +151,16 @@ Index: include/llvm/Analysis/LiveValues.h
 +  bool constants;
 +  bool metadata;
 +
-+  /* Per-basic block liveness sets. */
-+  std::map<const BasicBlock *, std::set<const Value *> *> liveIn;
-+  std::map<const BasicBlock *, std::set<const Value *> *> liveOut;
++  /* A loop nesting forest composed of 0 or more loop nesting trees. */
++  typedef std::list<LoopNestingTree> LoopNestingForest;
 +
-+  /* Loop-nesting forest, contains all loop-nests for the function. */
-+  std::list<LoopNestingTree *> loopNestingForest;
++  /* Maps live values to a basic block. */
++  typedef std::map<const BasicBlock *, std::set<const Value *> > LiveVals;
++  typedef std::pair<const BasicBlock *, std::set<const Value *> > LiveValsPair;
++
++  /* Store analysis for all functions. */
++  std::map<const Function *, LiveVals> FuncBBLiveIn;
++  std::map<const Function *, LiveVals> FuncBBLiveOut;
 +
 +  /**
 +   * Return whether or not a value is a variable that should be tracked.
@@ -186,26 +196,38 @@ Index: include/llvm/Analysis/LiveValues.h
 +   * liveness sets.
 +   * @param F a function for which to calculate per-basic block partial
 +   *          liveness sets
++   * @param liveIn per-basic block live-in values
++   * @param liveOut per-basic block live-out values
 +   */
-+  void dagDFS(Function &F);
++  void dagDFS(Function &F, LiveVals &liveIn, LiveVals &liveOut);
 +
 +  /**
 +   * Construct the loop-nesting forest for a function.
 +   * @param F a function for which to calculate the loop-nesting forest.
++   * @param LNF a loop nesting forest to populate with loop nesting trees.
 +   */
-+  void constructLoopNestingForest(Function &F);
++  void constructLoopNestingForest(Function &F, LoopNestingForest &LNF);
 +
 +  /**
 +   * Propagate live values throughout the loop-nesting tree.
 +   * @param loopNest a loop-nesting tree
++   * @param liveIn per-basic block live-in values
++   * @param liveOut per-basic block live-out values
 +   */
-+  void propagateValues(const LoopNestingTree *loopNest);
++  void propagateValues(const LoopNestingTree &loopNest,
++                       LiveVals &liveIn,
++                       LiveVals &liveOut);
 +
 +  /**
 +   * Propagate live values within loops for all loop-nesting trees in the
 +   * function's loop-nesting forest.
++   * @param LNF a loop nesting forest
++   * @param liveIn per-basic block live-in values
++   * @param liveOut per-basic block live-out values
 +   */
-+  void loopTreeDFS();
++  void loopTreeDFS(LoopNestingForest &LNF,
++                   LiveVals &liveIn,
++                   LiveVals &liveOut);
 +};
 +
 +} /* llvm namespace */
@@ -548,7 +570,16 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -448,6 +448,10 @@
+@@ -142,6 +142,8 @@
+ 
+   CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
+ 
++  CodeGenOpt::Level getIROptLevel() const { return TM->getIROptLevel(); }
++
+   /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
+   /// a portion of the normal code-gen pass sequence.
+   ///
+@@ -448,6 +450,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -685,7 +716,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.def	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.def	(working copy)
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,35 @@
 +//===-- llvm/Target/StackTransformTypes.def - Generator Opcodes -*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -705,15 +736,19 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 +
 +// TODO generate using TableGen rather than X macros
 +
++// Each instruction is defined as a mnemonic and a boolean defining if it's a
++// pseudo-instruction (which must be converted to normal instructions after
++// register & stack slot rewriting).
 +#define VALUE_GEN_INST \
-+  X(Set), /* Set the generated value to another value */ \
-+  X(Add), /* Add a value to the generated value */ \
-+  X(Subtract), /* Subtract a value from the generated value */ \
-+  X(Multiply), /* Multiply the generated value by another value */ \
-+  X(Divide), /* Divide the generated value by another value */ \
-+  X(LeftShiftLogical), /* Left-shift (logical) the generated value */ \
-+  X(LeftShiftArith), /* Left-shift (arithmetic) the generated value */ \
-+  X(RightShift) /* Right-shift the generated value */
++  X(Set, false), /* Set the generated value to another value */ \
++  X(Add, false), /* Add a value to the generated value */ \
++  X(Subtract, false), /* Subtract a value from the generated value */ \
++  X(Multiply, false), /* Multiply the generated value by another value */ \
++  X(Divide, false), /* Divide the generated value by another value */ \
++  X(LeftShiftLogical, false), /* Left-shift (logical) the generated value */ \
++  X(LeftShiftArith, false), /* Left-shift (arithmetic) the generated value */ \
++  X(RightShift, false), /* Right-shift the generated value */ \
++  X(StackSlot, true) /* Generate stack slot reference */
 +
 +#endif
 +
@@ -721,7 +756,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,458 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -755,17 +790,19 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  MachineLiveVal() = delete;
 +  virtual ~MachineLiveVal() {}
 +  virtual MachineLiveVal *copy() const = 0;
-+  virtual bool operator==(const MachineLiveVal &RHS) = 0;
++  virtual bool operator==(const MachineLiveVal &RHS) const = 0;
 +
-+  /// Possible constant types
++  /// Possible value types
 +  enum Type { None, Reference, Immediate, Generated };
 +
-+  /// Determine the constant's type
++  /// Determine the value's type
++  enum Type getType() const { return Type; }
 +  bool isValid() const { return Type == None; }
 +  bool isReference() const { return Type == Reference; }
 +  bool isImm() const { return Type == Immediate; }
 +  bool isGenerated() const { return Type == Generated; }
 +
++  /// Generate a human-readable string describing the value
 +  virtual std::string toString() const {
 +    switch(Type) {
 +    case None: return "none";
@@ -800,7 +837,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual MachineLiveVal *copy() const
 +  { return new MachineReference(*this); }
 +
-+  virtual bool operator==(const MachineLiveVal &RHS) {
++  virtual bool operator==(const MachineLiveVal &RHS) const {
 +    if(RHS.isReference()) {
 +      const MachineReference &MR = (const MachineReference &)RHS;
 +      if(MR.Symbol == Symbol) return true;
@@ -825,8 +862,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +/// MachineImmediate - an immediate value
 +class MachineImmediate : public MachineLiveVal {
 +public:
-+  MachineImmediate(unsigned int Size,
-+                   uint64_t Value,
++  MachineImmediate(unsigned int Size, uint64_t Value,
 +                   const MachineInstr *DefMI)
 +    : MachineLiveVal(Immediate, DefMI), Size(Size), Value(Value) {}
 +  MachineImmediate(const MachineImmediate &C)
@@ -835,7 +871,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual MachineLiveVal *copy() const
 +  { return new MachineImmediate(*this); }
 +
-+  virtual bool operator==(const MachineLiveVal &RHS) {
++  virtual bool operator==(const MachineLiveVal &RHS) const {
 +    if(RHS.isImm()) {
 +      const MachineImmediate &MI = (const MachineImmediate &)RHS;
 +      if(MI.Size == Size && MI.Value == Value) return true;
@@ -859,67 +895,154 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  uint64_t Value;
 +};
 +
++#define INV_INST_TYPE "Invalid instruction type"
++
 +/// MachineGeneratedVal - a value generated through a set of small operations
-+class MachineGeneratedVal : MachineLiveVal {
++class MachineGeneratedVal : public MachineLiveVal {
 +public:
 +  class ValueGenInst {
 +  public:
-+    // Available instructions
++    // Instruction mnemonics or types
 +    enum InstType {
-+      #define X(type) type
++      #define X(type, pseudo) type
 +      VALUE_GEN_INST
 +      #undef X
 +    };
++
++    // Human-readable instruction names
 +    static const char *InstTypeStr[];
 +
-+    // Available operand types
-+    enum OpType { Register, Immediate };
++    // Is the instruction a pseudo-instruction?  Access using InstType values.
++    static const bool PseudoInst[];
++
++    // Operand types
++    enum OpType { Register, Immediate, None };
 +
 +    virtual ~ValueGenInst() {}
-+
-+    virtual InstType type() const = 0;
 +    virtual OpType opType() const = 0;
++    virtual InstType type() const = 0;
 +    virtual std::string str() const = 0;
++    virtual bool operator==(const ValueGenInst &RHS) const = 0;
 +  };
 +
 +  // Wrap raw pointers to ValueGenInst in smart pointers.  Use shared_ptr so we
 +  // can use copy constructors for containers of these instructions.
 +  typedef std::shared_ptr<ValueGenInst> ValueGenInstPtr;
 +
-+  // Register-based instructions
-+  template<ValueGenInst::InstType Type>
-+  class RegInstruction : public ValueGenInst {
-+    static_assert(Type == Set || Type == Add || Type == Subtract ||
-+                  Type == Multiply || Type == Divide,
-+                  "Invalid instruction type for register instruction");
++  // Base class for register operand instructions
++  class RegInstructionBase : public ValueGenInst {
 +  public:
 +    // The *physical* register used in the instruction
 +    // Note: will be converted to DWARF during metadata emission
 +    uint16_t Reg;
 +
-+    virtual InstType type() const { return Type; }
++    RegInstructionBase(uint16_t Reg) : Reg(Reg) {}
 +    virtual OpType opType() const { return Register; }
++    uint16_t getReg() const { return Reg; }
++    void setReg(uint16_t Reg) { this->Reg = Reg; }
++  };
++
++  // Register-based instructions
++  template<ValueGenInst::InstType Type>
++  class RegInstruction : public RegInstructionBase {
++    static_assert(Type == Set || Type == Add || Type == Subtract ||
++                  Type == Multiply || Type == Divide,
++                  INV_INST_TYPE " for register instruction");
++  public:
++    RegInstruction(uint16_t Reg) : RegInstructionBase(Reg) {}
++    virtual InstType type() const { return Type; }
 +    virtual std::string str() const {
 +      std::string buf = std::string(InstTypeStr[Type]) + " register " +
 +                        std::to_string(Reg);
 +      return buf;
 +    }
++
++    virtual bool operator==(const ValueGenInst &RHS) const {
++      if(RHS.type() == Type && RHS.opType() == Register) {
++        const RegInstruction<Type> &RI = (const RegInstruction<Type> &)RHS;
++        if(RI.Reg == Reg) return true;
++      }
++      return false;
++    }
++  };
++
++  // Base class for immediate operand instructions
++  class ImmInstructionBase : public ValueGenInst {
++  public:
++    // The immediate value used in the instruction & its size
++    unsigned Size; // in bytes
++    int64_t Imm;
++
++    ImmInstructionBase(unsigned Size, int64_t Imm) : Size(Size), Imm(Imm) {}
++    virtual OpType opType() const { return Immediate; }
++    unsigned getImmSize() const { return Size; }
++    int64_t getImm() const { return Imm; }
++    void setImm(unsigned Size, int64_t Imm)
++    { this->Size = Size; this->Imm = Imm; }
 +  };
 +
 +  // Immediate-based instructions
 +  template<ValueGenInst::InstType Type>
-+  class ImmInstruction : public ValueGenInst {
++  class ImmInstruction : public ImmInstructionBase {
++    static_assert(Type != StackSlot,
++                  INV_INST_TYPE " for immediate instruction");
 +  public:
-+    // The immediate value used in the instruction & its size
-+    uint64_t Imm;
-+    unsigned int Size; // in bytes
-+
++    ImmInstruction(unsigned Size, int64_t Imm)
++      : ImmInstructionBase(Size, Imm) {}
 +    virtual InstType type() const { return Type; }
-+    virtual OpType opType() const { return Immediate; }
 +    virtual std::string str() const {
 +      std::string buf = std::string(InstTypeStr[Type]) + " immediate " +
 +                        std::to_string(Imm);
 +      return buf;
++    }
++
++    virtual bool operator==(const ValueGenInst &RHS) const {
++      if(RHS.type() == Type && RHS.opType() == Immediate) {
++        const ImmInstruction<Type> &II = (const ImmInstruction<Type> &)RHS;
++        if(II.Imm == Imm && II.Size == Size) return true;
++      }
++      return false;
++    }
++  };
++
++  // Base class for pseudo instructions
++  class PseudoInstructionBase : public ValueGenInst {
++  public:
++    // Whatever data is needed and the operation to be implemented after
++    // rewriting the pseudo-instruction
++    uint64_t Data;
++    InstType GenType;
++
++    PseudoInstructionBase(uint64_t Data, InstType GenType)
++      : Data(Data), GenType(GenType) {}
++    virtual OpType opType() const { return None; }
++    uint64_t getData() const { return Data; }
++    InstType getGenType() const { return GenType; }
++    void setData(uint64_t Data) { this->Data = Data; }
++    void setGenType(InstType GenType) { this->GenType = GenType; }
++  };
++
++  // Pseudo-instructions which must be converted to normal instructions later
++  template<ValueGenInst::InstType Type>
++  class PseudoInstruction : public PseudoInstructionBase {
++    static_assert(Type == StackSlot, INV_INST_TYPE " for pseudo-instruction");
++  public:
++    PseudoInstruction(uint64_t Data, InstType GenType)
++      : PseudoInstructionBase(Data, GenType) {}
++    virtual InstType type() const { return Type; }
++    virtual std::string str() const {
++      std::string buf = std::string(InstTypeStr[Type]) + " (" +
++                        std::to_string(Data) + ")";
++      return buf;
++    }
++
++    virtual bool operator==(const ValueGenInst &RHS) const {
++      if(RHS.type() == Type) {
++        const PseudoInstruction<Type> &PI =
++          (const PseudoInstruction<Type> &)RHS;
++        if(PI.Data == Data) return true;
++      }
++      return false;
 +    }
 +  };
 +
@@ -929,9 +1052,32 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  MachineGeneratedVal(const ValueGenInstList &VG, const MachineInstr *DefMI)
 +    : MachineLiveVal(Generated, DefMI), VG(VG) {}
 +
++  virtual MachineLiveVal *copy() const
++  { return new MachineGeneratedVal(*this); }
++
++  virtual bool operator==(const MachineLiveVal &RHS) const {
++    if(!RHS.isGenerated()) return false;
++    const MachineGeneratedVal &MGV = (const MachineGeneratedVal &)RHS;
++
++    if(VG.size() != MGV.VG.size()) return false;
++    for(size_t i = 0, num = VG.size(); i < num; i++)
++      if(VG[i] != MGV.VG[i]) return false;
++    return true;
++  }
++
++  ValueGenInstList &getInstructions() { return VG; }
++
++  virtual std::string toString() const {
++    std::string buf = MachineLiveVal::toString() + ", " +
++                      std::to_string(VG.size()) + " instruction(s)";
++    return buf;
++  }
++
 +private:
 +  ValueGenInstList VG;
 +};
++
++#undef INV_INST_TYPE
 +
 +//===----------------------------------------------------------------------===//
 +// Machine-specific locations
@@ -1274,6 +1420,34 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createStripSymbolsPass();
        (void) llvm::createStripNonDebugSymbolsPass();
        (void) llvm::createStripDeadDebugInfoPass();
+Index: include/llvm/MC/MCCodeGenInfo.h
+===================================================================
+--- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
++++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
+@@ -32,6 +32,10 @@
+   ///
+   CodeGenOpt::Level OptLevel;
+ 
++  /// IROptLevel - Optimization level (IR optimizations only).
++  ///
++  CodeGenOpt::Level IROptLevel;
++
+ public:
+   void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
+                          CodeModel::Model CM = CodeModel::Default,
+@@ -43,8 +47,12 @@
+ 
+   CodeGenOpt::Level getOptLevel() const { return OptLevel; }
+ 
++  CodeGenOpt::Level getIROptLevel() const { return IROptLevel; }
++
+   // Allow overriding OptLevel on a per-function basis.
+   void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
++
++  void setIROptLevel(CodeGenOpt::Level Level) { IROptLevel = Level; }
+ };
+ } // namespace llvm
+ 
 Index: include/llvm/MC/MCObjectFileInfo.h
 ===================================================================
 --- include/llvm/MC/MCObjectFileInfo.h	(revision 277823)
@@ -1298,6 +1472,23 @@ Index: include/llvm/MC/MCObjectFileInfo.h
    MCSection *getStackMapSection() const { return StackMapSection; }
    MCSection *getFaultMapSection() const { return FaultMapSection; }
  
+Index: include/llvm/Target/TargetMachine.h
+===================================================================
+--- include/llvm/Target/TargetMachine.h	(revision 277823)
++++ include/llvm/Target/TargetMachine.h	(working copy)
+@@ -171,6 +171,12 @@
+   /// \brief Overrides the optimization level.
+   void setOptLevel(CodeGenOpt::Level Level) const;
+ 
++  /// Returns the IR optimization level: None, Less, Default or Aggressive.
++  CodeGenOpt::Level getIROptLevel() const;
++
++  /// \brief Overrides the IR optimization level.
++  void setIROptLevel(CodeGenOpt::Level Level) const;
++
+   void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
+ 
+   bool shouldPrintMachineCode() const { return Options.PrintMachineCode; }
 Index: include/llvm/Target/TargetSubtargetInfo.h
 ===================================================================
 --- include/llvm/Target/TargetSubtargetInfo.h	(revision 277823)
@@ -1328,7 +1519,7 @@ Index: include/llvm/Target/TargetValueGenerator.h
 ===================================================================
 --- include/llvm/Target/TargetValueGenerator.h	(nonexistent)
 +++ include/llvm/Target/TargetValueGenerator.h	(working copy)
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,45 @@
 +//===-- llvm/Target/TargetValueGenerator.h - Value Generator ----*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1362,12 +1553,6 @@ Index: include/llvm/Target/TargetValueGenerator.h
 +  TargetValueGenerator(const TargetValueGenerator &) = delete;
 +  void operator=(const TargetValueGenerator &) = delete;
 +  virtual ~TargetValueGenerator() {};
-+
-+  /// Return a list of instructions for re-generating a value produced by a
-+  /// a machine instruction, or null if instruction not supported.
-+  virtual void
-+  getValueGenInstr(const MachineInstr *MI,
-+                   MachineGeneratedVal::ValueGenInstList &IL) const = 0;
 +
 +  /// Return a machine-specific value generated by a machine instruction.
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const = 0;
@@ -1448,7 +1633,7 @@ Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
 +++ lib/Analysis/LiveValues.cpp	(working copy)
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,374 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -1482,21 +1667,6 @@ Index: lib/Analysis/LiveValues.cpp
 +  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(true),
 +    constants(false), metadata(false) {}
 +
-+LiveValues::~LiveValues(void)
-+{
-+  std::map<const BasicBlock *, std::set<const Value *> *>::iterator bbIt;
-+  std::list<LoopNestingTree *>::iterator treeIt;
-+
-+  for(bbIt = liveIn.begin(); bbIt != liveIn.end(); bbIt++)
-+    delete bbIt->second;
-+  for(bbIt = liveOut.begin(); bbIt != liveOut.end(); bbIt++)
-+    delete bbIt->second;
-+  for(treeIt = loopNestingForest.begin();
-+      treeIt != loopNestingForest.end();
-+      treeIt++)
-+    delete *treeIt;
-+}
-+
 +void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const
 +{
 +  AU.addRequired<LoopInfoWrapperPass>();
@@ -1505,83 +1675,111 @@ Index: lib/Analysis/LiveValues.cpp
 +
 +bool LiveValues::runOnFunction(Function &F)
 +{
-+  DEBUG(errs() << "\n********** Beginning LiveValues **********\n"
-+               << "********** Function: " << F.getName() << " **********\n\n"
-+                  "LiveValues: performing bottom-up dataflow analysis\n");
++  if(FuncBBLiveIn.count(&F))
++  {
++    DEBUG(
++      errs() << "\nFound previous analysis for " << F.getName() << "\n\n";
++      print(errs(), &F);
++    );
++  }
++  else
++  {
++    DEBUG(errs() << "\n********** Beginning LiveValues **********\n"
++                 << "********** Function: " << F.getName() << " **********\n\n"
++                    "LiveValues: performing bottom-up dataflow analysis\n");
 +
-+  /* 1. Compute partial liveness sets using a postorder traversal. */
-+  dagDFS(F);
++    LoopNestingForest LNF;
++    FuncBBLiveIn.emplace(&F, LiveVals());
++    FuncBBLiveOut.emplace(&F, LiveVals());
 +
-+  DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n");
++    /* 1. Compute partial liveness sets using a postorder traversal. */
++    dagDFS(F, FuncBBLiveIn[&F], FuncBBLiveOut[&F]);
 +
-+  /* 2. Construct loop-nesting forest. */
-+  constructLoopNestingForest(F);
++    DEBUG(errs() << "LiveValues: constructing loop-nesting forest\n");
 +
-+  DEBUG(errs() << "LiveValues: propagating values within loop-nests\n");
++    /* 2. Construct loop-nesting forest. */
++    constructLoopNestingForest(F, LNF);
 +
-+  /* 3. Propagate live variables within loop bodies. */
-+  loopTreeDFS();
++    DEBUG(errs() << "LiveValues: propagating values within loop-nests\n");
 +
-+  DEBUG(
-+    print(errs(), F.getParent());
-+    errs() << "LiveValues: finished analysis\n"
-+  );
++    /* 3. Propagate live variables within loop bodies. */
++    loopTreeDFS(LNF, FuncBBLiveIn[&F], FuncBBLiveOut[&F]);
++
++    DEBUG(
++      print(errs(), &F);
++      errs() << "LiveValues: finished analysis\n"
++    );
++  }
 +
 +  return false;
 +}
 +
-+void LiveValues::print(raw_ostream &O, const Module *M) const
++void
++LiveValues::print(raw_ostream &O, const Function *F) const
 +{
-+  std::map<const BasicBlock *, std::set<const Value *> *>::const_iterator bbIt;
++  LiveVals::const_iterator bbIt;
 +  std::set<const Value *>::const_iterator valIt;
-+  const BasicBlock *bb;
-+  const std::set<const Value *> *vals;
++  const Module *M = F->getParent();
 +
 +  O << "LiveValues: results of live-value analysis\n";
 +
-+  for(bbIt = liveIn.cbegin(); bbIt != liveIn.cend(); bbIt++)
++  if(!FuncBBLiveIn.count(F) || !FuncBBLiveOut.count(F))
 +  {
-+    bb = bbIt->first;
-+    vals = bbIt->second;
-+
-+    bbIt->first->printAsOperand(O, false, M);
-+
-+    O << "\n  Live-in:";
-+    for(valIt = vals->cbegin(); valIt != vals->cend(); valIt++)
++    if(F->hasName())
++      O << "No liveness information for function " << F->getName() << "\n";
++    else
++      O << "No liveness information for requested function\n";
++  }
++  else
++  {
++    for(bbIt = FuncBBLiveIn.at(F).cbegin();
++        bbIt != FuncBBLiveIn.at(F).cend();
++        bbIt++)
 +    {
-+      O << "\n    ";
-+      (*valIt)->printAsOperand(O, false, M);
-+    }
++      const BasicBlock *bb = bbIt->first;
++      const std::set<const Value *> &liveInVals = bbIt->second;
++      const std::set<const Value *> &liveOutVals = FuncBBLiveOut.at(F).at(bb);
 +
-+    O << "\n  Live-out:";
-+    for(valIt = liveOut.at(bb)->cbegin();
-+        valIt != liveOut.at(bb)->cend();
-+        valIt++)
-+    {
-+      O << "\n    ";
-+      (*valIt)->printAsOperand(O, false, M);
-+    }
++      bb->printAsOperand(O, false, M);
++      O << "\n  Live-in:\n    ";
++      for(valIt = liveInVals.cbegin(); valIt != liveInVals.cend(); valIt++)
++      {
++        (*valIt)->printAsOperand(O, false, M);
++        O << " ";
++      }
 +
-+    O << "\n";
++      O << "\n  Live-out:\n    ";
++      for(valIt = liveOutVals.cbegin(); valIt != liveOutVals.cend(); valIt++)
++      {
++        (*valIt)->printAsOperand(O, false, M);
++        O << " ";
++      }
++
++      O << "\n";
++    }
 +  }
 +}
 +
 +std::set<const Value *> *LiveValues::getLiveIn(const BasicBlock *BB) const
 +{
-+  return new std::set<const Value *>(*liveIn.at(BB));
++  const Function *F = BB->getParent();
++  return new std::set<const Value *>(FuncBBLiveIn.at(F).at(BB));
 +}
 +
 +std::set<const Value *> *LiveValues::getLiveOut(const BasicBlock *BB) const
 +{
-+  return new std::set<const Value *>(*liveOut.at(BB));
++  const Function *F = BB->getParent();
++  return new std::set<const Value *>(FuncBBLiveOut.at(F).at(BB));
 +}
 +
 +std::set<const Value *>
 +*LiveValues::getLiveValues(const Instruction *inst) const
 +{
 +  const BasicBlock *BB = inst->getParent();
++  const Function *F = BB->getParent();
 +  BasicBlock::const_reverse_iterator ri, rie;
-+  std::set<const Value *> *live = new std::set<const Value *>(*liveOut.at(BB));
++  std::set<const Value *> *live =
++    new std::set<const Value *>(FuncBBLiveOut.at(F).at(BB));
 +
 +  for(ri = BB->rbegin(), rie = BB->rend(); ri != rie; ri++)
 +  {
@@ -1605,20 +1803,23 @@ Index: lib/Analysis/LiveValues.cpp
 +
 +bool LiveValues::includeVal(const llvm::Value *val) const
 +{
++  bool include = true;
++
 +  // TODO other values that should be filtered out?
 +  if(isa<BasicBlock>(val))
-+    return false;
++    include = false;
 +  else if(isa<InlineAsm>(val) && !inlineasm)
-+    return false;
++    include = false;
 +  else if(isa<BitCastInst>(val) && !bitcasts)
-+    return false;
++    include = false;
 +  else if(isa<CmpInst>(val) && !comparisons)
-+    return false;
++    include = false;
 +  else if(isa<Constant>(val) && !constants)
-+    return false;
++    include = false;
 +  else if(isa<MetadataAsValue>(val) && !metadata)
-+    return false;
-+  return true;
++    include = false;
++
++  return include;
 +}
 +
 +unsigned LiveValues::phiUses(const BasicBlock *B,
@@ -1662,7 +1863,7 @@ Index: lib/Analysis/LiveValues.cpp
 +  return added;
 +}
 +
-+void LiveValues::dagDFS(Function &F)
++void LiveValues::dagDFS(Function &F, LiveVals &liveIn, LiveVals &liveOut)
 +{
 +  std::set<const Value *> live, phiDefined;
 +  std::set<Edge> loopEdges;
@@ -1692,14 +1893,14 @@ Index: lib/Analysis/LiveValues.cpp
 +      if(!loopEdges.count(Edge(*B, *S)))
 +      {
 +        phiDefs(*S, phiDefined);
-+        for(std::set<const Value *>::const_iterator vi = liveIn[*S]->begin();
-+            vi != liveIn[*S]->end();
++        for(std::set<const Value *>::const_iterator vi = liveIn[*S].begin();
++            vi != liveIn[*S].end();
 +            vi++)
 +          if(!phiDefined.count(*vi) && includeVal(*vi)) live.insert(*vi);
 +        phiDefined.clear();
 +      }
 +    }
-+    liveOut[*B] = new std::set<const Value *>(live);
++    liveOut.insert(LiveValsPair(*B, std::set<const Value *>(live)));
 +
 +    /* Calculate live-in set (lines 8-11 of Algorithm 2). */
 +    for(BasicBlock::const_reverse_iterator inst = (*B)->rbegin();
@@ -1715,7 +1916,7 @@ Index: lib/Analysis/LiveValues.cpp
 +        if(includeVal(*op)) live.insert(*op);
 +    }
 +    phiDefs(*B, live);
-+    liveIn[*B] = new std::set<const Value *>(live);
++    liveIn.insert(LiveValsPair(*B, std::set<const Value *>(live)));
 +
 +    live.clear();
 +
@@ -1723,74 +1924,74 @@ Index: lib/Analysis/LiveValues.cpp
 +      errs() << "  ";
 +      (*B)->printAsOperand(errs(), false);
 +      errs() << ":\n";
-+      errs() << "    Live-in:";
++      errs() << "    Live-in:\n      ";
 +      std::set<const Value *>::const_iterator it;
-+      for(it = liveIn[*B]->begin(); it != liveIn[*B]->end(); it++)
++      for(it = liveIn[*B].begin(); it != liveIn[*B].end(); it++)
 +      {
-+        errs() << "\n      ";
 +        (*it)->printAsOperand(errs(), false);
++        errs() << " ";
 +      }
-+      errs() << "\n    Live-out:";
-+      for(it = liveOut[*B]->begin(); it != liveOut[*B]->end(); it++)
++      errs() << "\n    Live-out:\n      ";
++      for(it = liveOut[*B].begin(); it != liveOut[*B].end(); it++)
 +      {
-+        errs() << "\n      ";
 +        (*it)->printAsOperand(errs(), false);
++        errs() << " ";
 +      }
 +      errs() << "\n";
 +    );
 +  }
 +}
 +
-+void LiveValues::constructLoopNestingForest(Function &F)
++void LiveValues::constructLoopNestingForest(Function &F,
++                                            LoopNestingForest &LNF)
 +{
 +  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-+  LoopNestingTree *loopNest;
 +
 +  for(scc_iterator<Function *> scc = scc_begin(&F);
 +      scc != scc_end(&F);
 +      ++scc)
 +  {
 +    const std::vector<BasicBlock *> &SCC = *scc;
-+    loopNest = new LoopNestingTree(SCC, LI);
-+    loopNestingForest.push_back(loopNest);
++    LNF.emplace_back(SCC, LI);
 +
 +    DEBUG(
 +      errs() << "Loop nesting tree: "
-+             << loopNest->size() << " node(s), loop-nesting depth: "
-+             << loopNest->depth() << "\n";
-+      loopNest->print(errs());
++             << LNF.back().size() << " node(s), loop-nesting depth: "
++             << LNF.back().depth() << "\n";
++      LNF.back().print(errs());
 +      errs() << "\n"
 +    );
 +  }
 +}
 +
-+void LiveValues::propagateValues(const LoopNestingTree *loopNest)
++void LiveValues::propagateValues(const LoopNestingTree &loopNest,
++                                 LiveVals &liveIn,
++                                 LiveVals &liveOut)
 +{
-+  std::set<const Value *> liveLoop;
-+  std::set<const Value *> phiDefined;
++  std::set<const Value *> liveLoop, phiDefined;
 +
 +  /* Iterate over all loop nodes. */
-+  for(LoopNestingTree::loop_iterator loop = loopNest->loop_begin();
-+      loop != loopNest->loop_end();
++  for(LoopNestingTree::loop_iterator loop = loopNest.loop_begin();
++      loop != loopNest.loop_end();
 +      loop++)
 +  {
 +    /* Calculate LiveLoop (lines 3 & 4 of Algorithm 3). */
 +    phiDefs(*loop, phiDefined);
-+    for(std::set<const Value *>::const_iterator it = liveIn[*loop]->begin();
-+        it != liveIn[*loop]->end();
++    for(std::set<const Value *>::const_iterator it = liveIn[*loop].begin();
++        it != liveIn[*loop].end();
 +        it++)
 +      if(!phiDefined.count(*it) && includeVal(*it))
 +        liveLoop.insert(*it);
 +
 +    /* Propagate values to children (lines 5-8 of Algorithm 3). */
-+    for(LoopNestingTree::child_iterator child = loopNest->children_begin(loop);
-+        child != loopNest->children_end(loop);
++    for(LoopNestingTree::child_iterator child = loopNest.children_begin(loop);
++        child != loopNest.children_end(loop);
 +        child++) {
 +      for(std::set<const Value *>::const_iterator it = liveLoop.begin();
 +          it != liveLoop.end();
 +          it++) {
-+        liveIn[*child]->insert(*it);
-+        liveOut[*child]->insert(*it);
++        liveIn[*child].insert(*it);
++        liveOut[*child].insert(*it);
 +      }
 +    }
 +
@@ -1798,11 +1999,13 @@ Index: lib/Analysis/LiveValues.cpp
 +  }
 +}
 +
-+void LiveValues::loopTreeDFS()
++void LiveValues::loopTreeDFS(LoopNestingForest &LNF,
++                             LiveVals &liveIn,
++                             LiveVals &liveOut)
 +{
-+  std::list<LoopNestingTree *>::const_iterator it;
-+  for(it = loopNestingForest.begin(); it != loopNestingForest.end(); it++)
-+    propagateValues(*it);
++  LoopNestingForest::const_iterator it;
++  for(it = LNF.begin(); it != LNF.end(); it++)
++    propagateValues(*it, liveIn, liveOut);
 +}
 +
 Index: lib/Analysis/LoopNestingTree.cpp
@@ -1829,10 +2032,10 @@ Index: lib/Analysis/LoopNestingTree.cpp
 +  std::list<Node *> work;
 +
 +  /* Bootstrap by grabbing the loop of the first basic block encountered. */
-+  loop = LI[*SCC.begin()];
++  loop = LI[SCC.front()];
 +  if(!loop) // Is the SCC actually a loop?
 +  {
-+    _root = new Node(*SCC.begin(), nullptr, true);
++    _root = new Node(SCC.front(), nullptr, true);
 +    return;
 +  }
 +
@@ -2212,7 +2415,35 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -754,6 +754,10 @@
+@@ -391,7 +391,9 @@
+     addPass(createVerifierPass());
+ 
+   // Run loop strength reduction before anything else.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableLSR) {
++  if (getOptLevel() != CodeGenOpt::None &&
++      getIROptLevel() != CodeGenOpt::None &&
++      !DisableLSR) {
+     addPass(createLoopStrengthReducePass());
+     if (PrintLSR)
+       addPass(createPrintFunctionPass(dbgs(), "\n\n*** Code after LSR ***\n"));
+@@ -406,10 +408,14 @@
+   addPass(createUnreachableBlockEliminationPass());
+ 
+   // Prepare expensive constants for SelectionDAG.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableConstantHoisting)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getIROptLevel() != CodeGenOpt::None &&
++      !DisableConstantHoisting)
+     addPass(createConstantHoistingPass());
+ 
+-  if (getOptLevel() != CodeGenOpt::None && !DisablePartialLibcallInlining)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getIROptLevel() != CodeGenOpt::None &&
++      !DisablePartialLibcallInlining)
+     addPass(createPartiallyInlineLibCallsPass());
+ }
+ 
+@@ -754,6 +760,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -2805,7 +3036,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +764,32 @@
+@@ -509,6 +764,35 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -2830,6 +3061,9 @@ Index: lib/CodeGen/StackMaps.cpp
 +        const MachineReference *MS = (const MachineReference *)C.second;
 +        OS.EmitSymbolValue(OS.getContext().lookupSymbol(MS->getSymbol()), 8);
 +      }
++      else if(C.second->isGenerated()) {
++        // TODO skip for now
++      }
 +      else llvm_unreachable("Unhandled arch-specific constant");
 +
 +      delete C.second;
@@ -2838,7 +3072,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +796,7 @@
+@@ -515,7 +799,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -2847,7 +3081,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +820,7 @@
+@@ -539,7 +823,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -2882,7 +3116,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,941 @@
+@@ -0,0 +1,997 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3093,9 +3327,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 +
 +  /// Is a virtual register live across the machine instruction?
++  /// Note: returns false if the MI is the last instruction for which the
++  /// virtual register is alive
 +  bool isVregLiveAcrossInstr(unsigned Vreg, const MachineInstr *MI) const;
 +
 +  /// Is a stack slot live across the machine instruction?
++  /// Note: returns false if the MI is the last instruction for which the stack
++  /// slot is alive
 +  bool isSSLiveAcrossInstr(int SS, const MachineInstr *MI) const;
 +
 +  /// Add duplicate location information for a virtual register.  Return true
@@ -3128,8 +3366,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  /// Find stackmap operands that have been spilled to alternate locations
 +  void findAlternateOpLocs();
 +
-+  /// Analyze a machine instruction to find the value being used
-+  MachineLiveValPtr getTargetValue(const MachineInstr *MI) const;
++  /// Ensure virtual registers used to generate architecture-specific values
++  /// are live across function call & convert to physical registers
++  void sanitizeVregs(MachineLiveValPtr &LV, const MachineInstr *Call) const;
++
++  /// Analyze a machine instruction to find the value being used.  Needs the
++  /// call instruction to ensure values are generated correctly and are valid.
++  MachineLiveValPtr getTargetValue(const MachineInstr *MI,
++                                   const MachineInstr *Call) const;
 +
 +  /// Find architecture-specific live values added by the backend
 +  void findArchSpecificLiveVals();
@@ -3155,13 +3399,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +const std::string StackTransformMetadata::SMName("llvm.experimental.stackmap");
 +
 +INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
-+  "Analyze functions for additional stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, true)
 +INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 +INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 +INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 +INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 +INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
-+  "Analyze functions for additional stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, true)
 +
 +char StackTransformMetadata::ID = 0;
 +
@@ -3415,6 +3659,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +/// Is a virtual register live across the machine instruction?
++/// Note: returns false if the MI is the last instruction for which the virtual
++/// register is alive
 +bool
 +StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
 +                                              const MachineInstr *MI) const {
@@ -3422,13 +3668,16 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const LiveInterval &TheLI = LI->getInterval(Vreg);
 +    SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
 +    LiveInterval::const_iterator Seg = TheLI.find(InstrIdx);
-+    if(Seg != TheLI.end() && Seg->contains(InstrIdx))
++    if(Seg != TheLI.end() && Seg->contains(InstrIdx) &&
++       InstrIdx.getInstrDistance(Seg->end) != 0)
 +      return true;
 +  }
 +  return false;
 +}
 +
 +/// Is a stack slot live across the machine instruction?
++/// Note: returns false if the MI is the last instruction for which the stack
++/// slot is alive
 +bool
 +StackTransformMetadata::isSSLiveAcrossInstr(int SS,
 +                                            const MachineInstr *MI) const {
@@ -3436,7 +3685,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const LiveInterval &TheLI = LS->getInterval(SS);
 +    SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
 +    LiveInterval::const_iterator Seg = TheLI.find(InstrIdx);
-+    if(Seg != TheLI.end() && Seg->contains(InstrIdx))
++    if(Seg != TheLI.end() && Seg->contains(InstrIdx) &&
++       InstrIdx.getInstrDistance(Seg->end) != 0)
 +      return true;
 +  }
 +  return false;
@@ -3640,9 +3890,35 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  }
 +}
 +
-+/// Analyze a machine instruction to find the value being used
++/// Ensure virtual registers used to generate architecture-specific values are
++/// live across function call & convert to physical registers
++void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
++                                           const MachineInstr *Call) const {
++  typedef MachineGeneratedVal::ValueGenInst::OpType OpType;
++  typedef MachineGeneratedVal::RegInstructionBase RegInstruction;
++
++  if(!LV) return;
++  if(LV->isGenerated()) {
++    MachineGeneratedVal *MGV = (MachineGeneratedVal *)LV.get();
++    MachineGeneratedVal::ValueGenInstList &Inst = MGV->getInstructions();
++    for(size_t i = 0, num = Inst.size(); i < num; i++) {
++      if(Inst[i]->opType() == OpType::Register) {
++        RegInstruction *RI = (RegInstruction *)Inst[i].get();
++        if(!isVregLiveAcrossInstr(RI->getReg(), Call))
++          llvm_unreachable("Register for generating live value is not live "
++                           "across instruction");
++        assert(VRM->hasPhys(RI->getReg()) && "Invalid virtual register");
++        RI->setReg(VRM->getPhys(RI->getReg()));
++      }
++    }
++  }
++}
++
++/// Analyze a machine instruction to find the value being used.  Needs the call
++/// instruction to ensure values are generated correctly and are valid.
 +MachineLiveValPtr
-+StackTransformMetadata::getTargetValue(const MachineInstr *MI) const {
++StackTransformMetadata::getTargetValue(const MachineInstr *MI,
++                                       const MachineInstr *Call) const {
 +  if(!MI) return MachineLiveValPtr(nullptr);
 +
 +  // Immediates can be handled in an architecture-agnostic way
@@ -3662,7 +3938,12 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    }
 +    return MachineLiveValPtr(new MachineImmediate(Size, Value, MI));
 +  }
-+  else return TVG->getMachineValue(MI);
++  // Otherwise, drop to architecture-specific value generator
++  else {
++    MachineLiveValPtr MLV = TVG->getMachineValue(MI);
++    sanitizeVregs(MLV, Call);
++    return MLV;
++  }
 +}
 +
 +/// Find architecture-specific live values added by the backend
@@ -3699,8 +3980,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                     << " is live in register but not in stackmap\n";);
 +
 +        assert(++(MRI->def_instr_begin(Vreg)) == MRI->def_instr_end() &&
-+               "Multiple definitions for virtual register");
-+        MC = getTargetValue(&*MRI->def_instr_begin(Vreg));
++               "Multiple definitions for virtual register "
++               "(missed in live-value analysis?)");
++
++        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MICall);
 +        if(MC) {
 +          DEBUG(
 +            dbgs() << "      Defining instruction: ";
@@ -3711,6 +3994,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          MLR.setReg(VRM->getPhys(Vreg));
 +          MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
 +          CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
++        }
++        else {
++          DEBUG(
++            dbgs() << "      Unhandled defining instruction: ";
++            MRI->def_instr_begin(Vreg)->print(dbgs());
++            dbgs() << "\n";
++          );
 +        }
 +      }
 +      // Detect virtual registers mapped to stack slots not in stackmap
@@ -3828,7 +4118,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformTypes.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformTypes.cpp	(working copy)
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,24 @@
 +//===-- llvm/Target/TargetValueGenerator.cpp - Value Generator --*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3843,11 +4133,16 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +using namespace llvm;
 +
 +const char *MachineGeneratedVal::ValueGenInst::InstTypeStr[] = {
-+  #define X(type) #type
++  #define X(type, pseudo) #type
 +  VALUE_GEN_INST
 +  #undef X
 +};
 +
++const bool MachineGeneratedVal::ValueGenInst::PseudoInst[] = {
++  #define X(type, pseudo) pseudo
++  VALUE_GEN_INST
++  #undef X
++};
 Index: lib/CodeGen/UnwindInfo.cpp
 ===================================================================
 --- lib/CodeGen/UnwindInfo.cpp	(nonexistent)
@@ -4024,6 +4319,16 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +  }
 +}
 +
+Index: lib/MC/MCCodeGenInfo.cpp
+===================================================================
+--- lib/MC/MCCodeGenInfo.cpp	(revision 277823)
++++ lib/MC/MCCodeGenInfo.cpp	(working copy)
+@@ -20,4 +20,5 @@
+   RelocationModel = RM;
+   CMModel = CM;
+   OptLevel = OL;
++  IROptLevel = OptLevel;
+ }
 Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
 --- lib/MC/MCObjectFileInfo.cpp	(revision 277823)
@@ -4140,28 +4445,61 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64TargetMachine.cpp	(working copy)
-@@ -61,11 +61,15 @@
- EnableLoadStoreOpt("aarch64-load-store-opt", cl::desc("Enable the load/store pair"
-                    " optimization pass"), cl::init(true), cl::Hidden);
+@@ -220,16 +220,20 @@
+   // Cmpxchg instructions are often used with a subsequent comparison to
+   // determine whether it succeeded. We can exploit existing control-flow in
+   // ldrex/strex loops to simplify this, but it needs tidying up.
+-  if (TM->getOptLevel() != CodeGenOpt::None && EnableAtomicTidy)
++  if (TM->getOptLevel() != CodeGenOpt::None &&
++      TM->getIROptLevel() != CodeGenOpt::None &&
++      EnableAtomicTidy)
+     addPass(createCFGSimplificationPass());
  
-+// Note: this optimization invalidates stackmaps inserted in the middle-end,
-+// meaning AArch64 binaries are generated with different numbers of stackmaps
-+// versus other backends
-+// TODO is this still true with new integrated Popcorn passes?
- static cl::opt<bool>
- EnableAtomicTidy("aarch64-atomic-cfg-tidy", cl::Hidden,
-                  cl::desc("Run SimplifyCFG after expanding atomic operations"
-                           " to make use of cmpxchg flow-based information"),
--                 cl::init(true));
-+                 cl::init(false));
+   TargetPassConfig::addIRPasses();
  
- static cl::opt<bool>
- EnableEarlyIfConversion("aarch64-enable-early-ifcvt", cl::Hidden,
+   // Match interleaved memory accesses to ldN/stN intrinsics.
+-  if (TM->getOptLevel() != CodeGenOpt::None)
++  if (TM->getOptLevel() != CodeGenOpt::None &&
++      TM->getIROptLevel() != CodeGenOpt::None)
+     addPass(createInterleavedAccessPass(TM));
+ 
+-  if (TM->getOptLevel() == CodeGenOpt::Aggressive && EnableGEPOpt) {
++  if (TM->getOptLevel() == CodeGenOpt::Aggressive &&
++      TM->getIROptLevel() != CodeGenOpt::None && EnableGEPOpt) {
+     // Call SeparateConstOffsetFromGEP pass to extract constants within indices
+     // and lower a GEP with multiple indices to either arithmetic operations or
+     // multiple GEPs with single index.
+@@ -247,12 +251,14 @@
+ bool AArch64PassConfig::addPreISel() {
+   // Run promote constant before global merge, so that the promoted constants
+   // get a chance to be merged
+-  if (TM->getOptLevel() != CodeGenOpt::None && EnablePromoteConstant)
++  if (TM->getOptLevel() != CodeGenOpt::None &&
++      TM->getIROptLevel() != CodeGenOpt::None && EnablePromoteConstant)
+     addPass(createAArch64PromoteConstantPass());
+   // FIXME: On AArch64, this depends on the type.
+   // Basically, the addressable offsets are up to 4095 * Ty.getSizeInBytes().
+   // and the offset has to be a multiple of the related size in bytes.
+   if ((TM->getOptLevel() != CodeGenOpt::None &&
++       TM->getIROptLevel() != CodeGenOpt::None &&
+        EnableGlobalMerge == cl::BOU_UNSET) ||
+       EnableGlobalMerge == cl::BOU_TRUE) {
+     bool OnlyOptimizeForSize = (TM->getOptLevel() < CodeGenOpt::Aggressive) &&
+@@ -260,7 +266,8 @@
+     addPass(createGlobalMergePass(TM, 4095, OnlyOptimizeForSize));
+   }
+ 
+-  if (TM->getOptLevel() != CodeGenOpt::None)
++  if (TM->getOptLevel() != CodeGenOpt::None &&
++      TM->getIROptLevel() != CodeGenOpt::None)
+     addPass(createAArch64AddressTypePromotionPass());
+ 
+   return false;
 Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64ValueGenerator.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64ValueGenerator.cpp	(working copy)
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,90 @@
 +//===- AArch64TargetValueGenerator.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4180,21 +4518,40 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +#include "llvm/Target/TargetInstrInfo.h"
 +#include "llvm/Target/TargetSubtargetInfo.h"
 +
-+using namespace llvm;
-+typedef MachineGeneratedVal::ValueGenInstList VGIL;
-+
 +#define DEBUG_TYPE "stacktransform"
 +
++using namespace llvm;
++
++// Make types in MachineGeneratedVal more accessible
++typedef MachineGeneratedVal::ValueGenInst ValueGenInst;
++typedef MachineGeneratedVal::ValueGenInst::InstType InstType;
++typedef MachineGeneratedVal::ValueGenInstPtr ValueGenInstPtr;
++typedef MachineGeneratedVal::ValueGenInstList ValueGenInstList;
++
++template <InstType T>
++using RegInstruction = MachineGeneratedVal::RegInstruction<T>;
++template <InstType T>
++using ImmInstruction = MachineGeneratedVal::ImmInstruction<T>;
++template <InstType T>
++using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
++
 +void
-+AArch64ValueGenerator::getValueGenInstr(const MachineInstr *MI,
-+                                        VGIL &IL) const {
-+  const TargetInstrInfo *TII =
-+    MI->getParent()->getParent()->getSubtarget().getInstrInfo();
++AArch64ValueGenerator::genADDInstructions(const MachineInstr *MI,
++                                          ValueGenInstList &IL) const {
++  int Index;
 +
 +  switch(MI->getOpcode()) {
++  case AArch64::ADDXri:
++    if(MI->getOperand(1).isFI()) {
++      Index = MI->getOperand(1).getIndex();
++      IL.push_back(ValueGenInstPtr(
++        new PseudoInstruction<InstType::StackSlot>(Index, InstType::Set)));
++      assert(MI->getOperand(2).isImm() && MI->getOperand(2).getImm() == 0);
++      assert(MI->getOperand(3).isImm() && MI->getOperand(3).getImm() == 0);
++    }
++    break;
 +  default:
-+    DEBUG(dbgs() << "Unhandled opcode: "
-+                 << TII->getName(MI->getOpcode()) << "\n");
++    llvm_unreachable("Unhandled ADD machine instruction");
 +    break;
 +  }
 +}
@@ -4204,18 +4561,24 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +  MachineLiveVal* Val = nullptr;
 +  const MachineOperand *MO;
 +  const TargetInstrInfo *TII;
++  ValueGenInstList IL;
 +
 +  switch(MI->getOpcode()) {
 +  case AArch64::MOVaddr:
++  case AArch64::ADRP:
 +    MO = &MI->getOperand(1);
 +    assert((MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol()) &&
-+           "Invalid operand for MOVaddr");
++           "Invalid operand for address generation");
 +    if(MO->isGlobal())
 +      Val = new MachineReference(MO->getGlobal()->getName(), MI);
 +    else if(MO->isSymbol())
 +      Val = new MachineReference(MO->getSymbolName(), MI);
 +    else if(MO->isMCSymbol())
 +      Val = new MachineReference(MO->getMCSymbol()->getName(), MI);
++    break;
++  case AArch64::ADDXri:
++    genADDInstructions(MI, IL);
++    if(IL.size() > 0) Val = new MachineGeneratedVal(IL, MI);
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
@@ -4231,7 +4594,7 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.h
 ===================================================================
 --- lib/Target/AArch64/AArch64ValueGenerator.h	(nonexistent)
 +++ lib/Target/AArch64/AArch64ValueGenerator.h	(working copy)
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,25 @@
 +//===- AArch64TargetValueGenerator.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4248,10 +4611,11 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.h
 +class AArch64ValueGenerator final : public TargetValueGenerator {
 +public:
 +  AArch64ValueGenerator() {}
-+  virtual void
-+  getValueGenInstr(const MachineInstr *MI,
-+                   MachineGeneratedVal::ValueGenInstList &IL) const;
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
++
++private:
++  void genADDInstructions(const MachineInstr *MI,
++                          MachineGeneratedVal::ValueGenInstList &IL) const;
 +};
 +
 +}
@@ -4268,6 +4632,28 @@ Index: lib/Target/AArch64/CMakeLists.txt
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
+Index: lib/Target/TargetMachine.cpp
+===================================================================
+--- lib/Target/TargetMachine.cpp	(revision 277823)
++++ lib/Target/TargetMachine.cpp	(working copy)
+@@ -149,6 +149,17 @@
+     CodeGenInfo->setOptLevel(Level);
+ }
+ 
++CodeGenOpt::Level TargetMachine::getIROptLevel() const {
++  if (!CodeGenInfo)
++    return CodeGenOpt::Default;
++  return CodeGenInfo->getIROptLevel();
++}
++
++void TargetMachine::setIROptLevel(CodeGenOpt::Level Level) const {
++  if (CodeGenInfo)
++    CodeGenInfo->setIROptLevel(Level);
++}
++
+ TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
+   return TargetIRAnalysis([this](Function &F) {
+     return TargetTransformInfo(F.getParent()->getDataLayout());
 Index: lib/Target/X86/CMakeLists.txt
 ===================================================================
 --- lib/Target/X86/CMakeLists.txt	(revision 277823)
@@ -4366,6 +4752,19 @@ Index: lib/Target/X86/X86AsmPrinter.h
  
    const char *getPassName() const override {
      return "X86 Assembly / Object Emitter";
+Index: lib/Target/X86/X86ISelLowering.cpp
+===================================================================
+--- lib/Target/X86/X86ISelLowering.cpp	(revision 277823)
++++ lib/Target/X86/X86ISelLowering.cpp	(working copy)
+@@ -18621,6 +18621,8 @@
+   case ISD::GC_TRANSITION_START:
+                                 return LowerGC_TRANSITION_START(Op, DAG);
+   case ISD::GC_TRANSITION_END:  return LowerGC_TRANSITION_END(Op, DAG);
++  case (uint16_t)~TargetOpcode::STACKMAP:
++    return SDValue(); // Use generic stackmap type legalizer
+   }
+ }
+ 
 Index: lib/Target/X86/X86Subtarget.h
 ===================================================================
 --- lib/Target/X86/X86Subtarget.h	(revision 277823)
@@ -4399,7 +4798,7 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 ===================================================================
 --- lib/Target/X86/X86ValueGenerator.cpp	(nonexistent)
 +++ lib/Target/X86/X86ValueGenerator.cpp	(working copy)
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,99 @@
 +//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4410,26 +4809,70 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +//===----------------------------------------------------------------------===//
 +
 +#include "X86ValueGenerator.h"
++#include "X86InstrInfo.h"
 +#include "llvm/CodeGen/MachineFunction.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Target/TargetInstrInfo.h"
 +#include "llvm/Target/TargetSubtargetInfo.h"
 +
-+using namespace llvm;
-+typedef MachineGeneratedVal::ValueGenInstList VGIL;
-+
 +#define DEBUG_TYPE "stacktransform"
 +
-+void
-+X86ValueGenerator::getValueGenInstr(const MachineInstr *MI,
-+                                    VGIL &IL) const {
-+  const TargetInstrInfo *TII =
-+    MI->getParent()->getParent()->getSubtarget().getInstrInfo();
++using namespace llvm;
 +
++// Make types in MachineGeneratedVal more accessible
++typedef MachineGeneratedVal::ValueGenInst ValueGenInst;
++typedef MachineGeneratedVal::ValueGenInst::InstType InstType;
++typedef MachineGeneratedVal::ValueGenInstPtr ValueGenInstPtr;
++typedef MachineGeneratedVal::ValueGenInstList ValueGenInstList;
++
++template <InstType T>
++using RegInstruction = MachineGeneratedVal::RegInstruction<T>;
++template <InstType T>
++using ImmInstruction = MachineGeneratedVal::ImmInstruction<T>;
++template <InstType T>
++using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
++
++void X86ValueGenerator::genLEAInstructions(const MachineInstr *MI,
++                                           ValueGenInstList &IL) const {
++  int Index;
++  unsigned Reg;
++  int64_t Imm;
++  unsigned Size = 8; // in bytes
++
++  // TODO do we need to handle the segment register operand?
 +  switch(MI->getOpcode()) {
++  case X86::LEA64r:
++    // Set the index register & scale (if we're doing indexing)
++    Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
++    if(Reg) {
++      IL.push_back(ValueGenInstPtr(
++        new RegInstruction<InstType::Set>(Reg)));
++
++      Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::Multiply>(Size, Imm)));
++    }
++
++    if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
++      // The frame index becomes the base register + displacement after virtual
++      // register rewriting and stack slot allocation
++      Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
++      IL.push_back(ValueGenInstPtr(
++        new PseudoInstruction<InstType::StackSlot>(Index, InstType::Add)));
++    }
++    else {
++      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg());
++      Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
++      IL.push_back(ValueGenInstPtr(
++        new RegInstruction<InstType::Add>(Reg)));
++
++      Imm = MI->getOperand(1 + X86::AddrDisp).getImm();
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::Add>(Size, Imm)));
++    }
++    break;
 +  default:
-+    DEBUG(dbgs() << "Unhandled opcode: "
-+                 << TII->getName(MI->getOpcode()) << "\n");
++    llvm_unreachable("Unhandled LEA machine instruction");
 +    break;
 +  }
 +}
@@ -4438,8 +4881,13 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +X86ValueGenerator::getMachineValue(const MachineInstr *MI) const {
 +  MachineLiveVal* Val = nullptr;
 +  const TargetInstrInfo *TII;
++  ValueGenInstList IL;
 +
 +  switch(MI->getOpcode()) {
++  case X86::LEA64r:
++    genLEAInstructions(MI, IL);
++    if(IL.size() > 0) Val = new MachineGeneratedVal(IL, MI);
++    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
 +    DEBUG(dbgs() << "Unhandled opcode: "
@@ -4454,7 +4902,7 @@ Index: lib/Target/X86/X86ValueGenerator.h
 ===================================================================
 --- lib/Target/X86/X86ValueGenerator.h	(nonexistent)
 +++ lib/Target/X86/X86ValueGenerator.h	(working copy)
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,25 @@
 +//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4471,10 +4919,11 @@ Index: lib/Target/X86/X86ValueGenerator.h
 +class X86ValueGenerator final : public TargetValueGenerator {
 +public:
 +  X86ValueGenerator() {}
-+  virtual void
-+  getValueGenInstr(const MachineInstr *MI,
-+                   MachineGeneratedVal::ValueGenInstList &IL) const;
-+  MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
++  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
++
++private:
++  void genLEAInstructions(const MachineInstr *LEA,
++                          MachineGeneratedVal::ValueGenInstList &IL) const;
 +};
 +
 +}
@@ -4569,7 +5018,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
 +    {
 +      if(f->isDeclaration()) continue;
-+  
++
 +      DEBUG(errs() << "InsertStackMaps: entering function "
 +                   << f->getName() << "\n");
 +
@@ -4622,9 +5071,9 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +              if(calledFunc && calledFunc->hasName())
 +              {
 +                StringRef name = CI->getCalledFunction()->getName();
-+                errs() << name << " " << this->callSiteID;
++                errs() << name << " ";
 +              }
-+              else errs() << this->callSiteID;
++              errs() << "ID: " << this->callSiteID;
 +  
 +              errs() << ", " << sortedLive.size() << " live value(s)\n   ";
 +              for(const Value *val : sortedLive) {
@@ -4675,7 +5124,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    bool operator() (const Value *lhs, const Value *rhs) const
 +    {
 +      if(lhs->hasName()) return lhs->getName().compare(rhs->getName()) < 0;
-+      else return 1;
++      else return lhs < rhs;
 +    }
 +  };
 +
@@ -4862,7 +5311,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 ===================================================================
 --- lib/Transforms/Utils/NameStringLiterals.cpp	(nonexistent)
 +++ lib/Transforms/Utils/NameStringLiterals.cpp	(working copy)
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,119 @@
 +#include <algorithm>
 +#include <cctype>
 +#include "llvm/Pass.h"
@@ -4969,6 +5418,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +  
 +    return modified;
 +  }
++  virtual const char *getPassName() const { return "Name string literals"; }
 +};
 +
 +} /* end anonymous namespace */
@@ -4985,7 +5435,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 ===================================================================
 --- lib/Transforms/Utils/StaticVarSections.cpp	(nonexistent)
 +++ lib/Transforms/Utils/StaticVarSections.cpp	(working copy)
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,92 @@
 +#include "llvm/Pass.h"
 +#include "llvm/IR/Module.h"
 +#include "llvm/IR/GlobalVariable.h"
@@ -5065,6 +5515,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +    
 +    return modified;
 +  }
++  virtual const char *getPassName() const { return "Static variables in separate sections"; }
 +};
 +
 +} /* end anonymous namespace */

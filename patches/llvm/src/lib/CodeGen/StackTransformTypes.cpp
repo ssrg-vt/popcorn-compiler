@@ -12,8 +12,13 @@
 using namespace llvm;
 
 const char *MachineGeneratedVal::ValueGenInst::InstTypeStr[] = {
-  #define X(type) #type
+  #define X(type, pseudo) #type
   VALUE_GEN_INST
   #undef X
 };
 
+const bool MachineGeneratedVal::ValueGenInst::PseudoInst[] = {
+  #define X(type, pseudo) pseudo
+  VALUE_GEN_INST
+  #undef X
+};
