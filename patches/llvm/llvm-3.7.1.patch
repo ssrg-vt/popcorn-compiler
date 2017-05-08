@@ -570,16 +570,19 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -142,6 +142,8 @@
+@@ -142,6 +142,11 @@
  
    CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
  
 +  CodeGenOpt::Level getIROptLevel() const { return TM->getIROptLevel(); }
 +
++  bool emitStackTransformMetadata() const
++  { return TM->emitStackTransformMetadata(); }
++
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -448,6 +450,10 @@
+@@ -448,6 +453,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -1424,7 +1427,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
 --- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
-@@ -32,6 +32,10 @@
+@@ -32,6 +32,14 @@
    ///
    CodeGenOpt::Level OptLevel;
  
@@ -1432,19 +1435,29 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +  ///
 +  CodeGenOpt::Level IROptLevel;
 +
++  /// EmitStackTransformMetadata - Flag for emitting stack transformation
++  /// metadata
++  bool EmitStackTransformMetadata;
++
  public:
    void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
                           CodeModel::Model CM = CodeModel::Default,
-@@ -43,8 +47,12 @@
+@@ -43,8 +51,18 @@
  
    CodeGenOpt::Level getOptLevel() const { return OptLevel; }
  
 +  CodeGenOpt::Level getIROptLevel() const { return IROptLevel; }
 +
++  bool emitStackTransformMetadata() const
++  { return EmitStackTransformMetadata; }
++
    // Allow overriding OptLevel on a per-function basis.
    void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
 +
 +  void setIROptLevel(CodeGenOpt::Level Level) { IROptLevel = Level; }
++
++  void setEmitStackTransformMetadata(bool Emit)
++  { EmitStackTransformMetadata = Emit; }
  };
  } // namespace llvm
  
@@ -1476,7 +1489,7 @@ Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
-@@ -171,6 +171,12 @@
+@@ -171,6 +171,18 @@
    /// \brief Overrides the optimization level.
    void setOptLevel(CodeGenOpt::Level Level) const;
  
@@ -1485,6 +1498,12 @@ Index: include/llvm/Target/TargetMachine.h
 +
 +  /// \brief Overrides the IR optimization level.
 +  void setIROptLevel(CodeGenOpt::Level Level) const;
++
++  /// Returns whether or not we should emit stack transformation metadata
++  bool emitStackTransformMetadata() const;
++
++  /// \brief Enable/disable emitting of stack transformation metadata
++  void setEmitStackTransformMetadata(bool Emit);
 +
    void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
  
@@ -2240,6 +2259,37 @@ Index: lib/CodeGen/CodeGen.cpp
    initializeTailDuplicatePassPass(Registry);
    initializeTargetPassConfigPass(Registry);
    initializeTwoAddressInstructionPassPass(Registry);
+Index: lib/CodeGen/LLVMTargetMachine.cpp
+===================================================================
+--- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
++++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
+@@ -42,6 +42,12 @@
+ EnableFastISelOption("fast-isel", cl::Hidden,
+   cl::desc("Enable the \"fast\" instruction selector"));
+ 
++// Enable generation of stack transformation metadata, which also requires
++// disabling late-stage optimizations.
++static cl::opt<bool> EmitStackTransformMetadata("emit-st-metadata",
++  cl::init(false), cl::NotHidden,
++  cl::desc("Enable generation of Popcorn stack transformation metadata"));
++
+ void LLVMTargetMachine::initAsmInfo() {
+   MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
+   MII = TheTarget.createMCInstrInfo();
+@@ -105,6 +111,13 @@
+   // Set PassConfig options provided by TargetMachine.
+   PassConfig->setDisableVerify(DisableVerify);
+ 
++  // Add stack transformation instrumentation passes, remove late-stage IR
++  // optimizations
++  if(EmitStackTransformMetadata) {
++    TM->setIROptLevel(CodeGenOpt::None);
++    TM->setEmitStackTransformMetadata(true);
++  }
++
+   PM.add(PassConfig);
+ 
+   PassConfig->addIRPasses();
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
 --- lib/CodeGen/MachineFunction.cpp	(revision 277823)
@@ -2443,7 +2493,19 @@ Index: lib/CodeGen/Passes.cpp
      addPass(createPartiallyInlineLibCallsPass());
  }
  
-@@ -754,6 +760,10 @@
+@@ -459,6 +465,11 @@
+ void TargetPassConfig::addISelPrepare() {
+   addPreISel();
+ 
++  // Add pass to instrument IR with stackmap instructions, which get lowered
++  // to metadata needed for Popcorn's stack transformation
++  if(emitStackTransformMetadata())
++    addPass(createInsertStackMapsPass());
++
+   // Add both the safe stack and the stack protection passes: each of them will
+   // only protect functions that have corresponding attributes.
+   addPass(createSafeStackPass());
+@@ -754,6 +765,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -4323,11 +4385,12 @@ Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
 --- lib/MC/MCCodeGenInfo.cpp	(revision 277823)
 +++ lib/MC/MCCodeGenInfo.cpp	(working copy)
-@@ -20,4 +20,5 @@
+@@ -20,4 +20,6 @@
    RelocationModel = RM;
    CMModel = CM;
    OptLevel = OL;
 +  IROptLevel = OptLevel;
++  EmitStackTransformMetadata = false;
  }
 Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
@@ -4636,7 +4699,7 @@ Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
-@@ -149,6 +149,17 @@
+@@ -149,6 +149,29 @@
      CodeGenInfo->setOptLevel(Level);
  }
  
@@ -4649,6 +4712,18 @@ Index: lib/Target/TargetMachine.cpp
 +void TargetMachine::setIROptLevel(CodeGenOpt::Level Level) const {
 +  if (CodeGenInfo)
 +    CodeGenInfo->setIROptLevel(Level);
++}
++
++
++bool TargetMachine::emitStackTransformMetadata() const {
++  if (!CodeGenInfo)
++    return false;
++  else return CodeGenInfo->emitStackTransformMetadata();
++}
++
++void TargetMachine::setEmitStackTransformMetadata(bool Emit) {
++  if (CodeGenInfo)
++    CodeGenInfo->setEmitStackTransformMetadata(Emit);
 +}
 +
  TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
@@ -4944,7 +5019,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,330 @@
+@@ -0,0 +1,333 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -4983,7 +5058,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  ~InsertStackMaps() {}
 +
 +  /* ModulePass virtual methods */
-+  virtual const char *getPassName() const { return "InsertStackMaps"; }
++  virtual const char *getPassName() const { return "Insert stackmaps"; }
 +
 +  virtual void getAnalysisUsage(AnalysisUsage &AU) const
 +  {
@@ -5163,17 +5238,20 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  bool removeOldStackmaps(Module &M)
 +  {
 +    bool modified = false;
-+    IntrinsicInst* CI;
++    CallInst* CI;
++    const Function *F;
 +
 +    DEBUG(dbgs() << "Searching for/removing old stackmaps\n";);
 +
 +    for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++) {
 +      for(Function::iterator bb = f->begin(), bbe = f->end(); bb != bbe; bb++) {
 +        for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
-+          if((CI = dyn_cast<IntrinsicInst>(&*i)) &&
-+             CI->hasName() && CI->getName() == SMName) {
++          if((CI = dyn_cast<CallInst>(&*i))) {
++            F = CI->getCalledFunction();
++            if(F->hasName() && F->getName() == SMName) {
 +              i = i->eraseFromParent()->getPrevNode();
 +              modified = true;
++            }
 +          }
 +        }
 +      }

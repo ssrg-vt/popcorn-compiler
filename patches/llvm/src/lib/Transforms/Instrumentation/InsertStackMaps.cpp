@@ -36,7 +36,7 @@ public:
   ~InsertStackMaps() {}
 
   /* ModulePass virtual methods */
-  virtual const char *getPassName() const { return "InsertStackMaps"; }
+  virtual const char *getPassName() const { return "Insert stackmaps"; }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const
   {
@@ -216,17 +216,20 @@ private:
   bool removeOldStackmaps(Module &M)
   {
     bool modified = false;
-    IntrinsicInst* CI;
+    CallInst* CI;
+    const Function *F;
 
     DEBUG(dbgs() << "Searching for/removing old stackmaps\n";);
 
     for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++) {
       for(Function::iterator bb = f->begin(), bbe = f->end(); bb != bbe; bb++) {
         for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
-          if((CI = dyn_cast<IntrinsicInst>(&*i)) &&
-             CI->hasName() && CI->getName() == SMName) {
+          if((CI = dyn_cast<CallInst>(&*i))) {
+            F = CI->getCalledFunction();
+            if(F->hasName() && F->getName() == SMName) {
               i = i->eraseFromParent()->getPrevNode();
               modified = true;
+            }
           }
         }
       }
