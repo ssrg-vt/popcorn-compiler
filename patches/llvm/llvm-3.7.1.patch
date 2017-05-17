@@ -570,11 +570,12 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -142,6 +142,11 @@
+@@ -142,6 +142,12 @@
  
    CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
  
-+  CodeGenOpt::Level getIROptLevel() const { return TM->getIROptLevel(); }
++  CodeGenOpt::Level getArchIROptLevel() const
++  { return TM->getArchIROptLevel(); }
 +
 +  bool emitStackTransformMetadata() const
 +  { return TM->emitStackTransformMetadata(); }
@@ -582,7 +583,7 @@ Index: include/llvm/CodeGen/Passes.h
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -448,6 +453,10 @@
+@@ -448,6 +454,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -634,7 +635,26 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    struct LiveOutReg {
-@@ -185,7 +195,7 @@
+@@ -158,6 +168,18 @@
+         : Reg(Reg), DwarfRegNum(DwarfRegNum), Size(Size) {}
+   };
+ 
++  struct Operation {
++    MachineGeneratedVal::ValueGenInst::InstType InstType;
++    Location::LocationType OperandType;
++    unsigned Size;
++    unsigned DwarfReg;
++    int64_t Constant;
++    bool isSymbol;
++    const MCSymbol *Symbol;
++
++    Operation() : Size(0), DwarfReg(0), Constant(0), isSymbol(false) {}
++  };
++
+   // OpTypes are used to encode information about the following logical
+   // operand (which may consist of several MachineOperands) for the
+   // OpParser.
+@@ -185,7 +207,7 @@
    /// If there is any stack map data, create a stack map section and serialize
    /// the map info into it. This clears the stack map data structures
    /// afterwards.
@@ -643,12 +663,12 @@ Index: include/llvm/CodeGen/StackMaps.h
  
  private:
    static const char *WSMP;
-@@ -193,17 +203,23 @@
+@@ -193,17 +215,23 @@
    typedef SmallVector<LiveOutReg, 8> LiveOutVec;
    typedef MapVector<uint64_t, uint64_t> ConstantPool;
    typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
-+  typedef std::pair<Location, MachineLiveVal *> ArchConst;
-+  typedef SmallVector<ArchConst, 8> ArchConstants;
++  typedef std::pair<Location, Operation> ArchValue;
++  typedef SmallVector<ArchValue, 8> ArchValues;
  
    struct CallsiteInfo {
 +    const MCSymbol *Func;
@@ -661,18 +681,18 @@ Index: include/llvm/CodeGen/StackMaps.h
 -                 LocationVec &&Locations, LiveOutVec &&LiveOuts)
 -        : CSOffsetExpr(CSOffsetExpr), ID(ID), Locations(std::move(Locations)),
 -          LiveOuts(std::move(LiveOuts)) {}
-+    ArchConstants Consts;
++    ArchValues Vals;
 +    CallsiteInfo() : Func(nullptr), CSOffsetExpr(nullptr), ID(0) {}
 +    CallsiteInfo(const MCSymbol *Func, const MCExpr *CSOffsetExpr,
 +                 uint64_t ID, LocationVec &&Locations,
-+                 LiveOutVec &&LiveOuts, ArchConstants &&Consts)
++                 LiveOutVec &&LiveOuts, ArchValues &&Vals)
 +        : Func(Func), CSOffsetExpr(CSOffsetExpr), ID(ID),
 +          Locations(std::move(Locations)), LiveOuts(std::move(LiveOuts)),
-+          Consts(std::move(Consts)) {}
++          Vals(std::move(Vals)) {}
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +229,22 @@
+@@ -213,10 +241,22 @@
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
  
@@ -696,17 +716,23 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
-@@ -226,6 +254,9 @@
+@@ -226,6 +266,15 @@
    /// registers that need to be recorded in the stackmap.
    LiveOutVec parseRegisterLiveOutMask(const uint32_t *Mask) const;
  
-+  /// Add architecture-specific locations for the stackmap
-+  void addArchSpecificConstants(const CallInst *SM, ArchConstants &Consts);
++  /// Convert a list of instructions used to generate an architecture-specific
++  /// live value into multiple individual records.
++  void genArchValsFromInsts(ArchValues &AV,
++                            const Location &Loc,
++                            const MachineLiveVal &MLV);
++
++  /// Add architecture-specific locations for the stackmap.
++  void addArchLiveVals(const CallInst *SM, ArchValues &AV);
 +
    /// This should be called by the MC lowering code _immediately_ before
    /// lowering the MI to an MCInst. It records where the operands for the
    /// instruction are stored, and outputs a label to record the offset of
-@@ -240,7 +271,7 @@
+@@ -240,7 +289,7 @@
    void emitStackmapHeader(MCStreamer &OS);
  
    /// \brief Emit the function frame record for each function.
@@ -719,7 +745,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.def	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.def	(working copy)
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,37 @@
 +//===-- llvm/Target/StackTransformTypes.def - Generator Opcodes -*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -748,10 +774,12 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 +  X(Subtract, false), /* Subtract a value from the generated value */ \
 +  X(Multiply, false), /* Multiply the generated value by another value */ \
 +  X(Divide, false), /* Divide the generated value by another value */ \
-+  X(LeftShiftLogical, false), /* Left-shift (logical) the generated value */ \
-+  X(LeftShiftArith, false), /* Left-shift (arithmetic) the generated value */ \
-+  X(RightShift, false), /* Right-shift the generated value */ \
-+  X(StackSlot, true) /* Generate stack slot reference */
++  X(LeftShift, false), /* Left-shift the generated value */ \
++  X(RightShiftLog, false), /* Right-shift (logical) the generated value */ \
++  X(RightShiftArith, false), /* Right-shift (arithmetic) the generated value */ \
++  X(Mask, false), /* Apply bit mask */ \
++  X(StackSlot, true), /* Generate stack slot reference */ \
++  X(ConstantPool, true) /* Generate a constant pool entry reference */
 +
 +#endif
 +
@@ -759,7 +787,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,460 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -935,14 +963,14 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  // Base class for register operand instructions
 +  class RegInstructionBase : public ValueGenInst {
 +  public:
-+    // The *physical* register used in the instruction
++    // The register used in the instruction
 +    // Note: will be converted to DWARF during metadata emission
-+    uint16_t Reg;
++    unsigned Reg;
 +
-+    RegInstructionBase(uint16_t Reg) : Reg(Reg) {}
++    RegInstructionBase(unsigned Reg) : Reg(Reg) {}
 +    virtual OpType opType() const { return Register; }
-+    uint16_t getReg() const { return Reg; }
-+    void setReg(uint16_t Reg) { this->Reg = Reg; }
++    unsigned getReg() const { return Reg; }
++    void setReg(unsigned Reg) { this->Reg = Reg; }
 +  };
 +
 +  // Register-based instructions
@@ -952,7 +980,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +                  Type == Multiply || Type == Divide,
 +                  INV_INST_TYPE " for register instruction");
 +  public:
-+    RegInstruction(uint16_t Reg) : RegInstructionBase(Reg) {}
++    RegInstruction(unsigned Reg) : RegInstructionBase(Reg) {}
 +    virtual InstType type() const { return Type; }
 +    virtual std::string str() const {
 +      std::string buf = std::string(InstTypeStr[Type]) + " register " +
@@ -1028,7 +1056,8 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  // Pseudo-instructions which must be converted to normal instructions later
 +  template<ValueGenInst::InstType Type>
 +  class PseudoInstruction : public PseudoInstructionBase {
-+    static_assert(Type == StackSlot, INV_INST_TYPE " for pseudo-instruction");
++    static_assert(Type == StackSlot || Type == ConstantPool,
++                  INV_INST_TYPE " for pseudo-instruction");
 +  public:
 +    PseudoInstruction(uint64_t Data, InstType GenType)
 +      : PseudoInstructionBase(Data, GenType) {}
@@ -1069,6 +1098,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  }
 +
 +  ValueGenInstList &getInstructions() { return VG; }
++  const ValueGenInstList &getInstructions() const { return VG; }
 +
 +  virtual std::string toString() const {
 +    std::string buf = MachineLiveVal::toString() + ", " +
@@ -1427,13 +1457,14 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
 --- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
-@@ -32,6 +32,14 @@
+@@ -32,6 +32,15 @@
    ///
    CodeGenOpt::Level OptLevel;
  
-+  /// IROptLevel - Optimization level (IR optimizations only).
++  /// ArchIROptLevel - Optimization level (architecture-specific IR
++  /// optimizations only).
 +  ///
-+  CodeGenOpt::Level IROptLevel;
++  CodeGenOpt::Level ArchIROptLevel;
 +
 +  /// EmitStackTransformMetadata - Flag for emitting stack transformation
 +  /// metadata
@@ -1442,11 +1473,11 @@ Index: include/llvm/MC/MCCodeGenInfo.h
  public:
    void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
                           CodeModel::Model CM = CodeModel::Default,
-@@ -43,8 +51,18 @@
+@@ -43,8 +52,18 @@
  
    CodeGenOpt::Level getOptLevel() const { return OptLevel; }
  
-+  CodeGenOpt::Level getIROptLevel() const { return IROptLevel; }
++  CodeGenOpt::Level getArchIROptLevel() const { return ArchIROptLevel; }
 +
 +  bool emitStackTransformMetadata() const
 +  { return EmitStackTransformMetadata; }
@@ -1454,7 +1485,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
    // Allow overriding OptLevel on a per-function basis.
    void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
 +
-+  void setIROptLevel(CodeGenOpt::Level Level) { IROptLevel = Level; }
++  void setArchIROptLevel(CodeGenOpt::Level Level) { ArchIROptLevel = Level; }
 +
 +  void setEmitStackTransformMetadata(bool Emit)
 +  { EmitStackTransformMetadata = Emit; }
@@ -1489,15 +1520,16 @@ Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
-@@ -171,6 +171,18 @@
+@@ -171,6 +171,19 @@
    /// \brief Overrides the optimization level.
    void setOptLevel(CodeGenOpt::Level Level) const;
  
-+  /// Returns the IR optimization level: None, Less, Default or Aggressive.
-+  CodeGenOpt::Level getIROptLevel() const;
++  /// Returns the architecture-specific IR optimization level: None, Less,
++  /// Default or Aggressive.
++  CodeGenOpt::Level getArchIROptLevel() const;
 +
-+  /// \brief Overrides the IR optimization level.
-+  void setIROptLevel(CodeGenOpt::Level Level) const;
++  /// \brief Overrides the architecture-specific IR optimization level.
++  void setArchIROptLevel(CodeGenOpt::Level Level) const;
 +
 +  /// Returns whether or not we should emit stack transformation metadata
 +  bool emitStackTransformMetadata() const;
@@ -1516,7 +1548,7 @@ Index: include/llvm/Target/TargetSubtargetInfo.h
  class TargetRegisterInfo;
  class TargetSchedModel;
  class TargetSelectionDAGInfo;
-+class TargetValueGenerator;
++class TargetValues;
  struct MachineSchedPolicy;
  template <typename T> class SmallVectorImpl;
  
@@ -1524,22 +1556,22 @@ Index: include/llvm/Target/TargetSubtargetInfo.h
      return nullptr;
    }
  
-+  /// getValueGenerator - Returns the value generator object for the target or
-+  /// specific subtarget
++  /// getValues - Returns the value generator object for the target or specific
++  /// subtarget
 +  ///
-+  virtual const TargetValueGenerator *getValueGenerator() const {
++  virtual const TargetValues *getValues() const {
 +    return nullptr;
 +  };
 +
    /// Resolve a SchedClass at runtime, where SchedClass identifies an
    /// MCSchedClassDesc with the isVariant property. This may return the ID of
    /// another variant SchedClass, but repeated invocation must quickly terminate
-Index: include/llvm/Target/TargetValueGenerator.h
+Index: include/llvm/Target/TargetValues.h
 ===================================================================
---- include/llvm/Target/TargetValueGenerator.h	(nonexistent)
-+++ include/llvm/Target/TargetValueGenerator.h	(working copy)
-@@ -0,0 +1,45 @@
-+//===-- llvm/Target/TargetValueGenerator.h - Value Generator ----*- C++ -*-===//
+--- include/llvm/Target/TargetValues.h	(nonexistent)
++++ include/llvm/Target/TargetValues.h	(working copy)
+@@ -0,0 +1,44 @@
++//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
 +//
@@ -1548,36 +1580,35 @@ Index: include/llvm/Target/TargetValueGenerator.h
 +//
 +//===----------------------------------------------------------------------===//
 +//
-+// This file provides an API for generating a series of simple metadata
-+// instructions for reconstituting a value.  This is used by the stack
-+// transformation runtime to set up architecture-specific live values.
-+//
-+// Below we refer to the value being generated as the "generated value".
++// This file provides an API for detecting properties of architecture-specific
++// values & for generating a series of simple metadata instructions for
++// reconstituting a value.  This is used by the stack transformation runtime to
++// set up architecture-specific live values.
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#ifndef LLVM_TARGET_TARGETVALGEN_H
-+#define LLVM_TARGET_TARGETVALGEN_H
++#ifndef LLVM_TARGET_TARGETVAL_H
++#define LLVM_TARGET_TARGETVAL_H
 +
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +
 +namespace llvm {
 +
 +//===----------------------------------------------------------------------===//
-+// Superclass for ISA-specific value generators
++// Superclass for ISA-specific values
 +//
 +
-+class TargetValueGenerator {
++class TargetValues {
 +public:
-+  TargetValueGenerator(const TargetValueGenerator &) = delete;
-+  void operator=(const TargetValueGenerator &) = delete;
-+  virtual ~TargetValueGenerator() {};
++  TargetValues(const TargetValues &) = delete;
++  void operator=(const TargetValues &) = delete;
++  virtual ~TargetValues() {};
 +
 +  /// Return a machine-specific value generated by a machine instruction.
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const = 0;
 +
 +protected:
-+  TargetValueGenerator() {}
++  TargetValues() {}
 +};
 +
 +} // End llvm namespace
@@ -2283,7 +2314,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  // Add stack transformation instrumentation passes, remove late-stage IR
 +  // optimizations
 +  if(EmitStackTransformMetadata) {
-+    TM->setIROptLevel(CodeGenOpt::None);
++    TM->setArchIROptLevel(CodeGenOpt::None);
 +    TM->setEmitStackTransformMetadata(true);
 +  }
 +
@@ -2310,7 +2341,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  MachineInstr::mmo_iterator
  MachineFunction::allocateMemRefsArray(unsigned long Num) {
    return Allocator.Allocate<MachineMemOperand *>(Num);
-@@ -482,6 +491,150 @@
+@@ -482,6 +491,166 @@
                                 Twine(getFunctionNumber()) + "$pb");
  }
  
@@ -2357,6 +2388,8 @@ Index: lib/CodeGen/MachineFunction.cpp
 +  addSMOpLocation(SM, SM->getArgOperand(Op), MLL);
 +}
 +
++
++/// Add an architecture-specific live value & location for a stackmap
 +void MachineFunction::addSMArchSpecificLocation(const CallInst *SM,
 +                                                const MachineLiveLoc &MLL,
 +                                                const MachineLiveVal &MC) {
@@ -2407,6 +2440,20 @@ Index: lib/CodeGen/MachineFunction.cpp
 +          Change = Changes.find(SS);
 +          if(Change != Changes.end())
 +            LSS.setStackSlot(Change->second);
++        }
++
++        if(MLL.second->isGenerated()) {
++          MachineGeneratedVal &MG = (MachineGeneratedVal &)*MLL.second;
++          for(auto &Inst : MG.getInstructions()) {
++            if(Inst->type() == MachineGeneratedVal::ValueGenInst::StackSlot) {
++              MachineGeneratedVal::PseudoInstructionBase &PS =
++                (MachineGeneratedVal::PseudoInstructionBase &)*Inst;
++              int SS = (int)PS.getData();
++              Change = Changes.find(SS);
++              if(Change != Changes.end())
++                PS.setData((uint64_t)Change->second);
++            }
++          }
 +        }
 +      }
 +    }
@@ -2465,35 +2512,7 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -391,7 +391,9 @@
-     addPass(createVerifierPass());
- 
-   // Run loop strength reduction before anything else.
--  if (getOptLevel() != CodeGenOpt::None && !DisableLSR) {
-+  if (getOptLevel() != CodeGenOpt::None &&
-+      getIROptLevel() != CodeGenOpt::None &&
-+      !DisableLSR) {
-     addPass(createLoopStrengthReducePass());
-     if (PrintLSR)
-       addPass(createPrintFunctionPass(dbgs(), "\n\n*** Code after LSR ***\n"));
-@@ -406,10 +408,14 @@
-   addPass(createUnreachableBlockEliminationPass());
- 
-   // Prepare expensive constants for SelectionDAG.
--  if (getOptLevel() != CodeGenOpt::None && !DisableConstantHoisting)
-+  if (getOptLevel() != CodeGenOpt::None &&
-+      getIROptLevel() != CodeGenOpt::None &&
-+      !DisableConstantHoisting)
-     addPass(createConstantHoistingPass());
- 
--  if (getOptLevel() != CodeGenOpt::None && !DisablePartialLibcallInlining)
-+  if (getOptLevel() != CodeGenOpt::None &&
-+      getIROptLevel() != CodeGenOpt::None &&
-+      !DisablePartialLibcallInlining)
-     addPass(createPartiallyInlineLibCallsPass());
- }
- 
-@@ -459,6 +465,11 @@
+@@ -459,6 +459,11 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -2505,7 +2524,7 @@ Index: lib/CodeGen/Passes.cpp
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +765,10 @@
+@@ -754,6 +759,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -2583,21 +2602,41 @@ Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
    SDValue PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo);
    SDValue PromoteIntOp_TRUNCATE(SDNode *N);
    SDValue PromoteIntOp_UINT_TO_FP(SDNode *N);
+Index: lib/CodeGen/StackColoring.cpp
+===================================================================
+--- lib/CodeGen/StackColoring.cpp	(revision 277823)
++++ lib/CodeGen/StackColoring.cpp	(working copy)
+@@ -713,7 +713,7 @@
+ 
+   // This is a simple greedy algorithm for merging allocas. First, sort the
+   // slots, placing the largest slots first. Next, perform an n^2 scan and look
+-  // for disjoint slots. When you find disjoint slots, merge the samller one
++  // for disjoint slots. When you find disjoint slots, merge the smaller one
+   // into the bigger one and update the live interval. Remove the small alloca
+   // and continue.
+ 
 Index: lib/CodeGen/StackMaps.cpp
 ===================================================================
 --- lib/CodeGen/StackMaps.cpp	(revision 277823)
 +++ lib/CodeGen/StackMaps.cpp	(working copy)
-@@ -12,7 +12,9 @@
+@@ -12,12 +12,16 @@
  #include "llvm/CodeGen/MachineFrameInfo.h"
  #include "llvm/CodeGen/MachineFunction.h"
  #include "llvm/CodeGen/MachineInstr.h"
 +#include "llvm/CodeGen/UnwindInfo.h"
  #include "llvm/IR/DataLayout.h"
++#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
  #include "llvm/MC/MCContext.h"
  #include "llvm/MC/MCExpr.h"
  #include "llvm/MC/MCObjectFileInfo.h"
-@@ -29,6 +31,12 @@
+ #include "llvm/MC/MCSectionMachO.h"
+ #include "llvm/MC/MCStreamer.h"
++#include "llvm/MC/MCSymbol.h"
+ #include "llvm/Support/CommandLine.h"
+ #include "llvm/Target/TargetMachine.h"
+ #include "llvm/Target/TargetOpcodes.h"
+@@ -29,6 +33,14 @@
  
  #define DEBUG_TYPE "stackmaps"
  
@@ -2605,12 +2644,14 @@ Index: lib/CodeGen/StackMaps.cpp
 +  ((uint8_t)type) << 4 | ((uint8_t)ptr) << 2 | \
 +  ((uint8_t)alloca) << 1 | ((uint8_t)dup)
 +
-+#define ARCH_TYPE_AND_FLAGS(type, ptr) ((unsigned)type) << 4 | ((unsigned)ptr);
++#define ARCH_TYPE_AND_FLAGS(type, ptr) ((uint8_t)type) << 4 | ((uint8_t)ptr)
++
++#define ARCH_OP_TYPE(inst, op) ((uint8_t)inst << 4) | ((uint8_t)op)
 +
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +92,115 @@
+@@ -84,32 +96,110 @@
    return (unsigned)RegNum;
  }
  
@@ -2640,6 +2681,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +                               unsigned &Dwarf,
 +                               unsigned &Offset) const {
 +  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
++  assert(!TRI->isVirtualRegister(Phys) &&
++         "Virtual registers should have been rewritten by now");
 +  Offset = 0;
 +  Dwarf = getDwarfRegNum(Phys, TRI);
 +  unsigned LLVMRegNum = TRI->getLLVMRegNum(Dwarf, false);
@@ -2663,9 +2706,6 @@ Index: lib/CodeGen/StackMaps.cpp
 +        unsigned Offset, DwarfRegNum;
 +        getRegLocation(MR.getReg(), DwarfRegNum, Offset);
 +
-+        DEBUG(Oper->printAsOperand(dbgs());
-+              dbgs() << ": duplicate in " << MR.toString() << "\n";);
-+
 +        Locs.emplace_back(Location::Register, Size, DwarfRegNum, Offset,
 +                          Ptr, Alloca, true, AllocaSize);
 +      }
@@ -2675,9 +2715,6 @@ Index: lib/CodeGen/StackMaps.cpp
 +        assert(!MFI->isDeadObjectIndex(MSS.getStackSlot()) &&
 +               "Attempting to add a dead stack slot");
 +        int64_t Offset = MFI->getObjectOffset(MSS.getStackSlot()) + FBPOff;
-+
-+        DEBUG(Oper->printAsOperand(dbgs());
-+              dbgs() << ": duplicate in " << MSS.toString() << "\n";);
 +
 +        Locs.emplace_back(Location::Indirect, Size,
 +          getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI),
@@ -2711,10 +2748,10 @@ Index: lib/CodeGen/StackMaps.cpp
        Size /= 8;
        unsigned Reg = (++MOI)->getReg();
        int64_t Imm = (++MOI)->getImm();
-       Locs.emplace_back(StackMaps::Location::Direct, Size,
+-      Locs.emplace_back(StackMaps::Location::Direct, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
-+                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca, false,
-+                        AllocaSize);
++      Locs.emplace_back(Location::Direct, Size, getDwarfRegNum(Reg, TRI), Imm,
++                        isPtr, isAlloca, false, AllocaSize);
        break;
      }
      case StackMaps::IndirectMemRefOp: {
@@ -2725,13 +2762,13 @@ Index: lib/CodeGen/StackMaps.cpp
        int64_t Imm = (++MOI)->getImm();
 -      Locs.emplace_back(StackMaps::Location::Indirect, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
-+      Locs.emplace_back(StackMaps::Location::Indirect, (unsigned)Size,
++      Locs.emplace_back(Location::Indirect, (unsigned)Size,
 +                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca, false,
 +                        AllocaSize);
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +207,24 @@
+@@ -116,17 +206,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -2759,7 +2796,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +232,16 @@
+@@ -134,17 +231,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -2784,15 +2821,15 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +258,7 @@
+@@ -161,6 +257,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
-+    const ArchConstants &Consts = CSI.Consts;
++    const ArchValues &Values = CSI.Vals;
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +292,7 @@
+@@ -194,7 +291,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -2801,7 +2838,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +301,15 @@
+@@ -203,8 +300,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -2819,19 +2856,19 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +326,43 @@
+@@ -221,6 +325,77 @@
           << LO.Size << "]\n";
        Idx++;
      }
 +
-+    OS << WSMP << "\thas " << Consts.size() << " arch-specific live values\n";
++    OS << WSMP << "\thas " << Values.size() << " arch-specific live values\n";
 +
 +    Idx = 0;
-+    for (const auto &C : Consts) {
-+      const Location &Loc = C.first;
-+      const MachineLiveVal *Val = C.second;
++    for (const auto &V : Values) {
++      const Location &Loc = V.first;
++      const Operation &Op = V.second;
 +
-+      OS << WSMP << "\t\tC " << Idx << ": ";
++      OS << WSMP << "\t\tArch-Val " << Idx << ": ";
 +      switch(Loc.Type) {
 +      case Location::Register:
 +        OS << "Register ";
@@ -2850,26 +2887,135 @@ Index: lib/CodeGen/StackMaps.cpp
 +          OS << " + " << Loc.Offset;
 +        break;
 +      default:
-+        OS << "<Unknown constant type>";
++        OS << "<Unknown live value type>";
 +        break;
 +      }
-+      OS << ", " << Val->toString() << ", pointer? " << Loc.Ptr;
++
++      OS << ", " << MachineGeneratedVal::ValueGenInst::InstTypeStr[Op.InstType]
++         << " ";
++      switch(Op.OperandType) {
++      case Location::Register:
++        OS << "register ";
++        if (TRI)
++          OS << TRI->getName(Op.DwarfReg);
++        else
++          OS << Op.DwarfReg;
++        break;
++      case Location::Direct:
++        OS << "register ";
++        if (TRI)
++          OS << TRI->getName(Op.DwarfReg);
++        else
++          OS << Op.DwarfReg;
++        if (Op.Constant)
++          OS << " + " << Op.Constant;
++        break;
++      case Location::Constant:
++        if(Op.isSymbol)
++          OS << "address of " << Op.Symbol->getName();
++        else {
++          OS << "immediate ";
++          OS.write_hex(Op.Constant);
++        }
++        break;
++      default:
++        OS << "<Unknown operand type>";
++        break;
++      }
 +
 +      unsigned TypeAndFlags = ARCH_TYPE_AND_FLAGS(Loc.Type, Loc.Ptr);
++      unsigned OpType = ARCH_OP_TYPE(Op.InstType, Op.OperandType);
 +      OS << "\t[encoding: .byte " << TypeAndFlags << ", .byte " << Loc.Size
 +         << ", .short " << Loc.Reg << ", .int " << Loc.Offset
-+         << ", .ulong <value>]\n";
++         << ", .byte " << OpType << ", .byte " << Op.Size << ", .short "
++         << Op.DwarfReg << ", .int64 " << (Op.isSymbol ? 0 : Op.Constant)
++         << "]\n";
 +    }
    }
  }
  
-@@ -277,6 +419,53 @@
+@@ -277,6 +452,150 @@
    return LiveOuts;
  }
  
++/// Convert a list of instructions used to generate an architecture-specific
++/// live value into multiple individual records.
++void StackMaps::genArchValsFromInsts(ArchValues &AV,
++                                     const Location &Loc,
++                                     const MachineLiveVal &MLV) {
++  assert(MLV.isGenerated() && "Invalid live value type");
++
++  typedef MachineGeneratedVal::ValueGenInst::InstType InstType;
++  typedef MachineGeneratedVal::ValueGenInst::OpType OpType;
++  typedef MachineGeneratedVal::RegInstructionBase RegInstruction;
++  typedef MachineGeneratedVal::ImmInstructionBase ImmInstruction;
++  typedef MachineGeneratedVal::PseudoInstructionBase PseudoInstruction;
++
++  const MachineGeneratedVal &MGV = (const MachineGeneratedVal &)MLV;
++  const MachineGeneratedVal::ValueGenInstList &I = MGV.getInstructions();
++  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
++  const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
++  const unsigned FBP = getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI);
++  const unsigned FBPOff = AP.getFBPOffset();
++  Operation Op;
++
++  for(auto &Inst : I) {
++    const RegInstruction *RI;
++    const ImmInstruction *II;
++    const PseudoInstruction *PI;
++
++    switch(Inst->type()) {
++    case MachineGeneratedVal::ValueGenInst::StackSlot:
++      PI = (const PseudoInstruction *)Inst.get();
++      assert((PI->getGenType() == InstType::Add ||
++              PI->getGenType() == InstType::Set) &&
++             "Invalid frame object reference");
++
++      Op.InstType = PI->getGenType();
++      Op.OperandType = Location::Direct;
++      Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
++      Op.DwarfReg = FBP;
++      Op.Constant = MFI->getObjectOffset(PI->getData()) + FBPOff;
++      AV.emplace_back(ArchValue(Loc, Op));
++      break;
++    case MachineGeneratedVal::ValueGenInst::ConstantPool:
++      PI = (const PseudoInstruction *)Inst.get();
++      assert(PI->getGenType() == InstType::Set &&
++             "Invalid constant pool entry reference");
++
++      Op.InstType = PI->getGenType();
++      Op.OperandType = Location::Constant;
++      Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
++      Op.DwarfReg = 0;
++      Op.isSymbol = true;
++      Op.Symbol = AP.GetCPISymbol(PI->getData());
++    default:
++      Op.InstType = Inst->type();
++      switch(Inst->opType()) {
++      case OpType::Register:
++        RI = (const RegInstruction *)Inst.get();
++        Op.OperandType = Location::Register;
++        Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
++        Op.DwarfReg = getDwarfRegNum(RI->getReg(), TRI);
++        Op.Constant = 0;
++        break;
++      case OpType::Immediate:
++        II = (const ImmInstruction *)Inst.get();
++        Op.OperandType = Location::Constant;
++        Op.Size = II->getImmSize();
++        Op.DwarfReg = 0;
++        Op.Constant = II->getImm();
++        break;
++      default: llvm_unreachable("Invalid operand type"); break;
++      }
++      AV.emplace_back(ArchValue(Loc, Op));
++      break;
++    }
++  }
++}
++
 +/// Add architecture-specific locations for the stackmap
-+void StackMaps::addArchSpecificConstants(const CallInst *SM,
-+                                         ArchConstants &Consts) {
++void StackMaps::addArchLiveVals(const CallInst *SM, ArchValues &AV) {
 +  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
 +  const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
 +
@@ -2878,7 +3024,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +    const unsigned FBPOff = AP.getFBPOffset();
 +
 +    for(auto &Val : Vals) {
-+      Location Loc;
++      Location Loc; Loc.Ptr = false;
++      Operation Op;
 +
 +      // Parse the location
 +      if(Val.first->isReg()) {
@@ -2894,22 +3041,43 @@ Index: lib/CodeGen/StackMaps.cpp
 +        Loc.Offset = Offset;
 +      }
 +      else if(Val.first->isStackSlot()) {
-+        // TODO for now, we're going to assume that it's a single uint64_t
-+        // in the stack slot.
 +        const MachineLiveStackSlot &MSS =
 +          (const MachineLiveStackSlot &)*Val.first;
 +        int StackSlot = MSS.getStackSlot();
 +
 +        Loc.Type = Location::Direct;
-+        Loc.Size = 8;
++        Loc.Size = MFI->getObjectSize(StackSlot);
 +        Loc.Reg = getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI);
 +        Loc.Offset = MFI->getObjectOffset(StackSlot) + FBPOff;
 +      }
++      else llvm_unreachable("Invalid architecture-specific live value");
 +
-+      // If we're referencing a symbol, then we're a pointer
-+      if(Val.second->isReference()) Loc.Ptr = true;
-+
-+      Consts.emplace_back(ArchConst(std::move(Loc), Val.second->copy()));
++      // Parse the operation
++      if(Val.second->isImm()) {
++        const MachineImmediate &MI = (const MachineImmediate &)*Val.second;
++        Op.InstType = MachineGeneratedVal::ValueGenInst::Set;
++        Op.OperandType = Location::Constant;
++        Op.Size = MI.getSize();
++        Op.DwarfReg = 0;
++        Op.Constant = MI.getValue();
++        AV.emplace_back(ArchValue(Loc, Op));
++      }
++      else if(Val.second->isReference()) {
++        const MachineReference &MR = (const MachineReference &)*Val.second;
++        Loc.Ptr = true;
++        Op.InstType = MachineGeneratedVal::ValueGenInst::Set;
++        Op.OperandType = Location::Constant;
++        Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
++        Op.DwarfReg = 0;
++        Op.isSymbol = true;
++        Op.Symbol = AP.OutContext.lookupSymbol(MR.getSymbol());
++        AV.emplace_back(ArchValue(Loc, Op));
++      }
++      // TODO generated vals may point to allocas, should we also mark them as
++      // pointers in order to do runtime checking?
++      else if(Val.second->isGenerated())
++        genArchValsFromInsts(AV, Loc, *Val.second);
++      else llvm_unreachable("Invalid architecture-specific live value");
 +    }
 +  }
 +}
@@ -2917,7 +3085,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +474,46 @@
+@@ -285,21 +604,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -2925,7 +3093,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    LocationVec Locations;
    LiveOutVec LiveOuts;
-+  ArchConstants Constants;
++  ArchValues Constants;
  
    if (recordResult) {
      assert(PatchPointOpers(&MI).hasDef() && "Stackmap has no return value.");
@@ -2961,12 +3129,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +  assert(Op == (IRSM->op_end() - 1) && "did not lower all stackmap operands");
  
 +  // Add architecture-specific live values
-+  addArchSpecificConstants(IRSM, Constants);
++  addArchLiveVals(IRSM, Constants);
 +
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +541,9 @@
+@@ -327,8 +671,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -2978,7 +3146,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +626,11 @@
+@@ -411,8 +756,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -2991,7 +3159,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +638,15 @@
+@@ -420,6 +768,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3007,7 +3175,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +666,20 @@
+@@ -439,14 +796,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3032,13 +3200,13 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +688,19 @@
+@@ -455,6 +818,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
 +///   uint16 : Padding
-+///   uint16 : NumArchConstants
-+///   ArchConstants[NumArchConstants] {
++///   uint16 : NumArchValues
++///   ArchValues[NumArchValues] {
 +///     Location {
 +///       uint8 (4 bits) : Register | Direct
 +///       uint8 (3 bits) : Padding
@@ -3047,16 +3215,22 @@ Index: lib/CodeGen/StackMaps.cpp
 +///       uint16         : Dwarf RegNum
 +///       int32          : Offset
 +///     }
-+///     uint64_t : Value
++///     Value {
++///       uint8_t (4 bits) : Instruction
++///       uint8_t (4 bits) : Operand type
++///       uint8_t          : Size
++///       uint16_t         : Dwarf RegNum
++///       int64_t          : Offset or Constant
++///     }
 +///   }
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +716,29 @@
+@@ -470,23 +852,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
-+    const ArchConstants &Consts = CSI.Consts;
++    const ArchValues &Values = CSI.Vals;
  
      // Verify stack map entry. It's better to communicate a problem to the
      // runtime than crash in case of in-process compilation. Currently, we do
@@ -3064,16 +3238,16 @@ Index: lib/CodeGen/StackMaps.cpp
      // compilation errors this way.
 -    if (CSLocs.size() > UINT16_MAX || LiveOuts.size() > UINT16_MAX) {
 +    if (CSLocs.size() > UINT16_MAX || LiveOuts.size() > UINT16_MAX ||
-+        Consts.size() > UINT16_MAX) {
++        Values.size() > UINT16_MAX) {
        OS.EmitIntValue(UINT64_MAX, 8); // Invalid ID.
-+      OS.EmitIntValue(UINT32_MAX, 4);
++      OS.EmitIntValue(UINT32_MAX, 4); // Invalid index.
        OS.EmitValue(CSI.CSOffsetExpr, 4);
        OS.EmitIntValue(0, 2); // Reserved.
        OS.EmitIntValue(0, 2); // 0 locations.
        OS.EmitIntValue(0, 2); // padding.
        OS.EmitIntValue(0, 2); // 0 live-out registers.
 +      OS.EmitIntValue(0, 2); // padding.
-+      OS.EmitIntValue(0, 2); // 0 arch-specific constants.
++      OS.EmitIntValue(0, 2); // 0 arch-specific values.
        OS.EmitIntValue(0, 4); // padding.
        continue;
      }
@@ -3083,7 +3257,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +746,13 @@
+@@ -494,10 +882,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3098,43 +3272,37 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +764,35 @@
+@@ -509,6 +900,29 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
 +
 +    // Num arch-specific constants and padding to align to 4 bytes.
 +    OS.EmitIntValue(0, 2);
-+    OS.EmitIntValue(Consts.size(), 2);
++    OS.EmitIntValue(Values.size(), 2);
 +
-+    for (const auto &C : Consts) {
++    for (const auto &C : Values) {
 +      const Location &Loc = C.first;
++      const Operation &Op = C.second;
++
 +      uint8_t TypeAndFlags = ARCH_TYPE_AND_FLAGS(Loc.Type, Loc.Ptr);
 +      OS.EmitIntValue(TypeAndFlags, 1);
 +      OS.EmitIntValue(Loc.Size, 1);
 +      OS.EmitIntValue(Loc.Reg, 2);
 +      OS.EmitIntValue(Loc.Offset, 4);
 +
-+      if(C.second->isImm()) {
-+        const MachineImmediate *MI = (const MachineImmediate *)C.second;
-+        OS.EmitIntValue(MI->getValue(), 8);
-+      }
-+      else if(C.second->isReference()) {
-+        const MachineReference *MS = (const MachineReference *)C.second;
-+        OS.EmitSymbolValue(OS.getContext().lookupSymbol(MS->getSymbol()), 8);
-+      }
-+      else if(C.second->isGenerated()) {
-+        // TODO skip for now
-+      }
-+      else llvm_unreachable("Unhandled arch-specific constant");
-+
-+      delete C.second;
++      uint8_t OpType = ARCH_OP_TYPE(Op.InstType, Op.OperandType);
++      OS.EmitIntValue(OpType, 1);
++      OS.EmitIntValue(Op.Size, 1);
++      OS.EmitIntValue(Op.DwarfReg, 2);
++      if(Op.isSymbol) OS.EmitSymbolValue(Op.Symbol, 8);
++      else OS.EmitIntValue(Op.Constant, 8);
 +    }
 +
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +799,7 @@
+@@ -515,7 +929,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3143,7 +3311,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +823,7 @@
+@@ -539,7 +953,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -3178,7 +3346,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,997 @@
+@@ -0,0 +1,991 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3211,7 +3379,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +#include "llvm/IR/LLVMContext.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Target/TargetInstrInfo.h"
-+#include "llvm/Target/TargetValueGenerator.h"
++#include "llvm/Target/TargetValues.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
 +
@@ -3345,7 +3513,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  const MachineRegisterInfo *MRI;
 +  const TargetInstrInfo *TII;
 +  const TargetRegisterInfo *TRI;
-+  const TargetValueGenerator *TVG;
++  const TargetValues *TVG;
 +  const LiveIntervals *LI;
 +  const LiveStacks *LS;
 +  const SlotIndexes *Indexes;
@@ -3429,8 +3597,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  void findAlternateOpLocs();
 +
 +  /// Ensure virtual registers used to generate architecture-specific values
-+  /// are live across function call & convert to physical registers
-+  void sanitizeVregs(MachineLiveValPtr &LV, const MachineInstr *Call) const;
++  /// are handled by the stackmap & convert to physical registers
++  void sanitizeVregs(MachineLiveValPtr &LV, const MachineInstr *SM) const;
 +
 +  /// Analyze a machine instruction to find the value being used.  Needs the
 +  /// call instruction to ensure values are generated correctly and are valid.
@@ -3487,7 +3655,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    MRI = &MF->getRegInfo();
 +    TII = MF->getSubtarget().getInstrInfo();
 +    TRI = MF->getSubtarget().getRegisterInfo();
-+    TVG = MF->getSubtarget().getValueGenerator();
++    TVG = MF->getSubtarget().getValues();
 +    Indexes = &getAnalysis<SlotIndexes>();
 +    LI = &getAnalysis<LiveIntervals>();
 +    LS = &getAnalysis<LiveStacks>();
@@ -3609,12 +3777,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        }
 +
 +        if(!MCI) {
-+          DEBUG(
-+            dbgs() << "WARNING: stackmap " << ID << " ";
-+            IRSM->printAsOperand(dbgs());
-+            dbgs() << ": could not find associated call instruction "
-+                      "(lowered to a native instruction?)\n";
-+          );
++          DEBUG(dbgs() << "NOTE: stackmap " << ID << " ";
++                IRSM->print(dbgs());
++                dbgs() << ": could not find associated call instruction "
++                          "(lowered to a native instruction?)\n");
 +          continue;
 +        }
 +
@@ -3726,6 +3892,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +bool
 +StackTransformMetadata::isVregLiveAcrossInstr(unsigned Vreg,
 +                                              const MachineInstr *MI) const {
++  assert(TRI->isVirtualRegister(Vreg) && "Invalid virtual register");
++
 +  if(LI->hasInterval(Vreg)) {
 +    const LiveInterval &TheLI = LI->getInterval(Vreg);
 +    SlotIndex InstrIdx = Indexes->getInstructionIndex(MI);
@@ -3771,8 +3939,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  {
 +    unsigned Phys = VRM->getPhys(Vreg);
 +    for(size_t sz = 0; sz < IRVals->size(); sz++) {
-+      DEBUG(dumpReg(Vreg, IRVals->operator[](sz)););
-+      MF->addSMOpLocation(IRSM, IRVals->operator[](sz), MachineLiveReg(Phys));
++      DEBUG(dumpReg(Vreg, (*IRVals)[sz]););
++      MF->addSMOpLocation(IRSM, (*IRVals)[sz], MachineLiveReg(Phys));
 +    }
 +    Vregs[Vreg] = IRVals;
 +    return true;
@@ -3796,9 +3964,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +     (isSSLiveAcrossInstr(SS, MISM) || isSSLiveAcrossInstr(SS, MICall)))
 +  {
 +    for(size_t sz = 0; sz < IRVals->size(); sz++) {
-+      DEBUG(dumpStackSlot(SS, IRVals->operator[](sz)););
-+      MF->addSMOpLocation(IRSM, IRVals->operator[](sz),
-+                          MachineLiveStackSlot(SS));
++      DEBUG(dumpStackSlot(SS, (*IRVals)[sz]););
++      MF->addSMOpLocation(IRSM, (*IRVals)[sz], MachineLiveStackSlot(SS));
 +    }
 +    SSlots[SS] = IRVals;
 +    return true;
@@ -3826,7 +3993,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      unsigned Vreg = (*Copy)->Vreg;
 +      const MachineInstr *Instr = (*Copy)->Instr;
 +
-+      if(!Visited.count(Instr) && addVregMetadata(Vreg, IRVals, SM)) {
++      if(!Visited.count(Instr)) {
++        addVregMetadata(Vreg, IRVals, SM);
 +        Visited.insert(Instr);
 +        work.push(Vreg);
 +      }
@@ -3854,13 +4022,23 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    Visited.clear();
 +
 +    // Follow data flow to search for all duplicate locations, including stack
-+    // slots and other registers.  It's a duplicate location if the following
-+    // are true:
++    // slots and other registers.  It's a duplicate if the following are true:
 +    //
 +    //   1. It's a copy-like instruction, e.g., a register move or a load
 +    //      from/store to stack slot
 +    //   2. The alternate location (virtual register/stack slot) is live across
 +    //      either the machine call instruction or the stackmap
++    //
++    // Note: we *must* search exhaustively (i.e., across copies from registers
++    // that are *not* live across the call) because the following can happen:
++    //
++    //   STORE vreg0, <fi#0>
++    //   ...
++    //   COPY vreg0, vreg1
++    //   ...
++    //   STACKMAP 0, 0, vreg1
++    //
++    // Here, vreg0 is *not* live across the stackmap, but <fi#0> *is*
 +    //
 +    work.push(origVreg);
 +    while(!work.empty()) {
@@ -3873,6 +4051,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      for(auto instr = MRI->def_instr_begin(cur), ei = MRI->def_instr_end();
 +          instr != ei;
 +          instr++) {
++        if(Visited.count(&*instr)) continue;
 +        CopyLocPtr loc = getCopyLocation(&*instr);
 +        if(!loc) continue;
 +
@@ -3880,15 +4059,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        case CopyLoc::VREG:
 +          RCL = (RegCopyLoc *)loc.get();
 +          vreg = RCL->SrcVreg;
-+          if(!Visited.count(&*instr) && addVregMetadata(vreg, IRVals, SM)) {
-+            Visited.insert(&*instr);
-+            work.push(vreg);
-+          }
++          addVregMetadata(vreg, IRVals, SM);
++          Visited.insert(&*instr);
++          work.push(vreg);
 +          break;
 +        case CopyLoc::STACK_LOAD:
 +          SCL = (StackCopyLoc *)loc.get();
 +          ss = SCL->StackSlot;
-+          if(!Visited.count(&*instr) && addSSMetadata(ss, IRVals, SM)) {
++          if(addSSMetadata(ss, IRVals, SM)) {
 +            Visited.insert(&*instr);
 +            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
 +          }
@@ -3900,6 +4078,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      // Walk over uses
 +      for(auto instr = MRI->use_instr_begin(cur), ei = MRI->use_instr_end();
 +          instr != ei; instr++) {
++        if(Visited.count(&*instr)) continue;
 +        CopyLocPtr loc = getCopyLocation(&*instr);
 +        if(!loc) continue;
 +
@@ -3907,15 +4086,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        case CopyLoc::VREG:
 +          RCL = (RegCopyLoc *)loc.get();
 +          vreg = RCL->Vreg;
-+          if(!Visited.count(&*instr) && addVregMetadata(vreg, IRVals, SM)) {
-+            Visited.insert(&*instr);
-+            work.push(vreg);
-+          }
++          addVregMetadata(vreg, IRVals, SM);
++          Visited.insert(&*instr);
++          work.push(vreg);
 +          break;
 +        case CopyLoc::STACK_STORE:
 +          SCL = (StackCopyLoc *)loc.get();
 +          ss = SCL->StackSlot;
-+          if(!Visited.count(&*instr) && addSSMetadata(ss, IRVals, SM)) {
++          if(addSSMetadata(ss, IRVals, SM)) {
 +            Visited.insert(&*instr);
 +            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
 +          }
@@ -3945,17 +4123,18 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // values
 +    mapOpsToIR(IRSM, MISM);
 +
-+    // Find alternate locations for vregs in stack map
++    // Find alternate locations for vregs in stack map.  Note we don't need to
++    // find alternate stack slot locations, as allocas *should* already be in
++    // the stackmap, so the remaining stack slots are spilled registers (which
++    // are covered here).
 +    findAlternateVregLocs(*S);
-+
-+    // TODO Find alternate locations for stack slots in stack map
 +  }
 +}
 +
 +/// Ensure virtual registers used to generate architecture-specific values are
-+/// live across function call & convert to physical registers
++/// handled by the stackmap & convert to physical registers
 +void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
-+                                           const MachineInstr *Call) const {
++                                           const MachineInstr *SM) const {
 +  typedef MachineGeneratedVal::ValueGenInst::OpType OpType;
 +  typedef MachineGeneratedVal::RegInstructionBase RegInstruction;
 +
@@ -3966,11 +4145,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    for(size_t i = 0, num = Inst.size(); i < num; i++) {
 +      if(Inst[i]->opType() == OpType::Register) {
 +        RegInstruction *RI = (RegInstruction *)Inst[i].get();
-+        if(!isVregLiveAcrossInstr(RI->getReg(), Call))
-+          llvm_unreachable("Register for generating live value is not live "
-+                           "across instruction");
-+        assert(VRM->hasPhys(RI->getReg()) && "Invalid virtual register");
-+        RI->setReg(VRM->getPhys(RI->getReg()));
++        if(!TRI->isVirtualRegister(RI->getReg()) ||
++           !SMVregs.at(SM).count(RI->getReg())) {
++          DEBUG(dbgs() << "WARNING: vreg "
++                       << TargetRegisterInfo::virtReg2Index(RI->getReg())
++                       << " used to generate value not handled in stackmap\n");
++          LV.reset(nullptr);
++        }
++        else {
++          assert(VRM->hasPhys(RI->getReg()) && "Invalid virtual register");
++          RI->setReg(VRM->getPhys(RI->getReg()));
++        }
 +      }
 +    }
 +  }
@@ -4029,53 +4214,45 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +             << MFI->getObjectIndexEnd() << "\n";
 +    );
 +
-+    // Search for virtual registers not handled by the stackmap
-+    for(unsigned i = 0; i < MRI->getNumVirtRegs(); i++) {
++    // Search for virtual registers not handled by the stackmap.  Registers
++    // spilled to the stack should have been converted to frame index
++    // references by now.
++    for(unsigned i = 0, numVregs = MRI->getNumVirtRegs(); i < numVregs; i++) {
 +      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
 +      MachineLiveValPtr MC;
 +      MachineLiveReg MLR(0);
 +
-+      // Detect virtual registers live across but not included in the stackmap
 +      if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
 +         CurVregs.find(Vreg) == CurVregs.end()) {
 +        DEBUG(dbgs() << "    + vreg" << i
 +                     << " is live in register but not in stackmap\n";);
 +
-+        assert(++(MRI->def_instr_begin(Vreg)) == MRI->def_instr_end() &&
-+               "Multiple definitions for virtual register "
-+               "(missed in live-value analysis?)");
++        if(!MRI->hasOneDef(Vreg)) {
++          DEBUG(
++            dbgs() << "WARNING: multiple definitions for virtual "
++                      "register, missed in live-value analysis?\n";
++            for(auto d = MRI->def_instr_begin(Vreg), e = MRI->def_instr_end();
++                d != e; d++)
++              d->dump();
++          );
++          continue;
++        }
 +
 +        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MICall);
 +        if(MC) {
-+          DEBUG(
-+            dbgs() << "      Defining instruction: ";
-+            MC->getDefiningInst()->print(dbgs());
-+            dbgs() << "      Value: " << MC->toString() << "\n";
-+          );
++          DEBUG(dbgs() << "      Defining instruction: ";
++                MC->getDefiningInst()->print(dbgs());
++                dbgs() << "      Value: " << MC->toString() << "\n");
 +
 +          MLR.setReg(VRM->getPhys(Vreg));
 +          MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
 +          CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
 +        }
 +        else {
-+          DEBUG(
-+            dbgs() << "      Unhandled defining instruction: ";
-+            MRI->def_instr_begin(Vreg)->print(dbgs());
-+            dbgs() << "\n";
-+          );
++          DEBUG(dbgs() << "      Unhandled defining instruction: ";
++                MRI->def_instr_begin(Vreg)->print(dbgs());
++                dbgs() << "\n");
 +        }
-+      }
-+      // Detect virtual registers mapped to stack slots not in stackmap
-+      // Note: we can't detect if this vreg is actually in use judging by the
-+      // value returned from VRM->getStackSlot.  Therefore, manually check by
-+      // seeing if there are any definitions.
-+      else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
-+              (MRI->def_instr_begin(Vreg) != MRI->def_instr_end()) &&
-+              isVregLiveAcrossInstr(Vreg, MICall) &&
-+              CurVregs.find(Vreg) == CurVregs.end()) {
-+        DEBUG(dbgs() << "    + vreg" << i
-+                     << " is live in stack slot but not in stackmap\n");
-+        // TODO handle vreg spilled to stack slot
 +      }
 +    }
 +
@@ -4088,8 +4265,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        DEBUG(dbgs() << "    + stack slot " << SS
 +                     << " is live but not in stackmap\n";);
 +        // TODO add arch-specific stack slot information to machine function
-+        // TODO does this imply an alloca that wasn't captured in the stackmap?
-+        // I think this is a live value analysis bug...
 +      }
 +    }
 +
@@ -4147,19 +4322,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        Msg = "Unhandled register ";
 +        Msg += TRI->getName(VRM->getPhys(Vreg));
 +        displayWarning(Msg, IRCall, CalledFunc);
-+      }
-+      // Virtual register spilled to the stack
-+      else if(VRM->getStackSlot(Vreg) != VirtRegMap::NO_STACK_SLOT &&
-+              isVregLiveAcrossInstr(Vreg, MICall) &&
-+              CurVregs.find(Vreg) == CurVregs.end()) {
-+        auto def = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
-+        if(def != end) {
-+          Msg = "Unhandled virtual register ";
-+          Msg += std::to_string(Vreg);
-+          Msg += " in stack slot ";
-+          Msg += std::to_string(VRM->getStackSlot(Vreg));
-+          displayWarning(Msg, IRCall, CalledFunc);
-+        }
 +      }
 +    }
 +
@@ -4389,7 +4551,7 @@ Index: lib/MC/MCCodeGenInfo.cpp
    RelocationModel = RM;
    CMModel = CM;
    OptLevel = OL;
-+  IROptLevel = OptLevel;
++  ArchIROptLevel = OL;
 +  EmitStackTransformMetadata = false;
  }
 Index: lib/MC/MCObjectFileInfo.cpp
@@ -4482,7 +4644,7 @@ Index: lib/Target/AArch64/AArch64Subtarget.h
  #include "AArch64InstrInfo.h"
  #include "AArch64RegisterInfo.h"
  #include "AArch64SelectionDAGInfo.h"
-+#include "AArch64ValueGenerator.h"
++#include "AArch64Values.h"
  #include "llvm/IR/DataLayout.h"
  #include "llvm/Target/TargetSubtargetInfo.h"
  #include <string>
@@ -4490,7 +4652,7 @@ Index: lib/Target/AArch64/AArch64Subtarget.h
    AArch64InstrInfo InstrInfo;
    AArch64SelectionDAGInfo TSInfo;
    AArch64TargetLowering TLInfo;
-+  AArch64ValueGenerator VGen;
++  AArch64Values VGen;
  private:
    /// initializeSubtargetDependencies - Initializes using CPUString and the
    /// passed in feature string so that we can use initializer lists for
@@ -4498,7 +4660,7 @@ Index: lib/Target/AArch64/AArch64Subtarget.h
    const AArch64RegisterInfo *getRegisterInfo() const override {
      return &getInstrInfo()->getRegisterInfo();
    }
-+  const AArch64ValueGenerator *getValueGenerator() const override {
++  const AArch64Values *getValues() const override {
 +    return &VGen;
 +  }
    const Triple &getTargetTriple() const { return TargetTriple; }
@@ -4514,7 +4676,7 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
    // ldrex/strex loops to simplify this, but it needs tidying up.
 -  if (TM->getOptLevel() != CodeGenOpt::None && EnableAtomicTidy)
 +  if (TM->getOptLevel() != CodeGenOpt::None &&
-+      TM->getIROptLevel() != CodeGenOpt::None &&
++      TM->getArchIROptLevel() != CodeGenOpt::None &&
 +      EnableAtomicTidy)
      addPass(createCFGSimplificationPass());
  
@@ -4523,12 +4685,12 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
    // Match interleaved memory accesses to ldN/stN intrinsics.
 -  if (TM->getOptLevel() != CodeGenOpt::None)
 +  if (TM->getOptLevel() != CodeGenOpt::None &&
-+      TM->getIROptLevel() != CodeGenOpt::None)
++      TM->getArchIROptLevel() != CodeGenOpt::None)
      addPass(createInterleavedAccessPass(TM));
  
 -  if (TM->getOptLevel() == CodeGenOpt::Aggressive && EnableGEPOpt) {
 +  if (TM->getOptLevel() == CodeGenOpt::Aggressive &&
-+      TM->getIROptLevel() != CodeGenOpt::None && EnableGEPOpt) {
++      TM->getArchIROptLevel() != CodeGenOpt::None && EnableGEPOpt) {
      // Call SeparateConstOffsetFromGEP pass to extract constants within indices
      // and lower a GEP with multiple indices to either arithmetic operations or
      // multiple GEPs with single index.
@@ -4538,13 +4700,13 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
    // get a chance to be merged
 -  if (TM->getOptLevel() != CodeGenOpt::None && EnablePromoteConstant)
 +  if (TM->getOptLevel() != CodeGenOpt::None &&
-+      TM->getIROptLevel() != CodeGenOpt::None && EnablePromoteConstant)
++      TM->getArchIROptLevel() != CodeGenOpt::None && EnablePromoteConstant)
      addPass(createAArch64PromoteConstantPass());
    // FIXME: On AArch64, this depends on the type.
    // Basically, the addressable offsets are up to 4095 * Ty.getSizeInBytes().
    // and the offset has to be a multiple of the related size in bytes.
    if ((TM->getOptLevel() != CodeGenOpt::None &&
-+       TM->getIROptLevel() != CodeGenOpt::None &&
++       TM->getArchIROptLevel() != CodeGenOpt::None &&
         EnableGlobalMerge == cl::BOU_UNSET) ||
        EnableGlobalMerge == cl::BOU_TRUE) {
      bool OnlyOptimizeForSize = (TM->getOptLevel() < CodeGenOpt::Aggressive) &&
@@ -4554,16 +4716,16 @@ Index: lib/Target/AArch64/AArch64TargetMachine.cpp
  
 -  if (TM->getOptLevel() != CodeGenOpt::None)
 +  if (TM->getOptLevel() != CodeGenOpt::None &&
-+      TM->getIROptLevel() != CodeGenOpt::None)
++      TM->getArchIROptLevel() != CodeGenOpt::None)
      addPass(createAArch64AddressTypePromotionPass());
  
    return false;
-Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
+Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64ValueGenerator.cpp	(nonexistent)
-+++ lib/Target/AArch64/AArch64ValueGenerator.cpp	(working copy)
-@@ -0,0 +1,90 @@
-+//===- AArch64TargetValueGenerator.cpp - AArch64 specific value generator -===//
+--- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
++++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
+@@ -0,0 +1,131 @@
++//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
 +//
@@ -4572,7 +4734,7 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#include "AArch64ValueGenerator.h"
++#include "AArch64Values.h"
 +#include "AArch64.h"
 +#include "llvm/CodeGen/MachineFunction.h"
 +#include "llvm/MC/MCSymbol.h"
@@ -4598,9 +4760,8 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +template <InstType T>
 +using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
 +
-+void
-+AArch64ValueGenerator::genADDInstructions(const MachineInstr *MI,
-+                                          ValueGenInstList &IL) const {
++void AArch64Values::genADDInstructions(const MachineInstr *MI,
++                                       ValueGenInstList &IL) const {
 +  int Index;
 +
 +  switch(MI->getOpcode()) {
@@ -4619,8 +4780,38 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +  }
 +}
 +
-+MachineLiveValPtr
-+AArch64ValueGenerator::getMachineValue(const MachineInstr *MI) const {
++void AArch64Values::genBitfieldInstructions(const MachineInstr *MI,
++                                            ValueGenInstList &IL) const {
++  int64_t R, S;
++  unsigned Size = 8, Bits = 64;
++  const uint64_t Mask = UINT64_MAX;
++
++  switch(MI->getOpcode()) {
++  case AArch64::UBFMXri:
++    // TODO ensure this is correct
++    assert(MI->getOperand(1).isReg() && MI->getOperand(2).isImm() &&
++           MI->getOperand(3).isImm());
++    IL.push_back(ValueGenInstPtr(
++      new RegInstruction<InstType::Set>(MI->getOperand(1).getReg())));
++    R = MI->getOperand(2).getImm();
++    S = MI->getOperand(3).getImm();
++    if(S >= R) {
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::RightShiftLog>(Size, R)));
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::Mask>(Size, ~(Mask << (S - R + 1)))));
++    }
++    else {
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::Mask>(Size, ~(Mask << (S + 1)))));
++      IL.push_back(ValueGenInstPtr(
++        new ImmInstruction<InstType::LeftShift>(Size, Bits - R)));
++    }
++    break;
++  }
++}
++
++MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
 +  MachineLiveVal* Val = nullptr;
 +  const MachineOperand *MO;
 +  const TargetInstrInfo *TII;
@@ -4630,18 +4821,30 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +  case AArch64::MOVaddr:
 +  case AArch64::ADRP:
 +    MO = &MI->getOperand(1);
-+    assert((MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol()) &&
-+           "Invalid operand for address generation");
-+    if(MO->isGlobal())
-+      Val = new MachineReference(MO->getGlobal()->getName(), MI);
-+    else if(MO->isSymbol())
-+      Val = new MachineReference(MO->getSymbolName(), MI);
-+    else if(MO->isMCSymbol())
-+      Val = new MachineReference(MO->getMCSymbol()->getName(), MI);
++    if(MO->isCPI()) {
++      IL.push_back(ValueGenInstPtr(
++        new PseudoInstruction<InstType::ConstantPool>(MO->getIndex(),
++                                                      InstType::Set)));
++      Val = new MachineGeneratedVal(IL, MI);
++    }
++    else {
++      assert((MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol()) &&
++             "Invalid operand for address generation");
++      if(MO->isGlobal())
++        Val = new MachineReference(MO->getGlobal()->getName(), MI);
++      else if(MO->isSymbol())
++        Val = new MachineReference(MO->getSymbolName(), MI);
++      else if(MO->isMCSymbol())
++        Val = new MachineReference(MO->getMCSymbol()->getName(), MI);
++    }
 +    break;
 +  case AArch64::ADDXri:
 +    genADDInstructions(MI, IL);
-+    if(IL.size() > 0) Val = new MachineGeneratedVal(IL, MI);
++    if(IL.size()) Val = new MachineGeneratedVal(IL, MI);
++    break;
++  case AArch64::UBFMXri:
++    genBitfieldInstructions(MI, IL);
++    if(IL.size()) Val = new MachineGeneratedVal(IL, MI);
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
@@ -4653,12 +4856,12 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.cpp
 +  return MachineLiveValPtr(Val);
 +}
 +
-Index: lib/Target/AArch64/AArch64ValueGenerator.h
+Index: lib/Target/AArch64/AArch64Values.h
 ===================================================================
---- lib/Target/AArch64/AArch64ValueGenerator.h	(nonexistent)
-+++ lib/Target/AArch64/AArch64ValueGenerator.h	(working copy)
-@@ -0,0 +1,25 @@
-+//===- AArch64TargetValueGenerator.cpp - AArch64 specific value generator -===//
+--- lib/Target/AArch64/AArch64Values.h	(nonexistent)
++++ lib/Target/AArch64/AArch64Values.h	(working copy)
+@@ -0,0 +1,28 @@
++//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
 +//
@@ -4667,17 +4870,20 @@ Index: lib/Target/AArch64/AArch64ValueGenerator.h
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#include "llvm/Target/TargetValueGenerator.h"
++#include "llvm/Target/TargetValues.h"
 +
 +namespace llvm {
 +
-+class AArch64ValueGenerator final : public TargetValueGenerator {
++class AArch64Values final : public TargetValues {
 +public:
-+  AArch64ValueGenerator() {}
++  AArch64Values() {}
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 +
 +private:
 +  void genADDInstructions(const MachineInstr *MI,
++                          MachineGeneratedVal::ValueGenInstList &IL) const;
++  void
++  genBitfieldInstructions(const MachineInstr *MI,
 +                          MachineGeneratedVal::ValueGenInstList &IL) const;
 +};
 +
@@ -4691,7 +4897,7 @@ Index: lib/Target/AArch64/CMakeLists.txt
    AArch64TargetMachine.cpp
    AArch64TargetObjectFile.cpp
    AArch64TargetTransformInfo.cpp
-+  AArch64ValueGenerator.cpp
++  AArch64Values.cpp
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
@@ -4699,21 +4905,20 @@ Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
-@@ -149,6 +149,29 @@
+@@ -149,6 +149,28 @@
      CodeGenInfo->setOptLevel(Level);
  }
  
-+CodeGenOpt::Level TargetMachine::getIROptLevel() const {
++CodeGenOpt::Level TargetMachine::getArchIROptLevel() const {
 +  if (!CodeGenInfo)
 +    return CodeGenOpt::Default;
-+  return CodeGenInfo->getIROptLevel();
++  return CodeGenInfo->getArchIROptLevel();
 +}
 +
-+void TargetMachine::setIROptLevel(CodeGenOpt::Level Level) const {
++void TargetMachine::setArchIROptLevel(CodeGenOpt::Level Level) const {
 +  if (CodeGenInfo)
-+    CodeGenInfo->setIROptLevel(Level);
++    CodeGenInfo->setArchIROptLevel(Level);
 +}
-+
 +
 +bool TargetMachine::emitStackTransformMetadata() const {
 +  if (!CodeGenInfo)
@@ -4737,7 +4942,7 @@ Index: lib/Target/X86/CMakeLists.txt
    X86VZeroUpper.cpp
    X86FixupLEAs.cpp
    X86WinEHState.cpp
-+  X86ValueGenerator.cpp
++  X86Values.cpp
    )
  
  if( CMAKE_CL_64 )
@@ -4848,7 +5053,7 @@ Index: lib/Target/X86/X86Subtarget.h
  #include "X86ISelLowering.h"
  #include "X86InstrInfo.h"
  #include "X86SelectionDAGInfo.h"
-+#include "X86ValueGenerator.h"
++#include "X86Values.h"
  #include "llvm/ADT/Triple.h"
  #include "llvm/IR/CallingConv.h"
  #include "llvm/Target/TargetSubtargetInfo.h"
@@ -4857,7 +5062,7 @@ Index: lib/Target/X86/X86Subtarget.h
    X86TargetLowering TLInfo;
    X86FrameLowering FrameLowering;
 -
-+  X86ValueGenerator VGen;
++  X86Values VGen;
  public:
    /// This constructor initializes the data members to match that
    /// of the specified triple.
@@ -4865,16 +5070,16 @@ Index: lib/Target/X86/X86Subtarget.h
    const X86RegisterInfo *getRegisterInfo() const override {
      return &getInstrInfo()->getRegisterInfo();
    }
-+  const X86ValueGenerator *getValueGenerator() const override { return &VGen; }
++  const X86Values *getValues() const override { return &VGen; }
  
    /// Returns the minimum alignment known to hold of the
    /// stack frame on entry to the function and which must be maintained by every
-Index: lib/Target/X86/X86ValueGenerator.cpp
+Index: lib/Target/X86/X86Values.cpp
 ===================================================================
---- lib/Target/X86/X86ValueGenerator.cpp	(nonexistent)
-+++ lib/Target/X86/X86ValueGenerator.cpp	(working copy)
-@@ -0,0 +1,99 @@
-+//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
+--- lib/Target/X86/X86Values.cpp	(nonexistent)
++++ lib/Target/X86/X86Values.cpp	(working copy)
+@@ -0,0 +1,98 @@
++//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
 +//
@@ -4883,7 +5088,7 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#include "X86ValueGenerator.h"
++#include "X86Values.h"
 +#include "X86InstrInfo.h"
 +#include "llvm/CodeGen/MachineFunction.h"
 +#include "llvm/Support/Debug.h"
@@ -4907,8 +5112,8 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +template <InstType T>
 +using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
 +
-+void X86ValueGenerator::genLEAInstructions(const MachineInstr *MI,
-+                                           ValueGenInstList &IL) const {
++void X86Values::genLEAInstructions(const MachineInstr *MI,
++                                   ValueGenInstList &IL) const {
 +  int Index;
 +  unsigned Reg;
 +  int64_t Imm;
@@ -4952,8 +5157,7 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +  }
 +}
 +
-+MachineLiveValPtr
-+X86ValueGenerator::getMachineValue(const MachineInstr *MI) const {
++MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
 +  MachineLiveVal* Val = nullptr;
 +  const TargetInstrInfo *TII;
 +  ValueGenInstList IL;
@@ -4973,12 +5177,12 @@ Index: lib/Target/X86/X86ValueGenerator.cpp
 +  return MachineLiveValPtr(Val);
 +}
 +
-Index: lib/Target/X86/X86ValueGenerator.h
+Index: lib/Target/X86/X86Values.h
 ===================================================================
---- lib/Target/X86/X86ValueGenerator.h	(nonexistent)
-+++ lib/Target/X86/X86ValueGenerator.h	(working copy)
+--- lib/Target/X86/X86Values.h	(nonexistent)
++++ lib/Target/X86/X86Values.h	(working copy)
 @@ -0,0 +1,25 @@
-+//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
++//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
 +//
@@ -4987,13 +5191,13 @@ Index: lib/Target/X86/X86ValueGenerator.h
 +//
 +//===----------------------------------------------------------------------===//
 +
-+#include "llvm/Target/TargetValueGenerator.h"
++#include "llvm/Target/TargetValues.h"
 +
 +namespace llvm {
 +
-+class X86ValueGenerator final : public TargetValueGenerator {
++class X86Values final : public TargetValues {
 +public:
-+  X86ValueGenerator() {}
++  X86Values() {}
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 +
 +private:
@@ -5019,7 +5223,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,333 @@
+@@ -0,0 +1,337 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -5027,6 +5231,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Dominators.h"
 +#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/IR/InstIterator.h"
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
 +#include "llvm/IR/Module.h"
@@ -5120,14 +5325,21 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +          {
 +            live = liveVals.getLiveValues(&*i);
 +            for(const Value *val : *live) sortedLive.insert(val);
-+            for(const Argument *val : hiddenArgs) sortedLive.insert(val);
 +            for(const Instruction *val : hiddenInst) {
 +              /*
 +               * The two criteria for inclusion of a hidden value are:
 +               *   1. The value's definition dominates the call
-+               *   2. A use of the definition is included in the stackmap
++               *   2. A use which hides the definition is in the stackmap
 +               */
 +              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
++                sortedLive.insert(val);
++            }
++            for(const Argument *val : hiddenArgs) {
++              /*
++               * Similar criteria apply as above, except we know arguments
++               * dominate the entire function.
++               */
++              if(hasLiveUser(val, *live))
 +                sortedLive.insert(val);
 +            }
 +            delete live;
@@ -5196,10 +5408,13 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +  /* Sort values based on name */
 +  struct ValueComp {
-+    bool operator() (const Value *lhs, const Value *rhs) const
++    bool operator() (const Value *a, const Value *b) const
 +    {
-+      if(lhs->hasName()) return lhs->getName().compare(rhs->getName()) < 0;
-+      else return lhs < rhs;
++      if(a->hasName() && b->hasName())
++        return a->getName().compare(b->getName()) < 0;
++      else if(a->hasName()) return true;
++      else if(b->hasName()) return false;
++      else return a < b;
 +    }
 +  };
 +
@@ -5248,7 +5463,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +        for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
 +          if((CI = dyn_cast<CallInst>(&*i))) {
 +            F = CI->getCalledFunction();
-+            if(F->hasName() && F->getName() == SMName) {
++            if(F && F->hasName() && F->getName() == SMName) {
 +              i = i->eraseFromParent()->getPrevNode();
 +              modified = true;
 +            }
@@ -5264,55 +5479,48 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  }
 +
 +  /**
-+   * Gather a list of instructions or arguments which may be "hidden" from live
-+   * value analysis.
++   * Gather a list of values which may be "hidden" from live value analysis.
++   * This function collects the values used in these instructions, which are
++   * later added to the appropriate stackmaps.
 +   *
-+   * Some instructions, like getelementptr, can interfere with the live value
-+   * analysis to "hide" the backing values passed to getelementptr.  For
-+   * example, the following IR obscures %arr from the live value analysis:
++   * 1. Instructions which access fields of structs or entries of arrays, like
++   *    getelementptr, can interfere with the live value analysis to hide the
++   *    backing values used in the instruction.  For example, the following IR
++   *    obscures %arr from the live value analysis:
 +   *
 +   *  %arr = alloca [4 x double], align 8
 +   *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
-+   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
-+   *  -> be considered live any more
 +   *
-+   * This function collects the values used in these instructions, which are later
-+   * added to the appropriate stackmaps.
++   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
++   *     be used any more
++   *
++   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
++   *    architecture-specific  machine code by the backend.  To help capture
++   *    all live values, we capture both the value used in the comparison and
++   *    the resulting condition value.
++   *
 +   */
 +  void getHiddenVals(Function &F,
 +                     std::set<const Instruction *> &inst,
 +                     std::set<const Argument *> &args)
 +  {
 +    /* Does the instruction potentially hide values from liveness analysis? */
-+    auto isExtractType = [](const Instruction *I) {
++    auto hidesValues = [](const Instruction *I) {
 +      if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
 +         isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-+         isa<GetElementPtrInst>(I))
++         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
 +        return true ;
 +      else return false;
 +    };
 +
-+    /* Is the value an argument to the function? */
-+    auto isArg = [](const Function &F, const Value *V) {
-+      for(auto arg = F.arg_begin(), e = F.arg_end(); arg != e; arg++)
-+        if(V == &*arg) return true;
-+      return false;
-+    };
-+
 +    /* Search for instructions that obscure live values & record operands */
-+    for(Function::const_iterator bb = F.begin(), bbe = F.end();
-+        bb != bbe; bb++) {
-+      for(BasicBlock::const_iterator i = bb->begin(), ie = bb->end();
-+          i != ie; i++) {
-+        if(isExtractType(&*i))
-+        {
-+          for(unsigned op = 0; op < i->getNumOperands(); op++)
-+          {
-+            if(isa<Instruction>(i->getOperand(op)))
-+              inst.insert(cast<Instruction>(i->getOperand(op)));
-+            else if(isArg(F, i->getOperand(op)))
-+              args.insert(cast<Argument>(i->getOperand(op)));
-+          }
++    for(inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
++      if(hidesValues(&*i)) {
++        for(unsigned op = 0; op < i->getNumOperands(); op++) {
++          if(isa<Instruction>(i->getOperand(op)))
++            inst.insert(cast<Instruction>(i->getOperand(op)));
++          else if(isa<Argument>(i->getOperand(op)))
++            args.insert(cast<Argument>(i->getOperand(op)));
 +        }
 +      }
 +    }
@@ -5325,11 +5533,11 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +   * @param Live a set of live values
 +   * @return true if a user is in the liveness set, false otherwise
 +   */
-+  bool hasLiveUser(const Instruction *Val,
++  bool hasLiveUser(const Value *Val,
 +                   const std::set<const Value *> &Live) const {
-+    Instruction::const_use_iterator use, e;
++    Value::const_use_iterator use, e;
 +    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
-+      if(Live.count(*use)) return true;
++      if(Live.count(use->getUser())) return true;
 +    return false;
 +  }
 +};

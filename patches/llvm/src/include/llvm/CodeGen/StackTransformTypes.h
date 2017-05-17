@@ -173,14 +173,14 @@ public:
   // Base class for register operand instructions
   class RegInstructionBase : public ValueGenInst {
   public:
-    // The *physical* register used in the instruction
+    // The register used in the instruction
     // Note: will be converted to DWARF during metadata emission
-    uint16_t Reg;
+    unsigned Reg;
 
-    RegInstructionBase(uint16_t Reg) : Reg(Reg) {}
+    RegInstructionBase(unsigned Reg) : Reg(Reg) {}
     virtual OpType opType() const { return Register; }
-    uint16_t getReg() const { return Reg; }
-    void setReg(uint16_t Reg) { this->Reg = Reg; }
+    unsigned getReg() const { return Reg; }
+    void setReg(unsigned Reg) { this->Reg = Reg; }
   };
 
   // Register-based instructions
@@ -190,7 +190,7 @@ public:
                   Type == Multiply || Type == Divide,
                   INV_INST_TYPE " for register instruction");
   public:
-    RegInstruction(uint16_t Reg) : RegInstructionBase(Reg) {}
+    RegInstruction(unsigned Reg) : RegInstructionBase(Reg) {}
     virtual InstType type() const { return Type; }
     virtual std::string str() const {
       std::string buf = std::string(InstTypeStr[Type]) + " register " +
@@ -266,7 +266,8 @@ public:
   // Pseudo-instructions which must be converted to normal instructions later
   template<ValueGenInst::InstType Type>
   class PseudoInstruction : public PseudoInstructionBase {
-    static_assert(Type == StackSlot, INV_INST_TYPE " for pseudo-instruction");
+    static_assert(Type == StackSlot || Type == ConstantPool,
+                  INV_INST_TYPE " for pseudo-instruction");
   public:
     PseudoInstruction(uint64_t Data, InstType GenType)
       : PseudoInstructionBase(Data, GenType) {}
@@ -307,6 +308,7 @@ public:
   }
 
   ValueGenInstList &getInstructions() { return VG; }
+  const ValueGenInstList &getInstructions() const { return VG; }
 
   virtual std::string toString() const {
     std::string buf = MachineLiveVal::toString() + ", " +

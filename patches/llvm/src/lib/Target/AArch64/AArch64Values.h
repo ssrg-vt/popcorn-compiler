@@ -1,4 +1,4 @@
-//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
+//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,17 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Target/TargetValueGenerator.h"
+#include "llvm/Target/TargetValues.h"
 
 namespace llvm {
 
-class X86ValueGenerator final : public TargetValueGenerator {
+class AArch64Values final : public TargetValues {
 public:
-  X86ValueGenerator() {}
+  AArch64Values() {}
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 
 private:
-  void genLEAInstructions(const MachineInstr *LEA,
+  void genADDInstructions(const MachineInstr *MI,
+                          MachineGeneratedVal::ValueGenInstList &IL) const;
+  void
+  genBitfieldInstructions(const MachineInstr *MI,
                           MachineGeneratedVal::ValueGenInstList &IL) const;
 };
 

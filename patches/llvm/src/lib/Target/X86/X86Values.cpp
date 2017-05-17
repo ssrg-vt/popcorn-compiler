@@ -1,4 +1,4 @@
-//===----- X86TargetValueGenerator.cpp - X86 specific value generator -----===//
+//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "X86ValueGenerator.h"
+#include "X86Values.h"
 #include "X86InstrInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/Support/Debug.h"
@@ -31,8 +31,8 @@ using ImmInstruction = MachineGeneratedVal::ImmInstruction<T>;
 template <InstType T>
 using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
 
-void X86ValueGenerator::genLEAInstructions(const MachineInstr *MI,
-                                           ValueGenInstList &IL) const {
+void X86Values::genLEAInstructions(const MachineInstr *MI,
+                                   ValueGenInstList &IL) const {
   int Index;
   unsigned Reg;
   int64_t Imm;
@@ -76,8 +76,7 @@ void X86ValueGenerator::genLEAInstructions(const MachineInstr *MI,
   }
 }
 
-MachineLiveValPtr
-X86ValueGenerator::getMachineValue(const MachineInstr *MI) const {
+MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   MachineLiveVal* Val = nullptr;
   const TargetInstrInfo *TII;
   ValueGenInstList IL;

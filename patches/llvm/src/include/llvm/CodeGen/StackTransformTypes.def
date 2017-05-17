@@ -17,15 +17,21 @@
 
 // TODO generate using TableGen rather than X macros
 
+// Each instruction is defined as a mnemonic and a boolean defining if it's a
+// pseudo-instruction (which must be converted to normal instructions after
+// register & stack slot rewriting).
 #define VALUE_GEN_INST \
-  X(Set), /* Set the generated value to another value */ \
-  X(Add), /* Add a value to the generated value */ \
-  X(Subtract), /* Subtract a value from the generated value */ \
-  X(Multiply), /* Multiply the generated value by another value */ \
-  X(Divide), /* Divide the generated value by another value */ \
-  X(LeftShiftLogical), /* Left-shift (logical) the generated value */ \
-  X(LeftShiftArith), /* Left-shift (arithmetic) the generated value */ \
-  X(RightShift) /* Right-shift the generated value */
+  X(Set, false), /* Set the generated value to another value */ \
+  X(Add, false), /* Add a value to the generated value */ \
+  X(Subtract, false), /* Subtract a value from the generated value */ \
+  X(Multiply, false), /* Multiply the generated value by another value */ \
+  X(Divide, false), /* Divide the generated value by another value */ \
+  X(LeftShift, false), /* Left-shift the generated value */ \
+  X(RightShiftLog, false), /* Right-shift (logical) the generated value */ \
+  X(RightShiftArith, false), /* Right-shift (arithmetic) the generated value */ \
+  X(Mask, false), /* Apply bit mask */ \
+  X(StackSlot, true), /* Generate stack slot reference */ \
+  X(ConstantPool, true) /* Generate a constant pool entry reference */
 
 #endif
 

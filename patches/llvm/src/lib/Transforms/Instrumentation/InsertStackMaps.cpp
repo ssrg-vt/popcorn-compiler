@@ -5,6 +5,7 @@
 #include "llvm/Analysis/LiveValues.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
@@ -98,14 +99,21 @@ public:
           {
             live = liveVals.getLiveValues(&*i);
             for(const Value *val : *live) sortedLive.insert(val);
-            for(const Argument *val : hiddenArgs) sortedLive.insert(val);
             for(const Instruction *val : hiddenInst) {
               /*
                * The two criteria for inclusion of a hidden value are:
                *   1. The value's definition dominates the call
-               *   2. A use of the definition is included in the stackmap
+               *   2. A use which hides the definition is in the stackmap
                */
               if(DT.dominates(val, CI) && hasLiveUser(val, *live))
+                sortedLive.insert(val);
+            }
+            for(const Argument *val : hiddenArgs) {
+              /*
+               * Similar criteria apply as above, except we know arguments
+               * dominate the entire function.
+               */
+              if(hasLiveUser(val, *live))
                 sortedLive.insert(val);
             }
             delete live;
@@ -174,10 +182,13 @@ private:
 
   /* Sort values based on name */
   struct ValueComp {
-    bool operator() (const Value *lhs, const Value *rhs) const
+    bool operator() (const Value *a, const Value *b) const
     {
-      if(lhs->hasName()) return lhs->getName().compare(rhs->getName()) < 0;
-      else return lhs < rhs;
+      if(a->hasName() && b->hasName())
+        return a->getName().compare(b->getName()) < 0;
+      else if(a->hasName()) return true;
+      else if(b->hasName()) return false;
+      else return a < b;
     }
   };
 
@@ -226,7 +237,7 @@ private:
         for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
           if((CI = dyn_cast<CallInst>(&*i))) {
             F = CI->getCalledFunction();
-            if(F->hasName() && F->getName() == SMName) {
+            if(F && F->hasName() && F->getName() == SMName) {
               i = i->eraseFromParent()->getPrevNode();
               modified = true;
             }
@@ -242,55 +253,48 @@ private:
   }
 
   /**
-   * Gather a list of instructions or arguments which may be "hidden" from live
-   * value analysis.
+   * Gather a list of values which may be "hidden" from live value analysis.
+   * This function collects the values used in these instructions, which are
+   * later added to the appropriate stackmaps.
    *
-   * Some instructions, like getelementptr, can interfere with the live value
-   * analysis to "hide" the backing values passed to getelementptr.  For
-   * example, the following IR obscures %arr from the live value analysis:
+   * 1. Instructions which access fields of structs or entries of arrays, like
+   *    getelementptr, can interfere with the live value analysis to hide the
+   *    backing values used in the instruction.  For example, the following IR
+   *    obscures %arr from the live value analysis:
    *
    *  %arr = alloca [4 x double], align 8
    *  %arrayidx = getelementptr inbounds [4 x double], [4 x double]* %arr, i64 0, i64 0
-   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
-   *  -> be considered live any more
    *
-   * This function collects the values used in these instructions, which are later
-   * added to the appropriate stackmaps.
+   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
+   *     be used any more
+   *
+   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
+   *    architecture-specific  machine code by the backend.  To help capture
+   *    all live values, we capture both the value used in the comparison and
+   *    the resulting condition value.
+   *
    */
   void getHiddenVals(Function &F,
                      std::set<const Instruction *> &inst,
                      std::set<const Argument *> &args)
   {
     /* Does the instruction potentially hide values from liveness analysis? */
-    auto isExtractType = [](const Instruction *I) {
+    auto hidesValues = [](const Instruction *I) {
       if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-         isa<GetElementPtrInst>(I))
+         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
         return true ;
       else return false;
     };
 
-    /* Is the value an argument to the function? */
-    auto isArg = [](const Function &F, const Value *V) {
-      for(auto arg = F.arg_begin(), e = F.arg_end(); arg != e; arg++)
-        if(V == &*arg) return true;
-      return false;
-    };
-
     /* Search for instructions that obscure live values & record operands */
-    for(Function::const_iterator bb = F.begin(), bbe = F.end();
-        bb != bbe; bb++) {
-      for(BasicBlock::const_iterator i = bb->begin(), ie = bb->end();
-          i != ie; i++) {
-        if(isExtractType(&*i))
-        {
-          for(unsigned op = 0; op < i->getNumOperands(); op++)
-          {
-            if(isa<Instruction>(i->getOperand(op)))
-              inst.insert(cast<Instruction>(i->getOperand(op)));
-            else if(isArg(F, i->getOperand(op)))
-              args.insert(cast<Argument>(i->getOperand(op)));
-          }
+    for(inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
+      if(hidesValues(&*i)) {
+        for(unsigned op = 0; op < i->getNumOperands(); op++) {
+          if(isa<Instruction>(i->getOperand(op)))
+            inst.insert(cast<Instruction>(i->getOperand(op)));
+          else if(isa<Argument>(i->getOperand(op)))
+            args.insert(cast<Argument>(i->getOperand(op)));
         }
       }
     }
@@ -303,11 +307,11 @@ private:
    * @param Live a set of live values
    * @return true if a user is in the liveness set, false otherwise
    */
-  bool hasLiveUser(const Instruction *Val,
+  bool hasLiveUser(const Value *Val,
                    const std::set<const Value *> &Live) const {
-    Instruction::const_use_iterator use, e;
+    Value::const_use_iterator use, e;
     for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
-      if(Live.count(*use)) return true;
+      if(Live.count(use->getUser())) return true;
     return false;
   }
 };
