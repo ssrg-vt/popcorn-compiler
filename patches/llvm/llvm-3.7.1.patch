@@ -3349,7 +3349,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,991 @@
+@@ -0,0 +1,997 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4148,12 +4148,18 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    for(size_t i = 0, num = Inst.size(); i < num; i++) {
 +      if(Inst[i]->opType() == OpType::Register) {
 +        RegInstruction *RI = (RegInstruction *)Inst[i].get();
-+        if(!TRI->isVirtualRegister(RI->getReg()) ||
-+           !SMVregs.at(SM).count(RI->getReg())) {
++        if(!TRI->isVirtualRegister(RI->getReg())) {
++          // TODO walk through stackmap and see if physical register in
++          // instruction is contained in stackmap
++          LV.reset(nullptr);
++          return;
++        }
++        else if(!SMVregs.at(SM).count(RI->getReg())) {
 +          DEBUG(dbgs() << "WARNING: vreg "
 +                       << TargetRegisterInfo::virtReg2Index(RI->getReg())
 +                       << " used to generate value not handled in stackmap\n");
 +          LV.reset(nullptr);
++          return;
 +        }
 +        else {
 +          assert(VRM->hasPhys(RI->getReg()) && "Invalid virtual register");
@@ -4168,7 +4174,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// instruction to ensure values are generated correctly and are valid.
 +MachineLiveValPtr
 +StackTransformMetadata::getTargetValue(const MachineInstr *MI,
-+                                       const MachineInstr *Call) const {
++                                       const MachineInstr *SM) const {
 +  if(!MI) return MachineLiveValPtr(nullptr);
 +
 +  // Immediates can be handled in an architecture-agnostic way
@@ -4191,7 +4197,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  // Otherwise, drop to architecture-specific value generator
 +  else {
 +    MachineLiveValPtr MLV = TVG->getMachineValue(MI);
-+    sanitizeVregs(MLV, Call);
++    sanitizeVregs(MLV, SM);
 +    return MLV;
 +  }
 +}
@@ -4241,7 +4247,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +          continue;
 +        }
 +
-+        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MICall);
++        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MISM);
 +        if(MC) {
 +          DEBUG(dbgs() << "      Defining instruction: ";
 +                MC->getDefiningInst()->print(dbgs());
