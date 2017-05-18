@@ -20,7 +20,7 @@ OBJ := $(subst src,$(BUILD),$(SRC:.c=.o))
 UTIL_OBJ  := $(BUILD)/bin.o $(BUILD)/util.o $(BUILD)/strings.o
 CHECK_OBJ := $(UTIL_OBJ) $(BUILD)/stackmap.o
 
-all: $(BIN)
+all: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
 
 %/.dir:
 	@echo " [MK] $*"
