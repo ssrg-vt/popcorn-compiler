@@ -258,7 +258,7 @@ ret_t add_section(Elf *e,
   if(!(data = elf_newdata(scn))) return ADD_SECTION_FAILED;
 
   data->d_buf = buf;
-  data->d_type = ELF_T_XWORD;
+  data->d_type = ELF_T_WORD;
   data->d_version = EV_CURRENT;
   data->d_size = entry_size * num_entries;
   data->d_off = 0LL; // Must be set by somebody else
