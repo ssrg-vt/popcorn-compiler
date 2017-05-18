@@ -85,8 +85,8 @@ static void parse_args(int argc, char **argv)
  * possible rather than to die on errors.  So, we'll iterate over everything
  * and print out where we find inconsistencies.
  */
-ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
-                      bin *b, stack_map *sm_b, size_t num_sm_b)
+ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
+                      bin *b, stack_map_section *sm_b, size_t num_sm_b)
 {
   ret_t ret = SUCCESS;
   char buf[BUF_SIZE];
@@ -134,15 +134,15 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
     num_records = MIN(sm_a[i].num_records, sm_b[i].num_records);
     for(j = 0; j < num_records; j++)
     {
-      const stack_size_record *ssr;
+      const function_record *fr;
 
-      ssr = &sm_a[i].stack_size_records[sm_a[i].stack_map_records[j].func_idx];
-      func_a = ssr->func_addr;
+      fr = &sm_a[i].function_records[sm_a[i].call_sites[j].func_idx];
+      func_a = fr->func_addr;
       sym_a = get_sym_by_addr(a->e, func_a, STT_FUNC);
       sym_a_name = get_sym_name(a->e, sym_a);
 
-      ssr = &sm_b[i].stack_size_records[sm_b[i].stack_map_records[j].func_idx];
-      func_b = ssr->func_addr;
+      fr = &sm_b[i].function_records[sm_b[i].call_sites[j].func_idx];
+      func_b = fr->func_addr;
       sym_b = get_sym_by_addr(b->e, func_b, STT_FUNC);
       sym_b_name = get_sym_name(b->e, sym_b);
 
@@ -154,7 +154,7 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
       {
         snprintf(buf, BUF_SIZE,
                  "stackmap %lu corresponds to different functions "
-                 "(%s/%lx vs. %s/%lx)", sm_a[i].stack_map_records[j].id,
+                 "(%s/%lx vs. %s/%lx)", sm_a[i].call_sites[j].id,
                  sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
         ret = INVALID_METADATA;
@@ -166,12 +166,12 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          * non-duplicated records, i.e., ignore backing stack slot locations.
          */
         unsigned num_a = 0, num_b = 0;
-        for(k = 0; k < sm_a[i].stack_map_records[j].num_locations; k++)
-          if(!sm_a[i].stack_map_records[j].locations[k].is_duplicate)
+        for(k = 0; k < sm_a[i].call_sites[j].num_locations; k++)
+          if(!sm_a[i].call_sites[j].locations[k].is_duplicate)
             num_a++;
 
-        for(k = 0; k < sm_b[i].stack_map_records[j].num_locations; k++)
-          if(!sm_b[i].stack_map_records[j].locations[k].is_duplicate)
+        for(k = 0; k < sm_b[i].call_sites[j].num_locations; k++)
+          if(!sm_b[i].call_sites[j].locations[k].is_duplicate)
             num_b++;
 
         /*
@@ -183,7 +183,7 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           snprintf(buf, BUF_SIZE,
                    "stackmap %lu has different numbers of location records "
                    "(%u vs. %u)",
-                   sm_a[i].stack_map_records[j].id, num_a, num_b);
+                   sm_a[i].call_sites[j].id, num_a, num_b);
           warn(buf);
           ret = INVALID_METADATA;
         }
@@ -195,37 +195,37 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
          */
         for(k = 0, l = 0; k < num_a && l < num_b; k++, l++)
         {
-          flag_a = sm_a[i].stack_map_records[j].locations[k].size;
-          flag_b = sm_b[i].stack_map_records[j].locations[l].size;
+          flag_a = sm_a[i].call_sites[j].locations[k].size;
+          flag_b = sm_b[i].call_sites[j].locations[l].size;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "different size (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].call_sites[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
 
-          flag_a = sm_a[i].stack_map_records[j].locations[k].is_ptr;
-          flag_b = sm_b[i].stack_map_records[j].locations[l].is_ptr;
+          flag_a = sm_a[i].call_sites[j].locations[k].is_ptr;
+          flag_b = sm_b[i].call_sites[j].locations[l].is_ptr;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched pointer flag (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].call_sites[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
           }
 
-          flag_a = sm_a[i].stack_map_records[j].locations[k].is_alloca;
-          flag_b = sm_b[i].stack_map_records[j].locations[l].is_alloca;
+          flag_a = sm_a[i].call_sites[j].locations[k].is_alloca;
+          flag_b = sm_b[i].call_sites[j].locations[l].is_alloca;
           if(flag_a != flag_b)
           {
             snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                     "mismatched alloca flag (%u vs. %u)",
-                     sym_a_name, sm_a[i].stack_map_records[j].id, k, l, flag_a,
+                     sym_a_name, sm_a[i].call_sites[j].id, k, l, flag_a,
                      flag_b);
             warn(buf);
             ret = INVALID_METADATA;
@@ -233,13 +233,13 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
 
           if(flag_a && flag_b)
           {
-            size_a = sm_a[i].stack_map_records[j].locations[k].alloca_size;
-            size_b = sm_b[i].stack_map_records[j].locations[l].alloca_size;
+            size_a = sm_a[i].call_sites[j].locations[k].alloca_size;
+            size_b = sm_b[i].call_sites[j].locations[l].alloca_size;
             if(size_a != size_b)
             {
               snprintf(buf, BUF_SIZE, "%s: stackmap %lu, location %lu/%lu has "
                                       "different size (%u vs. %u)",
-                       sym_a_name, sm_a[i].stack_map_records[j].id, k, l,
+                       sym_a_name, sm_a[i].call_sites[j].id, k, l,
                        size_a, size_b);
               warn(buf);
               ret = INVALID_METADATA;
@@ -247,9 +247,12 @@ ret_t check_stackmaps(bin *a, stack_map *sm_a, size_t num_sm_a,
           }
 
           /* Skip backing stack slot records */
-          while(sm_a[i].stack_map_records[j].locations[k+1].is_duplicate) k++;
-          while(sm_b[i].stack_map_records[j].locations[l+1].is_duplicate) l++;
+          while(sm_a[i].call_sites[j].locations[k+1].is_duplicate) k++;
+          while(sm_b[i].call_sites[j].locations[l+1].is_duplicate) l++;
         }
+
+        // Note: don't check architecture-specific live values because they're
+        // by nature going to be different
       }
     }
   }
@@ -265,7 +268,7 @@ int main(int argc, char **argv)
 {
   ret_t ret;
   bin *bin_aarch64 = NULL, *bin_x86_64 = NULL;
-  stack_map *sm_aarch64 = NULL, *sm_x86_64 = NULL;
+  stack_map_section *sm_aarch64 = NULL, *sm_x86_64 = NULL;
   size_t num_sm_aarch64, num_sm_x86_64;
 
   parse_args(argc, argv);

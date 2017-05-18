@@ -16,28 +16,26 @@
 /**
  * Generate the call-site metadata section.
  * @param b a binary descriptor
- * @param sm stack map data
- * @param num_sm number of stack maps pointed to by sm
  * @param start_id beginning ID number for site tags
+ * @param sm stack map section
+ * @param num_sm number of stack map sections pointed to by sm
  * @param num_sites number of call sites copied to cs
  * @param cs call site meta-data
  * @param num_live number of location records copied to live
  * @param live live variable location information
- * @param num_consts number of arch-specific constant records copied to consts
- * @param consts architecture-specific value information
+ * @param num_arch_live number of arch-specific live value records copied to arch_live
+ * @param arch_live architecture-specific live value information
  * @param unwind_addr function unwinding information address ranges
  * @param num_addrs number of function unwinding information entries
  * @return true if the data was created, false otherwise (*cs & *locs will be
  *         NULL if creation failed)
  */
 static bool
-create_call_site_metadata(bin *b,
-                          stack_map *sm,
-                          size_t num_sm,
-                          uint64_t start_id,
+create_call_site_metadata(bin *b, uint64_t start_id,
+                          stack_map_section *sm, size_t num_sm,
                           size_t *num_sites, call_site **cs,
-                          size_t *num_live, call_site_value **live,
-                          size_t *num_consts, arch_const_value **consts,
+                          size_t *num_live, live_value **live,
+                          size_t *num_arch_live, arch_live_value **arch_live,
                           size_t num_addrs, const unwind_addr *addrs);
 
 /**
@@ -102,18 +100,18 @@ ret_t update_function_addr(bin *b, const char *sec)
 }
 
 ret_t add_sections(bin *b,
-                   stack_map *sm,
+                   stack_map_section *sm,
                    size_t num_sm,
                    const char *sec,
                    uint64_t start_id,
                    const char *unwind_sec)
 {
   size_t num_shdr, i, added = 0, cur_offset, num_sites,
-         num_live, num_const, num_unwind;
+         num_live, num_arch_live, num_unwind;
   char sec_name[BUF_SIZE];
   call_site *id_sites, *addr_sites;
-  call_site_value *live_vals;
-  arch_const_value *archconsts;
+  live_value *live_vals;
+  arch_live_value *archlive;
   Elf64_Ehdr *ehdr;
   Elf64_Shdr *shdr;
   Elf_Scn *scn;
@@ -126,13 +124,10 @@ ret_t add_sections(bin *b,
   if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
   num_unwind = shdr->sh_size / shdr->sh_entsize;
   if(!(unwind = get_section_data(scn))) return READ_ELF_FAILED;
-  if(!create_call_site_metadata(b,
-                                sm,
-                                num_sm,
-                                start_id,
+  if(!create_call_site_metadata(b, start_id, sm, num_sm,
                                 &num_sites, &id_sites,
                                 &num_live, &live_vals,
-                                &num_const, &archconsts,
+                                &num_arch_live, &archlive,
                                 num_unwind, unwind))
     return CREATE_METADATA_FAILED;
 
@@ -161,18 +156,18 @@ ret_t add_sections(bin *b,
   /* Add live-value location section. */
   snprintf(sec_name, BUF_SIZE, "%s.%s", sec, SECTION_LIVE);
   if((scn = get_section_by_name(b->e, sec_name)))
-    ret = update_section(b->e, scn, num_live, sizeof(call_site_value), live_vals);
+    ret = update_section(b->e, scn, num_live, sizeof(live_value), live_vals);
   else
-    ret = add_section(b->e, sec_name, num_live, sizeof(call_site_value), live_vals);
+    ret = add_section(b->e, sec_name, num_live, sizeof(live_value), live_vals);
   if(ret) return ret;
   added++;
 
   /* Add architecture-specific location section. */
   snprintf(sec_name, BUF_SIZE, "%s.%s", sec, SECTION_ARCH);
   if((scn = get_section_by_name(b->e, sec_name)))
-    ret = update_section(b->e, scn, num_const, sizeof(arch_const_value), archconsts);
+    ret = update_section(b->e, scn, num_arch_live, sizeof(arch_live_value), archlive);
   else
-    ret = add_section(b->e, sec_name, num_const, sizeof(arch_const_value), archconsts);
+    ret = add_section(b->e, sec_name, num_arch_live, sizeof(arch_live_value), archlive);
   if(ret) return ret;
   added++;
 
@@ -207,64 +202,68 @@ ret_t add_sections(bin *b,
 ///////////////////////////////////////////////////////////////////////////////
 
 static bool
-create_call_site_metadata(bin *b,
-                          stack_map *sm,
-                          size_t num_sm,
-                          uint64_t start_id,
+create_call_site_metadata(bin *b, uint64_t start_id,
+                          stack_map_section *sm, size_t num_sm,
                           size_t *num_sites, call_site **cs,
-                          size_t *num_live, call_site_value **live,
-                          size_t *num_consts, arch_const_value **consts,
+                          size_t *num_live, live_value **live,
+                          size_t *num_arch_live, arch_live_value **arch_live,
                           size_t num_addrs, const unwind_addr *addrs)
 {
-  size_t i, j, sites_num = 0, loc_num = 0, const_num = 0, cur;
-  const stack_size_record *ssr;
+  size_t i, j, sites_num = 0, loc_num = 0, arch_num = 0, cur;
+  const function_record *fr;
   GElf_Sym mainthr, thread;
+  call_site_record *site_record;
   call_site *sites;
-  call_site_value *locs;
+  live_value *locs;
   const unwind_addr *ua;
-  arch_const_value *archconsts;
+  arch_live_value *archlive;
 
-  if(!num_sites || !cs || !num_live || !live) return false;
+  if(!num_sites || !cs || !num_live || !live || !num_arch_live ||
+     !arch_live || !addrs)
+    return false;
 
   mainthr = get_sym_by_name(b->e, START_MAIN);
   if(!mainthr.st_size) return false;
+  thread.st_size = 0;
   thread = get_sym_by_name(b->e, START_THREAD);
 
-  /* Calculate number of stackmap & location records */
+  /* Calculate number of call site & location records */
   for(i = 0; i < num_sm; i++)
   {
     sites_num += sm[i].num_records;
     for(j = 0; j < sm[i].num_records; j++)
     {
-      loc_num += sm[i].stack_map_records[j].num_locations;
-      const_num += sm[i].stack_map_records[j].num_arch_consts;
+      loc_num += sm[i].call_sites[j].num_locations;
+      arch_num += sm[i].call_sites[j].num_arch_live;
     }
   }
   sites_num += (thread.st_size ? 2 : 1);
   sites = malloc(sizeof(call_site) * sites_num);
-  locs = malloc(sizeof(call_site_value) * loc_num);
-  archconsts = malloc(sizeof(arch_const_value) * const_num);
+  locs = malloc(sizeof(live_value) * loc_num);
+  archlive = malloc(sizeof(arch_live_value) * arch_num);
 
   if(verbose)
-    printf("Creating metadata for %lu call site & %lu location records\n",
-           sites_num, loc_num);
+    printf("Creating metadata for %lu call sites, %lu location records & %lu "
+           "arch-specific locations\n",
+           sites_num, loc_num, arch_num);
 
   /* Populate call site & location record data. */
-  for(i = 0, loc_num = 0, const_num = 0, cur = 0; i < num_sm; i++)
+  for(i = 0, loc_num = 0, arch_num = 0, cur = 0; i < num_sm; i++)
   {
     for(j = 0; j < sm[i].num_records; j++, cur++)
     {
-      ssr = &sm[i].stack_size_records[sm[i].stack_map_records[j].func_idx];
+      site_record = &sm[i].call_sites[j];
+      fr = &sm[i].function_records[site_record->func_idx];
 
       /* Populate call site record */
       sites[cur].id = start_id++;
-      sites[cur].addr = ssr->func_addr + sm[i].stack_map_records[j].offset;
-      sites[cur].fbp_offset = ssr->stack_size - fp_offset(b->arch);
-      sites[cur].num_unwind = ssr->num_unwind;
-      sites[cur].num_live = sm[i].stack_map_records[j].num_locations;
-      sites[cur].num_arch_const = sm[i].stack_map_records[j].num_arch_consts;
+      sites[cur].addr = fr->func_addr + site_record->offset;
+      sites[cur].fbp_offset = fr->stack_size - fp_offset(b->arch);
+      sites[cur].num_unwind = fr->num_unwind;
+      sites[cur].num_live = site_record->num_locations;
       sites[cur].live_offset = loc_num;
-      sites[cur].arch_const_offset = const_num;
+      sites[cur].num_arch_live = site_record->num_arch_live;
+      sites[cur].arch_live_offset = arch_num;
 
       /* Find unwinding information offset */
       ua = get_func_unwind_data(sites[cur].addr, num_addrs, addrs);
@@ -272,14 +271,14 @@ create_call_site_metadata(bin *b,
       sites[cur].unwind_offset = ua->unwind_offset;
 
       /* Copy live value location records to new section */
-      memcpy(&locs[loc_num], sm[i].stack_map_records[j].locations,
-             sizeof(call_site_value) * sites[cur].num_live);
+      memcpy(&locs[loc_num], site_record->locations,
+             sizeof(live_value) * sites[cur].num_live);
       loc_num += sites[cur].num_live;
 
-      /* Copy arch-specific constant records to new section */
-      memcpy(&archconsts[const_num], sm[i].stack_map_records[j].arch_consts,
-             sizeof(arch_const_value) * sites[cur].num_arch_const);
-      const_num += sites[cur].num_arch_const;
+      /* Copy arch-specific live value records to new section */
+      memcpy(&archlive[arch_num], site_record->arch_live,
+             sizeof(arch_live_value) * sites[cur].num_arch_live);
+      arch_num += sites[cur].num_arch_live;
     }
   }
 
@@ -295,8 +294,8 @@ create_call_site_metadata(bin *b,
   sites[cur].unwind_offset = UINT32_MAX;
   sites[cur].num_live = 0;
   sites[cur].live_offset = loc_num;
-  sites[cur].num_arch_const = 0;
-  sites[cur].arch_const_offset = const_num;
+  sites[cur].num_arch_live = 0;
+  sites[cur].arch_live_offset = arch_num;
   cur++;
 
   if(thread.st_size) // May not exist if application doesn't use pthreads
@@ -308,16 +307,16 @@ create_call_site_metadata(bin *b,
     sites[cur].unwind_offset = UINT32_MAX;
     sites[cur].num_live = 0;
     sites[cur].live_offset = loc_num;
-    sites[cur].num_arch_const = 0;
-    sites[cur].arch_const_offset = const_num;
+    sites[cur].num_arch_live = 0;
+    sites[cur].arch_live_offset = arch_num;
   }
 
   *num_sites = sites_num;
   *cs = sites;
   *num_live = loc_num;
   *live = locs;
-  *num_consts = const_num;
-  *consts = archconsts;
+  *num_arch_live = arch_num;
+  *arch_live = archlive;
 
   return true;
 }

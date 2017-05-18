@@ -45,8 +45,8 @@ typedef struct __attribute__((__packed__)) unwind_loc {
     .unwind_offset = 0, \
     .num_live = 0, \
     .live_offset = 0, \
-    .num_arch_const = 0, \
-    .arch_const_offset = 0, \
+    .num_arch_live = 0, \
+    .arch_live_offset = 0, \
     .padding = UINT16_MAX \
   })
 
@@ -58,8 +58,8 @@ typedef struct __attribute__((__packed__)) call_site {
   uint64_t unwind_offset; /* beginning of unwinding info records in unwind info section */
   uint16_t num_live; /* number of live values at site */
   uint64_t live_offset; /* beginning of live value location records in live value section */
-  uint16_t num_arch_const; /* number of arch-specific constants at site */
-  uint64_t arch_const_offset; /* beginning of arch-specific constant records in constant section */
+  uint16_t num_arch_live; /* number of arch-specific live values at site */
+  uint64_t arch_live_offset; /* beginning of arch-specific live value records in section */
   uint16_t padding; /* Make 4-byte aligned */
 } call_site;
 
@@ -76,7 +76,7 @@ enum location_type {
 // Note: the compiler lays out the bit fields from least-significant to
 // most-significant, meaning they *must* be in the following order to adhere to
 // the on-disk layout
-typedef struct __attribute__((__packed__)) call_site_value {
+typedef struct __attribute__((__packed__)) live_value {
   uint8_t is_duplicate : 1;
   uint8_t is_alloca : 1;
   uint8_t is_ptr : 1;
@@ -86,14 +86,22 @@ typedef struct __attribute__((__packed__)) call_site_value {
   uint16_t regnum;
   int32_t offset_or_constant;
   uint32_t alloca_size;
-} call_site_value;
+} live_value;
+
+/* Operation types for generating architecture-specific values. */
+enum inst_type {
+#define X(inst, pseudo) inst,
+#include "StackTransformTypes.def"
+VALUE_GEN_INST
+#undef X
+};
 
 /*
- * An architecture-specific constant's location & value at a call site.  These
- * are conceptually a reduced version of a call_site_value, but it also
- * contains the value used to populate the location.
+ * An architecture-specific live values's location & value at a call site.
+ * Similar to a call_site_value, but also contains instructions for populating
+ * the location.
  */
-typedef struct __attribute__((__packed__)) arch_const_value {
+typedef struct __attribute__((__packed__)) arch_live_value {
   /* Location */
   uint8_t is_ptr : 1;
   uint8_t bit_pad : 3;
@@ -102,9 +110,13 @@ typedef struct __attribute__((__packed__)) arch_const_value {
   uint16_t regnum;
   uint32_t offset;
 
-  /* Value */
-  uint64_t value;
-} arch_const_value;
+  /* Operation/operand */
+  uint8_t operand_type : 4;
+  uint8_t inst_type : 4;
+  uint8_t operand_size;
+  uint16_t operand_regnum;
+  int64_t operand_offset_or_constant;
+} arch_live_value;
 
 #endif /* _CALL_SITE_H */
 

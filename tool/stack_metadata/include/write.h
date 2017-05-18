@@ -32,7 +32,7 @@ ret_t update_function_addr(bin *b, const char *sec);
  * @return 0 if the sections were added, an error code otherwise
  */
 ret_t add_sections(bin *b,
-                   stack_map *sm,
+                   stack_map_section *sm,
                    size_t num_sm,
                    const char *sec,
                    uint64_t start_id,

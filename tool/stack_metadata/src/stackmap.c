@@ -21,13 +21,13 @@ static uint64_t stackmap_records_size(void *raw_sm, unsigned num_records)
 
   for(i = 0; i < num_records; i++)
   {
-    raw_sm += offsetof(stack_map_record, num_locations);
+    raw_sm += offsetof(call_site_record, num_locations);
     num = raw_sm; // Number of locations
-    raw_sm += 4 + sizeof(call_site_value) * (*num);
+    raw_sm += 4 + sizeof(live_value) * (*num);
     num = raw_sm; // Number of live outs
     raw_sm += 4 + sizeof(live_out_record) * (*num);
-    num = raw_sm; // Number of architecture-specific constants
-    raw_sm += 2 + sizeof(arch_const_value) * (*num);
+    num = raw_sm; // Number of architecture-specific locations
+    raw_sm += 2 + sizeof(arch_live_value) * (*num);
     if((uint64_t)raw_sm % 8)
       raw_sm += 8 - ((uint64_t)raw_sm % 8);
   }
@@ -35,38 +35,38 @@ static uint64_t stackmap_records_size(void *raw_sm, unsigned num_records)
   return raw_sm - orig_raw;
 }
 
-static uint64_t read_stackmap_records(void *raw_sm, stack_map *sm)
+static uint64_t read_stackmap_records(void *raw_sm, stack_map_section *sm)
 {
   size_t i, off;
   void* orig_raw = raw_sm;
 
-  sm->stack_map_records = malloc(sizeof(stack_map_record) * sm->num_records);
+  sm->call_sites = malloc(sizeof(call_site_record) * sm->num_records);
   for(i = 0; i < sm->num_records; i++)
   {
     /* id, func_idx, offset, reserved, num_locations */
-    off = offsetof(stack_map_record, num_locations);
-    memcpy(&sm->stack_map_records[i], raw_sm, off);
+    off = offsetof(call_site_record, num_locations);
+    memcpy(&sm->call_sites[i], raw_sm, off);
     raw_sm += off;
 
     /* num_locations, locations, padding */
-    memcpy(&sm->stack_map_records[i].num_locations, raw_sm, 2);
+    memcpy(&sm->call_sites[i].num_locations, raw_sm, 2);
     raw_sm += 2;
-    sm->stack_map_records[i].locations = raw_sm;
-    raw_sm += sizeof(call_site_value) * sm->stack_map_records[i].num_locations;
+    sm->call_sites[i].locations = raw_sm;
+    raw_sm += sizeof(live_value) * sm->call_sites[i].num_locations;
     raw_sm += 2; // padding
 
     /* num_live_outs, live_outs, padding2 */
-    memcpy(&sm->stack_map_records[i].num_live_outs, raw_sm, 2);
+    memcpy(&sm->call_sites[i].num_live_outs, raw_sm, 2);
     raw_sm += 2;
-    sm->stack_map_records[i].live_outs = raw_sm;
-    raw_sm += sizeof(live_out_record) * sm->stack_map_records[i].num_live_outs;
+    sm->call_sites[i].live_outs = raw_sm;
+    raw_sm += sizeof(live_out_record) * sm->call_sites[i].num_live_outs;
     raw_sm += 2; // padding2
 
-    /* num_arch_consts, arch_consts, alignment padding */
-    memcpy(&sm->stack_map_records[i].num_arch_consts, raw_sm, 2);
+    /* num_arch_live, arch_live, alignment padding */
+    memcpy(&sm->call_sites[i].num_arch_live, raw_sm, 2);
     raw_sm += 2;
-    sm->stack_map_records[i].arch_consts = raw_sm;
-    raw_sm += sizeof(arch_const_value) * sm->stack_map_records[i].num_arch_consts;
+    sm->call_sites[i].arch_live = raw_sm;
+    raw_sm += sizeof(arch_live_value) * sm->call_sites[i].num_arch_live;
     if((uint64_t)raw_sm % 8)
       raw_sm += 8 - ((uint64_t)raw_sm % 8);
   }
@@ -74,11 +74,11 @@ static uint64_t read_stackmap_records(void *raw_sm, stack_map *sm)
   return raw_sm - orig_raw;
 }
 
-ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm)
+ret_t init_stackmap(bin *b, stack_map_section **sm_ptr, size_t *num_sm)
 {
   ret_t ret = SUCCESS;
   uint64_t offset, i, j;
-  stack_map *sm, tmp_sm;
+  stack_map_section *sm, tmp_sm;
   Elf_Scn *scn;
   GElf_Shdr shdr;
   Elf_Data *data = NULL;
@@ -95,48 +95,52 @@ ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm)
     return READ_ELF_FAILED;
 
   if(verbose)
-    printf("Section '%s': %lu bytes\n", LLVM_STACKMAP_SECTION, shdr.sh_size);
+    printf("ELF section '%s': %lu bytes\n", LLVM_STACKMAP_SECTION,
+           shdr.sh_size);
 
   /* Calculate number of stack map records */
   offset = 0;
   while(offset < shdr.sh_size)
   {
     (*num_sm)++;
-    memcpy(&tmp_sm, data->d_buf + offset, offsetof(stack_map, stack_size_records));
-    offset += offsetof(stack_map, stack_size_records);
-    offset += sizeof(stack_size_record) * tmp_sm.num_functions;
+    memcpy(&tmp_sm, data->d_buf + offset,
+           offsetof(stack_map_section, function_records));
+    offset += offsetof(stack_map_section, function_records);
+    offset += sizeof(function_record) * tmp_sm.num_functions;
     offset += sizeof(uint64_t) * tmp_sm.num_constants;
     offset += stackmap_records_size(data->d_buf + offset, tmp_sm.num_records);
   }
 
+  // Note: we should expect LLVM to generate a stackmap section for each
+  // instrumented module
   if(verbose) printf("Found %lu stackmap section(s)\n", *num_sm);
 
   /* Populate stackmap records. */
   offset = 0;
-  sm = malloc(sizeof(stack_map) * (*num_sm));
+  sm = malloc(sizeof(stack_map_section) * (*num_sm));
   for(i = 0; i < *num_sm; i++)
   {
     /* Read header & record counts */
     memcpy(&sm[i], data->d_buf + offset,
-           offsetof(stack_map, stack_size_records));
-    offset += offsetof(stack_map, stack_size_records);
+           offsetof(stack_map_section, function_records));
+    offset += offsetof(stack_map_section, function_records);
 
     if(verbose)
       printf("  Stackmap v%d, %u function(s), %u constant(s), %u record(s)\n",
              sm[i].version, sm[i].num_functions, sm[i].num_constants,
              sm[i].num_records);
 
-    /* Read stack_size_records */
-    sm[i].stack_size_records = data->d_buf + offset;
-    offset += sizeof(stack_size_record) * sm[i].num_functions;
+    /* Read function_records */
+    sm[i].function_records = data->d_buf + offset;
+    offset += sizeof(function_record) * sm[i].num_functions;
 
     if(verbose)
       for(j = 0; j < sm[i].num_functions; j++)
         printf("    Function %lu: %p, stack frame size = %lu byte(s), "
                "%u unwinding records\n", j,
-               (void*)sm[i].stack_size_records[j].func_addr,
-               sm[i].stack_size_records[j].stack_size,
-               sm[i].stack_size_records[j].num_unwind);
+               (void*)sm[i].function_records[j].func_addr,
+               sm[i].function_records[j].stack_size,
+               sm[i].function_records[j].num_unwind);
 
     /* Read constants */
     sm[i].constants = data->d_buf + offset;
@@ -156,27 +160,27 @@ ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm)
                "function offset = %u byte(s), "
                "%u location(s), "
                "%u live-out(s), "
-               "%u arch-specific constants\n",
-               j, sm[i].stack_map_records[j].id,
-               sm[i].stack_map_records[j].func_idx,
-               sm[i].stack_map_records[j].offset,
-               sm[i].stack_map_records[j].num_locations,
-               sm[i].stack_map_records[j].num_live_outs,
-               sm[i].stack_map_records[j].num_arch_consts);
+               "%u arch-specific live value(s)\n",
+               j, sm[i].call_sites[j].id,
+               sm[i].call_sites[j].func_idx,
+               sm[i].call_sites[j].offset,
+               sm[i].call_sites[j].num_locations,
+               sm[i].call_sites[j].num_live_outs,
+               sm[i].call_sites[j].num_arch_live);
   }
 
   *sm_ptr = sm;
   return ret;
 }
 
-ret_t free_stackmaps(stack_map *sm, size_t num_sm)
+ret_t free_stackmaps(stack_map_section *sm, size_t num_sm)
 {
   size_t i;
 
   if(!sm) return INVALID_ARGUMENT;
 
   for(i = 0; i < num_sm; i++)
-    free(sm[i].stack_map_records);
+    free(sm[i].call_sites);
   free(sm);
 
   return SUCCESS;

@@ -1,7 +1,8 @@
-BUILD := build
-BIN   := gen-stackinfo
-UTIL  := dump-stackinfo
-CHECK := check-stackmaps
+BUILD		:= build
+BIN		:= gen-stackinfo
+DUMP_SM	:= dump-llvm-stackmap
+DUMP_ST	:= dump-stackinfo
+CHECK		:= check-stackmaps
 
 POPCORN        := /usr/local/popcorn
 POPCORN_X86_64 := $(POPCORN)/x86_64
@@ -32,26 +33,30 @@ build/%.o: src/%.c $(HDR)
 
 $(BIN): $(BUILD)/.dir $(OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(BIN) $(OBJ) $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $(OBJ) $(LIB)
 
-util: $(UTIL)
+util: $(DUMP_SM) $(DUMP_ST)
 
-$(UTIL): utils/dump_stackinfo.c $(UTIL_OBJ)
+$(DUMP_SM): utils/dump_llvm_stackmap.c $(CHECK_OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(UTIL) $^ $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
+
+$(DUMP_ST): utils/dump_stackinfo.c $(UTIL_OBJ)
+	@echo " [CC] $@"
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
 
 check: $(CHECK)
 
 $(CHECK): utils/check_stackmaps.c $(CHECK_OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(CHECK) $^ $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
 
-install: $(BIN) $(UTIL) $(CHECK)
+install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
 	@echo " [INSTALL] $^ to $(POPCORN)/bin"
 	@cp $^ $(POPCORN)/bin
 
 clean:
-	@echo " [RM] $(BIN) $(BUILD) $(UTIL) $(CHECK)"
-	@rm -rf $(BIN) $(BUILD) $(UTIL) $(CHECK)
+	@echo " [RM] $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK)"
+	@rm -rf $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK)
 
 .PHONY: all util clean

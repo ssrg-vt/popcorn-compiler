@@ -32,7 +32,7 @@ Options:\n\
 \t-i num  : number at which to begin generating call site IDs\n\
 \t-v      : be verbose\n\n\
 \
-Note: this tool should be run after symbol alignment!";
+Note: this tool *must* be run after symbol alignment!";
 
 static const char *file = NULL;
 static char unwind_addr_name[512];
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
   ret_t ret;
   size_t num_sm;
   bin *b;
-  stack_map *sm;
+  stack_map_section *sm;
 
   parse_args(argc, argv);  
   snprintf(unwind_addr_name, 512, "%s.%s", section_name, SECTION_UNWIND_ADDR);

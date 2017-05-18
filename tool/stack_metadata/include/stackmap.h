@@ -16,12 +16,12 @@
 #include "call_site.h"
 
 /* A stack size record for a function. */
-typedef struct __attribute__((__packed__)) stack_size_record {
+typedef struct __attribute__((__packed__)) function_record {
   uint64_t func_addr;
   uint64_t stack_size;
   uint32_t num_unwind;
   uint32_t unwind_offset;
-} stack_size_record;
+} function_record;
 
 /* A live register across the stack map call. */
 typedef struct __attribute__((__packed__)) live_out_record {
@@ -33,16 +33,16 @@ typedef struct __attribute__((__packed__)) live_out_record {
 /* A stack map record for a call site. */
 // Note: this doesn't directly mirror on-disk layout, as the on-disk records
 // are variably sized.
-typedef struct __attribute__((__packed__)) stack_map_record {
+typedef struct __attribute__((__packed__)) call_site_record {
   /* Call site header */
   uint64_t id; /* per-call site ID */
-  uint32_t func_idx; /* index into stack_size_records for function information */
+  uint32_t func_idx; /* index into function_records for function information */
   uint32_t offset; /* offset from beginning of function */
   uint16_t reserved;
 
   /* Live value locations */
   uint16_t num_locations;
-  call_site_value *locations;
+  live_value *locations;
   uint16_t padding;
 
   /* Register live-outs */
@@ -50,13 +50,13 @@ typedef struct __attribute__((__packed__)) stack_map_record {
   live_out_record *live_outs;
   uint16_t padding2;
 
-  /* Architecture-specific constants */
-  uint16_t num_arch_consts;
-  arch_const_value *arch_consts;
-} stack_map_record;
+  /* Architecture-specific live values */
+  uint16_t num_arch_live;
+  arch_live_value *arch_live;
+} call_site_record;
 
 /* Per-module stack map information. */
-typedef struct stack_map {
+typedef struct stack_map_section {
   /* Header */
   uint8_t version;
   uint8_t reserved;
@@ -68,14 +68,14 @@ typedef struct stack_map {
   uint32_t num_records;
 
   /* Function records */
-  stack_size_record *stack_size_records;
+  function_record *function_records;
 
   /* Constant pool entries */
   uint64_t *constants;
 
   /* Stack map call site records */
-  stack_map_record *stack_map_records;
-} stack_map;
+  call_site_record *call_sites;
+} stack_map_section;
 
 /**
  * Read stack map information from a binary.
@@ -85,7 +85,7 @@ typedef struct stack_map {
  * @param num_sm number of stackmap structs parsed
  * @return 0 if successful, an error code otherwise
  */
-ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm);
+ret_t init_stackmap(bin *b, stack_map_section **sm_ptr, size_t *num_sm);
 
 /**
  * Free stack map data.
@@ -93,7 +93,7 @@ ret_t init_stackmap(bin *b, stack_map **sm_ptr, size_t *num_sm);
  * @param num_sm number of stack maps
  * @return 0 if successful, an error code otherwise
  */
-ret_t free_stackmaps(stack_map *sm, size_t num_sm);
+ret_t free_stackmaps(stack_map_section *sm, size_t num_sm);
 
 #endif
 

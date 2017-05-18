@@ -145,7 +145,7 @@ public:
   public:
     // Instruction mnemonics or types
     enum InstType {
-      #define X(type, pseudo) type
+      #define X(type, pseudo) type,
       VALUE_GEN_INST
       #undef X
     };
