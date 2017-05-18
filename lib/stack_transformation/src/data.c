@@ -28,7 +28,7 @@ static inline void* get_val_loc(rewrite_context ctx,
  * values, and will return addresses for constants.
  */
 static const void* get_src_loc(rewrite_context ctx,
-                               const call_site_value* val,
+                               const live_value* val,
                                int act);
 
 /*
@@ -36,7 +36,7 @@ static const void* get_src_loc(rewrite_context ctx,
  * value (doesn't return addresses for constants).
  */
 static void* get_dest_loc(rewrite_context ctx,
-                          const call_site_value* val,
+                          const live_value* val,
                           int act);
 
 /*
@@ -47,6 +47,25 @@ static void* callee_saved_loc(rewrite_context ctx,
                               uint16_t regnum,
                               int act);
 
+/*
+ * Get operand location for an instruction used to generate an
+ * architecture-specific live value.
+ */
+// TODO: we need to handle types more carefully, since we're not doing a
+// straight copy any more
+static int64_t get_arch_operand_loc(rewrite_context ctx,
+                                    const arch_live_value* val,
+                                    int act);
+
+/*
+ * Given a destination (and possible callee-saved location) apply an insruction
+ * to generate an architecture-specific value.
+ */
+static void apply_arch_operation(uint64_t* dest,
+                                 uint64_t* callee_dest,
+                                 int64_t operand,
+                                 enum inst_type inst);
+
 ///////////////////////////////////////////////////////////////////////////////
 // Data access
 ///////////////////////////////////////////////////////////////////////////////
@@ -55,9 +74,9 @@ static void* callee_saved_loc(rewrite_context ctx,
  * Put SRC_VAL from SRC at DEST_VAL from DEST (copying SIZE bytes).
  */
 void put_val(rewrite_context src,
-             const call_site_value* src_val,
+             const live_value* src_val,
              rewrite_context dest,
-             const call_site_value* dest_val)
+             const live_value* dest_val)
 {
   const void* src_addr;
   void* dest_addr, *callee_addr = NULL;
@@ -100,12 +119,13 @@ void put_val(rewrite_context src,
  * Evaluate architecture-specific location record VAL and set the appropriate
  * value in CTX.
  */
-void put_val_arch(rewrite_context ctx, const arch_const_value* val)
+void put_val_arch(rewrite_context ctx, const arch_live_value* val)
 {
   void* dest_addr, *callee_addr = NULL;
+  uint64_t operand;
 
   TIMER_FG_START(put_val)
-  ASSERT(val->type == SM_REGISTER || val->type == SM_DIRECT,
+  ASSERT(val->type == SM_REGISTER || val->type == SM_INDIRECT,
          "Invalid architecture-specific value type (%u)\n", val->type);
 
   ST_INFO("Putting architecture-specific destination value\n");
@@ -114,8 +134,11 @@ void put_val_arch(rewrite_context ctx, const arch_const_value* val)
     callee_addr = callee_saved_loc(ctx, val->regnum, ctx->act);
 
   ASSERT(dest_addr, "invalid destination location\n");
-  memcpy(dest_addr, &val->value, val->size);
-  if(callee_addr) memcpy(callee_addr, &val->value, val->size);
+
+  ST_INFO("Getting operand: ");
+  operand = get_arch_operand_loc(ctx, val, ctx->act);
+  ST_INFO("Operand: %ld / %lu / %lx", operand, operand, operand);
+  apply_arch_operation(dest_addr, callee_addr, operand, val->inst_type);
 
   TIMER_FG_STOP(put_val);
 }
@@ -124,13 +147,20 @@ void put_val_arch(rewrite_context ctx, const arch_const_value* val)
  * Set the live value VAL's in activation ACT and context CTX to DATA.
  */
 void put_val_data(rewrite_context ctx,
-                  const call_site_value* val,
+                  const live_value* val,
                   int act,
                   uint64_t data)
 {
   void* dest_addr, *callee_addr = NULL;
 
   TIMER_FG_START(put_val);
+
+  // Avoid the copy if destination value is constant
+  if(val->type == SM_CONSTANT || val->type == SM_CONST_IDX)
+  {
+    ST_INFO("Skipping value (destination value is constant)\n");
+    return;
+  }
 
   ST_INFO("Setting data: ");
   dest_addr = get_dest_loc(ctx, val, act);
@@ -148,7 +178,7 @@ void put_val_data(rewrite_context ctx,
  * Return whether or not a pointer refers to a value on the stack.
  */
 void* points_to_stack(const rewrite_context ctx,
-                      const call_site_value* val)
+                      const live_value* val)
 {
   void* stack_addr = NULL;
 
@@ -200,9 +230,9 @@ void* points_to_stack(const rewrite_context ctx,
  * Return whether or not a pointer refers to the specified live value.
  */
 void* points_to_data(const rewrite_context src,
-                     const call_site_value* src_val,
+                     const live_value* src_val,
                      const rewrite_context dest,
-                     const call_site_value* dest_val,
+                     const live_value* dest_val,
                      void* src_ptr)
 {
   void* src_addr, *dest_addr = NULL;
@@ -299,7 +329,7 @@ static inline void* get_val_loc(rewrite_context ctx,
 }
 
 static const void* get_src_loc(rewrite_context ctx,
-                               const call_site_value* val,
+                               const live_value* val,
                                int act)
 {
   switch(val->type)
@@ -327,7 +357,7 @@ static const void* get_src_loc(rewrite_context ctx,
 }
 
 static void* get_dest_loc(rewrite_context ctx,
-                          const call_site_value* val,
+                          const live_value* val,
                           int act)
 {
   return get_val_loc(ctx,
@@ -362,5 +392,65 @@ static void* callee_saved_loc(rewrite_context ctx,
   /* Register is still live in outermost frame. */
   ST_INFO("Callee-saved register %u live in outer-most frame\n", regnum);
   return REGOPS(ctx)->reg(ctx->acts[0].regs, regnum);
+}
+
+static int64_t get_arch_operand_loc(rewrite_context ctx,
+                                    const arch_live_value* val,
+                                    int act)
+{
+  void* val_loc;
+
+  ASSERT(val->operand_size == 8,
+        "Invalid architecture-specific instruction operand\n");
+
+  // Note: control flow is a little funky here because constants aren't handled
+  // by get_val_loc(), and each of SM_<CONSTANT | DIRECT | REGISTER> are
+  // handled differently
+
+  switch(val->operand_type)
+  {
+  case SM_CONSTANT: return val->operand_offset_or_constant;
+  default: break;
+  }
+
+  val_loc = get_val_loc(ctx,
+                        val->operand_type,
+                        val->operand_regnum,
+                        val->operand_offset_or_constant,
+                        act);
+
+  switch(val->operand_type)
+  {
+  case SM_REGISTER: return *(int64_t*)val_loc;
+  case SM_DIRECT: return (int64_t)val_loc;
+  default:
+    ST_ERR(1, "Invalid architecture-specific instruction operand\n");
+    break;
+  }
+}
+
+// TODO we should be more careful with types here...
+static void apply_arch_operation(uint64_t* dest,
+                                 uint64_t* callee_dest,
+                                 int64_t operand,
+                                 enum inst_type inst)
+{
+  uint64_t orig_val = *(uint64_t*)dest;
+
+  switch(inst)
+  {
+  case Set: *dest = operand; break;
+  case Add: *dest = orig_val + operand; break;
+  case Subtract: *dest = orig_val - operand; break;
+  case Multiply: *dest = orig_val * operand; break;
+  case Divide: *dest = orig_val / operand; break;
+  case LeftShift: *dest = orig_val << operand; break;
+  case RightShiftLog: *dest = orig_val >> (uint64_t)operand; break;
+  case RightShiftArith: *dest = orig_val >> operand; break;
+  case Mask: *dest = orig_val & operand; break;
+  default: ST_ERR(1, "Invalid instruction type (%d)\n", inst); break;
+  }
+
+  if(callee_dest) *callee_dest = *dest;
 }
 

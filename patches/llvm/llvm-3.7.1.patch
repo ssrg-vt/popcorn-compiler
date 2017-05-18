@@ -769,16 +769,16 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 +// pseudo-instruction (which must be converted to normal instructions after
 +// register & stack slot rewriting).
 +#define VALUE_GEN_INST \
-+  X(Set, false), /* Set the generated value to another value */ \
-+  X(Add, false), /* Add a value to the generated value */ \
-+  X(Subtract, false), /* Subtract a value from the generated value */ \
-+  X(Multiply, false), /* Multiply the generated value by another value */ \
-+  X(Divide, false), /* Divide the generated value by another value */ \
-+  X(LeftShift, false), /* Left-shift the generated value */ \
-+  X(RightShiftLog, false), /* Right-shift (logical) the generated value */ \
-+  X(RightShiftArith, false), /* Right-shift (arithmetic) the generated value */ \
-+  X(Mask, false), /* Apply bit mask */ \
-+  X(StackSlot, true), /* Generate stack slot reference */ \
++  X(Set, false) /* Set the generated value to another value */ \
++  X(Add, false) /* Add a value to the generated value */ \
++  X(Subtract, false) /* Subtract a value from the generated value */ \
++  X(Multiply, false) /* Multiply the generated value by another value */ \
++  X(Divide, false) /* Divide the generated value by another value */ \
++  X(LeftShift, false) /* Left-shift the generated value */ \
++  X(RightShiftLog, false) /* Right-shift (logical) the generated value */ \
++  X(RightShiftArith, false) /* Right-shift (arithmetic) the generated value */ \
++  X(Mask, false) /* Apply bit mask */ \
++  X(StackSlot, true) /* Generate stack slot reference */ \
 +  X(ConstantPool, true) /* Generate a constant pool entry reference */
 +
 +#endif
@@ -935,7 +935,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  public:
 +    // Instruction mnemonics or types
 +    enum InstType {
-+      #define X(type, pseudo) type
++      #define X(type, pseudo) type,
 +      VALUE_GEN_INST
 +      #undef X
 +    };
@@ -2877,8 +2877,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +        else
 +          OS << Loc.Reg;
 +        break;
-+      case Location::Direct:
-+        OS << "Direct ";
++      case Location::Indirect:
++        OS << "Indirect ";
 +        if (TRI)
 +          OS << TRI->getName(Loc.Reg);
 +        else
@@ -2934,7 +2934,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +452,150 @@
+@@ -277,6 +452,151 @@
    return LiveOuts;
  }
  
@@ -2975,8 +2975,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +      Op.OperandType = Location::Direct;
 +      Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
 +      Op.DwarfReg = FBP;
++      Op.isSymbol = false;
 +      Op.Constant = MFI->getObjectOffset(PI->getData()) + FBPOff;
-+      AV.emplace_back(ArchValue(Loc, Op));
 +      break;
 +    case MachineGeneratedVal::ValueGenInst::ConstantPool:
 +      PI = (const PseudoInstruction *)Inst.get();
@@ -2991,6 +2991,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +      Op.Symbol = AP.GetCPISymbol(PI->getData());
 +    default:
 +      Op.InstType = Inst->type();
++      Op.isSymbol = false;
 +      switch(Inst->opType()) {
 +      case OpType::Register:
 +        RI = (const RegInstruction *)Inst.get();
@@ -3008,9 +3009,9 @@ Index: lib/CodeGen/StackMaps.cpp
 +        break;
 +      default: llvm_unreachable("Invalid operand type"); break;
 +      }
-+      AV.emplace_back(ArchValue(Loc, Op));
 +      break;
 +    }
++    AV.emplace_back(ArchValue(Loc, Op));
 +  }
 +}
 +
@@ -3045,7 +3046,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +          (const MachineLiveStackSlot &)*Val.first;
 +        int StackSlot = MSS.getStackSlot();
 +
-+        Loc.Type = Location::Direct;
++        Loc.Type = Location::Indirect;
 +        Loc.Size = MFI->getObjectSize(StackSlot);
 +        Loc.Reg = getDwarfRegNum(TRI->getFrameRegister(*AP.MF), TRI);
 +        Loc.Offset = MFI->getObjectOffset(StackSlot) + FBPOff;
@@ -3085,7 +3086,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +604,46 @@
+@@ -285,21 +605,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -3134,7 +3135,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +671,9 @@
+@@ -327,8 +672,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -3146,7 +3147,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +756,11 @@
+@@ -411,8 +757,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -3159,7 +3160,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +768,15 @@
+@@ -420,6 +769,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3175,7 +3176,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +796,20 @@
+@@ -439,14 +797,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3200,7 +3201,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +818,25 @@
+@@ -455,6 +819,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -3208,7 +3209,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +///   uint16 : NumArchValues
 +///   ArchValues[NumArchValues] {
 +///     Location {
-+///       uint8 (4 bits) : Register | Direct
++///       uint8 (4 bits) : Register | Indirect
 +///       uint8 (3 bits) : Padding
 +///       uint8 (1 bit)  : Is it a pointer?
 +///       uint8          : Size in Bytes
@@ -3217,7 +3218,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +///     }
 +///     Value {
 +///       uint8_t (4 bits) : Instruction
-+///       uint8_t (4 bits) : Operand type
++///       uint8_t (4 bits) : Register | Direct | Constant
 +///       uint8_t          : Size
 +///       uint16_t         : Dwarf RegNum
 +///       int64_t          : Offset or Constant
@@ -3226,7 +3227,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +852,29 @@
+@@ -470,23 +853,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3257,7 +3258,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +882,13 @@
+@@ -494,10 +883,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3272,7 +3273,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +900,29 @@
+@@ -509,6 +901,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -3291,6 +3292,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +      OS.EmitIntValue(Loc.Reg, 2);
 +      OS.EmitIntValue(Loc.Offset, 4);
 +
++      assert(!MachineGeneratedVal::ValueGenInst::PseudoInst[Op.InstType] &&
++             "Generated values should be lowered to non-pseudo instructions");
 +      uint8_t OpType = ARCH_OP_TYPE(Op.InstType, Op.OperandType);
 +      OS.EmitIntValue(OpType, 1);
 +      OS.EmitIntValue(Op.Size, 1);
@@ -3302,7 +3305,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +929,7 @@
+@@ -515,7 +932,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3311,7 +3314,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +953,7 @@
+@@ -539,7 +956,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -4357,13 +4360,13 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +using namespace llvm;
 +
 +const char *MachineGeneratedVal::ValueGenInst::InstTypeStr[] = {
-+  #define X(type, pseudo) #type
++  #define X(type, pseudo) #type ,
 +  VALUE_GEN_INST
 +  #undef X
 +};
 +
 +const bool MachineGeneratedVal::ValueGenInst::PseudoInst[] = {
-+  #define X(type, pseudo) pseudo
++  #define X(type, pseudo) pseudo,
 +  VALUE_GEN_INST
 +  #undef X
 +};

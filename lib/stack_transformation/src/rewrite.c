@@ -68,8 +68,8 @@ static void unwind_and_size(rewrite_context src,
  * Rewrite an individual value from the source to destination call frame.
  * Returns true if there's a fixup needed within this stack frame.
  */
-static bool rewrite_val(rewrite_context src, const call_site_value* val_src,
-                        rewrite_context dest, const call_site_value* val_dest);
+static bool rewrite_val(rewrite_context src, const live_value* val_src,
+                        rewrite_context dest, const live_value* val_dest);
 
 /*
  * Fix up pointers to same-frame data.
@@ -429,8 +429,8 @@ static void unwind_and_size(rewrite_context src,
 /*
  * Rewrite an individual value from the source to destination call frame.
  */
-static bool rewrite_val(rewrite_context src, const call_site_value* val_src,
-                        rewrite_context dest, const call_site_value* val_dest)
+static bool rewrite_val(rewrite_context src, const live_value* val_src,
+                        rewrite_context dest, const live_value* val_dest)
 {
   bool skip = false, needs_local_fixup = false;
   void* stack_addr;
@@ -526,7 +526,7 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
   size_t i, j, src_offset, dest_offset;
   bool found_fixup;
   void* stack_addr;
-  const call_site_value* val_src, *val_dest;
+  const live_value* val_src, *val_dest;
   node_t(fixup)* fixup_node;
 
   ST_INFO("Resolving local fix-ups\n");
@@ -597,7 +597,7 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
 static void rewrite_frame(rewrite_context src, rewrite_context dest)
 {
   size_t i, j, src_offset, dest_offset;
-  const call_site_value* val_src, *val_dest;
+  const live_value* val_src, *val_dest;
   bool needs_local_fixup = false;
 
   TIMER_FG_START(rewrite_frame);
@@ -639,8 +639,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         "did not handle all live values\n");
 
   /* Set architecture-specific live values */
-  dest_offset = ACT(dest).site.arch_const_offset;
-  for(i = 0; i < ACT(dest).site.num_arch_const; i++)
+  dest_offset = ACT(dest).site.arch_live_offset;
+  for(i = 0; i < ACT(dest).site.num_arch_live; i++)
     put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
 
   /* Fix up pointers to arguments or local values */

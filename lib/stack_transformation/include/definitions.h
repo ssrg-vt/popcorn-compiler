@@ -106,7 +106,7 @@ extern FILE* __log;
 typedef struct fixup {
   void* src_addr; // pointed-to address on the source stack
   int act; // in which activation we must apply the fixup
-  const call_site_value* dest_loc; // pointer to reify on destination stack
+  const live_value* dest_loc; // pointer to reify on destination stack
 } fixup;
 
 /* List of fixup records. */
@@ -168,11 +168,11 @@ struct _st_handle
 
   /* Call site live value records */
   uint64_t live_vals_count;
-  const call_site_value* live_vals;
+  const live_value* live_vals;
 
   /* Architecture-specific call site live value records */
   uint64_t arch_live_vals_count;
-  const arch_const_value* arch_live_vals;
+  const arch_live_value* arch_live_vals;
 };
 
 typedef struct _st_handle* st_handle;

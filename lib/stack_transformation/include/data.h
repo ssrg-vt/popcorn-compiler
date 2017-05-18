@@ -27,9 +27,9 @@
  * @param size the size of the data to copy between contexts
  */
 void put_val(rewrite_context src,
-             const call_site_value* src_val,
+             const live_value* src_val,
              rewrite_context dest,
-             const call_site_value* dest_val);
+             const live_value* dest_val);
 
 /*
  * Put an architecture-specific constant value into a location.  This function
@@ -38,7 +38,7 @@ void put_val(rewrite_context src,
  * @param ctx the rewriting context
  * @param val the architecture-specific constant value
  */
-void put_val_arch(rewrite_context ctx, const arch_const_value *val);
+void put_val_arch(rewrite_context ctx, const arch_live_value *val);
 
 /*
  * Put data into a location.  Used for general-purpose touch-ups, such as
@@ -50,7 +50,7 @@ void put_val_arch(rewrite_context ctx, const arch_const_value *val);
  * @param data the live value's new data
  */
 void put_val_data(rewrite_context ctx,
-                  const call_site_value* val,
+                  const live_value* val,
                   int act,
                   uint64_t data);
 
@@ -64,7 +64,7 @@ void put_val_data(rewrite_context ctx,
  *         to the stack
  */
 void* points_to_stack(const rewrite_context ctx,
-                      const call_site_value* val);
+                      const live_value* val);
 
 /*
  * Return whether or not a pointer refers to the specified live value in the
@@ -80,9 +80,9 @@ void* points_to_stack(const rewrite_context ctx,
  *         src_val, or NULL otherwise
  */
 void* points_to_data(const rewrite_context src,
-                     const call_site_value* src_val,
+                     const live_value* src_val,
                      const rewrite_context dest,
-                     const call_site_value* dest_val,
+                     const live_value* dest_val,
                      void* src_ptr);
 
 /*

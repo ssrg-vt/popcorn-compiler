@@ -63,6 +63,7 @@ typedef struct timer* timer;
 #ifndef _NO_DECLARE_TIMERS
 # define X( timer_name ) extern timer __timer_##timer_name;
 ALL_TIMERS
+# undef X
 #endif
 
 /* Macros to control enabling/disabling timer function calls. */
