@@ -448,6 +448,7 @@ static void apply_arch_operation(uint64_t* dest,
   case RightShiftLog: *dest = orig_val >> (uint64_t)operand; break;
   case RightShiftArith: *dest = orig_val >> operand; break;
   case Mask: *dest = orig_val & operand; break;
+  case Load: *dest = *(uint64_t*)operand; break;
   default: ST_ERR(1, "Invalid instruction type (%d)\n", inst); break;
   }
 

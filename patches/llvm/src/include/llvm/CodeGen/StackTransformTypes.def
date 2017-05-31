@@ -30,6 +30,7 @@
   X(RightShiftLog, false) /* Right-shift (logical) the generated value */ \
   X(RightShiftArith, false) /* Right-shift (arithmetic) the generated value */ \
   X(Mask, false) /* Apply bit mask */ \
+  X(Load, false) /* Load value from memory */ \
   X(StackSlot, true) /* Generate stack slot reference */ \
   X(ConstantPool, true) /* Generate a constant pool entry reference */
 
