@@ -1,4 +1,4 @@
-POPCORN := /usr/local/popcorn
+POPCORN := /home/beowulf/compiler
 POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 
@@ -57,7 +57,7 @@ all: $(LIB_ARM) $(LIB_X86)
 	@mkdir -p $*
 	@touch $@
 
-$(BUILD_ARM)/%.o: src/%.c
+$(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@echo " [CC] $< (aarch64)"
 	@$(CC) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
@@ -68,7 +68,7 @@ $(LIB_ARM): $(BUILD_ARM)/.dir $(HDR_ARM) $(OBJ_ARM)
 	@rm -f $(LIB_ARM)
 	@$(AR) $(ARFLAGS) $(LIB_ARM) $(OBJ_ARM) &> /dev/null
 
-$(BUILD_X86)/%.o: src/%.c
+$(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@echo " [CC] $< (x86-64)"
 	@$(CC) $(CFLAGS_X86) $(INC_X86) -emit-llvm -o $@.bc $<
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
