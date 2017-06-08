@@ -21,6 +21,7 @@ enum arch {
   NUM_ARCHES
 };
 
+#if 0
 /**
  * Get the CPUs associated with a given architecture in the system.
  * @param ar the architecture
@@ -39,6 +40,7 @@ cpu_set_t current_arch();
  * @return the architecture on which to migrate
  */
 cpu_set_t select_arch();
+#endif
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional
@@ -59,7 +61,7 @@ void check_migrate(void (*callback)(void*), void *callback_data);
  *                 on destination architecture
  * @param callback_data data to be passed to the callback function
  */
-void migrate(void (*callback)(void*), void *callback_data);
+void migrate(int nid, void (*callback)(void*), void *callback_data);
 
 /**
  * Register a function to be used for migration points inserted by
