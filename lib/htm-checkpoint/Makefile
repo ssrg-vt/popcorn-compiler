@@ -32,7 +32,7 @@ OBJ     := $(SRC:.c=.o)
 OBJ_PPC := $(subst src,$(BUILD_PPC),$(OBJ))
 OBJ_X86 := $(subst src,$(BUILD_X86),$(OBJ))
 
-LIB     := libhtm-migration.a
+LIB     := libhtm-checkpoint.a
 LIB_PPC := $(BUILD_PPC)/$(LIB)
 LIB_X86 := $(BUILD_X86)/$(LIB)
 

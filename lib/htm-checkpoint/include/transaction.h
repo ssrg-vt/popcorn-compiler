@@ -20,13 +20,14 @@ extern "C" {
  * per-processor statuses to one of these. */
 #define TRANSACTION_STATUSES \
   X(BEGIN) /* Beginning of transaction */ \
-  X(CONFLICT) /* Memory access conflict */ \
-  X(CAPACITY) /* HTM buffers reached capacity */ \
-  X(TRANSIENT) /* Aborted for reason in which a retry will likely succeed */ \
-  X(OTHER) /* Some other abort reason we don't care about */ \
   X(SUCCESS) /* Successful transaction */ \
+  X(CONFLICT) /* Memory access conflict */ \
+  X(CAPACITY) /* Transactional memory buffers reached capacity */ \
+  X(TRANSIENT) /* Aborted for reason in which a retry will likely succeed */ \
+  X(PERSISTENT) /* Aborted for reason which will continue to cause aborts */ \
   X(APP_MAKESPAN) /* Application's run time, from start to finish */ \
-  X(INVALID)
+  X(OTHER) /* Some other abort reason we don't care about */ \
+  X(INVALID) /* Should never be returned by APIs */ // TODO delete
 
 /* Enumeration of statuses using X-macros above. */
 typedef enum transaction_status {
