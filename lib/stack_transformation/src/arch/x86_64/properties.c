@@ -14,7 +14,6 @@
 
 #define X86_64_RA_OFFSET -0x8
 #define X86_64_SAVED_FBP_OFFSET -0x10
-#define X86_64_CFA_OFFSET 0x10
 #define X86_64_CFA_OFFSET_FUNCENTRY 0x8
 #define X86_64_STACK_ALIGNMENT 0x10
 #define X86_64_SP_FIXUP 0x8
@@ -39,7 +38,6 @@ const struct properties_t properties_x86_64 = {
   .callee_saved_size = callee_saved_size_x86_64,
   .ra_offset = X86_64_RA_OFFSET,
   .savedfbp_offset = X86_64_SAVED_FBP_OFFSET,
-  .cfa_offset = X86_64_CFA_OFFSET,
   .cfa_offset_funcentry = X86_64_CFA_OFFSET_FUNCENTRY,
 
   .align_sp = align_sp_x86_64,

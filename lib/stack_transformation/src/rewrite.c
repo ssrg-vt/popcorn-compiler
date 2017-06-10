@@ -97,7 +97,7 @@ int st_rewrite_stack(st_handle handle_src,
                      void* sp_base_dest)
 {
   rewrite_context src, dest;
-  uint64_t* saved_fbp, *fbp;
+  uint64_t* saved_fbp;
 
   if(!handle_src || !regset_src || !sp_base_src ||
      !handle_dest || !regset_dest || !sp_base_dest)
@@ -143,12 +143,6 @@ int st_rewrite_stack(st_handle handle_src,
 
   set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
   pop_frame_funcentry(dest);
-  fbp = REGOPS(dest)->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
-  ASSERT(fbp, "invalid frame pointer\n");
-  REGOPS(dest)->set_fbp(ACT(dest).regs, fbp);
-  REGOPS(dest)->set_fbp(PREV_ACT(dest).regs, fbp);
-  setup_frame_info(dest);
-  ST_INFO("Set FP=%p for outer-most frame\n", fbp);
 
   /* Rewrite rest of frames. */
   // Note: no need to rewrite libc start function, no state to maintain there
@@ -161,12 +155,8 @@ int st_rewrite_stack(st_handle handle_src,
     saved_fbp = get_savedfbp_loc(dest);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dest);
-    fbp = REGOPS(dest)->sp(ACT(dest).regs) + ACT(dest).site.fbp_offset;
-    ASSERT(fbp, "invalid frame pointer\n");
-    REGOPS(dest)->set_fbp(ACT(dest).regs, fbp);
-    *saved_fbp = (uint64_t)fbp;
-    setup_frame_info(dest);
-    ST_INFO("Saved old FP=%p to %p\n", fbp, saved_fbp);
+    *saved_fbp = (uint64_t)REGOPS(dest)->fbp(ACT(dest).regs);
+    ST_INFO("Old FP saved to %p\n", saved_fbp);
   }
 
   TIMER_STOP(rewrite_stack);
@@ -219,7 +209,6 @@ static rewrite_context init_src_context(st_handle handle,
                                         void* sp_base)
 {
   rewrite_context ctx;
-  unwind_addr meta;
 
   TIMER_START(init_src_context);
 
@@ -238,23 +227,11 @@ static rewrite_context init_src_context(st_handle handle,
   ctx->regs = regset;
   ctx->stack_base = sp_base;
   ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
-  setup_frame_info(ctx);
+  bootstrap_frame(ctx);
 
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
-  {
-    ACT(ctx).site = EMPTY_CALL_SITE;
-    ST_INFO("No source call site information for PC=%p, searching for function\n",
-            REGOPS(ctx)->pc(ACT(ctx).regs));
-
-    if(!get_unwind_offset_by_addr(handle,
-                                  REGOPS(ctx)->pc(ACT(ctx).regs),
-                                  &meta))
-      ST_ERR(1, "unable to find unwinding information for outermost frame\n");
-
-    ACT(ctx).site.num_unwind = meta.num_unwind;
-    ACT(ctx).site.unwind_offset = meta.unwind_offset;
-  }
-
+    ST_ERR(1, "could not get source call site information for outermost frame "
+           "(address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   ASSERT(ctx->stack, "invalid stack pointer\n");
 
   TIMER_STOP(init_src_context);
@@ -361,7 +338,6 @@ static void unwind_and_size(rewrite_context src,
   do
   {
     pop_frame(src);
-    setup_frame_info(src);
     src->num_acts++;
     dest->num_acts++;
     dest->act++;
@@ -378,16 +354,12 @@ static void unwind_and_size(rewrite_context src,
              REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
 
     /* Update stack size with newly discovered stack frame's size */
-    // Note: this might overestimate the size for frames without a base pointer
-    // but that shouldn't be a problem.
-    stack_size += ACT(dest).site.fbp_offset +
-                  (2 * dest->handle->ptr_size); // old FBP & RA
+    stack_size += ACT(dest).site.frame_size;
   }
   while(!first_frame(ACT(src).site.id));
 
   /* Do one more iteration for starting function */
   pop_frame(src);
-  setup_frame_info(src);
   src->num_acts++;
   dest->num_acts++;
   dest->act++;
@@ -397,7 +369,7 @@ static void unwind_and_size(rewrite_context src,
   if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
     ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
            REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
-  stack_size += ACT(dest).site.fbp_offset + (2 * dest->handle->ptr_size);
+  stack_size += ACT(dest).site.frame_size;
 
   ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
 
@@ -421,7 +393,7 @@ static void unwind_and_size(rewrite_context src,
                                      dest->num_acts);
 
   /* Set up outermost activation for destination since we have a SP. */
-  setup_frame_info_funcentry(dest);
+  bootstrap_frame_funcentry(dest);
 
   TIMER_STOP(unwind_and_size);
 }

@@ -258,7 +258,7 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       /* Populate call site record */
       sites[cur].id = start_id++;
       sites[cur].addr = fr->func_addr + site_record->offset;
-      sites[cur].fbp_offset = fr->stack_size - fp_offset(b->arch);
+      sites[cur].frame_size = fr->stack_size;
       sites[cur].num_unwind = fr->num_unwind;
       sites[cur].num_live = site_record->num_locations;
       sites[cur].live_offset = loc_num;
@@ -289,7 +289,7 @@ create_call_site_metadata(bin *b, uint64_t start_id,
    */
   sites[cur].id = UINT64_MAX;
   sites[cur].addr = mainthr.st_value + main_start_offset(b->arch);
-  sites[cur].fbp_offset = 0;
+  sites[cur].frame_size = 0;
   sites[cur].num_unwind = 0;
   sites[cur].unwind_offset = UINT32_MAX;
   sites[cur].num_live = 0;
@@ -302,7 +302,7 @@ create_call_site_metadata(bin *b, uint64_t start_id,
   {
     sites[cur].id = UINT64_MAX - 1;
     sites[cur].addr = thread.st_value + thread_start_offset(b->arch);
-    sites[cur].fbp_offset = 0;
+    sites[cur].frame_size = 0;
     sites[cur].num_unwind = 0;
     sites[cur].unwind_offset = UINT32_MAX;
     sites[cur].num_live = 0;

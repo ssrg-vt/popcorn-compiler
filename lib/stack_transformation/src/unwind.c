@@ -12,9 +12,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Set up the frame's information.
+ * Boot strap the outermost frame's information.  Only needed during
+ * initialization as pop_frame performs the same functionality during
+ * unwinding.
  */
-void setup_frame_info(rewrite_context ctx)
+void bootstrap_frame(rewrite_context ctx)
 {
   size_t num_regs;
 
@@ -22,13 +24,16 @@ void setup_frame_info(rewrite_context ctx)
   ACT(ctx).callee_saved.size = num_regs;
   ACT(ctx).callee_saved.bits =
     &ctx->callee_saved_pool[ctx->act * bitmap_size(num_regs)];
-  ACT(ctx).cfa = REGOPS(ctx)->fbp(ACT(ctx).regs) + PROPS(ctx)->cfa_offset;
+  ACT(ctx).cfa = REGOPS(ctx)->sp(ACT(ctx).regs) + ACT(ctx).site.frame_size;
 }
 
 /*
- * Set up the frame context as if we just entered the current function.
+ * Boot strap the outermost frame's information.  This is a special case for
+ * setting up information before the function has set up the frame, i.e.,
+ * directly upon function entry.  Only needed during initialization as
+ * pop_frame_funcentry performs the same functionality during unwinding.
  */
-void setup_frame_info_funcentry(rewrite_context ctx)
+void bootstrap_frame_funcentry(rewrite_context ctx)
 {
   size_t num_regs;
 
@@ -50,22 +55,27 @@ bool first_frame(uint64_t id)
 }
 
 /*
- * Pop a frame from CTX's stack.
+ * Pop a frame from CTX's stack.  Sets up the stack pointer, frame base
+ * pointer, canonical frame address & callee-saved registers.
  */
 void pop_frame(rewrite_context ctx)
 {
   const unwind_loc* locs;
   uint32_t unwind_start, unwind_end;
-  void* saved_loc;
+  void* saved_loc, *new_sp;
+  size_t num_regs;
 
   TIMER_FG_START(pop_frame);
-
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  /* Initialize next activation's regset */
+  /* Initialize next activation's regset & callee-saved information */
   NEXT_ACT(ctx).regs =
     &ctx->regset_pool[(ctx->act + 1) * REGOPS(ctx)->regset_size];
   REGOPS(ctx)->regset_clone(ACT(ctx).regs, NEXT_ACT(ctx).regs);
+  num_regs = REGOPS(ctx)->num_regs;
+  NEXT_ACT(ctx).callee_saved.size = num_regs;
+  NEXT_ACT(ctx).callee_saved.bits =
+    &ctx->callee_saved_pool[ctx->act * bitmap_size(num_regs)];
 
   /* Get offsets into unwinding information section & unwind the frame */
   locs = ctx->handle->unwind_locs;
@@ -92,31 +102,51 @@ void pop_frame(rewrite_context ctx)
   ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
 
   /*
-   * Set the stack pointer in the previous frame which is by definition the CFA
-   * of the current frame.
+   * Set the stack pointer in the new frame which is by definition the CFA of
+   * the current frame.  Using the new stack pointer, set the canonical frame
+   * address & frame base pointer.
    */
-  REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
+  new_sp = ACT(ctx).cfa;
+  REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, new_sp);
+  NEXT_ACT(ctx).cfa = new_sp + NEXT_ACT(ctx).site.frame_size;
+  REGOPS(ctx)->setup_fbp(NEXT_ACT(ctx).regs, NEXT_ACT(ctx).cfa);
+  ASSERT(REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs), "Invalid frame pointer\n");
 
   /* Advance to next frame. */
   ctx->act++;
   ASSERT(ctx->act < MAX_FRAMES, "too many frames on stack\n");
+
+  ST_INFO("New frame: SP=%p, FBP=%p, CFA=%p\n",
+          REGOPS(ctx)->sp(ACT(ctx).regs),
+          ACT(ctx).cfa,
+          REGOPS(ctx)->fbp(ACT(ctx).regs));
+
+  /* Finish setting up the frame, i.e., CFA & FBP */
 
   TIMER_FG_STOP(pop_frame);
 }
 
 /*
  * Pop a frame from CTX's stack.  This is a special case for popping the frame
- * before the function has set it up, i.e., directly upon function entry.
+ * before the function has set it up, i.e., directly upon function entry.  Sets
+ * up the stack pointer, frame base pointer & canonical frame address.
  */
 void pop_frame_funcentry(rewrite_context ctx)
 {
+  void* new_sp;
+  size_t num_regs;
+
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  /* Initialize next activation's regset */
+  /* Initialize next activation's regset & callee-saved information */
   NEXT_ACT(ctx).regs =
     &ctx->regset_pool[(ctx->act + 1) * REGOPS(ctx)->regset_size];
   REGOPS(ctx)->regset_clone(ACT(ctx).regs, NEXT_ACT(ctx).regs);
+  num_regs = REGOPS(ctx)->num_regs;
+  NEXT_ACT(ctx).callee_saved.size = num_regs;
+  NEXT_ACT(ctx).callee_saved.bits =
+    &ctx->callee_saved_pool[ctx->act * bitmap_size(num_regs)];
 
   /*
    * We only have to worry about restoring the PC, since the function hasn't
@@ -131,13 +161,25 @@ void pop_frame_funcentry(rewrite_context ctx)
 
   /*
    * Set the stack pointer in the previous frame which is by definition the CFA
-   * of the current frame.
+   * of the current frame.  Using the new stack pointer, set the canonical
+   * frame address, frame base pointer & current frame base pointer (it wasn't
+   * saved to the stack).
    */
-  REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
+  new_sp = ACT(ctx).cfa;
+  REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, new_sp);
+  NEXT_ACT(ctx).cfa = new_sp + NEXT_ACT(ctx).site.frame_size;
+  REGOPS(ctx)->setup_fbp(NEXT_ACT(ctx).regs, NEXT_ACT(ctx).cfa);
+  REGOPS(ctx)->set_fbp(ACT(ctx).regs, REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
+  ASSERT(REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs), "Invalid frame pointer\n");
 
   /* Advance to next frame. */
   ctx->act++;
   ASSERT(ctx->act < MAX_FRAMES, "too many frames on stack\n");
+
+  ST_INFO("New frame: SP=%p, FBP=%p, CFA=%p\n",
+          REGOPS(ctx)->sp(ACT(ctx).regs),
+          ACT(ctx).cfa,
+          REGOPS(ctx)->fbp(ACT(ctx).regs));
 
   TIMER_FG_STOP(pop_frame);
 }

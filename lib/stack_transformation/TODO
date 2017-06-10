@@ -11,3 +11,5 @@ Implementation
 
 4. Implement correct error handling/reporting
 
+5. We no longer need the unwind information by address section
+

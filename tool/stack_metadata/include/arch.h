@@ -9,7 +9,6 @@
 #define _ARCH_H
 
 #include <elf.h>
-#include "arch_common.h"
 
 /*
  * Because we don't generate call site metadata for musl, we hardcode an offset

@@ -25,7 +25,6 @@
 #include "regs.h"
 #include "properties.h"
 #include "call_site.h"
-#include "arch_common.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Checking, debugging & information macros

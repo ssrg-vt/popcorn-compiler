@@ -90,6 +90,9 @@ struct regops_t
   /* Set the return-address mapped register */
   void (*set_ra_reg)(regset_t regset, void* ra);
 
+  /* Architecture-specific frame base pointer setup */
+  void (*setup_fbp)(regset_t regset, void* cfa);
+
   /////////////////////////////////////////////////////////////////////////////
   // General-purpose register access
   /////////////////////////////////////////////////////////////////////////////

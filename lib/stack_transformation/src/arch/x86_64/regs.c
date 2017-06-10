@@ -31,6 +31,7 @@ static void set_pc_x86_64(regset_t regset, void* pc);
 static void set_sp_x86_64(regset_t regset, void* sp);
 static void set_fbp_x86_64(regset_t regset, void* fbp);
 static void set_ra_reg_x86_64(regset_t regset, void* ra);
+static void setup_fbp_x86_64(regset_t regset, void* cfa);
 
 static uint16_t reg_size_x86_64(uint16_t reg);
 static void* reg_x86_64(regset_t regset, uint16_t reg);
@@ -70,6 +71,7 @@ const struct regops_t regs_x86_64 = {
   .set_sp = set_sp_x86_64,
   .set_fbp = set_fbp_x86_64,
   .set_ra_reg = set_ra_reg_x86_64,
+  .setup_fbp = setup_fbp_x86_64,
 
   .reg_size = reg_size_x86_64,
   .reg = reg_x86_64,
@@ -168,6 +170,13 @@ static void set_ra_reg_x86_64(regset_t regset, void* val)
 {
   // N/a for x86-64, return address is always stored on the stack
   ST_ERR(1, "no return-address register for x86-64\n");
+}
+
+static void setup_fbp_x86_64(regset_t regset, void* cfa)
+{
+  ASSERT(cfa, "Null canonical frame address\n");
+  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
+  cur->regs.rbp = (uint64_t)cfa - 0x10;
 }
 
 static uint16_t reg_size_x86_64(uint16_t reg)

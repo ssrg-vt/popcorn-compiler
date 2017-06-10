@@ -36,6 +36,7 @@ static void set_pc_aarch64(regset_t regset, void* pc);
 static void set_sp_aarch64(regset_t regset, void* sp);
 static void set_fbp_aarch64(regset_t regset, void* fp);
 static void set_ra_reg_aarch64(regset_t regset, void* ra);
+static void setup_fbp_aarch64(regset_t regset, void* cfa);
 
 static uint16_t reg_size_aarch64(uint16_t reg);
 static void* reg_aarch64(regset_t regset, uint16_t reg);
@@ -75,6 +76,7 @@ const struct regops_t regs_aarch64 = {
   .set_sp = set_sp_aarch64,
   .set_fbp = set_fbp_aarch64,
   .set_ra_reg = set_ra_reg_aarch64,
+  .setup_fbp = setup_fbp_aarch64,
 
   .reg_size = reg_size_aarch64,
   .reg = reg_aarch64,
@@ -172,6 +174,13 @@ static void set_ra_reg_aarch64(regset_t regset, void* ra)
 {
   regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
   cur->regs.x[AARCH64_LINK_REG] = (uint64_t)ra;
+}
+
+static void setup_fbp_aarch64(regset_t regset, void* cfa)
+{
+  ASSERT(cfa, "Null canonical frame address\n");
+  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
+  cur->regs.x[AARCH64_FBP_REG] = (uint64_t)cfa - 0x10;
 }
 
 static uint16_t reg_size_aarch64(uint16_t reg)
