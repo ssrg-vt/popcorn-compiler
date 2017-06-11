@@ -745,7 +745,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.def	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.def	(working copy)
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,38 @@
 +//===-- llvm/Target/StackTransformTypes.def - Generator Opcodes -*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -778,6 +778,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 +  X(RightShiftLog, false) /* Right-shift (logical) the generated value */ \
 +  X(RightShiftArith, false) /* Right-shift (arithmetic) the generated value */ \
 +  X(Mask, false) /* Apply bit mask */ \
++  X(Load, false) /* Load value from memory */ \
 +  X(StackSlot, true) /* Generate stack slot reference */ \
 +  X(ConstantPool, true) /* Generate a constant pool entry reference */
 +
@@ -787,7 +788,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,460 @@
+@@ -0,0 +1,464 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -966,25 +967,29 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +    // The register used in the instruction
 +    // Note: will be converted to DWARF during metadata emission
 +    unsigned Reg;
++    int Offset;
 +
-+    RegInstructionBase(unsigned Reg) : Reg(Reg) {}
++    RegInstructionBase(unsigned Reg, int Offset) : Reg(Reg), Offset(Offset) {}
 +    virtual OpType opType() const { return Register; }
 +    unsigned getReg() const { return Reg; }
++    int getOffset() const { return Offset; }
 +    void setReg(unsigned Reg) { this->Reg = Reg; }
++    void setOffset(int Offset) { this->Offset = Offset; }
 +  };
 +
 +  // Register-based instructions
 +  template<ValueGenInst::InstType Type>
 +  class RegInstruction : public RegInstructionBase {
 +    static_assert(Type == Set || Type == Add || Type == Subtract ||
-+                  Type == Multiply || Type == Divide,
++                  Type == Multiply || Type == Divide || Type == Load,
 +                  INV_INST_TYPE " for register instruction");
 +  public:
-+    RegInstruction(unsigned Reg) : RegInstructionBase(Reg) {}
++    RegInstruction(unsigned Reg, int Off) : RegInstructionBase(Reg, Off) {}
 +    virtual InstType type() const { return Type; }
 +    virtual std::string str() const {
 +      std::string buf = std::string(InstTypeStr[Type]) + " register " +
 +                        std::to_string(Reg);
++      if(Offset) buf += " offset " + std::to_string(Offset);
 +      return buf;
 +    }
 +
@@ -2934,7 +2939,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +452,151 @@
+@@ -277,6 +452,166 @@
    return LiveOuts;
  }
  
@@ -2989,12 +2994,27 @@ Index: lib/CodeGen/StackMaps.cpp
 +      Op.DwarfReg = 0;
 +      Op.isSymbol = true;
 +      Op.Symbol = AP.GetCPISymbol(PI->getData());
++      break;
++    case MachineGeneratedVal::ValueGenInst::Load:
++      RI = (const RegInstruction *)Inst.get();
++      assert(TRI->isPhysicalRegister(RI->getReg()) &&
++             "Virtual should have been converted to physical register");
++
++      Op.InstType = RI->type();
++      Op.OperandType = Location::Direct;
++      Op.Size = 8;
++      Op.DwarfReg = getDwarfRegNum(RI->getReg(), TRI);
++      Op.isSymbol = false;
++      Op.Constant = RI->getOffset();
++      break;
 +    default:
 +      Op.InstType = Inst->type();
 +      Op.isSymbol = false;
 +      switch(Inst->opType()) {
 +      case OpType::Register:
 +        RI = (const RegInstruction *)Inst.get();
++        assert(TRI->isPhysicalRegister(RI->getReg()) &&
++               "Virtual should have been converted to physical register");
 +        Op.OperandType = Location::Register;
 +        Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
 +        Op.DwarfReg = getDwarfRegNum(RI->getReg(), TRI);
@@ -3086,7 +3106,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +605,46 @@
+@@ -285,21 +620,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -3135,7 +3155,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +672,9 @@
+@@ -327,8 +687,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -3147,7 +3167,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +757,11 @@
+@@ -411,8 +772,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -3160,7 +3180,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +769,15 @@
+@@ -420,6 +784,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3176,7 +3196,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +797,20 @@
+@@ -439,14 +812,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3201,7 +3221,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +819,25 @@
+@@ -455,6 +834,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -3227,7 +3247,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +853,29 @@
+@@ -470,23 +868,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3258,7 +3278,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +883,13 @@
+@@ -494,10 +898,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3273,7 +3293,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +901,31 @@
+@@ -509,6 +916,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -3305,7 +3325,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +932,7 @@
+@@ -515,7 +947,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3314,7 +3334,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +956,7 @@
+@@ -539,7 +971,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -3349,7 +3369,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,997 @@
+@@ -0,0 +1,998 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4149,6 +4169,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      if(Inst[i]->opType() == OpType::Register) {
 +        RegInstruction *RI = (RegInstruction *)Inst[i].get();
 +        if(!TRI->isVirtualRegister(RI->getReg())) {
++          if(RI->getReg() == TRI->getFrameRegister(*MF)) continue;
 +          // TODO walk through stackmap and see if physical register in
 +          // instruction is contained in stackmap
 +          LV.reset(nullptr);
@@ -4328,7 +4349,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      // Virtual register allocated to physical register
 +      if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
 +         CurVregs.find(Vreg) == CurVregs.end()) {
-+        Msg = "Unhandled register ";
++        Msg = "Stack transformation: unhandled register ";
 +        Msg += TRI->getName(VRM->getPhys(Vreg));
 +        displayWarning(Msg, IRCall, CalledFunc);
 +      }
@@ -4339,7 +4360,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        SS < e; SS++) {
 +      if(!MFI->isDeadObjectIndex(SS) &&
 +         isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
-+        Msg = "Unhandled stack slot ";
++        Msg = "Stack transformation: unhandled stack slot ";
 +        Msg += std::to_string(SS);
 +        displayWarning(Msg, IRCall, CalledFunc);
 +      }
@@ -4733,7 +4754,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,139 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4801,7 +4822,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    assert(MI->getOperand(1).isReg() && MI->getOperand(2).isImm() &&
 +           MI->getOperand(3).isImm());
 +    IL.push_back(ValueGenInstPtr(
-+      new RegInstruction<InstType::Set>(MI->getOperand(1).getReg())));
++      new RegInstruction<InstType::Set>(MI->getOperand(1).getReg(), 0)));
 +    R = MI->getOperand(2).getImm();
 +    S = MI->getOperand(3).getImm();
 +    if(S >= R) {
@@ -4854,6 +4875,14 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  case AArch64::UBFMXri:
 +    genBitfieldInstructions(MI, IL);
 +    if(IL.size()) Val = new MachineGeneratedVal(IL, MI);
++    break;
++  case AArch64::COPY:
++    MO = &MI->getOperand(1);
++    if(MO->isReg() && MO->getReg() == AArch64::LR) {
++      IL.push_back(ValueGenInstPtr(
++        new RegInstruction<InstType::Load>(AArch64::FP, 8)));
++      Val = new MachineGeneratedVal(IL, MI);
++    }
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
@@ -4910,6 +4939,53 @@ Index: lib/Target/AArch64/CMakeLists.txt
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
+Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
+===================================================================
+--- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 277823)
++++ lib/Target/PowerPC/PPCAsmPrinter.cpp	(working copy)
+@@ -36,6 +36,7 @@
+ #include "llvm/CodeGen/MachineRegisterInfo.h"
+ #include "llvm/CodeGen/StackMaps.h"
+ #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
++#include "llvm/CodeGen/UnwindInfo.h"
+ #include "llvm/IR/Constants.h"
+ #include "llvm/IR/DebugInfo.h"
+ #include "llvm/IR/DerivedTypes.h"
+@@ -70,10 +71,11 @@
+     MapVector<MCSymbol*, MCSymbol*> TOC;
+     const PPCSubtarget *Subtarget;
+     StackMaps SM;
++    UnwindInfo UI;
+   public:
+     explicit PPCAsmPrinter(TargetMachine &TM,
+                            std::unique_ptr<MCStreamer> Streamer)
+-        : AsmPrinter(TM, std::move(Streamer)), SM(*this) {}
++        : AsmPrinter(TM, std::move(Streamer)), SM(*this), UI(*this) {}
+ 
+     const char *getPassName() const override {
+       return "PowerPC Assembly Printer";
+@@ -101,7 +103,9 @@
+     void EmitTlsCall(const MachineInstr *MI, MCSymbolRefExpr::VariantKind VK);
+     bool runOnMachineFunction(MachineFunction &MF) override {
+       Subtarget = &MF.getSubtarget<PPCSubtarget>();
+-      return AsmPrinter::runOnMachineFunction(MF);
++      bool retval = AsmPrinter::runOnMachineFunction(MF);
++      UI.recordUnwindInfo(MF);
++      return retval;
+     }
+   };
+ 
+@@ -327,7 +331,9 @@
+ }
+ 
+ void PPCAsmPrinter::EmitEndOfAsmFile(Module &M) {
+-  SM.serializeToStackMapSection();
++  UI.serializeToUnwindInfoSection();
++  SM.serializeToStackMapSection(&UI);
++  UI.reset(); // Must reset after SM serialization to clear metadata
+ }
+ 
+ void PPCAsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
 Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
@@ -5135,7 +5211,7 @@ Index: lib/Target/X86/X86Values.cpp
 +    Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
 +    if(Reg) {
 +      IL.push_back(ValueGenInstPtr(
-+        new RegInstruction<InstType::Set>(Reg)));
++        new RegInstruction<InstType::Set>(Reg, 0)));
 +
 +      Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
 +      IL.push_back(ValueGenInstPtr(
@@ -5153,7 +5229,7 @@ Index: lib/Target/X86/X86Values.cpp
 +      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg());
 +      Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
 +      IL.push_back(ValueGenInstPtr(
-+        new RegInstruction<InstType::Add>(Reg)));
++        new RegInstruction<InstType::Add>(Reg, 0)));
 +
 +      Imm = MI->getOperand(1 + X86::AddrDisp).getImm();
 +      IL.push_back(ValueGenInstPtr(
