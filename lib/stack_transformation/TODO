@@ -11,3 +11,7 @@ Implementation
 
 4. Implement correct error handling/reporting
 
+5. Do we need the unwind information address range section?  We currently use
+   it to look up functions by PC (needed when bootstrapping) but we don't need
+   the unwinding offset information.
+

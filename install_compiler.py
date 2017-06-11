@@ -55,7 +55,7 @@ def setup_argument_parsing():
                         default=2)
 
     process_opts = parser.add_argument_group('Process Options (skip steps)')
-    process_opts.add_argument("--skip-prereq-check", 
+    process_opts.add_argument("--skip-prereq-check",
                         help="Skip checking for prerequisites (see README)",
                         action="store_true",
                         dest="skip_prereq_check")
@@ -89,7 +89,7 @@ def setup_argument_parsing():
                         dest="install_call_info_library")
 
     build_opts = parser.add_argument_group('Build options (per-step)')
-    build_opts.add_argument("--make-all-targets", 
+    build_opts.add_argument("--make-all-targets",
                         help="[LLVM/Clang] Build all LLVM targets, " + \
                              "not only x86 & AArch64",
                         action="store_true",
@@ -117,7 +117,7 @@ def setup_argument_parsing():
 #================================================
 def _check_for_prerequisite(prereq):
     try:
-        out = subprocess.check_output([prereq, '--version'], 
+        out = subprocess.check_output([prereq, '--version'],
                                       stderr=subprocess.STDOUT)
     except Exception:
         print('{} not found!'.format(prereq))
@@ -178,9 +178,9 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         print('Downloading LLVM source...')
 
         try:
-            rv = subprocess.check_call(['svn', 'co', llvm_url, 
+            rv = subprocess.check_call(['svn', 'co', llvm_url,
                                         llvm_download_path],
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not download LLVM source ({})!'.format(e))
@@ -195,9 +195,9 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         #=====================================================
         print('Downloading Clang source...')
         try:
-            rv = subprocess.check_call(['svn', 'co', clang_url, 
-                                        clang_download_path], 
-                                        #stdout=FNULL, 
+            rv = subprocess.check_call(['svn', 'co', clang_url,
+                                        clang_download_path],
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not download Clang source ({})!'.format(e))
@@ -205,17 +205,17 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         else:
             if rv != 0:
                 print('Clang source download failed.')
-                sys.exit(1)   
+                sys.exit(1)
 
         # PATCH LLVM
         with open(llvm_patch_path, 'r') as patch_file:
 
             try:
                 print("Patching LLVM...")
-                rv = subprocess.check_call(['patch', '-p0', '-d', 
+                rv = subprocess.check_call(['patch', '-p0', '-d',
                                             llvm_download_path],
                                             stdin=patch_file,
-                                            #stdout=FNULL, 
+                                            #stdout=FNULL,
                                             stderr=subprocess.STDOUT)
             except Exception as e:
                 print('Could not patch LLVM({})!'.format(e))
@@ -230,10 +230,10 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
 
             try:
                 print("Patching clang...")
-                rv = subprocess.check_call(['patch', '-p0', '-d', 
+                rv = subprocess.check_call(['patch', '-p0', '-d',
                                             clang_download_path],
                                             stdin=patch_file,
-                                            #stdout=FNULL, 
+                                            #stdout=FNULL,
                                             stderr=subprocess.STDOUT)
             except Exception as e:
                 print('Could not patch clang({})!'.format(e))
@@ -242,7 +242,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                 if rv != 0:
                     print('clang patch failed.')
                     sys.exit(1)
-        
+
         # BUILD AND INSTALL LLVM
         cur_dir = os.getcwd()
         os.chdir(llvm_download_path)
@@ -250,8 +250,8 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         os.chdir('build')
         try:
             print('Running CMake...')
-            rv = subprocess.check_call(['cmake'] + cmake_flags + ['..'], 
-                                       ##stdout=FNULL, 
+            rv = subprocess.check_call(['cmake'] + cmake_flags + ['..'],
+                                       ##stdout=FNULL,
                                        stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not run CMake ({})!'.format(e))
@@ -259,13 +259,13 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         else:
             if rv != 0:
                 print('CMake failed.')
-                sys.exit(1)  
+                sys.exit(1)
 
         try:
-            print('Running Make...')            
-            rv = subprocess.check_call(['make', 'REQUIRES_RTTI=1',  
+            print('Running Make...')
+            rv = subprocess.check_call(['make', 'REQUIRES_RTTI=1',
                                         '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         '-j', str(num_threads)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -273,7 +273,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
         else:
             if rv != 0:
                 print('Make failed.')
-                sys.exit(1)  
+                sys.exit(1)
 
         os.chdir(cur_dir)
 
@@ -281,7 +281,7 @@ def install_binutils(base_path, install_path, num_threads):
 
     binutils_install_path = os.path.join(install_path, 'src/binutils-2.27')
 
-    patch_path = os.path.join(base_path, 
+    patch_path = os.path.join(base_path,
                               'patches/binutils-gold/binutils-2.27-gold.patch')
 
     configure_flags = ['--prefix={}'.format(install_path),
@@ -292,7 +292,7 @@ def install_binutils(base_path, install_path, num_threads):
                        '--disable-libstdcxx']
 
     with open(os.devnull, 'wb') as FNULL:
-        
+
         # DOWNLOAD BINUTILS
         print('Downloading binutils source...')
         try:
@@ -309,10 +309,10 @@ def install_binutils(base_path, install_path, num_threads):
         print("Patching binutils...")
         with open(patch_path, 'r') as patch_file:
             try:
-                rv = subprocess.check_call(['patch', '-p0', '-d', 
+                rv = subprocess.check_call(['patch', '-p0', '-d',
                                             binutils_install_path],
                                             stdin=patch_file,
-                                            #stdout=FNULL, 
+                                            #stdout=FNULL,
                                             stderr=subprocess.STDOUT)
             except Exception as e:
                 print('Could not patch LLVM({})!'.format(e))
@@ -331,7 +331,7 @@ def install_binutils(base_path, install_path, num_threads):
         print("Configuring binutils...")
         try:
             rv = subprocess.check_call(['../configure'] + configure_flags,
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not configure binutils({})!'.format(e))
@@ -352,13 +352,13 @@ def install_binutils(base_path, install_path, num_threads):
         else:
             if rv != 0:
                 print('Make failed.')
-                sys.exit(1)  
+                sys.exit(1)
 
         os.chdir(cur_dir)
 
 def install_libraries(base_path, install_path, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
-    
+
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
@@ -395,7 +395,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--disable-shared',
                                 'CC=aarch64-linux-gnu-gcc',
                                 'CFLAGS="-ffunction-sections -fdata-sections"']),
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
         except Exception as e:
@@ -417,7 +417,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         else:
             if rv != 0:
                 print('Make failed.')
-                sys.exit(1) 
+                sys.exit(1)
 
 
         try:
@@ -440,7 +440,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-optimize',
                                 '--disable-shared',
                                 'CFLAGS="-ffunction-sections -fdata-sections -fasynchronous-unwind-tables"']),
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
         except Exception as e:
@@ -462,7 +462,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         else:
             if rv != 0:
                 print('Make failed.')
-                sys.exit(1)   
+                sys.exit(1)
 
         os.chdir(cur_dir)
 
@@ -494,7 +494,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                         '--enable-elf64',
                                         '--disable-shared',
                                         '--enable-extended-format']),
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
         except Exception as e:
@@ -516,7 +516,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         else:
             if rv != 0:
                 print('Make failed.')
-                sys.exit(1) 
+                sys.exit(1)
 
         try:
             rv = subprocess.check_call(['make', 'distclean'])
@@ -531,7 +531,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         print("Configuring libelf (x86_64)...")
         try:
             cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
-                     '-specs {}"'.format(os.path.join(x86_64_install_path, 
+                     '-specs {}"'.format(os.path.join(x86_64_install_path,
                                                      'lib/musl-gcc.specs'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
@@ -539,7 +539,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                         '--enable-elf64',
                                         '--disable-shared',
                                         '--enable-extended-format']),
-                                        #stdout=FNULL, 
+                                        #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
         except Exception as e:
@@ -600,13 +600,13 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         try:
             print('Running Make...')
             if flags != '':
-                rv = subprocess.check_call(['make', flags, '-j', 
+                rv = subprocess.check_call(['make', flags, '-j',
                                             str(num_threads),
                                             'POPCORN={}'.format(install_path)])
             else:
                 rv = subprocess.check_call(['make', '-j', str(num_threads),
                                             'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -638,13 +638,13 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         try:
             print('Running Make...')
             if flags != '':
-                rv = subprocess.check_call(['make', flags, '-j', 
+                rv = subprocess.check_call(['make', flags, '-j',
                                             str(num_threads),
                                             'POPCORN={}'.format(install_path)])
             else:
                 rv = subprocess.check_call(['make', '-j', str(num_threads),
                                             'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -653,7 +653,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
-        
+
         os.chdir(cur_dir)
 
 def install_tools(base_path, install_path, num_threads):
@@ -689,7 +689,7 @@ def install_tools(base_path, install_path, num_threads):
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
             sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_x86Objs.sh".format(tmp)
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -698,7 +698,7 @@ def install_tools(base_path, install_path, num_threads):
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
-        
+
         os.chdir(cur_dir)
 
         #=====================================================
@@ -711,7 +711,7 @@ def install_tools(base_path, install_path, num_threads):
             print('Running Make...')
             rv = subprocess.check_call(['make', '-j', str(num_threads),
                                         'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -720,7 +720,7 @@ def install_tools(base_path, install_path, num_threads):
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
-        
+
         os.chdir(cur_dir)
 
 def install_call_info_library(base_path, install_path, num_threads):
@@ -736,7 +736,7 @@ def install_call_info_library(base_path, install_path, num_threads):
             print('Running Make...')
             rv = subprocess.check_call(['make', '-j', str(num_threads),
                                         'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install', 
+            rv = subprocess.check_call(['make', 'install',
                                         'POPCORN={}'.format(install_path)])
         except Exception as e:
             print('Could not run Make ({})!'.format(e))
@@ -745,7 +745,7 @@ def install_call_info_library(base_path, install_path, num_threads):
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
-        
+
         os.chdir(cur_dir)
 
 def install_utils(base_path, install_path, num_threads):
@@ -802,14 +802,14 @@ def main(args):
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path, args.threads,
                           args.debug_stack_transformation,
-                          args.libmigration_type, 
+                          args.libmigration_type,
                           args.enable_libmigration_timing)
 
     if not args.skip_tools_install:
         install_tools(args.base_path, args.install_path, args.threads)
 
     if args.install_call_info_library:
-        install_call_info_library(args.base_path, args.install_path, 
+        install_call_info_library(args.base_path, args.install_path,
                                   args.threads)
 
     if not args.skip_utils_install:

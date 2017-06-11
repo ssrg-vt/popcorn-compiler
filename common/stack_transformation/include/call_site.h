@@ -40,7 +40,7 @@ typedef struct __attribute__((__packed__)) unwind_loc {
   ((call_site){ \
     .id = 0, \
     .addr = 0, \
-    .fbp_offset = 0, \
+    .frame_size = 0, \
     .num_unwind = 0, \
     .unwind_offset = 0, \
     .num_live = 0, \
@@ -53,7 +53,7 @@ typedef struct __attribute__((__packed__)) unwind_loc {
 typedef struct __attribute__((__packed__)) call_site {
   uint64_t id; /* call site ID -- maps sites across binaries */
   uint64_t addr; /* call site return address */
-  uint32_t fbp_offset; /* frame pointer offset from top of stack */
+  uint32_t frame_size; /* size of the stack frame */
   uint16_t num_unwind; /* number of registers saved by the function */
   uint64_t unwind_offset; /* beginning of unwinding info records in unwind info section */
   uint16_t num_live; /* number of live values at site */

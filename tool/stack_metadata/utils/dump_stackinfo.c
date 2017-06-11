@@ -137,7 +137,7 @@ bool dump_callsite_section(Elf_Scn *scn)
     printf("%lu: 0x%lx, %u, %u unwind entries (offset=%lu), "
            "%u live value(s) (offset=%lu), "
            "%u arch-specific live value(s) (offset=%lu)\n",
-      sites[i].id, sites[i].addr, sites[i].fbp_offset,
+      sites[i].id, sites[i].addr, sites[i].frame_size,
       sites[i].num_unwind, sites[i].unwind_offset,
       sites[i].num_live, sites[i].live_offset,
       sites[i].num_arch_live, sites[i].arch_live_offset);

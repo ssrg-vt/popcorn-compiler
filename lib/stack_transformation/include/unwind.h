@@ -15,22 +15,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Set up the frame information, including callee-save bitfield and CFA.
- *
- * @param ctx a rewriting context
- */
-void setup_frame_info(rewrite_context ctx);
-
-/*
- * Set up the frame context.  This is a special case for setting up the frame
- * data before the function has set up the frame base pointer, i.e., directly
- * upon function entry.
- *
- * @param ctx a rewriting context
- */
-void setup_frame_info_funcentry(rewrite_context ctx);
-
-/*
  * Return whether or not the specified call site record corresponds to one of
  * the starting functions, either for the main or spawned threads.
  *
@@ -40,16 +24,68 @@ void setup_frame_info_funcentry(rewrite_context ctx);
 bool first_frame(uint64_t id);
 
 /*
- * Unwind a call frame activation from the stack stored in the handle.
+ * Calculate a frame's canonical frame address.
+ *
+ * @param ctx a rewriting context
+ * @param act a function activation number
+ * @return the activation's canonical frame address
+ */
+void* calculate_cfa(rewrite_context ctx, int act);
+
+/*
+ * Boot strap the outermost frame's information.  Only needed during
+ * initialization as pop_frame performs the same functionality during
+ * unwinding.
  *
  * @param ctx a rewriting context
  */
-void pop_frame(rewrite_context ctx);
+void bootstrap_first_frame(rewrite_context ctx);
 
 /*
- * Unwind a call frame activation from the stack stored in the handle.  This is
- * a special case for popping the frame before the function has set it up,
- * i.e., directly upon function entry.
+ * Boot strap the outermost frame's information.  This is a special case for
+ * setting up information before the function has set up the frame, i.e.,
+ * directly upon function entry.  Only needed during initialization as
+ * pop_frame_funcentry performs the same functionality during unwinding.
+ *
+ * @param ctx a rewriting context
+ */
+void bootstrap_first_frame_funcentry(rewrite_context ctx);
+
+/*
+ * Unwind the current call frame activation from the stack stored in the
+ * context.  Set up the new frame's stack pointer and restore the callee-saved
+ * registers; if requested, set up the frame base pointer and canonical frame
+ * address.
+ *
+ * Unwinding the source stack will correctly set up the frame base pointer,
+ * thus there's no need to set it up from the stack transformation metadata
+ * (you still need to set up the canonical frame address using calculate_cfa()
+ * in order to unwind the frame).  However the FBP must be calculated for the
+ * destination stack using the stack transformation metadata.  Thus, the
+ * setup_bounds flag should be false when unwinding the source stack and true
+ * for the destination stack.
+ *
+ * Note: call site information for the next frame must have already been
+ * populated in order to set up the frame base pointer
+ *
+ * Note: if you don't calculate the frame base pointer from the metadata
+ * (setup_bounds = false), you *must* calculate the canonical frame address
+ * separately using calculate_cfa() in order to unwind the next frame
+ *
+ * @param ctx a rewriting context
+ * @param setup_bounds whether or not to set up the frame base pointer and
+ *                     canonical frame address from the transformation metadata
+ */
+void pop_frame(rewrite_context ctx, bool setup_bounds);
+
+/*
+ * Unwind the current call frame activation from the stack stored in the
+ * context and set up the new frame's stack pointer, frame base pointer and
+ * canonical frame address.  This is a special case for popping the frame
+ * before the function has set it up, i.e., directly upon function entry.
+ *
+ * Note: call site information for the next frame must have already been
+ * populated in order to set up the frame base pointer
  *
  * @param ctx a rewriting context
  */

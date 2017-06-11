@@ -25,7 +25,6 @@
 #include "regs.h"
 #include "properties.h"
 #include "call_site.h"
-#include "arch_common.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Checking, debugging & information macros
@@ -57,11 +56,11 @@
 /* Log file descriptor.  Defined in src/init.c. */
 extern FILE* __log;
 
-#  define ST_RAW_INFO( str, ... ) fprintf(__log, str, ##__VA_ARGS__)
+#  define ST_RAW_INFO( str, ... ) fprintf(__log, str, ##__VA_ARGS__); fflush(__log)
 #  define ST_INFO( str, ... ) \
-      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__)
+      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__); fflush(__log)
 #  define ST_WARN( str, ... ) \
-      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__)
+      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__); fflush(__log)
 
 # else
 

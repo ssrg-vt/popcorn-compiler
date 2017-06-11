@@ -34,10 +34,7 @@ struct properties_t
   const int32_t ra_offset;
   const int32_t savedfbp_offset;
 
-  /* Offset of CFA from FBP */
-  const int32_t cfa_offset;
-
-  /* Offset of CFA from SP (upon function entry) */
+  /* Offset of CFA from SP upon function entry */
   const int32_t cfa_offset_funcentry;
 
   /////////////////////////////////////////////////////////////////////////////

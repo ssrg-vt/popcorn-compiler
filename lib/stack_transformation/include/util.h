@@ -87,6 +87,19 @@ bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* site);
 bool get_site_by_id(st_handle handle, uint64_t csid, call_site* site);
 
 /*
+ * Return the address of the function containing the specified program
+ * location.  This is used to bootstrap in the outer frame, where we have an
+ * exact program location for the source but need to restart the function on
+ * the destination.
+ *
+ * @param handle a stack transformation handle
+ * @param pc a program location
+ * @return the address of the function containing the address, or NULL if it
+ *         could not be found
+ */
+void* get_function_address(st_handle handle, void* pc);
+
+/*
  * Return the function unwinding metadata (offset into the unwinding
  * information section & number of unwinding records) for the function
  * enclosing the specified address.  This is used as a fallback when the PC is

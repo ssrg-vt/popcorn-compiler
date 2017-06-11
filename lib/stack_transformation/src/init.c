@@ -104,7 +104,8 @@ st_handle st_init(const char* fn)
   {
     handle->unwind_locs = get_section_data(handle->elf, SECTION_ST_UNWIND);
     if(!handle->unwind_locs ) goto close_elf;
-    ST_INFO("Found %lu frame unwinding entries\n", handle->unwind_count);
+    ST_INFO("Found %lu callee-saved frame unwinding entries\n",
+            handle->unwind_count);
   }
   else
   {

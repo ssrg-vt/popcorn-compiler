@@ -219,9 +219,20 @@ bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
   }
 
   if(found)
-    ST_INFO("Starting address of enclosing function: 0x%lx\n", meta->addr);
+    ST_INFO("Address of enclosing function: 0x%lx\n", meta->addr);
 
   TIMER_FG_STOP(get_unwind_offset_by_addr);
   return found;
+}
+
+/*
+ * Return the address of the function encapsulating PC.
+ */
+void* get_function_address(st_handle handle, void* pc)
+{
+  unwind_addr entry;
+
+  if(!get_unwind_offset_by_addr(handle, pc, &entry)) return NULL;
+  else return (void*)entry.addr;
 }
 

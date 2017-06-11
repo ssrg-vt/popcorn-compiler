@@ -1,5 +1,0 @@
-build/
-dump-llvm-stackmap
-dump-stackinfo
-gen-stackinfo
-check-stackmaps

@@ -66,7 +66,7 @@ clean:
 	rm -f $(ALL_LIBS) lib/*.[ao] lib/*.so
 	rm -f $(ALL_TOOLS)
 	rm -f $(GENH) $(GENH_INT)
-	rm -f include/bits
+	rm -rf include/bits
 
 distclean: clean
 	rm -f config.mak
