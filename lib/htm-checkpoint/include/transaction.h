@@ -49,8 +49,12 @@ extern const char *status_name(transaction_status status);
  *   stop_transaction() : Stop transactional execution.
  *   in_transaction()   : Return non-zero if in transaction, or zero otherwise
  */
-#ifdef __x86_64__
+#ifdef __powerpc64__
+# include "ppc64le.h"
+#elif defined __x86_64__
 # include "x86_64.h"
+#else
+# error "Unsupported target architecture"
 #endif
 
 // TODO Equivalence point APIs

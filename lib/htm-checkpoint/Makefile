@@ -8,7 +8,7 @@ INC     := -I./include
 INC_PPC := $(INC) -I./arch/ppc64le
 INC_X86 := $(INC) -I./arch/x86_64
 
-ARCH_PPC := -march=ppc64le #-target ppc64le-linux-gnu
+ARCH_PPC := -mtune=power8 -mhtm #-target ppc64le-linux-gnu -Xclang -target-cpu -Xclang pwr8
 ARCH_X86 := -mtune=broadwell -mrtm #-target x86_64-linux-gnu -Xclang -target-cpu -Xclang broadwell 
 
 CFLAGS     := -O2 -Wall -c -g -D_STATISTICS

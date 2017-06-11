@@ -12,6 +12,14 @@
 
 #include <htmintrin.h>
 
+// Note: there's a typo in GCC/clang's htmintrin.h, correct here
+#ifdef _TEXASR_IMPLEMENTAION_SPECIFIC
+# define _TEXASR_IMPLEMENTATION_SPECIFIC _TEXASR_IMPLEMENTAION_SPECIFIC
+#endif
+#ifdef _TEXASRU_IMPLEMENTAION_SPECIFIC
+# define _TEXASRU_IMPLEMENTATION_SPECIFIC _TEXASRU_IMPLEMENTAION_SPECIFIC
+#endif
+
 /*
  * PowerPC HTM contains a special rollback-only transaction mode with the
  * following properties:
@@ -65,7 +73,7 @@ static inline transaction_status start_transaction()
     if(_TEXASRU_IMPLEMENTATION_SPECIFIC(texasru)) return TRANSIENT;
     else if(_TEXASRU_FOOTPRINT_OVERFLOW(texasru)) return CAPACITY;
     else if(_TEXASRU_NON_TRANSACTIONAL_CONFLICT(texasru) ||
-            _TEXASRU_TRANSACTIONAL_CONFLICT(texasru) ||
+            _TEXASRU_TRANSACTION_CONFLICT(texasru) ||
             _TEXASRU_TRANSLATION_INVALIDATION_CONFLICT(texasru) ||
             _TEXASRU_INSTRUCTION_FETCH_CONFLICT(texasru)) return CONFLICT;
     else if(_TEXASRU_DISALLOWED(texasru) ||
