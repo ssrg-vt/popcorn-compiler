@@ -1,4 +1,4 @@
-POPCORN := /home/beowulf/compiler
+POPCORN := /usr/local/popcorn
 POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 

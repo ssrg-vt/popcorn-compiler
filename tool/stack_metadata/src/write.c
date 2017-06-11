@@ -258,7 +258,7 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       /* Populate call site record */
       sites[cur].id = start_id++;
       sites[cur].addr = fr->func_addr + site_record->offset;
-      sites[cur].frame_size = fr->stack_size;
+      sites[cur].frame_size = cfa_correction(b->arch, fr->stack_size);
       sites[cur].num_unwind = fr->num_unwind;
       sites[cur].num_live = site_record->num_locations;
       sites[cur].live_offset = loc_num;

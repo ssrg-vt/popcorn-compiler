@@ -16,7 +16,6 @@
 #define X86_64_SAVED_FBP_OFFSET -0x10
 #define X86_64_CFA_OFFSET_FUNCENTRY 0x8
 #define X86_64_STACK_ALIGNMENT 0x10
-#define X86_64_SP_FIXUP 0x8
 
 static const uint16_t callee_saved_x86_64[] = {
   RBX, RBP, R12, R13, R14, R15, RIP
@@ -51,10 +50,15 @@ const struct properties_t properties_x86_64 = {
 
 static void* align_sp_x86_64(void* sp)
 {
+  /*
+   * Per the ABI:
+   *   "...the value (%rsp + 8) is always a multiple of 16 when control is
+   *    transferred to the function entry point."
+   */
+  // TODO alignment should be 32 when value of type __m256 is passed on stack
   uint64_t stack_ptr = (uint64_t)sp;
-  stack_ptr &= ~(X86_64_SP_FIXUP - 1);
-  if(!(stack_ptr & X86_64_STACK_ALIGNMENT))
-    stack_ptr -= X86_64_SP_FIXUP;
+  if((stack_ptr + 8) % X86_64_STACK_ALIGNMENT)
+    stack_ptr -= 8;
   return (void*)stack_ptr;
 }
 
