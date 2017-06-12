@@ -14,7 +14,7 @@ extern "C" {
 
 /* Number of times to retry transient-like aborts before continuing
  * non-transactionally. */
-#define NUM_RETRY_TRANSIENT 10
+#define NUM_RETRY_TRANSIENT 3
 
 /* Transaction statuses.  Architecture-specific code should convert
  * per-processor statuses to one of these. */
@@ -25,9 +25,8 @@ extern "C" {
   X(CAPACITY) /* Transactional memory buffers reached capacity */ \
   X(TRANSIENT) /* Aborted for reason in which a retry will likely succeed */ \
   X(PERSISTENT) /* Aborted for reason which will continue to cause aborts */ \
-  X(APP_MAKESPAN) /* Application's run time, from start to finish */ \
   X(OTHER) /* Some other abort reason we don't care about */ \
-  X(INVALID) /* Should never be returned by APIs */ // TODO delete
+  X(APP_MAKESPAN) /* Application's run time, from start to finish */ \
 
 /* Enumeration of statuses using X-macros above. */
 typedef enum transaction_status {

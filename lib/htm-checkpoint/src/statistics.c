@@ -102,6 +102,7 @@ void htm_log_push_back(htm_log *log, htm_log_entry *entry)
 const htm_log_entry *htm_log_get(htm_log *log, size_t elem)
 {
   tsx_assert(log);
+  tsx_assert(log->entries);
   tsx_assert(elem < log->size);
   return &log->entries[elem];
 }

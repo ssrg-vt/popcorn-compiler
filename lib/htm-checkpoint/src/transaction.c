@@ -1,6 +1,6 @@
 /*
  * Transactional execution instrumentation.  Start transactions at equivalence
- * points, with results to be commited at next encountered equivalence point.
+ * points, with results to be committed at next encountered equivalence point.
  * Log transaction execution results (if enabled at compile time).
  *
  * Author: Rob Lyerly <rlyerly@vt.edu>
@@ -23,13 +23,13 @@ static int tid_ctr = 0;
 static __thread int tid = -1;
 static __thread htm_log_entry entry;
 
-// Note: the following two are implemented as macros in order to better support
+// Note: the following are implemented as macros in order to better support
 // finding the call site (i.e., __builtin_return_address())
 
-// Note: the following two macros must *only* be called outside of transactions
-// because timing functions & log functions may cause abort.
+// Note: the following macros must *only* be called outside of transactions
+// because timing & log functions may cause abort.
 
-// TODO locking in the next two macros is a bottleneck when multiple threads
+// TODO locking in the following macros is a bottleneck when multiple threads
 // execute many function calls
 
 /* Start log entry for a transaction. */
@@ -51,20 +51,18 @@ static __thread htm_log_entry entry;
 #define LOG_END( _log_entry ) \
   do { \
     struct timespec end; \
-    if(_log_entry.status != INVALID) { \
-      tsx_assert(!in_transaction()); \
-      clock_gettime(CLOCK_MONOTONIC, &end); \
-      _log_entry.end = TS_TO_NS(end); \
-      pthread_mutex_lock(&lock); \
-      htm_log_push_back(&log, &_log_entry); \
-      pthread_mutex_unlock(&lock); \
-    } \
+    tsx_assert(!in_transaction()); \
+    clock_gettime(CLOCK_MONOTONIC, &end); \
+    _log_entry.end = TS_TO_NS(end); \
+    pthread_mutex_lock(&lock); \
+    htm_log_push_back(&log, &_log_entry); \
+    pthread_mutex_unlock(&lock); \
   } while(0)
 
 /* Log a transaction -- save it's status, take ending timestamp & record in
  * log.  This does the whole shebang for successful transactions. */
-#define LOG_SUCCESS( _log_entry, _status ) \
-  do { LOG_STATUS( _log_entry, _status ); LOG_END( _log_entry ); } while(0)
+#define LOG_SUCCESS( _log_entry ) \
+  do { LOG_STATUS( _log_entry, SUCCESS ); LOG_END( _log_entry ); } while(0)
 
 /* Initialize per-thread statistics information. */
 static inline void init_thread_stats()
@@ -73,7 +71,7 @@ static inline void init_thread_stats()
   // an abort) use a simple TID counter.
   tid = __atomic_fetch_add(&tid_ctr, 1, __ATOMIC_SEQ_CST);
   entry.tid = tid;
-  entry.status = INVALID;
+  entry.fn = NULL;
 }
 
 #else
@@ -81,7 +79,7 @@ static inline void init_thread_stats()
 #define LOG_START( _log_entry, _fn ) {}
 #define LOG_STATUS( _log_entry, _status ) {}
 #define LOG_END( _log_entry ) {}
-#define LOG_SUCCESS( _log_entry, _status ) {}
+#define LOG_SUCCESS( _log_entry ) {}
 
 #endif /* _STATISTICS */
 
@@ -119,12 +117,14 @@ void __cyg_profile_func_enter(void *fn, void *cs)
   if(tid == -1) init_thread_stats();
 #endif /* _STATISTICS */
 
+  // If executing transactionally, return to normal execution.  Record
+  // transaction log entry for all statuses.
   if(in_transaction()) 
   {
     stop_transaction();
-    LOG_SUCCESS(entry, SUCCESS);
+    LOG_SUCCESS(entry);
   }
-  else LOG_END(entry);
+  else if(entry.fn) LOG_END(entry);
 
   // Start the next transaction.  Because we can't log inside a transaction,
   // add entry for beginning of transaction before loop.  Subsequent log
@@ -134,7 +134,7 @@ void __cyg_profile_func_enter(void *fn, void *cs)
   for(i = 0; status == TRANSIENT && i < NUM_RETRY_TRANSIENT; i++)
     status = start_transaction();
 
-  // Save the status here, but take the end timestamp at the end of the
+  // Save the status, but don't take the end timestamp until the end of the
   // section, i.e., at the next equivalence point.
   if(!in_transaction()) LOG_STATUS(entry, status);
 }
@@ -161,12 +161,13 @@ static void __attribute__((destructor)) __htm_cleanup()
   if(in_transaction())
   {
     stop_transaction();
-    LOG_SUCCESS(entry, SUCCESS);
+    LOG_SUCCESS(entry);
   }
-  else LOG_END(entry);
+  else if(entry.fn) LOG_END(entry);
 
 #ifdef _STATISTICS
-  LOG_SUCCESS(app_makespan, APP_MAKESPAN);
+  LOG_STATUS(app_makespan, APP_MAKESPAN);
+  LOG_END(app_makespan);
   htm_log_write_entries(&log);
   htm_log_free(&log);
 #endif /* _STATISTICS */

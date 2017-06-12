@@ -11,7 +11,6 @@
 #define _STATISTICS_H
 
 #include <stdio.h>
-#include <pthread.h>
 
 /* Environment variable controlling output filename & default filename in which
  * to write results. */
@@ -24,11 +23,11 @@
 
 /* A log entry recording HTM statistics. */
 typedef struct htm_log_entry {
-  pthread_t tid;
-  unsigned long start, end;
-  transaction_status status;
-  void *fn;
-  void *pc;
+  int tid; // thread ID
+  unsigned long start, end; // start and end time stamp
+  transaction_status status; // transaction result
+  void *fn; // function in which transaction starts
+  void *pc; // call site of beginning of transaction
 } htm_log_entry;
 
 /* Default initial capacity for the log. */

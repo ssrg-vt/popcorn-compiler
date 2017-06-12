@@ -15,8 +15,7 @@
  *   _XBEGIN_STARTED - successfully started the transaction
  *
  * TRANSIENT:
- *   _XABORT_RETRY - hardware thinks transaction will succeed on retry
- *   _XABORT_DEBUG - aborted due to debug trap
+ *   _XABORT_RETRY - hardware thinks transaction may succeed on retry
  *   code == 0 - transaction aborted for other reason (e.g., page fault)
  *
  * CAPACITY:
@@ -27,14 +26,17 @@
  *
  * PERSISTENT:
  *   _XABORT_EXPLICIT - aborted by xabort instruction
+ *
+ * Abort reasons we should never experience:
+ *   _XABORT_DEBUG - aborted due to debug trap
+ *   _XABORT_NESTED - aborted in execution of nested transaction
  */
 static inline transaction_status start_transaction()
 {
   unsigned int code = _xbegin();
 
   if(code == _XBEGIN_STARTED) return BEGIN;
-  else if((code & _XABORT_RETRY) || (code & _XABORT_DEBUG) || !code)
-    return TRANSIENT;
+  else if((code & _XABORT_RETRY) || !code) return TRANSIENT;
   else if(code & _XABORT_CAPACITY) return CAPACITY;
   else if(code & _XABORT_CONFLICT) return CONFLICT;
   else if(code & _XABORT_EXPLICIT) return PERSISTENT;
