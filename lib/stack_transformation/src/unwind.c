@@ -130,11 +130,12 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
  * initialization as pop_frame performs the same functionality during
  * unwinding.
  */
-void bootstrap_first_frame(rewrite_context ctx)
+void bootstrap_first_frame(rewrite_context ctx, void* regset)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ctx->acts[ctx->act].cfa = calculate_cfa(ctx, ctx->act);
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->regset_copyin(ctx->acts[0].regs, regset);
 }
 
 /*
@@ -143,12 +144,13 @@ void bootstrap_first_frame(rewrite_context ctx)
  * directly upon function entry.  Only needed during initialization as
  * pop_frame_funcentry performs the same functionality during unwinding.
  */
-void bootstrap_first_frame_funcentry(rewrite_context ctx)
+void bootstrap_first_frame_funcentry(rewrite_context ctx, void* sp)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ACT(ctx).cfa = REGOPS(ctx)->sp(ACT(ctx).regs) +
-                 PROPS(ctx)->cfa_offset_funcentry;
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->set_sp(ctx->acts[0].regs, sp);
+  ctx->acts[0].cfa = sp + PROPS(ctx)->cfa_offset_funcentry;
 }
 
 /*

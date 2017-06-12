@@ -35,11 +35,12 @@ void* calculate_cfa(rewrite_context ctx, int act);
 /*
  * Boot strap the outermost frame's information.  Only needed during
  * initialization as pop_frame performs the same functionality during
- * unwinding.
+ * unwinding.  Does *not* set up the frame's CFA.
  *
  * @param ctx a rewriting context
+ * @param regset the current register set
  */
-void bootstrap_first_frame(rewrite_context ctx);
+void bootstrap_first_frame(rewrite_context ctx, void* regset);
 
 /*
  * Boot strap the outermost frame's information.  This is a special case for
@@ -48,8 +49,9 @@ void bootstrap_first_frame(rewrite_context ctx);
  * pop_frame_funcentry performs the same functionality during unwinding.
  *
  * @param ctx a rewriting context
+ * @param sp the stack pointer for the outermost frame
  */
-void bootstrap_first_frame_funcentry(rewrite_context ctx);
+void bootstrap_first_frame_funcentry(rewrite_context ctx, void* sp);
 
 /*
  * Unwind the current call frame activation from the stack stored in the

@@ -63,7 +63,7 @@ void st_destroy(st_handle handle);
  * @param dest_regs the transformed destination register set
  * @return 0 if the stack was successfully re-written, 1 otherwise
  */
-int st_userspace_rewrite(void* sp, void* regs, void* dest_regs);
+int st_userspace_rewrite(void* sp, void* src_regs, void* dest_regs);
 
 /*
  * Rewrite the stack from user-space (aarch64 -> aarch64).  Useful for
@@ -101,14 +101,12 @@ int st_userspace_rewrite_x86_64(void* sp,
  * Rewrite the stack in its entirety from its current form (source) to the
  * requested destination form (destination).
  *
- * Note: handles cannot be accessed concurrently, not thread safe!
- *
- * @param src a stack transformation handle which has debugging information for
- *            the source binary
+ * @param src a stack transformation handle which has transformation metadata
+ *            for the source binary
  * @param regset_src a pointer to a filled register set representing the
  *                   thread's state
  * @param sp_base_src source stack base
- * @param dest a stack transformation handle which has debugging information
+ * @param dest a stack transformation handle which has transformation metadata
  *             for the destination binary
  * @param regset_dest a pointer to a register set to be filled with destination
  *                    thread's state
@@ -127,14 +125,12 @@ int st_rewrite_stack(st_handle src,
  * Rewrite only the top frame of the stack.  Previous frames will be
  * re-written on-demand as the thread unwinds the call stack.
  *
- * Note: handles cannot be accessed concurrently, not thread safe!
- *
- * @param src a stack transformation handle which has debugging information for
- *            the source binary
+ * @param src a stack transformation handle which has transformation metadata
+ *            for the source binary
  * @param regset_src a pointer to a filled register set representing the
  *                   thread's state
  * @param sp_base_src source stack base
- * @param dest a stack transformation handle which has debugging information
+ * @param dest a stack transformation handle which has transformation metadata
  *             for the destination binary
  * @param regset_dest a pointer to a register set to be filled with destination
  *                    thread's state
@@ -142,6 +138,7 @@ int st_rewrite_stack(st_handle src,
  *                     activation records)
  * @return 0 if succesful, or 1 otherwise
  */
+// TODO note yet implemented
 int st_rewrite_ondemand(st_handle src,
                         void* regset_src,
                         void* sp_base_src,

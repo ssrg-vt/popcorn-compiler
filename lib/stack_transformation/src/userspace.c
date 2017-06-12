@@ -49,14 +49,14 @@ static bool get_main_stack(stack_bounds* bounds);
 static bool get_thread_stack(stack_bounds* bounds);
 
 /*
- * Rewrite from the current stack (metadata provided by handle_a) to a
- * transformed stack (handle_b).
+ * Rewrite from the current stack (metadata provided by src_handle) to a
+ * transformed stack (dest_handle).
  */
 static int userspace_rewrite_internal(void* sp,
-                                      void* regs,
+                                      void* src_regs,
                                       void* dest_regs,
-                                      st_handle handle_a,
-                                      st_handle handle_b);
+                                      st_handle src_handle,
+                                      st_handle dest_handle);
 
 ///////////////////////////////////////////////////////////////////////////////
 // User-space initialization, rewriting & teardown
@@ -197,7 +197,7 @@ stack_bounds get_stack_bounds()
  * Rewrite from source to destination stack.
  */
 int st_userspace_rewrite(void* sp,
-                         void* regs,
+                         void* src_regs,
                          void* dest_regs)
 {
   if(!aarch64_handle || !x86_64_handle)
@@ -208,13 +208,13 @@ int st_userspace_rewrite(void* sp,
 
 #ifdef __aarch64__
   return userspace_rewrite_internal(sp,
-                                    regs,
+                                    src_regs,
                                     dest_regs,
                                     aarch64_handle,
                                     x86_64_handle);
 #elif defined __x86_64__
   return userspace_rewrite_internal(sp,
-                                    regs,
+                                    src_regs,
                                     dest_regs,
                                     x86_64_handle,
                                     aarch64_handle);
@@ -410,13 +410,13 @@ static bool get_thread_stack(stack_bounds* bounds)
 
 /*
  * Rewrite from source to destination stack.  Logically, divides 8MB stack in
- * half, detects which half we're currently using and rewrite to the other.
+ * half, detects which half we're currently using and rewrites to the other.
  */
 static int userspace_rewrite_internal(void* sp,
-                                      void* regs,
+                                      void* src_regs,
                                       void* dest_regs,
-                                      st_handle handle_a,
-                                      st_handle handle_b)
+                                      st_handle src_handle,
+                                      st_handle dest_handle)
 {
   int retval = 0;
   void* stack_a, *stack_b, *cur_stack, *new_stack;
@@ -425,7 +425,7 @@ static int userspace_rewrite_internal(void* sp,
   stack_bounds* bounds_ptr;
 #endif
 
-  if(!sp || !regs || !dest_regs || !handle_a || !handle_b)
+  if(!sp || !src_regs || !dest_regs || !src_handle || !dest_handle)
   {
     ST_WARN("invalid arguments\n");
     return 1;
@@ -463,11 +463,11 @@ static int userspace_rewrite_internal(void* sp,
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
   new_stack = (sp >= stack_b) ? stack_b : stack_a;
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
-  if(st_rewrite_stack(handle_a, regs, cur_stack,
-                      handle_b, dest_regs, new_stack))
+  if(st_rewrite_stack(src_handle, src_regs, cur_stack,
+                      dest_handle, dest_regs, new_stack))
   {
     ST_WARN("stack transformation failed (%s -> %s)\n",
-            arch_name(handle_a->arch), arch_name(handle_b->arch));
+            arch_name(src_handle->arch), arch_name(dest_handle->arch));
     retval = 1;
   }
 
