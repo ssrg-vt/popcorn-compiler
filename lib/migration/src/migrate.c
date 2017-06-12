@@ -191,6 +191,13 @@ struct shim_data {
   void *regset;
 };
 
+/*
+ * Create a program location for which the compiler will generate
+ * transformation metadata.
+ */
+static void *__attribute__((noinline))
+get_call_site() { return __builtin_return_address(0); }
+
 #ifdef _DEBUG
 /*
  * Flag indicating we should spin post-migration in order to wait until a

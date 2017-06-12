@@ -193,12 +193,6 @@ stack_bounds get_stack_bounds()
   return cur_bounds;
 }
 
-/* Public-facing rewrite macros */
-
-// TODO: the program location stored in the regset doesn't correspond to a call
-// site, only the location where the inline assembly grabbed the PC.  For now,
-// correct the program location using the rewrite API's return address.
-
 /*
  * Rewrite from source to destination stack.
  */
@@ -213,16 +207,12 @@ int st_userspace_rewrite(void* sp,
   }
 
 #ifdef __aarch64__
-  struct regset_aarch64* real_regs = (struct regset_aarch64*)regs;
-  real_regs->pc = __builtin_return_address(0);
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,
                                     aarch64_handle,
                                     x86_64_handle);
 #elif defined __x86_64__
-  struct regset_x86_64* real_regs = (struct regset_x86_64*)regs;
-  real_regs->rip = __builtin_return_address(0);
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,
@@ -244,7 +234,6 @@ int st_userspace_rewrite_aarch64(void* sp,
     return 1;
   }
 
-  regs->pc = __builtin_return_address(0);
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,
@@ -265,7 +254,6 @@ int st_userspace_rewrite_x86_64(void* sp,
     return 1;
   }
 
-  regs->rip = __builtin_return_address(0);
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,

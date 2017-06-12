@@ -12,6 +12,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_X86_64(regs_x86_64); \
+    regs_x86_64.rip = get_call_site(); \
     if(st_userspace_rewrite_x86_64((void*)regs_x86_64.rsp, &regs_x86_64, &regs_x86_64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \
@@ -37,6 +38,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_X86_64(regs_x86_64); \
+    regs_x86_64.rip = get_call_site(); \
     if(st_userspace_rewrite((void*)regs_x86_64.rsp, &regs_x86_64, &regs_aarch64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \

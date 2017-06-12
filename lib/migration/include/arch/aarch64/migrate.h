@@ -12,6 +12,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_AARCH64(regs_aarch64); \
+    regs_aarch64.pc = get_call_site(); \
     if(st_userspace_rewrite_aarch64(regs_aarch64.sp, &regs_aarch64, &regs_aarch64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \
@@ -37,6 +38,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_AARCH64(regs_aarch64); \
+    regs_aarch64.pc = get_call_site(); \
     if(st_userspace_rewrite(regs_aarch64.sp, &regs_aarch64, &regs_x86_64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \
