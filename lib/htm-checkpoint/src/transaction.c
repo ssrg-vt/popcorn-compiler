@@ -7,12 +7,14 @@
  * Date: 6/16/2017
  */
 
+#include <stddef.h>
 #include "transaction.h"
 
 #ifdef _STATISTICS
 
 #include <stdint.h>
 #include <time.h>
+#include <pthread.h>
 #include "statistics.h"
 #include "tsx_assert.h"
 
@@ -51,12 +53,14 @@ static __thread htm_log_entry entry;
 #define LOG_END( _log_entry ) \
   do { \
     struct timespec end; \
-    tsx_assert(!in_transaction()); \
-    clock_gettime(CLOCK_MONOTONIC, &end); \
-    _log_entry.end = TS_TO_NS(end); \
-    pthread_mutex_lock(&lock); \
-    htm_log_push_back(&log, &_log_entry); \
-    pthread_mutex_unlock(&lock); \
+    if(_log_entry.fn) { \
+      tsx_assert(!in_transaction()); \
+      clock_gettime(CLOCK_MONOTONIC, &end); \
+      _log_entry.end = TS_TO_NS(end); \
+      pthread_mutex_lock(&lock); \
+      htm_log_push_back(&log, &_log_entry); \
+      pthread_mutex_unlock(&lock); \
+    } \
   } while(0)
 
 /* Log a transaction -- save it's status, take ending timestamp & record in
@@ -124,7 +128,7 @@ void __cyg_profile_func_enter(void *fn, void *cs)
     stop_transaction();
     LOG_SUCCESS(entry);
   }
-  else if(entry.fn) LOG_END(entry);
+  else LOG_END(entry);
 
   // Start the next transaction.  Because we can't log inside a transaction,
   // add entry for beginning of transaction before loop.  Subsequent log
@@ -163,7 +167,7 @@ static void __attribute__((destructor)) __htm_cleanup()
     stop_transaction();
     LOG_SUCCESS(entry);
   }
-  else if(entry.fn) LOG_END(entry);
+  else LOG_END(entry);
 
 #ifdef _STATISTICS
   LOG_STATUS(app_makespan, APP_MAKESPAN);

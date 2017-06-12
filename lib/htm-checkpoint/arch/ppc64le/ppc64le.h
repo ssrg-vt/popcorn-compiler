@@ -29,7 +29,7 @@
  *  - Rollback-only transactions are not serialized
  *  - No tracking of memory loads
  *
- *  This is closer to pure hardware checkpointing, and thus what we use.
+ *  This is basically pure hardware checkpointing, and thus what we use.
  */
 #define PPC_ROLLBACK_ONLY_TRANSACTION 1
 
@@ -44,8 +44,8 @@
  *   - implementation-specific reason to abort
  *
  * CAPACITY:
- *   - footprint overflow - too much transactional state, should only apply to
- *                          stores since we're executing in ROT mode
+ *   - footprint overflow - transactional state overflowed buffers (should only
+ *                          apply to stores since we're executing in ROT mode)
  *
  * CONFLICT:
  *   - conflicting write with another thread executing non-transactionally

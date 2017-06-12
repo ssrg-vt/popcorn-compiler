@@ -117,7 +117,7 @@ void htm_log_write_entries(htm_log *log)
   for(i = 0; i < log->size; i++)
   {
     const htm_log_entry *entry = htm_log_get(log, i);
-    fprintf(log->file, "%lu,%lu,%lu,%s,%p,%p\n",
+    fprintf(log->file, "%d,%lu,%lu,%s,%p,%p\n",
                         entry->tid, entry->start, entry->end,
                         status_name(entry->status),
                         entry->fn, entry->pc);

@@ -11,7 +11,7 @@ INC_X86 := $(INC) -I./arch/x86_64
 ARCH_PPC := -mtune=power8 -mhtm #-target ppc64le-linux-gnu -Xclang -target-cpu -Xclang pwr8
 ARCH_X86 := -mtune=broadwell -mrtm #-target x86_64-linux-gnu -Xclang -target-cpu -Xclang broadwell 
 
-CFLAGS     := -O2 -Wall -c -g -D_STATISTICS
+CFLAGS     := -O2 -Wall -c -g
 CFLAGS_PPC := $(CFLAGS) $(ARCH_PPC) $(INC_PPC)
 CFLAGS_X86 := $(CFLAGS) $(ARCH_X86) $(INC_X86)
 
@@ -36,6 +36,14 @@ LIB     := libhtm-checkpoint.a
 LIB_PPC := $(BUILD_PPC)/$(LIB)
 LIB_X86 := $(BUILD_X86)/$(LIB)
 
+OBJ_STATS     := $(SRC:.c=_stats.o)
+OBJ_STATS_PPC := $(subst src,$(BUILD_PPC),$(OBJ_STATS))
+OBJ_STATS_X86 := $(subst src,$(BUILD_X86),$(OBJ_STATS))
+
+LIB_STATS     := $(LIB:.a=-stats.a)
+LIB_STATS_PPC := $(BUILD_PPC)/$(LIB_STATS)
+LIB_STATS_X86 := $(BUILD_X86)/$(LIB_STATS)
+
 all: $(LIB_PPC) $(LIB_X86)
 
 %/.dir:
@@ -43,23 +51,49 @@ all: $(LIB_PPC) $(LIB_X86)
 	@mkdir -p $*
 	@touch $@
 
+###########
+# PowerPC #
+###########
+
 $(BUILD_PPC)/%.o: src/%.c $(HDR_PPC)
 	@echo " [CC] $< (ppc64le)"
 	@$(CC) $(CFLAGS_PPC) -o $@ $<
 
 $(LIB_PPC): $(BUILD_PPC)/.dir $(OBJ_PPC)
-	@echo " [AR] $(LIB_PPC)"
-	@rm -f $(LIB_PPC)
-	@$(AR) $(ARFLAGS) $(LIB_PPC) $(OBJ_PPC) &> /dev/null
+	@echo " [AR] $@"
+	@rm -f $@
+	@$(AR) $(ARFLAGS) $@ $(OBJ_PPC) &> /dev/null
+
+$(BUILD_PPC)/%_stats.o: src/%.c $(HDR_PPC)
+	@echo " [CC] $< (ppc64le, statistics enabled)"
+	@$(CC) $(CFLAGS_PPC) -D_STATISTICS -o $@ $<
+
+$(LIB_STATS_PPC): $(BUILD_PPC)/.dir $(OBJ_STATS_PPC)
+	@echo " [AR] $@"
+	@rm -f $@
+	@$(AR) $(ARFLAGS) $@ $(OBJ_STATS_PPC) &> /dev/null
+
+##########
+# x86-64 #
+##########
 
 $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@echo " [CC] $< (x86-64)"
 	@$(CC) $(CFLAGS_X86) -o $@ $<
 
 $(LIB_X86): $(BUILD_X86)/.dir $(OBJ_X86)
-	@echo " [AR] $(LIB_X86)"
-	@rm -f $(LIB_X86)
-	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
+	@echo " [AR] $@"
+	@rm -f $@
+	@$(AR) $(ARFLAGS) $@ $(OBJ_X86) &> /dev/null
+
+$(BUILD_X86)/%_stats.o: src/%.c $(HDR_X86)
+	@echo " [CC] $< (x86-64, statistics enabled)"
+	@$(CC) $(CFLAGS_X86) -D_STATISTICS -o $@ $<
+
+$(LIB_STATS_X86): $(BUILD_X86)/.dir $(OBJ_STATS_X86)
+	@echo " [AR] $@"
+	@rm -f $@
+	@$(AR) $(ARFLAGS) $@ $(OBJ_STATS_X86) &> /dev/null
 
 install: $(LIB_PPC) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_PPC) to $(POPCORN_PPC)/lib"
@@ -73,4 +107,4 @@ clean:
 	@echo " [RM] $(BUILD)"
 	@rm -rf $(BUILD)
 
-.PHONY: all clean
+.PHONY: all install clean
