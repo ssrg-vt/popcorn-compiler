@@ -2544,15 +2544,16 @@ Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
 --- lib/CodeGen/RegAllocFast.cpp	(revision 277823)
 +++ lib/CodeGen/RegAllocFast.cpp	(working copy)
-@@ -1078,6 +1078,12 @@
+@@ -1078,6 +1078,13 @@
  /// runOnMachineFunction - Register allocate the whole function
  ///
  bool RAFast::runOnMachineFunction(MachineFunction &Fn) {
 +  // TODO the fast register allocator behaves poorly for stackmaps with lots
 +  // of operands, and since it doesn't use the VirtRegRewriter pass we can't
 +  // capture correct stackmap operand locations
-+  assert(false && "fast register allocator not supported "
-+                  "for stack transformation");
++  if(Fn.getFrameInfo()->hasStackMap())
++    llvm_unreachable("Fast register allocator not supported for stack"
++                     "transformation");
 +
    DEBUG(dbgs() << "********** FAST REGISTER ALLOCATION **********\n"
                 << "********** Function: " << Fn.getName() << '\n');

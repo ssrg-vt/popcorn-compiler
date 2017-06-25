@@ -796,7 +796,7 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,27 @@
+@@ -4934,6 +4934,29 @@
        A->render(Args, CmdArgs);
    }
  
@@ -812,6 +812,8 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-popcorn-migratable");
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-emit-st-metadata");
++    CmdArgs.push_back("-mllvm");
++    CmdArgs.push_back("-optimize-regalloc");
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
 +    // Forward Popcorn alignment flag and add -f*-sections flags for symbol
