@@ -33,7 +33,6 @@ $POPCORN/bin/ld.gold -static ${OUTPUT} ${INPUT} $GCC_LOC \
  $POPCORN/aarch64/lib/libstack-transform.a \
  $POPCORN/aarch64/lib/libelf.a \
  $POPCORN/aarch64/lib/libpthread.a \
- $POPCORN/aarch64/lib/libbomp.a \
  $POPCORN/aarch64/lib/libc.a \
  $POPCORN/aarch64/lib/libm.a \
  --start-group $GCC_LIBS --end-group $MAP $LINKER > out_aarch64.txt || exit 1

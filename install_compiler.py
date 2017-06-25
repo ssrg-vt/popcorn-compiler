@@ -568,23 +568,23 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         #=====================================================
         # CONFIGURE & INSTALL LIBBOMP
         #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/libbomp'))
+        #os.chdir(os.path.join(base_path, 'lib/libbomp'))
 
-        print('Making libbomp...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                        'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
-                                        'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-        os.chdir(cur_dir)
+        #print('Making libbomp...')
+        #try:
+        #    print('Running Make...')
+        #    rv = subprocess.check_call(['make', '-j', str(num_threads),
+        #                                'POPCORN={}'.format(install_path)])
+        #    rv = subprocess.check_call(['make', 'install',
+        #                                'POPCORN={}'.format(install_path)])
+        #except Exception as e:
+        #    print('Could not run Make ({})!'.format(e))
+        #    sys.exit(1)
+        #else:
+        #    if rv != 0:
+        #        print('Make failed.')
+        #        sys.exit(1)
+        #os.chdir(cur_dir)
 
         #=====================================================
         # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
