@@ -405,8 +405,11 @@ static bool get_thread_stack(stack_bounds* bounds)
     // TODO is there any important data stored above muslc/start's stack frame?
     bounds->high = bounds->low + stack_size;
     if(stack_size != MAX_STACK_SIZE)
-      ST_WARN("unexpected stack size: expected %lu, got %lu\n",
+    {
+      ST_WARN("unexpected stack size: expected %lx, got %lx\n",
               MAX_STACK_SIZE, stack_size);
+      bounds->low = bounds->high - MAX_STACK_SIZE;
+    }
     retval = true;
   }
   else

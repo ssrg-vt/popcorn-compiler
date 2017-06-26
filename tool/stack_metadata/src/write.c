@@ -287,9 +287,12 @@ create_call_site_metadata(bin *b, uint64_t start_id,
    * denote stack beginning call site records with an ID Of UINT64_MAX for
    * the main thread & UINT64_MAX-1 for spawned threads.
    */
+  // Note: frame size is non-zero because we need to account for the return
+  // address on architectures which automatically push the return address with
+  // a call instruction (i.e., x86)
   sites[cur].id = UINT64_MAX;
   sites[cur].addr = mainthr.st_value + main_start_offset(b->arch);
-  sites[cur].frame_size = 0;
+  sites[cur].frame_size = 8;
   sites[cur].num_unwind = 0;
   sites[cur].unwind_offset = UINT32_MAX;
   sites[cur].num_live = 0;
@@ -302,7 +305,7 @@ create_call_site_metadata(bin *b, uint64_t start_id,
   {
     sites[cur].id = UINT64_MAX - 1;
     sites[cur].addr = thread.st_value + thread_start_offset(b->arch);
-    sites[cur].frame_size = 0;
+    sites[cur].frame_size = 8;
     sites[cur].num_unwind = 0;
     sites[cur].unwind_offset = UINT32_MAX;
     sites[cur].num_live = 0;
