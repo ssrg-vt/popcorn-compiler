@@ -31,7 +31,6 @@ $POPCORN/bin/ld.gold -static \
  $POPCORN/x86_64/lib/libstack-transform.a \
  $POPCORN/x86_64/lib/libelf.a \
  $POPCORN/x86_64/lib/libpthread.a \
- $POPCORN/x86_64/lib/libpthread.a \
  $POPCORN/x86_64/lib/libc.a \
  $POPCORN/x86_64/lib/libm.a \
  --start-group --end-group $MAP $LINKER > out_x86_64.txt || exit 1
