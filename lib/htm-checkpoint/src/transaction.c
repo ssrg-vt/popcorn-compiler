@@ -142,7 +142,7 @@ void __cyg_profile_func_enter(void *fn, void *cs)
 
   // If executing transactionally, return to normal execution.  Record
   // transaction log entry for all statuses.
-  if(in_transaction()) 
+  if(in_transaction())
   {
     stop_transaction();
     LOG_SUCCESS(entry);
