@@ -19,9 +19,10 @@
 #include "tsx_assert.h"
 
 static htm_log log;
+static volatile int log_initialized = 0;
 static pthread_mutex_t lock;
 static htm_log_entry app_makespan;
-static int tid_ctr = 0;
+static volatile int tid_ctr = 0;
 static __thread int tid = -1;
 static __thread htm_log_entry entry;
 
@@ -68,6 +69,20 @@ static __thread htm_log_entry entry;
 #define LOG_SUCCESS( _log_entry ) \
   do { LOG_STATUS( _log_entry, SUCCESS ); LOG_END( _log_entry ); } while(0)
 
+/* Initialize the log. */
+// Note: not thread safe!
+static inline void init_log()
+{
+  const char *fn;
+  if(!log_initialized)
+  {
+    if(!(fn = getenv(HTM_STAT_FN_ENV))) fn = HTM_STAT_DEFAULT_FN;
+    htm_log_init(&log, fn);
+    LOG_START(app_makespan, (void *)UINT64_MAX);
+    log_initialized = 1;
+  }
+}
+
 /* Initialize per-thread statistics information. */
 static inline void init_thread_stats()
 {
@@ -76,6 +91,10 @@ static inline void init_thread_stats()
   tid = __atomic_fetch_add(&tid_ctr, 1, __ATOMIC_SEQ_CST);
   entry.tid = tid;
   entry.fn = NULL;
+
+  // Initialize the log.  We call this here because it's possible we get a log
+  // entry before __htm_stats_init() is called due to constructor ordering
+  init_log();
 }
 
 #else
@@ -148,14 +167,10 @@ void __attribute__((alias("__cyg_profile_func_enter")))
 __cyg_profile_func_exit(void *, void *);
 
 #ifdef _STATISTICS
-/* Prepare statistics gathering machinery. */
+/* Prepare statistics gathering machinery & initialize main thread. */
 static void __attribute__((constructor)) __htm_stats_init()
 {
-  const char *fn;
   init_thread_stats();
-  if(!(fn = getenv(HTM_STAT_FN_ENV))) fn = HTM_STAT_DEFAULT_FN;
-  htm_log_init(&log, fn);
-  LOG_START(app_makespan, (void *)UINT64_MAX);
 }
 #endif /* _STATISTICS */
 

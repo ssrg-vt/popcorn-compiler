@@ -12,7 +12,6 @@
  */
 
 // TODO add fine-grained concurrency control for adding log entries
-// TODO better error handling for file I/O issues
 
 #include <stdbool.h>
 #include "transaction.h"
@@ -29,13 +28,21 @@ void htm_log_init(htm_log *log, const char *fn)
   tsx_assert(log);
   tsx_assert(fn);
 
+  // Setup data structures
   log->capacity = DEFAULT_CAPACITY;
   log->size = 0;
   log->entries = malloc(sizeof(htm_log_entry) * DEFAULT_CAPACITY);
-  log->file = fopen(fn, "w");
-  tsx_assert(log->file);
-  fprintf(log->file, ";Thread ID,Start time (ns),End time (ns),Status,"
-                     "Function,Call Site\n");
+  if(!(log->file = fopen(fn, "w")))
+    perror("WARNING: could not open HTM statistics log file");
+
+  // Print log header
+  if(fprintf(log->file, ";Thread ID,Start time (ns),End time (ns),Status,"
+                        "Function,Call Site\n") < 0)
+  {
+    perror("WARNING: could not write header to HTM statistics log file");
+    if(fclose(log->file))
+      perror("WARNING: could not close HTM statistics log file");
+  }
 }
 
 /* Free the resources used by an htm_log. */
@@ -43,13 +50,14 @@ void htm_log_free(htm_log *log)
 {
   tsx_assert(log);
   tsx_assert(log->entries);
-  tsx_assert(log->file);
 
   log->capacity = 0;
   log->size = 0;
   free(log->entries);
   log->entries = NULL;
-  fclose(log->file);
+
+  if(log->file && fclose(log->file))
+    perror("WARNING: could not close HTM statistics log file");
   log->file = NULL;
 }
 
@@ -107,6 +115,7 @@ const htm_log_entry *htm_log_get(htm_log *log, size_t elem)
   return &log->entries[elem];
 }
 
+/* Write current log entries to disk. */
 void htm_log_write_entries(htm_log *log)
 {
   size_t i;
@@ -114,12 +123,18 @@ void htm_log_write_entries(htm_log *log)
   tsx_assert(log);
   tsx_assert(log->entries);
 
+  if(!log->file) return;
+
   for(i = 0; i < log->size; i++)
   {
     const htm_log_entry *entry = htm_log_get(log, i);
-    fprintf(log->file, "%d,%lu,%lu,%s,%p,%p\n",
-                        entry->tid, entry->start, entry->end,
-                        status_name(entry->status),
-                        entry->fn, entry->pc);
+    if(fprintf(log->file, "%d,%lu,%lu,%s,%p,%p\n",
+                           entry->tid, entry->start, entry->end,
+                           status_name(entry->status),
+                           entry->fn, entry->pc) < 0)
+    {
+      perror("WARNING: could not write to HTM statistics file");
+      break;
+    }
   }
 }
