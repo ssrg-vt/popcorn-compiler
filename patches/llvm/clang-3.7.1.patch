@@ -607,7 +607,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +865,115 @@
+@@ -769,3 +865,120 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -703,6 +703,11 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +                         *IRTargetOpts, CI.getLangOpts(),
 +                         TheModule.get(), BA, nullptr);
 +    Popcorn::StripTargetAttributes(*TheModule);
++
++    // TODO we need to create a deep copy of the module, since IR optimizations
++    // may inject architecture-specific instructions, i.e., the
++    // "createAtomicExpandPass" lowers IR-level atomics to
++    // architecture-specific ones
 +
 +    // Emit machine code for all specified architectures
 +    for(size_t i = 0; i < Targets.size(); i++) {

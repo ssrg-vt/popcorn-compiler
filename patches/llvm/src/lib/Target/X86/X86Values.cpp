@@ -45,7 +45,7 @@ void X86Values::genLEAInstructions(const MachineInstr *MI,
     Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
     if(Reg) {
       IL.push_back(ValueGenInstPtr(
-        new RegInstruction<InstType::Set>(Reg)));
+        new RegInstruction<InstType::Set>(Reg, 0)));
 
       Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
       IL.push_back(ValueGenInstPtr(
@@ -63,7 +63,7 @@ void X86Values::genLEAInstructions(const MachineInstr *MI,
       assert(MI->getOperand(1 + X86::AddrBaseReg).isReg());
       Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
       IL.push_back(ValueGenInstPtr(
-        new RegInstruction<InstType::Add>(Reg)));
+        new RegInstruction<InstType::Add>(Reg, 0)));
 
       Imm = MI->getOperand(1 + X86::AddrDisp).getImm();
       IL.push_back(ValueGenInstPtr(

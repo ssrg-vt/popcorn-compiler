@@ -65,7 +65,7 @@ void AArch64Values::genBitfieldInstructions(const MachineInstr *MI,
     assert(MI->getOperand(1).isReg() && MI->getOperand(2).isImm() &&
            MI->getOperand(3).isImm());
     IL.push_back(ValueGenInstPtr(
-      new RegInstruction<InstType::Set>(MI->getOperand(1).getReg())));
+      new RegInstruction<InstType::Set>(MI->getOperand(1).getReg(), 0)));
     R = MI->getOperand(2).getImm();
     S = MI->getOperand(3).getImm();
     if(S >= R) {
@@ -118,6 +118,14 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
   case AArch64::UBFMXri:
     genBitfieldInstructions(MI, IL);
     if(IL.size()) Val = new MachineGeneratedVal(IL, MI);
+    break;
+  case AArch64::COPY:
+    MO = &MI->getOperand(1);
+    if(MO->isReg() && MO->getReg() == AArch64::LR) {
+      IL.push_back(ValueGenInstPtr(
+        new RegInstruction<InstType::Load>(AArch64::FP, 8)));
+      Val = new MachineGeneratedVal(IL, MI);
+    }
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

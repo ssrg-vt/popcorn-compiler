@@ -797,6 +797,7 @@ void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
       if(Inst[i]->opType() == OpType::Register) {
         RegInstruction *RI = (RegInstruction *)Inst[i].get();
         if(!TRI->isVirtualRegister(RI->getReg())) {
+          if(RI->getReg() == TRI->getFrameRegister(*MF)) continue;
           // TODO walk through stackmap and see if physical register in
           // instruction is contained in stackmap
           LV.reset(nullptr);
@@ -976,7 +977,7 @@ void StackTransformMetadata::warnUnhandled() const {
       // Virtual register allocated to physical register
       if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
          CurVregs.find(Vreg) == CurVregs.end()) {
-        Msg = "Unhandled register ";
+        Msg = "Stack transformation: unhandled register ";
         Msg += TRI->getName(VRM->getPhys(Vreg));
         displayWarning(Msg, IRCall, CalledFunc);
       }
@@ -987,7 +988,7 @@ void StackTransformMetadata::warnUnhandled() const {
         SS < e; SS++) {
       if(!MFI->isDeadObjectIndex(SS) &&
          isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
-        Msg = "Unhandled stack slot ";
+        Msg = "Stack transformation: unhandled stack slot ";
         Msg += std::to_string(SS);
         displayWarning(Msg, IRCall, CalledFunc);
       }
