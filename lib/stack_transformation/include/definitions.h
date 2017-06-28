@@ -33,12 +33,24 @@
 #define STRINGIFY( x ) #x
 #define STR( x ) STRINGIFY( x )
 
+#ifdef _PER_LOG_OPEN
+#define OPEN_LOG_FILE	__log = fopen(LOG_FILE, "a")
+#define CLOSE_LOG_FILE	fclose(__log)
+#define CLOSE_GLOBAL_LOG_FILE
+#else
+#define OPEN_LOG_FILE
+#define CLOSE_LOG_FILE
+#define CLOSE_GLOBAL_LOG_FILE fclose(__log)
+#endif
+
 #ifdef _LOG
 # define ST_ERR( code, str, ... ) \
   { \
+	OPEN_LOG_FILE; \
     fprintf(stderr, "[" __FILE__ ":" STR(__LINE__) "] ERROR: " str, ##__VA_ARGS__); \
     fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] ERROR: " str, ##__VA_ARGS__); \
-    fflush(__log); \
+	CLOSE_LOG_FILE; \
+	CLOSE_GLOBAL_LOG_FILE; \
     exit(code); \
   }
 #else
@@ -56,11 +68,21 @@
 /* Log file descriptor.  Defined in src/init.c. */
 extern FILE* __log;
 
-#  define ST_RAW_INFO( str, ... ) fprintf(__log, str, ##__VA_ARGS__); fflush(__log)
-#  define ST_INFO( str, ... ) \
-      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__); fflush(__log)
-#  define ST_WARN( str, ... ) \
-      fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__); fflush(__log)
+#  define ST_RAW_INFO( str, ... ) { \
+	OPEN_LOG_FILE; \
+	fprintf(__log, str, ##__VA_ARGS__); fflush(__log); \
+	CLOSE_LOG_FILE; \
+}
+#  define ST_INFO( str, ... ) { \
+	OPEN_LOG_FILE; \
+    fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] " str, ##__VA_ARGS__); fflush(__log); \
+	CLOSE_LOG_FILE; \
+}
+#  define ST_WARN( str, ... ) { \
+	OPEN_LOG_FILE; \
+    fprintf(__log, "[" __FILE__ ":" STR(__LINE__) "] WARNING: " str, ##__VA_ARGS__); fflush(__log); \
+	CLOSE_LOG_FILE; \
+}
 
 # else
 
