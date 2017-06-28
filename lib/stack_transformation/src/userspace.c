@@ -251,11 +251,21 @@ int st_userspace_rewrite_aarch64(void* sp,
   }
 
   regs->pc = __builtin_return_address(0);
+
+#ifdef _SIMPLIFY_HOMOGENEOUS_MIGRATION
+	unsigned long *rbp = __builtin_frame_address(1);
+	memcpy(dest_regs, regs, sizeof(*dest_regs));
+	dest_regs->x[29] = *rbp;
+	dest_regs->sp = (unsigned long)(rbp + 1); // XXX need to check
+
+	return 0;
+#else
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,
                                     aarch64_handle,
                                     aarch64_handle);
+#endif
 }
 
 /*
@@ -272,11 +282,21 @@ int st_userspace_rewrite_x86_64(void* sp,
   }
 
   regs->rip = __builtin_return_address(0);
+
+#ifdef _SIMPLIFY_HOMOGENEOUS_MIGRATION
+	unsigned long *rbp = __builtin_frame_address(1);
+	memcpy(dest_regs, regs, sizeof(*dest_regs));
+	dest_regs->rbp = *rbp;
+	dest_regs->rsp = (unsigned long)(rbp + 1);
+
+	return 0;
+#else
   return userspace_rewrite_internal(sp,
                                     regs,
                                     dest_regs,
                                     x86_64_handle,
                                     x86_64_handle);
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
