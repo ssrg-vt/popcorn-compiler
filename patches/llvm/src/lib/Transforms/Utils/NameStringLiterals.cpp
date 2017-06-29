@@ -18,7 +18,7 @@ namespace
 
 /**
  * Generate unique name for private anonymous string literals.  Uses the
- * filename, LLVM's temporary name and(up to) the first 10 characters of the
+ * filename, LLVM's temporary name and (up to) the first 10 characters of the
  * string.  Converts non-alphanumeric characters to underscores.
  */
 std::string UniquifySymbol(const Module &M, GlobalVariable &Sym)

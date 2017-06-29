@@ -1,8 +1,8 @@
 #include "stdio_impl.h"
 
-static unsigned char buf_stderr[UNGET];
+static unsigned char buf[UNGET];
 static FILE f = {
-	.buf = buf_stderr+UNGET,
+	.buf = buf+UNGET,
 	.buf_size = 0,
 	.fd = 2,
 	.flags = F_PERM | F_NORD,

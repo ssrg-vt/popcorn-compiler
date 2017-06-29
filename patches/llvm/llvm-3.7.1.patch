@@ -723,7 +723,7 @@ Index: include/llvm/CodeGen/StackMaps.h
 +  /// Convert a list of instructions used to generate an architecture-specific
 +  /// live value into multiple individual records.
 +  void genArchValsFromInsts(ArchValues &AV,
-+                            const Location &Loc,
++                            Location &Loc,
 +                            const MachineLiveVal &MLV);
 +
 +  /// Add architecture-specific locations for the stackmap.
@@ -2940,14 +2940,14 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +452,166 @@
+@@ -277,6 +452,167 @@
    return LiveOuts;
  }
  
 +/// Convert a list of instructions used to generate an architecture-specific
 +/// live value into multiple individual records.
 +void StackMaps::genArchValsFromInsts(ArchValues &AV,
-+                                     const Location &Loc,
++                                     Location &Loc,
 +                                     const MachineLiveVal &MLV) {
 +  assert(MLV.isGenerated() && "Invalid live value type");
 +
@@ -2977,6 +2977,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +              PI->getGenType() == InstType::Set) &&
 +             "Invalid frame object reference");
 +
++      Loc.Ptr = true; // Enable pointer-to-stack fixups in runtime
 +      Op.InstType = PI->getGenType();
 +      Op.OperandType = Location::Direct;
 +      Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
@@ -3107,7 +3108,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +620,46 @@
+@@ -285,21 +621,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -3156,7 +3157,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +687,9 @@
+@@ -327,8 +688,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -3168,7 +3169,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +772,11 @@
+@@ -411,8 +773,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -3181,7 +3182,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +784,15 @@
+@@ -420,6 +785,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3197,7 +3198,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +812,20 @@
+@@ -439,14 +813,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3222,7 +3223,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +834,25 @@
+@@ -455,6 +835,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -3248,7 +3249,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +868,29 @@
+@@ -470,23 +869,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3279,7 +3280,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +898,13 @@
+@@ -494,10 +899,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3294,7 +3295,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +916,31 @@
+@@ -509,6 +917,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -3326,7 +3327,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +947,7 @@
+@@ -515,7 +948,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3335,7 +3336,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +971,7 @@
+@@ -539,7 +972,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -5704,7 +5705,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +
 +/**
 + * Generate unique name for private anonymous string literals.  Uses the
-+ * filename, LLVM's temporary name and(up to) the first 10 characters of the
++ * filename, LLVM's temporary name and (up to) the first 10 characters of the
 + * string.  Converts non-alphanumeric characters to underscores.
 + */
 +std::string UniquifySymbol(const Module &M, GlobalVariable &Sym)
@@ -5807,7 +5808,8 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 ===================================================================
 --- lib/Transforms/Utils/StaticVarSections.cpp	(nonexistent)
 +++ lib/Transforms/Utils/StaticVarSections.cpp	(working copy)
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,106 @@
++#include <algorithm>
 +#include "llvm/Pass.h"
 +#include "llvm/IR/Module.h"
 +#include "llvm/IR/GlobalVariable.h"
@@ -5821,6 +5823,19 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +
 +namespace
 +{
++
++std::string UniquifySymbol(const Module &M,
++                           std::string &section,
++                           GlobalVariable &Sym)
++{
++  std::string newName;
++  auto filter = [](char c){ return !isalnum(c); };
++
++  newName = M.getName().str() + "_" + Sym.getName().str();
++  std::replace_if(newName.begin(), newName.end(), filter, '_');
++
++  return section + newName;
++}
 +
 +/**
 + * This pass searches for static, i.e., module-private, global variables and
@@ -5873,7 +5888,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +          secName += "data.";
 +        }
 +
-+        secName += gl->getName().str();
++        secName = UniquifySymbol(M, secName, *gl);
 +        gl->setSection(secName);
 +        modified = true;
 +
