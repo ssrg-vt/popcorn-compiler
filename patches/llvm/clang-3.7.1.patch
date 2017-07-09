@@ -149,11 +149,12 @@ Index: include/clang/Driver/Options.td
 ===================================================================
 --- include/clang/Driver/Options.td	(revision 277850)
 +++ include/clang/Driver/Options.td	(working copy)
-@@ -1538,6 +1538,8 @@
+@@ -1538,6 +1538,9 @@
  def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
  def pipe : Flag<["-", "--"], "pipe">,
    HelpText<"Use pipes between commands, when possible">;
 +def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux (implies -popcorn-alignment)">, Flags<[CC1Option]>;
++def popcorn_libc : Flag<["-"], "popcorn-libc">, HelpText<"Compile libc code with appropriate instrumentation for migration (implies -popcorn-alignment)">, Flags<[CC1Option]>;
 +def popcorn_alignment : Flag<["-"], "popcorn-alignment">, HelpText<"Run Popcorn passes to prepare for link-time symbol alignment">, Flags<[CC1Option]>;
  def prebind__all__twolevel__modules : Flag<["-"], "prebind_all_twolevel_modules">;
  def prebind : Flag<["-"], "prebind">;
@@ -162,13 +163,10 @@ Index: include/clang/Frontend/CodeGenOptions.def
 ===================================================================
 --- include/clang/Frontend/CodeGenOptions.def	(revision 277850)
 +++ include/clang/Frontend/CodeGenOptions.def	(working copy)
-@@ -158,6 +158,12 @@
+@@ -158,6 +158,9 @@
  
  CODEGENOPT(EmitLLVMUseLists, 1, 0) ///< Control whether to serialize use-lists.
  
-+/// Instrument code for migration on Popcorn Linux
-+CODEGENOPT(PopcornMigratable, 1, 0)
-+
 +/// Adjust linkage of global values for symbol alignment
 +CODEGENOPT(PopcornAlignment, 1, 0)
 +
@@ -801,7 +799,7 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,29 @@
+@@ -4934,6 +4934,36 @@
        A->render(Args, CmdArgs);
    }
  
@@ -820,6 +818,13 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-optimize-regalloc");
 +  }
++  else if(Args.hasArg(options::OPT_popcorn_libc)) {
++    CmdArgs.push_back("-ffunction-sections");
++    CmdArgs.push_back("-fdata-sections");
++    CmdArgs.push_back("-popcorn-alignment");
++    CmdArgs.push_back("-mllvm");
++    CmdArgs.push_back("-emit-libc-metadata");
++  }
 +  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
 +    // Forward Popcorn alignment flag and add -f*-sections flags for symbol
 +    // alignment
@@ -835,15 +840,14 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -675,6 +675,16 @@
+@@ -675,6 +675,15 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
-+  Opts.PopcornMigratable = Args.hasArg(OPT_popcorn_migratable);
 +  Opts.PopcornAlignment = Args.hasArg(OPT_popcorn_alignment);
 +
 +  // TODO: the Popcorn compiler doesn't currently support vectorization
-+  if(Opts.PopcornMigratable) {
++  if(Args.hasArg(OPT_popcorn_migratable) || Args.hasArg(OPT_popcorn_libc)) {
 +    Opts.VectorizeBB = 0;
 +    Opts.VectorizeLoop = 0;
 +    Opts.VectorizeSLP = 0;
@@ -852,7 +856,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
    return Success;
  }
  
-@@ -856,7 +866,11 @@
+@@ -856,7 +865,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -865,7 +869,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1817,7 @@
+@@ -1803,6 +1816,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:

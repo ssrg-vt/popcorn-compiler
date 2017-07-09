@@ -211,7 +211,6 @@ create_call_site_metadata(bin *b, uint64_t start_id,
 {
   size_t i, j, sites_num = 0, loc_num = 0, arch_num = 0, cur;
   const function_record *fr;
-  GElf_Sym mainthr, thread;
   call_site_record *site_record;
   call_site *sites;
   live_value *locs;
@@ -221,11 +220,6 @@ create_call_site_metadata(bin *b, uint64_t start_id,
   if(!num_sites || !cs || !num_live || !live || !num_arch_live ||
      !arch_live || !addrs)
     return false;
-
-  mainthr = get_sym_by_name(b->e, START_MAIN);
-  if(!mainthr.st_size) return false;
-  thread.st_size = 0;
-  thread = get_sym_by_name(b->e, START_THREAD);
 
   /* Calculate number of call site & location records */
   for(i = 0; i < num_sm; i++)
@@ -237,7 +231,6 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       arch_num += sm[i].call_sites[j].num_arch_live;
     }
   }
-  sites_num += (thread.st_size ? 2 : 1);
   sites = malloc(sizeof(call_site) * sites_num);
   locs = malloc(sizeof(live_value) * loc_num);
   archlive = malloc(sizeof(arch_live_value) * arch_num);
@@ -256,7 +249,12 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       fr = &sm[i].function_records[site_record->func_idx];
 
       /* Populate call site record */
-      sites[cur].id = start_id++;
+      if(site_record->id == UINT64_MAX ||
+         site_record->id == UINT64_MAX - 1 ||
+         site_record->id == UINT64_MAX - 2)
+        sites[cur].id = site_record->id;
+      else
+        sites[cur].id = start_id++;
       sites[cur].addr = fr->func_addr + site_record->offset;
       sites[cur].frame_size = cfa_correction(b->arch, fr->stack_size);
       sites[cur].num_unwind = fr->num_unwind;
@@ -280,38 +278,6 @@ create_call_site_metadata(bin *b, uint64_t start_id,
              sizeof(arch_live_value) * sites[cur].num_arch_live);
       arch_num += sites[cur].num_arch_live;
     }
-  }
-
-  /*
-   * Add entries for main thread's __libc_start_main & thread's start.  We
-   * denote stack beginning call site records with an ID Of UINT64_MAX for
-   * the main thread & UINT64_MAX-1 for spawned threads.
-   */
-  // Note: frame size is non-zero because we need to account for the return
-  // address on architectures which automatically push the return address with
-  // a call instruction (i.e., x86)
-  sites[cur].id = UINT64_MAX;
-  sites[cur].addr = mainthr.st_value + main_start_offset(b->arch);
-  sites[cur].frame_size = 8;
-  sites[cur].num_unwind = 0;
-  sites[cur].unwind_offset = UINT32_MAX;
-  sites[cur].num_live = 0;
-  sites[cur].live_offset = loc_num;
-  sites[cur].num_arch_live = 0;
-  sites[cur].arch_live_offset = arch_num;
-  cur++;
-
-  if(thread.st_size) // May not exist if application doesn't use pthreads
-  {
-    sites[cur].id = UINT64_MAX - 1;
-    sites[cur].addr = thread.st_value + thread_start_offset(b->arch);
-    sites[cur].frame_size = 8;
-    sites[cur].num_unwind = 0;
-    sites[cur].unwind_offset = UINT32_MAX;
-    sites[cur].num_live = 0;
-    sites[cur].live_offset = loc_num;
-    sites[cur].num_arch_live = 0;
-    sites[cur].arch_live_offset = arch_num;
   }
 
   *num_sites = sites_num;

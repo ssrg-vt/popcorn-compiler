@@ -570,7 +570,7 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -142,6 +142,12 @@
+@@ -142,6 +142,15 @@
  
    CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
  
@@ -580,10 +580,13 @@ Index: include/llvm/CodeGen/Passes.h
 +  bool emitStackTransformMetadata() const
 +  { return TM->emitStackTransformMetadata(); }
 +
++  bool emitLibcTransformMetadata() const
++  { return TM->emitLibcTransformMetadata(); }
++
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -448,6 +454,10 @@
+@@ -448,6 +457,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -1471,7 +1474,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
 --- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
-@@ -32,6 +32,15 @@
+@@ -32,6 +32,19 @@
    ///
    CodeGenOpt::Level OptLevel;
  
@@ -1484,10 +1487,14 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +  /// metadata
 +  bool EmitStackTransformMetadata;
 +
++  /// EmitLibcTransformMetadata - Flag for emitting transformation metadata
++  /// for libc thread start routines
++  bool EmitLibcTransformMetadata;
++
  public:
    void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
                           CodeModel::Model CM = CodeModel::Default,
-@@ -43,8 +52,18 @@
+@@ -43,8 +56,23 @@
  
    CodeGenOpt::Level getOptLevel() const { return OptLevel; }
  
@@ -1496,6 +1503,8 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +  bool emitStackTransformMetadata() const
 +  { return EmitStackTransformMetadata; }
 +
++  bool emitLibcTransformMetadata() const { return EmitLibcTransformMetadata; }
++
    // Allow overriding OptLevel on a per-function basis.
    void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
 +
@@ -1503,6 +1512,9 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +
 +  void setEmitStackTransformMetadata(bool Emit)
 +  { EmitStackTransformMetadata = Emit; }
++
++  void setEmitLibcTransformMetadata(bool Emit)
++  { EmitLibcTransformMetadata = Emit; }
  };
  } // namespace llvm
  
@@ -1534,7 +1546,7 @@ Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
-@@ -171,6 +171,19 @@
+@@ -171,6 +171,26 @@
    /// \brief Overrides the optimization level.
    void setOptLevel(CodeGenOpt::Level Level) const;
  
@@ -1550,6 +1562,13 @@ Index: include/llvm/Target/TargetMachine.h
 +
 +  /// \brief Enable/disable emitting of stack transformation metadata
 +  void setEmitStackTransformMetadata(bool Emit);
++
++  /// Returns whether or not we should emit transformation metadata for libc
++  /// thread start functions
++  bool emitLibcTransformMetadata() const;
++
++  /// \brief Enable/disable emitting of libc thread start function metadata
++  void setEmitLibcTransformMetadata(bool Emit);
 +
    void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
  
@@ -2312,7 +2331,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
 --- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
-@@ -42,6 +42,12 @@
+@@ -42,6 +42,19 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
    cl::desc("Enable the \"fast\" instruction selector"));
  
@@ -2322,10 +2341,17 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  cl::init(false), cl::NotHidden,
 +  cl::desc("Enable generation of Popcorn stack transformation metadata"));
 +
++// Similar to "-emit-st-metadata", but *only* for specific libc thread start
++// functions
++static cl::opt<bool> EmitLibcTransformMetadata("emit-libc-metadata",
++  cl::init(false), cl::NotHidden,
++  cl::desc("Enable generation of transformation metadata for libc thread "
++           "start functions"));
++
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,6 +111,13 @@
+@@ -105,6 +118,19 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
@@ -2334,6 +2360,12 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  if(EmitStackTransformMetadata) {
 +    TM->setArchIROptLevel(CodeGenOpt::None);
 +    TM->setEmitStackTransformMetadata(true);
++  }
++
++  // Add libc instrumentation passes, remove late-stage IR optimizations
++  if(EmitLibcTransformMetadata) {
++    TM->setArchIROptLevel(CodeGenOpt::None);
++    TM->setEmitLibcTransformMetadata(true);
 +  }
 +
    PM.add(PassConfig);
@@ -2530,7 +2562,7 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -459,6 +459,13 @@
+@@ -459,6 +459,16 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -2539,12 +2571,15 @@ Index: lib/CodeGen/Passes.cpp
 +  if(emitStackTransformMetadata())
 +    addPass(createInsertStackMapsPass());
 +
-+  // TODO add call sites to libc functions
++  // Similarly to creatInsertStackMaps pass, but only instruments libc thread
++  // start functions
++  if(emitLibcTransformMetadata())
++    addPass(createLibcStackMapsPass());
 +
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +761,10 @@
+@@ -754,6 +764,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -5007,7 +5042,7 @@ Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
-@@ -149,6 +149,28 @@
+@@ -149,6 +149,39 @@
      CodeGenInfo->setOptLevel(Level);
  }
  
@@ -5031,6 +5066,17 @@ Index: lib/Target/TargetMachine.cpp
 +void TargetMachine::setEmitStackTransformMetadata(bool Emit) {
 +  if (CodeGenInfo)
 +    CodeGenInfo->setEmitStackTransformMetadata(Emit);
++}
++
++bool TargetMachine::emitLibcTransformMetadata() const {
++  if (!CodeGenInfo)
++    return false;
++  else return CodeGenInfo->emitLibcTransformMetadata();
++}
++
++void TargetMachine::setEmitLibcTransformMetadata(bool Emit) {
++  if (CodeGenInfo)
++    CodeGenInfo->setEmitLibcTransformMetadata(Emit);
 +}
 +
  TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
