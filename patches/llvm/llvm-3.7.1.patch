@@ -1382,7 +1382,15 @@ Index: include/llvm/InitializePasses.h
  void initializeInstructionCombiningPassPass(PassRegistry&);
  void initializeInstCountPass(PassRegistry&);
  void initializeInstNamerPass(PassRegistry&);
-@@ -162,6 +163,7 @@
+@@ -153,6 +154,7 @@
+ void initializeIntervalPartitionPass(PassRegistry&);
+ void initializeJumpThreadingPass(PassRegistry&);
+ void initializeLCSSAPass(PassRegistry&);
++void initializeLibcStackMapsPass(PassRegistry&);
+ void initializeLICMPass(PassRegistry&);
+ void initializeLazyValueInfoPass(PassRegistry&);
+ void initializeLibCallAliasAnalysisPass(PassRegistry&);
+@@ -162,6 +164,7 @@
  void initializeLiveRegMatrixPass(PassRegistry&);
  void initializeLiveStacksPass(PassRegistry&);
  void initializeLiveVariablesPass(PassRegistry&);
@@ -1390,7 +1398,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLoaderPassPass(PassRegistry&);
  void initializeLocalStackSlotPassPass(PassRegistry&);
  void initializeLoopDeletionPass(PassRegistry&);
-@@ -208,6 +210,7 @@
+@@ -208,6 +211,7 @@
  void initializeMetaRenamerPass(PassRegistry&);
  void initializeMergeFunctionsPass(PassRegistry&);
  void initializeModuleDebugInfoPrinterPass(PassRegistry&);
@@ -1398,7 +1406,7 @@ Index: include/llvm/InitializePasses.h
  void initializeNaryReassociatePass(PassRegistry&);
  void initializeNoAAPass(PassRegistry&);
  void initializeObjCARCAliasAnalysisPass(PassRegistry&);
-@@ -252,7 +255,8 @@
+@@ -252,7 +256,8 @@
  void initializeScalarEvolutionPass(PassRegistry&);
  void initializeShrinkWrapPass(PassRegistry &);
  void initializeSimpleInlinerPass(PassRegistry&);
@@ -1408,7 +1416,7 @@ Index: include/llvm/InitializePasses.h
  void initializeRegisterCoalescerPass(PassRegistry&);
  void initializeSingleLoopExtractorPass(PassRegistry&);
  void initializeSinkingPass(PassRegistry&);
-@@ -263,6 +267,7 @@
+@@ -263,6 +268,7 @@
  void initializeStackProtectorPass(PassRegistry&);
  void initializeStackColoringPass(PassRegistry&);
  void initializeStackSlotColoringPass(PassRegistry&);
@@ -1428,7 +1436,7 @@ Index: include/llvm/LinkAllPasses.h
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
  #include "llvm/Transforms/Vectorize.h"
-@@ -92,11 +93,13 @@
+@@ -92,11 +93,14 @@
        (void) llvm::createIPSCCPPass();
        (void) llvm::createInductiveRangeCheckEliminationPass();
        (void) llvm::createIndVarSimplifyPass();
@@ -1436,13 +1444,14 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createInstructionCombiningPass();
        (void) llvm::createInternalizePass();
        (void) llvm::createLCSSAPass();
++      (void) llvm::createLibcStackMapsPass();
        (void) llvm::createLICMPass();
        (void) llvm::createLazyValueInfoPass();
 +      (void) llvm::createLiveValuesPass();
        (void) llvm::createLoopExtractorPass();
        (void) llvm::createLoopInterchangePass();
        (void) llvm::createLoopSimplifyPass();
-@@ -110,6 +113,7 @@
+@@ -110,6 +114,7 @@
        (void) llvm::createLowerInvokePass();
        (void) llvm::createLowerSwitchPass();
        (void) llvm::createNaryReassociatePass();
@@ -1450,7 +1459,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createNoAAPass();
        (void) llvm::createObjCARCAliasAnalysisPass();
        (void) llvm::createObjCARCAPElimPass();
-@@ -134,6 +138,7 @@
+@@ -134,6 +139,7 @@
        (void) llvm::createSafeStackPass();
        (void) llvm::createScalarReplAggregatesPass();
        (void) llvm::createSingleLoopExtractorPass();
@@ -1624,13 +1633,17 @@ Index: include/llvm/Transforms/Instrumentation.h
 ===================================================================
 --- include/llvm/Transforms/Instrumentation.h	(revision 277823)
 +++ include/llvm/Transforms/Instrumentation.h	(working copy)
-@@ -136,6 +136,10 @@
+@@ -136,6 +136,14 @@
  /// protect against stack-based overflow vulnerabilities.
  FunctionPass *createSafeStackPass();
  
 +/// \brief This pass inserts stack map intrinsics at equivalence points in
 +/// order to record live value locations
 +ModulePass *createInsertStackMapsPass();
++
++/// \brief This pass inserts stack map intrinsics similarly to InsertStackMaps,
++/// but only in thread start functions inside of libc
++ModulePass *createLibcStackMapsPass();
 +
  } // End llvm namespace
  
@@ -2517,7 +2530,7 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -459,6 +459,11 @@
+@@ -459,6 +459,13 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -2526,10 +2539,12 @@ Index: lib/CodeGen/Passes.cpp
 +  if(emitStackTransformMetadata())
 +    addPass(createInsertStackMapsPass());
 +
++  // TODO add call sites to libc functions
++
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +759,10 @@
+@@ -754,6 +761,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -5298,14 +5313,17 @@ Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
 --- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 277823)
 +++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
-@@ -4,6 +4,7 @@
+@@ -4,8 +4,10 @@
    DataFlowSanitizer.cpp
    GCOVProfiling.cpp
    MemorySanitizer.cpp
 +  InsertStackMaps.cpp
    Instrumentation.cpp
    InstrProfiling.cpp
++  LibcStackMaps.cpp
    SafeStack.cpp
+   SanitizerCoverage.cpp
+   ThreadSanitizer.cpp
 Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
@@ -5636,7 +5654,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 +
 +INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
-+                      "Instrument equivalence points with stack maps ",
++                      "Instrument equivalence points with stack maps",
 +                      false, false)
 +INITIALIZE_PASS_DEPENDENCY(LiveValues)
 +INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
@@ -5652,14 +5670,250 @@ Index: lib/Transforms/Instrumentation/Instrumentation.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 277823)
 +++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
-@@ -25,6 +25,7 @@
+@@ -25,7 +25,9 @@
    initializeAddressSanitizerModulePass(Registry);
    initializeBoundsCheckingPass(Registry);
    initializeGCOVProfilerPass(Registry);
 +  initializeInsertStackMapsPass(Registry);
    initializeInstrProfilingPass(Registry);
++  initializeLibcStackMapsPass(Registry);
    initializeMemorySanitizerPass(Registry);
    initializeThreadSanitizerPass(Registry);
+   initializeSanitizerCoverageModulePass(Registry);
+Index: lib/Transforms/Instrumentation/LibcStackMaps.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/LibcStackMaps.cpp	(nonexistent)
++++ lib/Transforms/Instrumentation/LibcStackMaps.cpp	(working copy)
+@@ -0,0 +1,229 @@
++#include <map>
++#include <vector>
++#include "llvm/Pass.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/IR/Module.h"
++#include "llvm/IR/Type.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/Path.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "libc-stackmaps"
++
++using namespace llvm;
++
++namespace {
++
++/**
++ * Instrument thread starting points with stackmaps.  These are the only
++ * functions inside of libc for which we want to generate metadata, since we
++ * disallow migration inside the public libc API.
++ */
++// TODO: only implemented for musl-libc!
++class LibcStackMaps : public ModulePass
++{
++public:
++  static char ID;
++  size_t numInstrumented;
++
++  LibcStackMaps() : ModulePass(ID), numInstrumented(0) {
++    initializeLibcStackMapsPass(*PassRegistry::getPassRegistry());
++  }
++  ~LibcStackMaps() {}
++
++  /* ModulePass virtual methods */
++  virtual const char *getPassName() const
++  { return "Insert stackmaps in libc thread start functions"; }
++
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const
++  { AU.setPreservesCFG(); }
++
++  virtual bool runOnModule(Module &M)
++  {
++    int64_t smid;
++    bool modified = false;
++    Function *F;
++    std::map<std::string, std::vector<std::string> >::const_iterator file;
++
++    /* Is this a module (i.e., source file) we're interested in? */
++    if((file = funcs.find(sys::path::stem(M.getName()))) != funcs.end())
++    {
++      DEBUG(dbgs() << "\n********** Begin LibcStackMaps **********\n"
++                   << "********** Module: " << file->first << " **********\n\n");
++
++      this->createSMType(M);
++      modified |= this->addSMDeclaration(M);
++
++      /* Iterate over thread starting functions in the module */
++      for(size_t f = 0, fe = file->second.size(); f < fe; f++)
++      {
++        DEBUG(dbgs() << "LibcStackMaps: entering thread starting function "
++                     << file->second[f] << "\n");
++
++        F = M.getFunction(file->second[f]);
++        assert(F && !F->isDeclaration() && "No thread function definition");
++        modified |= this->removeOldStackmaps(F);
++        assert(smids.find(file->second[f]) != smids.end() && "No ID for function");
++        smid = smids.find(file->second[f])->second;
++
++        /*
++         * Look for & instrument a generic call instruction followed by a call
++         * to an exit function, e.g.,
++         *
++         *   %call = call i32 %main(...)
++         *   call void @exit(i32 %call)
++         */
++        for(Function::iterator bb = F->begin(), be = F->end(); bb != be; bb++)
++        {
++          bool track = false;
++          for(BasicBlock::reverse_iterator i = bb->rbegin(), ie = bb->rend();
++              i != ie; i++)
++          {
++            if(isExitCall(*i)) track = true;
++            else if(track && isa<CallInst>(*i))
++            {
++              IRBuilder<> builder(i->getNextNode());
++              std::vector<Value *> args(2);
++              args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), smid);
++              args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
++              this->numInstrumented++;
++              break;
++            }
++          }
++        }
++      }
++
++      DEBUG(dbgs() << "LibcStackMaps: finished module " << M.getName()
++                   << ", added " << this->numInstrumented << " stackmaps\n\n";);
++    }
++
++    if(numInstrumented > 0) modified = true;
++    return modified;
++  }
++
++private:
++  /* Name of stack map intrinsic */
++  static const StringRef SMName;
++
++  /* Stack map instruction creation */
++  Function *SMFunc;
++  FunctionType *SMTy; // Used for creating function declaration
++
++  /* Files, functions & IDs */
++  static const std::map<std::string, std::vector<std::string> > funcs;
++  static const std::map<std::string, int64_t> smids;
++  static const std::vector<std::string> exitFuncs;
++
++  /**
++   * Create the function type for the stack map intrinsic.
++   */
++  void createSMType(const Module &M)
++  {
++    std::vector<Type*> params(2);
++    params[0] = Type::getInt64Ty(M.getContext());
++    params[1] = Type::getInt32Ty(M.getContext());
++    this->SMTy = FunctionType::get(Type::getVoidTy(M.getContext()),
++                                                   ArrayRef<Type*>(params),
++                                                   true);
++  }
++
++  /**
++   * Add the stackmap intrinisic's function declaration if not already present.
++   * Return true if the declaration was added, or false if it's already there.
++   */
++  bool addSMDeclaration(Module &M)
++  {
++    if(!(this->SMFunc = M.getFunction(this->SMName)))
++    {
++      DEBUG(dbgs() << "Adding stackmap function declaration to " << M.getName() << "\n");
++      this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
++      this->SMFunc->setCallingConv(CallingConv::C);
++      return true;
++    }
++    else return false;
++  }
++
++  /**
++   * Iterate over all instructions, removing previously found stackmaps.
++   */
++  bool removeOldStackmaps(Function *F)
++  {
++    bool modified = false;
++    CallInst* CI;
++    const Function *CurF;
++
++    DEBUG(dbgs() << "Searching for/removing old stackmaps\n";);
++
++    for(Function::iterator bb = F->begin(), bbe = F->end(); bb != bbe; bb++) {
++      for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
++        if((CI = dyn_cast<CallInst>(&*i))) {
++          CurF = CI->getCalledFunction();
++          if(CurF && CurF->hasName() && CurF->getName() == SMName) {
++            i = i->eraseFromParent()->getPrevNode();
++            modified = true;
++          }
++        }
++      }
++    }
++
++    DEBUG(if(modified) dbgs() << "WARNING: found previous stackmaps!\n";);
++    return modified;
++  }
++
++  /**
++   * Return whether or not the instruction is a call to an exit function.
++   */
++  bool isExitCall(Instruction &I)
++  {
++    CallInst *CI;
++    Function *F;
++
++    if((CI = dyn_cast<CallInst>(&I)))
++    {
++      F = CI->getCalledFunction();
++      if(F && F->hasName())
++        for(size_t i = 0, e = exitFuncs.size(); i < e; i++)
++          if(F->getName() == exitFuncs[i]) return true;
++    }
++
++    return false;
++  }
++};
++
++} /* end anonymous namespace */
++
++char LibcStackMaps::ID = 0;
++const StringRef LibcStackMaps::SMName = "llvm.experimental.stackmap";
++
++/**
++ * Map a source code filename (minus the extension) to the names of functions
++ * inside which are to be instrumented.
++ */
++const std::map<std::string, std::vector<std::string> > LibcStackMaps::funcs = {
++  {"__libc_start_main", {"__libc_start_main"}},
++  {"pthread_create", {"start", "start_c11"}}
++};
++
++/* Map a function name to the stackmap ID representing that function. */
++const std::map<std::string, int64_t> LibcStackMaps::smids = {
++  {"__libc_start_main", UINT64_MAX},
++  {"start", UINT64_MAX - 1},
++  {"start_c11", UINT64_MAX - 2}
++};
++
++/**
++ * Thread exit function names, used to search for starting function call site
++ * to be instrumented with stackmap.
++ */
++const std::vector<std::string> LibcStackMaps::exitFuncs = {
++  "exit", "pthread_exit", "__pthread_exit"
++};
++
++INITIALIZE_PASS(LibcStackMaps, "libc-stackmaps",
++  "Instrument libc thread start functions with stack maps", false, false)
++
++namespace llvm {
++  ModulePass *createLibcStackMapsPass() { return new LibcStackMaps(); }
++}
++
 Index: lib/Transforms/Utils/CMakeLists.txt
 ===================================================================
 --- lib/Transforms/Utils/CMakeLists.txt	(revision 277823)

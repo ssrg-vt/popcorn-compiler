@@ -21,7 +21,7 @@ function copy_new_files {
     echo "  Copying new Popcorn file '$(basename $f)'"
     cp -f $src/$f $dest/$f
   done
-  cd -
+  cd - > /dev/null
 }
 
 cd $POPCORN/src/$LLVM && svn diff > $NEW_LLVM
