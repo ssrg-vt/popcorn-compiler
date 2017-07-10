@@ -20,7 +20,8 @@ else
   exit 1
 fi
 
-GCC_LOC="-L/usr/lib/gcc-cross/aarch64-linux-gnu/4.8"
+LOCAL_GCC_VERSION=`aarch64-linux-gnu-gcc -dumpversion`
+GCC_LOC="-L/usr/lib/gcc-cross/aarch64-linux-gnu/$LOCAL_GCC_VERSION"
 GCC_LIBS="-lgcc -lgcc_eh"
 
 POPCORN="/usr/local/popcorn"

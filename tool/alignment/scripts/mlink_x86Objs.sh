@@ -22,9 +22,13 @@ fi
 
 POPCORN="/usr/local/popcorn"
 
+LOCAL_GCC_VERSION=`gcc -dumpversion`
+LIBGCC_LOCATION="/usr/lib/gcc/x86_64-linux-gnu/$LOCAL_GCC_VERSION"
+
+
 $POPCORN/bin/ld.gold -static \
  ${OUTPUT} ${INPUT} -z relro --hash-style=gnu --build-id -m elf_x86_64 \
- /usr/lib/gcc/x86_64-linux-gnu/4.8/libgcc.a \
+ $LIBGCC_LOCATION/libgcc.a \
  $POPCORN/x86_64/lib/crt1.o \
  $POPCORN/x86_64/lib/libc.a \
  $POPCORN/x86_64/lib/libmigrate.a \
