@@ -122,8 +122,8 @@ all: post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-	@echo " [CHECK] Checking stackmaps for $^"
-	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
+#	@echo " [CHECK] Checking stackmaps for $^"
+#	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 
@@ -208,7 +208,7 @@ $(ARM64_LD_SCRIPT): $(ALIGN_BUILD)/.dir \
                     $(ALIGN_OBJ) \
                     $(ALIGN_SYMBOLS)
 	@echo " [ALIGN] $@"
-	@$(ALIGN) 1 $(APP_DIR) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
+	@$(ALIGN) $(APP_DIR) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
 	@if [ "`grep 'FAILURE' $(APP_DIR)/$(ALIGN_BUILD)/align.txt`" != "" ]; then \
 		echo "Align failed -- see $(ALIGN_BUILD)/align.txt"; \
 		false; \
