@@ -1,0 +1,6 @@
+align
+*.o
+build_aarch64
+build_x86-64
+test_aarch64
+test_x86-64
