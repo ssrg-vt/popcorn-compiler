@@ -301,9 +301,6 @@ public class Runtime {
 	   LinkerIO.writeOutLinkerScripts();
 	   //END END OF SECTION ****
 	 */
-	if (!globalVars.DEBUG) {
-	    cleanTargetDIR("3");
-	}
 	System.out.println("<success> END!");
     }				//end MAIN!!
 

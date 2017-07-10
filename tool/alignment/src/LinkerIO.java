@@ -161,7 +161,8 @@ public class LinkerIO {
 	while ((temp = br3.readLine()) != null) {
 	    linkerScript_ByLine_x86_64.add(temp);
 	}
-	//open the aarch64 linker script FileReader fr4 =
+	//open the aarch64 linker script 
+	FileReader fr4 =
 	    new FileReader(new
 			   File(Runtime.TARGET_DIR + "/aarch64linux.x"));
 	BufferedReader br4 = new BufferedReader(fr4);

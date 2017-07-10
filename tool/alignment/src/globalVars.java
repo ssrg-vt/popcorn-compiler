@@ -7,7 +7,8 @@ public class globalVars {
     public enum Section {
 	COMMON, DATA, RODATA
     }
-											//static int symbol_offset =256;  // 0x50 public static int symbol_offset = 100;
+											//static int symbol_offset =256;  // 0x50 
+	public static int symbol_offset = 100;
 											// 0x500
     public static int offset = 1000;	// 0x50
 
@@ -46,7 +47,8 @@ public class globalVars {
 	    A_text.get(p).setSize_x86_64(default_size);
 	    A_text.get(p).setSize_aarch64(default_size);
 	}
-	//RODATA for (p = 0; p < A_rodata.size(); p++) {
+	//RODATA 
+	for (p = 0; p < A_rodata.size(); p++) {
 	    A_rodata.get(p).setSize_x86_64(default_size);
 	    A_rodata.get(p).setSize_aarch64(default_size);
 	}
