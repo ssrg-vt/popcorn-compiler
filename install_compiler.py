@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import urllib
+import multiprocessing
 
 #================================================
 # GLOBALS
@@ -49,10 +50,6 @@ def setup_argument_parsing():
                         help="Install path of popcorn-x86-arm compiler",
                         default="/usr/local/popcorn",
                         dest="install_path")
-    config_opts.add_argument("--threads",
-                        help="Number of threads to build compiler with",
-                        type=int,
-                        default=2)
 
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
@@ -126,6 +123,17 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
+def _check_javac():
+    try:
+        out = subprocess.check_output(['javac', '-version'], 
+										stderr=subprocess.STDOUT)
+    except Exception:
+        print('javac not found!')
+        return None
+    else:
+        out = out.split('\n')[0]
+        return out
+
 def check_for_prerequisites():
     success = True
 
@@ -134,7 +142,7 @@ def check_for_prerequisites():
                          'sparc64-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++']
-    other_prequisites = ['flex', 'bison']
+    other_prequisites = ['flex', 'bison', 'svn', 'cmake']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -151,6 +159,9 @@ def check_for_prerequisites():
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
+
+    if not _check_javac():
+        success = False
 
     return success
 
@@ -793,28 +804,31 @@ def build_namespace(base_path):
             print('make failed')
 
 def main(args):
+
+    cpus = multiprocessing.cpu_count()
+
     if not args.skip_llvm_clang_install:
-        install_clang_llvm(args.base_path, args.install_path, args.threads,
+        install_clang_llvm(args.base_path, args.install_path, cpus,
                            args.make_all_targets)
 
     if not args.skip_binutils_install:
-        install_binutils(args.base_path, args.install_path, args.threads)
+        install_binutils(args.base_path, args.install_path, cpus)
 
     if not args.skip_libraries_install:
-        install_libraries(args.base_path, args.install_path, args.threads,
+        install_libraries(args.base_path, args.install_path, cpus,
                           args.debug_stack_transformation,
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
     if not args.skip_tools_install:
-        install_tools(args.base_path, args.install_path, args.threads)
+        install_tools(args.base_path, args.install_path, cpus)
 
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
-                                  args.threads)
+                                  cpus)
 
     if not args.skip_utils_install:
-        install_utils(args.base_path, args.install_path, args.threads)
+        install_utils(args.base_path, args.install_path, cpus)
 
     if not args.skip_namespace:
         build_namespace(args.base_path)

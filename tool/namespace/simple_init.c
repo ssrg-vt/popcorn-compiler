@@ -134,7 +134,8 @@ main(int argc, char *argv[])
             errExit("fork");
 
 	if (pid == 0) {
-	    execvp("./init", NULL);
+		char *args[1] = {NULL};
+	    execvp("./init", args);
             errExit("execvp");
         }
     }
