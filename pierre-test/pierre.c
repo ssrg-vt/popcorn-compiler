@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "test.h"
+
 int f(int a)
 {
-	return a + 2;
+	return my_function(a, a);
 }
 
 int main()
