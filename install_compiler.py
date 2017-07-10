@@ -671,8 +671,15 @@ def install_tools(base_path, install_path, num_threads):
             loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
             sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"-L{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
             rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
+
+            stdout, stderr = subprocess.Popen(['x86_64-linux-gnu-gcc',
+                                               '-print-libgcc-file-name'],
+                                               stdout=subprocess.PIPE).communicate()
+            libgcc = stdout.strip().replace('/', '\/')
+            sed_cmd = "sed -i -e 's/GCC_LIB=\".*\"/GCC_LIB=\"{}\"/g' ./tool/alignment/scripts/mlink_x86Objs.sh".format(libgcc)
+            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
         except Exception as e:
-            print('Could not get/set libgcc location for aarch64 ({})!'.format(e))
+            print('Could not get/set libgcc location ({})!'.format(e))
             sys.exit(1)
 
         #=====================================================
