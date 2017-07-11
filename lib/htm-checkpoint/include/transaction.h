@@ -46,7 +46,7 @@ extern const char *status_name(transaction_status status);
  *   start_transaction(): Start transactional execution & return status code.
  *                        This is also where aborted transactions return.
  *   stop_transaction() : Stop transactional execution.
- *   in_transaction()   : Return non-zero if in transaction, or zero otherwise
+ *   in_transaction()   : Return non-zero if in transaction, or zero otherwise.
  */
 #ifdef __powerpc64__
 # include "ppc64le.h"

@@ -33,9 +33,8 @@ typedef struct htm_log_entry {
 /* Default initial capacity for the log. */
 #define DEFAULT_CAPACITY 1024
 
-/* Maximum log capacity.  Rather than expanding into memory infinitely, start
- * streaming to disk once this capacity is hit. */
-#define MAX_CAPACITY 8192
+/* Rate-limit adding entries to the log based on MIN_PERIOD. */
+#define RATE_LIMIT 1
 
 /* Minimum sampling period, entries sampled under this time limit are
  * discarded. */

@@ -1,7 +1,5 @@
 /*
- * Support for logging HTM result statuses.  Uses a simple vector purpose built
- * for logging HTM statistics entries (similar to C++'s vector, but doesn't
- * require C++ standard library).  Also provides support for rate-limiting
+ * Support for logging HTM result statuses.  Provides support for rate-limiting
  * logging of entries & streaming of log entries to disk rather than
  * continuously eating memory.
  *
@@ -61,9 +59,11 @@ void htm_log_free(htm_log *log)
   log->file = NULL;
 }
 
+#ifdef RATE_LIMIT
+
 /* Determine whether or not to filter out an entry based on minimum sampling
  * frequency.  Entry recording application's makespan is always added. */
-static inline bool add_entry(const htm_log_entry *entry)
+static inline bool should_add_entry(const htm_log_entry *entry)
 {
   tsx_assert(entry);
 
@@ -73,6 +73,8 @@ static inline bool add_entry(const htm_log_entry *entry)
   else return false;
 }
 
+#endif /* RATE_LIMIT */
+
 /* Add an element to the back of the htm_log. */
 void htm_log_push_back(htm_log *log, htm_log_entry *entry)
 {
@@ -80,25 +82,17 @@ void htm_log_push_back(htm_log *log, htm_log_entry *entry)
   tsx_assert(log->entries);
   tsx_assert(entry);
 
+#ifdef RATE_LIMIT
   // Rate limit adding entries to the log
-  if(!add_entry(entry)) return;
+  if(!should_add_entry(entry)) return;
+#endif /* RATE_LIMIT */
 
+  // Write entries out to disk if we're out of space
   if(log->size >= log->capacity)
   {
-    if(log->capacity >= MAX_CAPACITY)
-    {
-      // The log is too large to keep expanding, write entries out to disk
-      // TODO start a separate thread to do this continually?
-      htm_log_write_entries(log);
-      log->size = 0;
-    }
-    else
-    {
-      // Double the log's size & keep going
-      log->capacity *= 2;
-      log->entries = realloc(log->entries,
-                             sizeof(htm_log_entry) * log->capacity);
-    }
+    // TODO start a separate thread to do this continuously?
+    htm_log_write_entries(log);
+    log->size = 0;
   }
 
   log->entries[log->size] = *entry;

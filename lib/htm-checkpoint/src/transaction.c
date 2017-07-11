@@ -64,7 +64,7 @@ static __thread htm_log_entry entry;
     } \
   } while(0)
 
-/* Log a transaction -- save it's status, take ending timestamp & record in
+/* Log a transaction -- save its status, take ending timestamp & record in
  * log.  This does the whole shebang for successful transactions. */
 #define LOG_SUCCESS( _log_entry ) \
   do { LOG_STATUS( _log_entry, SUCCESS ); LOG_END( _log_entry ); } while(0)
@@ -157,9 +157,11 @@ void __cyg_profile_func_enter(void *fn, void *cs)
   for(i = 0; status == TRANSIENT && i < NUM_RETRY_TRANSIENT; i++)
     status = start_transaction();
 
-  // Save the status, but don't take the end timestamp until the end of the
-  // section, i.e., at the next equivalence point.
+#ifdef _STATISTICS
+  // Save the abort status, but don't take the end timestamp until the end of
+  // the section, i.e., at the next equivalence point.
   if(!in_transaction()) LOG_STATUS(entry, status);
+#endif /* _STATISTICS */
 }
 
 /* Use same implementation as above. */

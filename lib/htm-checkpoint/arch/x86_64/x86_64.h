@@ -40,7 +40,6 @@ static inline transaction_status start_transaction()
   else if(code & _XABORT_CAPACITY) return CAPACITY;
   else if(code & _XABORT_CONFLICT) return CONFLICT;
   else if(code & _XABORT_EXPLICIT) return PERSISTENT;
-
   return OTHER;
 }
 
