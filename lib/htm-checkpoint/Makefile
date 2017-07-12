@@ -22,7 +22,8 @@ HDR     := $(shell ls include/*.h)
 HDR_PPC := $(HDR) $(shell ls arch/ppc64le/*.h)
 HDR_X86 := $(HDR) $(shell ls arch/x86_64/*.h)
 
-SRC     := $(shell ls src/*.c)
+SRC       := src/transaction.c
+STATS_SRC := $(SRC) src/statistics.c
 
 BUILD     := build
 BUILD_PPC := $(BUILD)/ppc64le
@@ -36,7 +37,7 @@ LIB     := libhtm-checkpoint.a
 LIB_PPC := $(BUILD_PPC)/$(LIB)
 LIB_X86 := $(BUILD_X86)/$(LIB)
 
-OBJ_STATS     := $(SRC:.c=_stats.o)
+OBJ_STATS     := $(STATS_SRC:.c=_stats.o)
 OBJ_STATS_PPC := $(subst src,$(BUILD_PPC),$(OBJ_STATS))
 OBJ_STATS_X86 := $(subst src,$(BUILD_X86),$(OBJ_STATS))
 

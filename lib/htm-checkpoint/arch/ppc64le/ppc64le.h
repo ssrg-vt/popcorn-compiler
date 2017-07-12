@@ -67,6 +67,7 @@ static inline transaction_status start_transaction()
   unsigned long texasru;
 
   if(started) return BEGIN;
+#ifdef _STATISTICS
   else
   {
     texasru = __builtin_get_texasru();
@@ -80,6 +81,9 @@ static inline transaction_status start_transaction()
             _TEXASRU_ABORT(texasru)) return PERSISTENT;
     return OTHER;
   }
+#else
+  return OTHER;
+#endif /* _STATISTICS */
 }
 
 /* Stop a transaction. */

@@ -36,10 +36,12 @@ static inline transaction_status start_transaction()
   unsigned int code = _xbegin();
 
   if(code == _XBEGIN_STARTED) return BEGIN;
+#ifdef _STATISTICS
   else if((code & _XABORT_RETRY) || !code) return TRANSIENT;
   else if(code & _XABORT_CAPACITY) return CAPACITY;
   else if(code & _XABORT_CONFLICT) return CONFLICT;
   else if(code & _XABORT_EXPLICIT) return PERSISTENT;
+#endif /* _STATISTICS */
   return OTHER;
 }
 

@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include <time.h>
 #include <pthread.h>
-#include "statistics.h"
 #include "tsx_assert.h"
 
 static htm_log log;
@@ -142,7 +141,7 @@ void __cyg_profile_func_enter(void *fn, void *cs)
 
   // If executing transactionally, return to normal execution.  Record
   // transaction log entry for all statuses.
-  if(in_transaction())
+  if(__builtin_expect(in_transaction(), 1))
   {
     stop_transaction();
     LOG_SUCCESS(entry);
@@ -179,7 +178,7 @@ static void __attribute__((constructor)) __htm_stats_init()
 /* Finish any final transactions & clean up. */
 static void __attribute__((destructor)) __htm_cleanup()
 {
-  if(in_transaction())
+  if(__builtin_expect(in_transaction(), 1))
   {
     stop_transaction();
     LOG_SUCCESS(entry);
