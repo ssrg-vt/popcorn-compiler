@@ -143,7 +143,6 @@ def check_for_prerequisites():
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['aarch64-linux-gnu-gcc',
-                         'sparc64-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++']
     other_prequisites = ['flex', 'bison', 'svn', 'cmake']
@@ -377,7 +376,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
-    sparc64_install_path = os.path.join(install_path, 'sparc64')
     x86_64_install_path = os.path.join(install_path, 'x86_64')
 
     with open(os.devnull, 'wb') as FNULL:
