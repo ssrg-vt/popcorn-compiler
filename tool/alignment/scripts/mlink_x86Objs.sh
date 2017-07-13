@@ -21,7 +21,7 @@ else
 fi
 
 POPCORN="/usr/local/popcorn"
-GCC_LIB="/usr/lib/gcc/x86_64-linux-gnu/4.8/libgcc.a"
+GCC_LIB="$(x86_64-linux-gnu-gcc -print-libgcc-file-name)"
 
 $POPCORN/bin/ld.gold -static \
  ${OUTPUT} ${INPUT} -z relro --hash-style=gnu --build-id -m elf_x86_64 \

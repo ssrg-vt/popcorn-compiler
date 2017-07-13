@@ -20,7 +20,7 @@ else
   exit 1
 fi
 
-GCC_LOC="-L/usr/lib/gcc-cross/aarch64-linux-gnu/4.8"
+GCC_LOC="-L$(dirname $(aarch64-linux-gnu-gcc -print-libgcc-file-name))"
 GCC_LIBS="-lgcc -lgcc_eh"
 
 POPCORN="/usr/local/popcorn"

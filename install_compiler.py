@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import urllib
+import multiprocessing
 
 #================================================
 # GLOBALS
@@ -52,7 +53,7 @@ def setup_argument_parsing():
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",
                         type=int,
-                        default=2)
+                        default=multiprocessing.cpu_count())
 
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
@@ -126,6 +127,17 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
+def _check_javac():
+    try:
+        out = subprocess.check_output(['javac', '-version'],
+                    stderr=subprocess.STDOUT)
+    except Exception:
+        print('javac not found!')
+        return None
+    else:
+        out = out.split('\n')[0]
+        return out
+
 def check_for_prerequisites():
     success = True
 
@@ -134,7 +146,7 @@ def check_for_prerequisites():
                          'sparc64-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++']
-    other_prequisites = ['flex', 'bison']
+    other_prequisites = ['flex', 'bison', 'svn', 'cmake']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -151,6 +163,9 @@ def check_for_prerequisites():
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
+
+    if not _check_javac():
+        success = False
 
     return success
 
@@ -661,28 +676,6 @@ def install_tools(base_path, install_path, num_threads):
         cur_dir = os.getcwd()
 
         #=====================================================
-        # MODIFY MLINK_ARMOBJS.SH
-        #=====================================================
-        print("Updating alignment tool scripts to reflect system setup...")
-        try:
-            stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
-                                               '-print-libgcc-file-name'],
-                                               stdout=subprocess.PIPE).communicate()
-            loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
-            sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"-L{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
-            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
-
-            stdout, stderr = subprocess.Popen(['x86_64-linux-gnu-gcc',
-                                               '-print-libgcc-file-name'],
-                                               stdout=subprocess.PIPE).communicate()
-            libgcc = stdout.strip().replace('/', '\/')
-            sed_cmd = "sed -i -e 's/GCC_LIB=\".*\"/GCC_LIB=\"{}\"/g' ./tool/alignment/scripts/mlink_x86Objs.sh".format(libgcc)
-            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
-        except Exception as e:
-            print('Could not get/set libgcc location ({})!'.format(e))
-            sys.exit(1)
-
-        #=====================================================
         # INSTALL ALIGNMENT TOOL
         #=====================================================
         os.chdir(os.path.join(base_path, 'tool/alignment'))
@@ -765,13 +758,6 @@ def install_utils(base_path, install_path, num_threads):
         tmp = install_path.replace('/', '\/')
         sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-
-        stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
-                                           '-print-libgcc-file-name'],
-                                           stdout=subprocess.PIPE).communicate()
-        loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
-        sed_cmd = "sed -i -e 's/ARM64_LIBGCC := .*/ARM64_LIBGCC := {}/g' ./util/Makefile.template".format(loc)
-        rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
     else:
