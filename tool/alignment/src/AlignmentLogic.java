@@ -324,7 +324,10 @@ public class AlignmentLogic {
 			       globalVars.A_text.size());
     }				//END cleanIntersection
 
-    static void set_symbol_Alignment(List < Tuple < String, Long, Long,
+    /************************************************************************/
+    /* set_symbol_Alignment                                                 */
+	/************************************************************************/
+	static void set_symbol_Alignment(List < Tuple < String, Long, Long,
 				     Long >> A_sectionList,
 				     List < String > A_x86_alignment,
 				     List < String > A_aarch64_alignment,
@@ -356,6 +359,9 @@ public class AlignmentLogic {
 	    }
     }				//end set_symbol_Alignment
 
+	/*************************************************************************/
+    /* long_alignSection                                                     */
+    /*************************************************************************/
     static long alignSection(String section) throws IOException,
 	InterruptedException {
 	int x86_addr = 0, arm_addr = 0;
@@ -411,6 +417,9 @@ public class AlignmentLogic {
 	//negative value = x86 is shorter and needs x86 to be extended
     }
 
+	/*************************************************************************/
+    /* checkSameAddr_MultipleSymbol                                          */
+    /*************************************************************************/
     static void checkSameAddr_MultipleSymbol(List < Tuple < String, Long,
 					     Long, Long >> currList,
 					     Long addr) throws IOException,
@@ -427,10 +436,19 @@ public class AlignmentLogic {
 					     1).getName());
 	    }
 	}
-    } static void checkSameSymbol_MultipleAddress() {
+    } 
+
+	/*************************************************************************/
+	/* NOT USED */
+	/*************************************************************************/
+	static void checkSameSymbol_MultipleAddress() {
 	//if this is true, need to change symbol size to be size + alignment fill
     }
 
+
+	/*************************************************************************/
+	/* add_sectionAlignment                                                  */
+    /*************************************************************************/
 	/**
 	 * ADD in PADDING AT END OF SECTION IF NEEDED.
 	 * @param section
@@ -639,7 +657,10 @@ public class AlignmentLogic {
 	}
     }
 
-    static void set_symbol_AlignmentN(List < Tuple < String, Long, Long,
+    /*************************************************************************/
+    /* set_symnol_AlignmentN                                                 */
+	/*************************************************************************/
+	static void set_symbol_AlignmentN(List < Tuple < String, Long, Long,
 				      Long >> A_sectionList,
 				      List < String > A_x86_alignment,
 				      List < String > A_aarch64_alignment,
@@ -839,7 +860,10 @@ public class AlignmentLogic {
 	}			//end for A_sectionList
     }				//end set_symbol_AlignmentN
 
-    static void resetRangesInfo() {
+    /*************************************************************************/
+	/* resetRangesInfo                                                       */
+	/*************************************************************************/
+	static void resetRangesInfo() {
 	RangesInfo.clear();
 	if (!RangesInfo.isEmpty()) {
 	    System.out.println("ERROR: RANGES NOT CLEARED!!!");
@@ -847,6 +871,9 @@ public class AlignmentLogic {
 	}
     }
 
+	/*************************************************************************/
+	/* grabSymbolsInRange                                                    */
+	/*************************************************************************/
 	/**  grab 
 	 * @param option:
 	 * 			0: x86
@@ -854,7 +881,8 @@ public class AlignmentLogic {
 	 * @param binary:
 	 * 			exe: first run
 	 * 			gold 2nd run
-	 * @throws IOException: Assume nm_files have been generated
+	 * @throws IOException: Assume nm_files have been generated | 
+							Pierre: really? 
 	 * @throws InterruptedException
 	 */
     static void grabSymbolsInRange(int option,
@@ -987,6 +1015,7 @@ public class AlignmentLogic {
 	    System.out.println("\n");
 	}
 
+	// Pierre: I want to cry
 	BufferedReader br1 = new BufferedReader(fr1);
 	int count = 0;
 	long size = 0, addr = 0;
@@ -997,6 +1026,7 @@ public class AlignmentLogic {
 	//   ADDR            SIZE            TYPE              NAME
 	//Pattern p = Pattern.compile("([0-9a-f]*)[ \t]+([0-9a-f]*)[ \t]+[wWtTdDrRbB]+[ \t]+([\\._\\-\\@A-Za-z0-9]*)");
 	//NEW PATTERN FOR MAP FILE!!!!!         .section(2)  .             NAME(1)      ADDR(3)                         SIZE(4)                 ALIGNMENT(5)    SOURCE OBJECT FILE
+	// Pierre: this match text|rodata|bss entries
 	Pattern p =
 	    Pattern.compile
 	    ("^[ \\s](\\.([texrodalcbs]*)\\.[\\S]*)\\s*([x0-9a-f]*)[ \\s]*([x0-9a-f]*)[ \\s]*([0x0-9a-f]*).*");
@@ -1013,12 +1043,13 @@ public class AlignmentLogic {
 	    Matcher m = p.matcher(temp);
 	    if (m.find()) {
 		if ((!m.group(1).isEmpty()) && m.group(3).isEmpty()
-		    && m.group(4).isEmpty()) {
+		    && m.group(4).isEmpty()) { // PIERRE: match pattern 1 type 1
 		    /*if(m.group(2).compareTo("tbss")==0){
 		       System.out.println(">>>>>>>>>>>What regex finds: m1:"+m.group(1)+"#    m2:"+m.group(2)+"#    m3:"+m.group(3)+"#    m4:"+m.group(4));
 		       } */
 		    //means we probably hit a long symbol name and important stuff is on the next line
 		    //save the name at least
+
 		    name = m.group(1);
 		    type = m.group(2);
 		    //System.out.println("BSS OLD temp: "+name);
@@ -1064,6 +1095,7 @@ public class AlignmentLogic {
 		    Matcher m2 = pline2.matcher(temp);
 		    while (m2.find()) {
 			//System.out.println("regex line2 finds: m1:"+m2.group(1)+"#    m2:"+m2.group(2));
+
 			if (m2.group(2).isEmpty()) {
 			    size = 0;
 			} else {
@@ -1093,7 +1125,7 @@ public class AlignmentLogic {
 			}
 			flag_foundsymbol = 1;
 		    }
-		}		//end if evil format
+		}		//end if evil format // Pierre: match pattern1 type 2
 		else if (!m.group(1).isEmpty() && !m.group(3).isEmpty()
 			 && Long.parseLong(m.group(4).
 					   replaceFirst("0x", ""),
@@ -1124,6 +1156,10 @@ public class AlignmentLogic {
 	    }			//end while m.find()
 
 	    if (flag_foundsymbol == 1) {
+
+		Plog.log("symbol found: name=" + name + ", addr=" + addr + ", size=" +
+			size + ", alignment=" + alignment + "\n");
+
 		flag_foundsymbol = 0;
 		//if(type.compareTo("text")==0 && option==0){
 		//      System.out.println("real b4 populate sections: "+ name+"     addr:0x"+Long.toHexString(addr)+"      size:0x"+Long.toHexString(size));
@@ -1155,6 +1191,9 @@ public class AlignmentLogic {
 	}			//end while readline
     }
 
+	/*************************************************************************/
+	/* populateSections                                                      */
+	/*************************************************************************/
     static void populateSections(String region, int option,
 				 List < Tuple < String, Long, Long,
 				 Long >> currList, String name, long addr,
@@ -1165,6 +1204,7 @@ public class AlignmentLogic {
 	long default_size = 0;
 	long init_align = 1;
 	int c = 0;
+
 	if (addr < sectionMax && addr >= sectionMin) {
 	    //System.out.println("WARNING: "+sectionMin+"  "+sectionMax+"   adr:"+addr);
 	    //check if the symbol already exists
@@ -1369,6 +1409,9 @@ public class AlignmentLogic {
 	}			//end if text range
     }
 
+	/*************************************************************************/
+	/* alignCustom_getVal                                                    */
+	/*************************************************************************/
     static Long alignCustom_getVal(Long input, Long mod) {
 	long temp = 0;
 	while (input % mod != 0) {
@@ -1378,6 +1421,9 @@ public class AlignmentLogic {
 	return temp;
     }
 
+	/**************************************************************************/
+	/* AntonioOffsetAdditional                                                */
+	/**************************************************************************/
 	/**TODO: Antonio function
 	 * @throws IOException 
 	 * Should make more generic to cascade for N additional architecture linker scripts
@@ -1813,6 +1859,8 @@ public class AlignmentLogic {
 	//if nm size doesnt match vanilla size use vanilla binary size to readjust
     }
 }
+
+	/* Pierre: everything below is commented */
 
 /**
  * @param option

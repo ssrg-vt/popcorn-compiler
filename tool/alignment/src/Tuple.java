@@ -2,8 +2,8 @@
 
 public class Tuple < X, Y, Z, W > {
     public X x;			//name
-    public Y y;			// x86 
-    public Z z;			// arm
+    public Y y;			// x86 SIZE
+    public Z z;			// arm SIZE
     public W w;			// addr
     public int flag;
     public long alignment_x86;

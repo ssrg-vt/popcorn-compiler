@@ -52,6 +52,10 @@ public class Runtime {
 	 */
     public static void main(String[]args) throws IOException,
 	InterruptedException {
+
+	Plog.plogInit();	
+
+	
 	LinkerIO.resetLinkerNewLines();
 
 	TARGET_DIR = args[0] + "/align";
@@ -64,7 +68,9 @@ public class Runtime {
 	     System.out.println
 		("-1---------- Gather & Sort Symbols Begin! -------------------------");
 	//find unique for each architecture
+
 	gatherANDsort();
+
 	if (globalVars.DEBUG)
 	    System.out.println
 		("-1--------------------- Gather & Sort Symbols Complete ------------");
@@ -305,7 +311,10 @@ public class Runtime {
     }				//end MAIN!!
 
 	/** TODO: gatherANDsort **/
+
+	
     static void gatherANDsort() throws InterruptedException, IOException {
+
 	//parse elf - get elf info
 	utilityARG_list.add("3");
 	runScript("readMyElfToFile.sh", utilityARG_list);
@@ -459,8 +468,10 @@ public class Runtime {
 	AlignmentLogic.recordRanges(0);
 	AlignmentLogic.recordRanges(1);
 
-	utilityARG_list.add("4");
-	runScript("nmScript.sh", utilityARG_list);
+	// Pierre: is this really needed? I comented it and everything seems
+	// to work correctly
+	//utilityARG_list.add("4");
+	//runScript("nmScript.sh", utilityARG_list);
 	utilityARG_list.clear();
 
 	//Necessary for accurate "** fill" information 
