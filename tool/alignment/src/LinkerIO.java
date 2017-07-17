@@ -98,6 +98,7 @@ public class LinkerIO {
     static List < String > COPY_linkerScript_ByLine_x86_64;
     static List < String > COPY_linkerScript_ByLine_aarch64;
 
+	/* Pierre: omg */
     static int x86_textLineOffset = 54;
     static int x86_rodataLineOffset = 72 + 1;
     static int x86_dataLineOffset = 78 + 2;
@@ -128,6 +129,9 @@ public class LinkerIO {
     static int aarch64_tlsdataendLine_Offset = 117 + 4;
     static int aarch64_tlsbssendLine_Offset = 121 + 5;
 
+	/**************************************************************************/
+	/* resetLinkerScript()                                                    */
+	/**************************************************************************/
     static void resetLinkerScript() {
 	linkerScript_ByLine_x86_64.clear();
 	linkerScript_ByLine_aarch64.clear();
@@ -151,6 +155,10 @@ public class LinkerIO {
 	aarch64_tls_bss_alignment.clear();
     }
 
+
+	/**************************************************************************/
+	/** readInLinkerScripts()                                                 */
+	/**************************************************************************/
     static void readInLinkerScripts() throws IOException {
 	//open the x86 linker script
 	String temp;
@@ -172,6 +180,10 @@ public class LinkerIO {
 	}
     }
 
+
+	/**************************************************************************/
+	/** writeOutLinkerScripts                                                 */
+	/**************************************************************************/
     static void writeOutLinkerScripts() throws IOException {
 	//save the file and overwrite to become the new linker script.
 	int x86_count = 0, arm_count = 0;
@@ -194,6 +206,9 @@ public class LinkerIO {
 	wA.close();
     }
 
+	/**************************************************************************/
+	/** addAlignmentToLinkerScripts                                           */
+	/**************************************************************************/
     static void addAlignmentToLinkerScripts(List < String >
 					    x86_64_alignment,
 					    List < String >
@@ -228,7 +243,10 @@ public class LinkerIO {
 				   " new lines of ARM linker script.");
 	}
     }
-
+	
+	/**************************************************************************/
+	/** addLineToLinkerScript                                                 */
+	/**************************************************************************/
     static void addLineToLinkerScript(String alignment, int offset,
 				      int x86_OR_aarch) {
 	if (x86_OR_aarch == 0) {
@@ -241,6 +259,10 @@ public class LinkerIO {
 	}
 	//else there is a problem!!!
     }
+
+	/**************************************************************************/
+	/** alignSectionHeaders                                                   */
+	/**************************************************************************/
     static void alignSectionHeaders() {
 	replaceLineInLinkerScript("\\p{Blank}*(\\.rodata)\\p{Blank}*:.*",
 				  "  .rodata\t: ALIGN(0x1000)", 1);
@@ -268,6 +290,9 @@ public class LinkerIO {
 				  "  .tbss\t: ALIGN(0x1000)", 0);
     }
 
+	/**************************************************************************/
+	/** replaceLineInLinkerScript                                             */
+	/**************************************************************************/
     static void replaceLineInLinkerScript(String findPatern,
 					  String replacePatern,
 					  int x86_OR_aarch) {

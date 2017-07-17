@@ -8,6 +8,9 @@ class AbstractArchitecture():
 	def getGccName(self):
 		return self._gcc_prefix + "-gcc"
 
+	# Returns the path the the folder containing libgcc.a for the calling 
+	# architecture. This assume a x86 host system with libgcc.a being provided
+	# by cross-compilers for arm64 and powerpc
 	def getLibGccLocation(self):
 		gcc_exec_name = self.getGccName()
 		try:
@@ -29,6 +32,9 @@ class AbstractArchitecture():
 
 		return libgcc_path
 
+	# Call gold to link object files with the proper linking options. These
+	# options are hardcoded here for now. Some stuff is architecture specific
+	# so there are some calls to the concrete class.
 	# inputs is a list of object files to link, for ex: ["test.o", "utils.o"]
 	def goldLink(self, inputs):
 		cmd = []
@@ -89,4 +95,6 @@ class AbstractArchitecture():
 			f.write(gold_output)
 
 		return
+
+	#	def getSectionInfo(binaryPath):
 

@@ -69,6 +69,9 @@ public class Runtime {
 		("-1---------- Gather & Sort Symbols Begin! -------------------------");
 	//find unique for each architecture
 
+	/**************************************************************************/
+	/** Pierre: there is a lot of stuff hapenning in the function below: */
+	/**************************************************************************/
 	gatherANDsort();
 
 	if (globalVars.DEBUG)
@@ -76,6 +79,7 @@ public class Runtime {
 		("-1--------------------- Gather & Sort Symbols Complete ------------");
 	LinkerIO.readInLinkerScripts();
 
+	// Pierre: is this executed?
 	PrintWriter writer =
 	    new PrintWriter(TARGET_DIR + "/v1113sizetext.txt", "UTF-8");
 	for (int w = 0; w < globalVars.A_rodata.size(); w++) {
@@ -327,6 +331,10 @@ public class Runtime {
 	AlignmentLogic.recordRanges(0);
 	//save section ranges ARM
 	AlignmentLogic.recordRanges(1);
+
+	/* Pierre */
+	AlignmentLogic.plogRangesInfo();
+
 	if (globalVars.DEBUG)
 	    System.out.println
 		("-1--------------------- recordRanges Complete! ------------------------");
@@ -443,6 +451,7 @@ public class Runtime {
 	LinkerIO.writeOutLinkerScripts();
 	runScript("mlink_x86Objs.sh", x86withChanges);
 	runScript("mlink_armObjs.sh", armwithChanges);
+
 		/** END SCOUT for symbols and layout **/
 	if (globalVars.DEBUG)
 	    System.out.println
@@ -452,6 +461,7 @@ public class Runtime {
 	    System.out.println
 		("-1--------------------- ^^ Reseting Select Storages");
 	//reset ALMOST everything
+	// Pierre: what is not reset .......
 	globalVars.resetSectionsInfo();
 	LinkerIO.resetLinkerScript();
 	AlignmentLogic.resetRangesInfo();
@@ -468,10 +478,8 @@ public class Runtime {
 	AlignmentLogic.recordRanges(0);
 	AlignmentLogic.recordRanges(1);
 
-	// Pierre: is this really needed? I comented it and everything seems
-	// to work correctly
-	//utilityARG_list.add("4");
-	//runScript("nmScript.sh", utilityARG_list);
+	utilityARG_list.add("4");
+	runScript("nmScript.sh", utilityARG_list);
 	utilityARG_list.clear();
 
 	//Necessary for accurate "** fill" information 

@@ -35,6 +35,20 @@ public class AlignmentLogic {
     static int dataCount = 0;
     static int bssCount = 0;
 
+	/* Pierre: print the content of RangesInfo */
+	public static void plogRangesInfo() {
+		Iterator it = RangesInfo.iterator();
+		
+		Plog.log("name\taddress\tsize\n");
+		Plog.log("-------------------\n");
+
+		while(it.hasNext()) {
+			Section < String, Long, Long> element = (Section)it.next();
+			Plog.log(element.getName() + "\t" + element.getAddr() + "\t" +
+				element.getSize() + "\n");
+		}	
+	}
+
 	/** recordRanges
 	 * @param option:
 	 *		0: x86
@@ -572,6 +586,9 @@ public class AlignmentLogic {
 	LinkerIO.sectionSize_alignment.clear();
     }				//END add_sectionAligment
 
+	/**************************************************************************/
+	/** compareAndSet_Alignment()                                             */
+	/**************************************************************************/
     static void compareAndSet_Alignment(List < Tuple < String, Long, Long,
 					Long >> symbols, int x86_offset,
 					int aarch64_offset) throws
@@ -658,7 +675,7 @@ public class AlignmentLogic {
     }
 
     /*************************************************************************/
-    /* set_symnol_AlignmentN                                                 */
+    /** set_symnol_AlignmentN                                                 */
 	/*************************************************************************/
 	static void set_symbol_AlignmentN(List < Tuple < String, Long, Long,
 				      Long >> A_sectionList,
@@ -861,7 +878,7 @@ public class AlignmentLogic {
     }				//end set_symbol_AlignmentN
 
     /*************************************************************************/
-	/* resetRangesInfo                                                       */
+	/** resetRangesInfo                                                       */
 	/*************************************************************************/
 	static void resetRangesInfo() {
 	RangesInfo.clear();
@@ -872,7 +889,7 @@ public class AlignmentLogic {
     }
 
 	/*************************************************************************/
-	/* grabSymbolsInRange                                                    */
+	/** grabSymbolsInRange                                                    */
 	/*************************************************************************/
 	/**  grab 
 	 * @param option:
@@ -1157,8 +1174,8 @@ public class AlignmentLogic {
 
 	    if (flag_foundsymbol == 1) {
 
-		Plog.log("symbol found: name=" + name + ", addr=" + addr + ", size=" +
-			size + ", alignment=" + alignment + "\n");
+		//Plog.log("symbol found: name=" + name + ", addr=" + addr + ", size=" +
+		//	size + ", alignment=" + alignment + "\n");
 
 		flag_foundsymbol = 0;
 		//if(type.compareTo("text")==0 && option==0){
@@ -1189,10 +1206,10 @@ public class AlignmentLogic {
 				     alignment, count);
 	    }			//end if flag_foundsymbol
 	}			//end while readline
-    }
+	}
 
 	/*************************************************************************/
-	/* populateSections                                                      */
+	/** populateSections                                                      */
 	/*************************************************************************/
     static void populateSections(String region, int option,
 				 List < Tuple < String, Long, Long,
@@ -1410,7 +1427,7 @@ public class AlignmentLogic {
     }
 
 	/*************************************************************************/
-	/* alignCustom_getVal                                                    */
+	/** alignCustom_getVal                                                    */
 	/*************************************************************************/
     static Long alignCustom_getVal(Long input, Long mod) {
 	long temp = 0;
@@ -1422,7 +1439,7 @@ public class AlignmentLogic {
     }
 
 	/**************************************************************************/
-	/* AntonioOffsetAdditional                                                */
+	/** AntonioOffsetAdditional                                                */
 	/**************************************************************************/
 	/**TODO: Antonio function
 	 * @throws IOException 
@@ -1569,6 +1586,9 @@ public class AlignmentLogic {
 	return totalsneakyoffset;
     }
 
+	/*************************************************************************/
+	/** anomolyARMSizeChecker()                                              */
+	/*************************************************************************/
     static void anomolyARMSizeChecker() throws InterruptedException,
 	IOException {
 	//Read in map file x86
@@ -1859,8 +1879,11 @@ public class AlignmentLogic {
 	//if nm size doesnt match vanilla size use vanilla binary size to readjust
     }
 }
-
+	/**************************************************************************/
+	/**************************************************************************/
 	/* Pierre: everything below is commented */
+	/**************************************************************************/
+	/**************************************************************************/
 
 /**
  * @param option

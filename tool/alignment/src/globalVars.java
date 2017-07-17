@@ -39,6 +39,9 @@ public class globalVars {
     public static List < String > Antonio_YellowList =
 	new ArrayList < String > ();
 
+	/**************************************************************************/
+	/** resetSectionsInfo()                                                   */
+	/**************************************************************************/
     static void resetSectionsInfo() {
 	long default_size = 0;
 	int p;
@@ -74,6 +77,9 @@ public class globalVars {
 	}
     }
 
+	/*************************************************************************/
+	/** resetMultipleAddress()                                               */
+	/*************************************************************************/	
     static void resetMultipleAddress() {
 	int default_size = 0;
 	int p;
