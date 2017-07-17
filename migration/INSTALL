@@ -1,0 +1,66 @@
+-----------------------
+Installing libmigration
+-----------------------
+
+The libmigration library is needed by all multi-ISA applications, and therefore
+needs to be compiled for all architectures in the system.  The Makefile handles
+this, however.
+
+NOTE: libmigration is built againts Popcorn's musl-libc.  Please install it for
+all architectures in /usr/local/popcorn/<arch> before continuing -- it is
+important to compile against musl-libc, otherwise gcc will default to compiling
+against glibc and glibc-specific symbols will creep into the library.  This
+will lead to undefined/unresolved symbols when compiling applications.
+
+1. Build & install libmigration for aarch64 & x86_64:
+
+  $ make install
+
+2. You can speed up the build by enabling parallel jobs:
+
+  $ make -j<# of parallel jobs>
+
+3. The library can be built in several different configurations:
+
+  - Selecting migration via environment variables: rather than migrating when
+    told by the scheduler, migrate at a point specified by environment
+    variables (see util/scripts/test-migration.py for more information on how
+    to choose a migration point) 
+
+    $ make type=env_select install
+
+  - Native execution: do all the normal pre-migration setup steps but do not
+    migrate.  In other words, do native stack transformation (e.g., x86-64 ->
+    86-64), switch to the rewritten stack and continue execution on the current
+    architecture with the rewritten stack.
+
+    $ make type=native install
+
+  - Debug: after a migration, spin indefinitely on the destination
+    architecture.  This gives the user a chance to attach to the migrated
+    application post-migration for debugging.
+
+    $ make type=debug install
+
+    Debugging on the destination architecture: after migration, users should
+    first attach to the application on the destination system:
+
+    $ gdb <binary>
+    $ (gdb) attach <PID>
+
+    Next, set the __hold variable to break out of the indefinite loop:
+
+    $ (gdb) set __hold=0
+
+    Now, the user can continue debugging as normal by setting breakpoints,
+    stepping through functions, etc.
+    
+  - Timing: time the stack transformation latency and print to stdout:
+
+    $ make type=timing install
+
+4. Most of these options can be composed, e.g., to select the migration point
+   and time stack transformation all on a native machine:
+
+  $ make type=env_select,native,timing install
+
