@@ -363,7 +363,15 @@ Index: lib/CodeGen/CodeGenAction.cpp
  #include "clang/Frontend/CompilerInstance.h"
  #include "clang/Frontend/FrontendDiagnostic.h"
  #include "clang/Lex/Preprocessor.h"
-@@ -41,6 +42,7 @@
+@@ -34,6 +35,7 @@
+ #include "llvm/Support/MemoryBuffer.h"
+ #include "llvm/Support/SourceMgr.h"
+ #include "llvm/Support/Timer.h"
++#include "llvm/Transforms/Utils/Cloning.h"
+ #include <memory>
+ using namespace clang;
+ using namespace llvm;
+@@ -41,6 +43,7 @@
  namespace clang {
    class BackendConsumer : public ASTConsumer {
      virtual void anchor();
@@ -371,7 +379,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      DiagnosticsEngine &Diags;
      BackendAction Action;
      const CodeGenOptions &CodeGenOpts;
-@@ -129,7 +131,7 @@
+@@ -129,7 +132,7 @@
          LLVMIRGeneration.stopTimer();
      }
  
@@ -380,7 +388,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        {
          PrettyStackTraceString CrashInfo("Per-file LLVM IR generation");
          if (llvm::TimePassesIsEnabled)
-@@ -165,7 +167,11 @@
+@@ -165,7 +168,11 @@
                  [=](const DiagnosticInfo &DI) { linkerDiagnosticHandler(DI); }))
            return;
        }
@@ -392,7 +400,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +267,76 @@
+@@ -261,6 +268,73 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -445,18 +453,15 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +                           TheModule.get(), Action, nullptr);
 +      Popcorn::StripTargetAttributes(*TheModule);
 +
-+      // TODO we need to create a deep copy of the module, since IR
-+      // optimizations may inject architecture-specific instructions, i.e., the
-+      // "createAtomicExpandPass" lowers IR-level atomics to
-+      // architecture-specific ones
-+
 +      // Generate machine code for each target
 +      for(size_t i = 0; i < AsmTargetOpts.size(); i++) {
-+        TheModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
-+        TheModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
++        llvm::Module* ArchModule = CloneModule(TheModule.get());
++        ArchModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
++        ArchModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
 +        CodegenBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
 +                             AsmTargetInfos[i]->getTargetDescription(),
-+                             TheModule.get(), Action, AsmOutStreams[i]);
++                             ArchModule, Action, AsmOutStreams[i]);
++        delete ArchModule;
 +      }
 +
 +      Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
@@ -469,7 +474,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +702,7 @@
+@@ -626,6 +700,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -477,7 +482,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +709,7 @@
+@@ -632,13 +707,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -492,7 +497,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +733,10 @@
+@@ -662,6 +731,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -503,7 +508,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +744,19 @@
+@@ -669,6 +742,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -523,7 +528,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +772,42 @@
+@@ -684,6 +770,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -566,7 +571,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +817,9 @@
+@@ -693,37 +815,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -605,7 +610,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +865,120 @@
+@@ -769,3 +863,117 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -702,21 +707,18 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +                         TheModule.get(), BA, nullptr);
 +    Popcorn::StripTargetAttributes(*TheModule);
 +
-+    // TODO we need to create a deep copy of the module, since IR optimizations
-+    // may inject architecture-specific instructions, i.e., the
-+    // "createAtomicExpandPass" lowers IR-level atomics to
-+    // architecture-specific ones
-+
 +    // Emit machine code for all specified architectures
 +    for(size_t i = 0; i < Targets.size(); i++) {
-+      TheModule->setTargetTriple(Targets[i]);
-+      TheModule->setDataLayout(TargetInfos[i]->getTargetDescription());
-+      LLVMContext &Ctx = TheModule->getContext();
++      llvm::Module *ArchModule = CloneModule(TheModule.get());
++      ArchModule->setTargetTriple(Targets[i]);
++      ArchModule->setDataLayout(TargetInfos[i]->getTargetDescription());
++      LLVMContext &Ctx = ArchModule->getContext();
 +      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
 +      CodegenBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
 +                           *TargetOpts[i], CI.getLangOpts(),
 +                           TargetInfos[i]->getTargetDescription(),
-+                           TheModule.get(), BA, OutFiles[i]);
++                           ArchModule, BA, OutFiles[i]);
++      delete ArchModule;
 +    }
 +
 +    return;

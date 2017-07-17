@@ -182,7 +182,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                    '-DLLVM_ENABLE_RTTI=ON']
 
     if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86;Sparc']
+        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86']
 
     with open(os.devnull, 'wb') as FNULL:
 
