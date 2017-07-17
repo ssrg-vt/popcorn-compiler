@@ -1,0 +1,49 @@
+--------
+Overview
+--------
+
+The final step in generating multi-ISA binaries is to parse the generated
+.llvm_stackmaps section and add stack transformation metadata sections to
+each binary.  This information provides the return address mappings across
+binaries and the live value location information at each call site.
+
+The metadata consists of call sites and live value locations.  Each call site
+is denoted by an ID (assigned by the tool), a return address for the function
+call, the size of the function's activation at the call site, the number of
+live values at the call site and an offset into the live value location
+section where the records needed to find live values are located.
+
+Each live value location record encodes the type of the location (e.g.,
+register), the size of the live value, whether or not the value is a pointer,
+and if so, the size of the pointed-to data.
+
+The tool adds 3 sections to each binary:
+
+.stack_transform.id: call site metadata, sorted by call site ID
+.stack_transform.addr: call site metadata, sorted by call site return address
+.stack_transform.live: live value location information
+
+The runtime correlates call sites across architectures by the following
+procedure:
+
+1. Calculate the return address for a called function from a source stack frame
+2. Use the return address to look up the current ISA's call site record, which
+   contains the call site ID
+3. Use the call site ID to look up the destination ISA's call site record
+4. Populate the return address for the called function from destination ISA's
+   call site record, and use both records to copy live values between stacks
+
+There are 3 generated tools:
+
+- gen-stackinfo: parse the .llvm_stackmaps section and add stack transformation
+  sections to the binary (.stack_transform.id, .stack_transform.addr and
+  .stack_transform.live).  This is run once per binary.
+
+- dump-stackinfo: print the generated stack transformation metadata in a
+  human-readable format
+
+- check-stackmaps: check the generated .llvm_stackmaps sections for two
+  binaries for inconsistencies that may prevent a correct transformation, e.g.,
+  different numbers of stackmaps, different numbers of live values at
+  corresponding stackmaps, live values of different sizes, etc.
+

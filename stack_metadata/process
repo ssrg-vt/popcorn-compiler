@@ -1,0 +1,3 @@
+rm rewrite_empty_powerpc64_stack_info ; ./dump-stackinfo -b ../../lib/stack_transformation/test/rewrite_empty/rewrite_empty_powerpc64 >> rewrite_empty_powerpc64_stack_info
+rm rewrite_empty_aarch64_stack_info ; ./dump-stackinfo -b ../../lib/stack_transformation/test/rewrite_empty/rewrite_empty_aarch64 >> rewrite_empty_aarch64_stack_info
+rm rewrite_empty_x86-64_stack_info ; ./dump-stackinfo -b ../../lib/stack_transformation/test/rewrite_empty/rewrite_empty_x86-64 >> rewrite_empty_x86-64_stack_info
