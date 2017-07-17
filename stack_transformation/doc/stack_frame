@@ -1,0 +1,57 @@
+Call Frame Information
+----------------------
+
+A call frame activation is composed of three components:
+
+1. A code location (i.e. a PC) -- where/which function the thread was executing
+
+2. A call frame (i.e. stack frame), identified by the canonical frame address
+   (defined below)
+
+3. A set of registers (in particular, their values) at the specified code
+   location
+
+(C)anonical (F)rame (A)ddress -- CFA
+------------------------------------
+
+The CFA is an address on the stack which identifies a particular call frame
+activation.  From the DWARF standard:
+
+"Typically, the CFA is defined to be the value of the stack pointer at the call
+site in the previous frame (which may be different from its value on entry to
+the current frame)."
+
+In the generalized view of the call frame below, n arguments are passed from
+the caller to the callee -- m arguments are passed in registers and the
+remaining n-m are passed on the stack.  The bottom of the on-stack argument
+list (past the red zone on x86-64) is the CFA.  Note that on x86-64, this is
+the value of the stack-pointer BEFORE the call instruction (per the quote
+above), as the call instruction pushes the return address onto the stack.
+Below the return address are the callee-saved registers and (l-k) local
+variables, where l is the total number of local variables and k of them are
+stored in registers (the remaining l-k must be stored on the stack).
+
+Note that many of these locations can change depending on how far we've
+progressed through the function, e.g. an argument in a register may no longer
+be live and will be clobbered when the compiler promotes a local variable into
+its place.
+
+|----------------|
+|   (red zone)   | <- x86-64 only
+|----------------|
+|   argument n   |
+|----------------|
+|      ....      |
+|----------------|
+|  argument m+1  |
+|----------------| <- CFA
+|  ret. address  | <- automatically pushed by "call" instruction on x86-64
+|----------------|
+|  callee-saved  |
+|----------------|
+| local var. k+1 |
+|----------------|
+|      ....      |
+|----------------|
+|  local var. l  |
+|----------------|
