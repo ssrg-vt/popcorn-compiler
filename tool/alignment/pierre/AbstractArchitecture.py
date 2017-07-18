@@ -1,6 +1,7 @@
 from Globals import *
 import subprocess
 import sys
+import os
 
 # We put everything common to each arch here
 class AbstractArchitecture():
@@ -9,28 +10,19 @@ class AbstractArchitecture():
 		return self._gcc_prefix + "-gcc"
 
 	# Returns the path the the folder containing libgcc.a for the calling 
-	# architecture. This assume a x86 host system with libgcc.a being provided
-	# by cross-compilers for arm64 and powerpc
+	# architecture.
 	def getLibGccLocation(self):
 		gcc_exec_name = self.getGccName()
+
 		try:
-			gcc_version = subprocess.check_output([gcc_exec_name, 
-				'-dumpversion'], stderr=subprocess.STDOUT)
+			libGccALocation = subprocess.check_output([gcc_exec_name, 
+				'-print-libgcc-file-name'], stderr=subprocess.STDOUT)
 		except Exception:
-			sys.stderr.write("ERROR: cannot execute %s -dumpversion to find" +
-				" libgcc.a")
+			sys.stderr.write("ERROR: cannot execute %si" + 
+				" -print-libgcc-file-name to find libgcc.a" % gcc_exec_name)
 			sys.exit()
 
-		gcc_version = gcc_version.replace("\n", "")
-		libgcc_path = ""
-		if self.getCrossCompile():
-			libgcc_path = ("/usr/lib/gcc-cross/" + 
-				gcc_exec_name.replace("-gcc", "") + "/" +	gcc_version)
-		else:
-			libgcc_path = ("/usr/lib/gcc/" + gcc_exec_name.replace("-gcc", "") 
-				+ "/" + gcc_version)
-
-		return libgcc_path
+		return os.path.dirname(libGccALocation)
 
 	# Call gold to link object files with the proper linking options. These
 	# options are hardcoded here for now. Some stuff is architecture specific

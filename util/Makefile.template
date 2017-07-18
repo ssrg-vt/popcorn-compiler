@@ -10,7 +10,8 @@
 POPCORN := /usr/local/popcorn
 
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
-ARM64_LIBGCC := /usr/lib/gcc-cross/aarch64-linux-gnu/5
+ARM64_LIBGCC := $(shell dirname \
+                $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
 BIN := test
@@ -27,8 +28,9 @@ APP_DIR := $(shell pwd)
 # Compiler
 CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
-CFLAGS     := -O0 -Wall -nostdinc
-HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common -ftls-model=initial-exec
+CFLAGS     := -O0 -Wall -nostdinc -g
+HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
+              -ftls-model=initial-exec
 
 IR := $(SRC:.c=.ll)
 
@@ -187,7 +189,7 @@ $(ALIGN_BUILD)/nm_symbols_x86.txt: $(X86_64_OBJ) $(ALIGN_BUILD)/.dir
 
 %.ll: %.c
 	@echo " [IR] $<"
-	@$(CC) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $< 
+	@$(CC) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $<
 
 %.o: %.c
 	@echo " [CC] $<"

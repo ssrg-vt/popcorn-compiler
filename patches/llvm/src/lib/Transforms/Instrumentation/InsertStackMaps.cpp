@@ -323,7 +323,7 @@ char InsertStackMaps::ID = 0;
 const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 
 INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
-                      "Instrument equivalence points with stack maps ",
+                      "Instrument equivalence points with stack maps",
                       false, false)
 INITIALIZE_PASS_DEPENDENCY(LiveValues)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)

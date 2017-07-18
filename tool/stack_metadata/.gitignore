@@ -1,4 +1,5 @@
-build
+.ycm_extra_conf.py
+build/
 check-stackmaps
 dump-llvm-stackmap
 dump-stackinfo

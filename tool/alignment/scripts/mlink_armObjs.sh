@@ -20,8 +20,7 @@ else
   exit 1
 fi
 
-LOCAL_GCC_VERSION=`aarch64-linux-gnu-gcc -dumpversion`
-GCC_LOC="-L/usr/lib/gcc-cross/aarch64-linux-gnu/$LOCAL_GCC_VERSION"
+GCC_LOC="-L$(dirname $(aarch64-linux-gnu-gcc -print-libgcc-file-name))"
 GCC_LIBS="-lgcc -lgcc_eh"
 
 POPCORN="/usr/local/popcorn"
