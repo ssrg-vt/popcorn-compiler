@@ -17,7 +17,7 @@ class AbstractArchitecture():
 		try:
 			libGccALocation = subprocess.check_output([gcc_exec_name, 
 				'-print-libgcc-file-name'], stderr=subprocess.STDOUT)
-		except Exception:
+		except CalledProcessError as e:
 			sys.stderr.write("ERROR: cannot execute %si" + 
 				" -print-libgcc-file-name to find libgcc.a" % gcc_exec_name)
 			sys.exit()
@@ -76,9 +76,10 @@ class AbstractArchitecture():
 		try:
 			gold_output = subprocess.check_output(cmd, 
 				stderr=subprocess.STDOUT)
-		except Exception as e:
+		except CalledProcessError as e:
 			sys.stderr.write("ERROR: during gold link step:\n" + e.output)
 			sys.stderr.write("Command: " + ' '.join(cmd) + "\n")
+			sys.stderr.write("Output:\n" + e.output)
 			with open(self.getLinkerLog(), "w+") as f:
 				f.write(e.output)
 				sys.exit()
@@ -87,6 +88,3 @@ class AbstractArchitecture():
 			f.write(gold_output)
 
 		return
-
-	#	def getSectionInfo(binaryPath):
-

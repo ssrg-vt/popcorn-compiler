@@ -59,8 +59,10 @@ def parseMapFile(filePath):
 	# only keep symbols related to text/data/rodata/bss so an additional check
 	# is performed on the extracted symbosl before addign it to the result set
 	twoLinesRe1 = "^[\s]+(\.[texrodalcbs\.]+[\S]*)$"
-	twoLinesRe2 = "^[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(.*)$"
-	oneLineRe = "^[\s]+(\.[texrodalcbs\.]+[\S]+)[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(.*)$"
+	twoLinesRe2 = ("^[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+" + 
+		"(0x[0-9a-f]+)[\s]+(.*)$")
+	oneLineRe = ("^[\s]+(\.[texrodalcbs\.]+[\S]+)[\s]+(0x[0-9a-f]+)[\s]+" + 
+		"(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(.*)$")
 
 	with open(filePath, "r") as mapfile:
 		lines = mapfile.readlines()

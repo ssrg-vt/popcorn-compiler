@@ -1,8 +1,0 @@
-External scripts that are called:
-- mlink_x86Objs.s -> implemented as the 'goldLink' method of 
-  AbstractArchitecture
-- mlink_armObjs.s -> same as above
-- nmScript.sh -> TODO - wait, is this actually used?? --> yes
-- readMyElfToFile.sh -> done, straightforward readElf() function in Utils 
-  module
-

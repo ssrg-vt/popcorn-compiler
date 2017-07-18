@@ -1,10 +1,14 @@
 from Arch import Arch, Archs
-from Utils import readElf
 from MapParser import parseMapFile
+from ReadElfParser import getSectionInfo
 
 # TODO remove this when done
 if __name__ == "__main__":
 	print "hello"	
+
+	res = getSectionInfo("/root/popcorn-compiler-arm-x86/pierre-test/align/x86exe_musl")
+	for section in res:
+		print section
 
 #	symbols = parseMapFile("map_x86.txt")
 #	for index1, symbol1 in enumerate(symbols):
@@ -15,9 +19,9 @@ if __name__ == "__main__":
 #				print symbol2
 #				print "-----------------------"
 
-	print Archs[Arch.X86].getLibGccLocation()
-	print Archs[Arch.POWER].getLibGccLocation()
-	print Archs[Arch.ARM].getLibGccLocation()
+	#print Archs[Arch.X86].getLibGccLocation()
+	#print Archs[Arch.POWER].getLibGccLocation()
+	#print Archs[Arch.ARM].getLibGccLocation()
 
 #	readElf("/root/popcorn-compiler-arm-x86/pierre-test/pierre.o", 
 #		"/root/test")
