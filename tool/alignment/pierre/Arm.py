@@ -1,26 +1,22 @@
 import Globals
 from AbstractArchitecture import AbstractArchitecture
+from Arch import Arch
 
 class Arm(AbstractArchitecture):
 	# Prefix for the gcc compiler name
-	_gcc_prefix = "aarch64-linux-gnu"
-	# Executable name for the output of the last linking step
-	_gold_output = "armBinGold_musl"
-	# Name of the map file taken as input by gold
-	_gold_map = "map_aarchgold.txt"
-	# Linker script used for the last linking step
-	_linker_script = "modified__aarch64.x"
-	# log file containing gold std/err output
-	_linker_log = "out_aarch64.txt"
-	# set of libraries to search as a group during the last linking step
-	_gold_search_group = "-lgcc -lgcc_eh"
+	_gccPrefix = "aarch64-linux-gnu"
+	# Executable name
+	_executable = "bin_arm"
+	# Name of the map file used in multiple steps of the alignment process
+	_mapFile = "map_arm"
+	# Linker linker script file used in multiple steps
+	_linkerScript = "linker_script_arm.x"
+	# set of libraries to search as a group during linking
+	_goldSearchGroup = "-lgcc -lgcc_eh"
 	# ISA folder name in popcorn install dir
-	_popcorn_isa_folder = "aarch64"
-	# GNU gold emulation
-	_gold_emulation = "aarch64linux"
-
-	def getCrossCompile(self):
-		return True
+	_popcornIsaFolder = "aarch64"
+	# GNU gold emulation target
+	_goldEmulation = "aarch64linux"
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,
@@ -29,23 +25,23 @@ class Arm(AbstractArchitecture):
 	def getLibGccGoldInclusion(self):
 		return "-L" + self.getLibGccLocation()
 
-	def getGoldOutput(self):
-		return self._gold_output
+	def getExecutable(self):
+		return self._executable
 
-	def getGoldMap(self):
-		return self._gold_map
+	def getMapFile(self):
+		return self._mapFile
 
 	def getLinkerScript(self):
-		return self._linker_script
-
-	def getLinkerLog(self):
-		return self._linker_log
+		return self._linkerScript
 
 	def getGoldSearchGroup(self):
-		return self._gold_search_group
+		return self._goldSearchGroup
 
 	def getPopcornIsaFolder(self):
-		return self._popcorn_isa_folder
+		return self._popcornIsaFolder
 
 	def getGoldEmulation(self):
-		return self._gold_emulation
+		return self._goldEmulation
+
+	def getArch(self):
+		return Arch.ARM

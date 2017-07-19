@@ -3,6 +3,8 @@ import subprocess
 import re
 import os
 
+# Represents a section. Each attribute is one of the fields reported by 
+# readelf -S
 class Section:
 	_index = -1
 	_name = ""
@@ -73,6 +75,7 @@ class Section:
 	def getAlignment(self):
 		return self._alignment
 
+# FIXME: do we need setters here?
 #	def setIndex(self, index):
 #		self._index = index
 #
@@ -105,8 +108,17 @@ class Section:
 #
 #	def setAlignment(self, alignment):
 #		self._alignment = alignment
-	
 
+	# Returns true if a given address is located inside the address range 
+	# corresponding to this section
+	# FIXME is this needed?
+	def checkAddressInSection(self, address):
+		return (address >= self.getAddress() and 
+			address < (self.getAddress() + self.getSize()))
+
+# This function takes a path to an ELF binary as parameter, executes readelf
+# on it, parsing the output, building then returning a list of sections 
+# objects
 def getSectionInfo(binaryPath):
 	absolutePath = os.path.abspath(binaryPath)
 	cmd = ["readelf", "-SW", absolutePath]
@@ -118,7 +130,7 @@ def getSectionInfo(binaryPath):
 	try:
 		readelf_output = subprocess.check_output(cmd,
 			stderr=subprocess.STDOUT)
-	except CalledProcessError as e:
+	except subprocess.CalledProcessError as e:
 		sys.stderr.write("ERROR: executing readelf " + absolutePath + 
 			" :\n")
 		sys.stderr.write(e.output)
@@ -129,13 +141,13 @@ def getSectionInfo(binaryPath):
 		if matchRes:
 			# I checked readelf sources so I know which of these are in hex
 			# and which are in decimal format
-			s = Section(int(matchRes.group(1)),		# index
+			s = Section(int(matchRes.group(1)),		# index 	(dec)
 				matchRes.group(2), 					# name
 				matchRes.group(3),					# type
-				int("0x" + matchRes.group(4), 0), 	# address
-				int("0x" + matchRes.group(5), 0),	# offset
-				int("0x" + matchRes.group(6), 0),	# size
-				int("0x" + matchRes.group(7), 0), 	# ES
+				int("0x" + matchRes.group(4), 0), 	# address	(hex)
+				int("0x" + matchRes.group(5), 0),	# offset	(hex)
+				int("0x" + matchRes.group(6), 0),	# size		(hex)
+				int("0x" + matchRes.group(7), 0), 	# ES		(hex)
 				matchRes.group(8), 					# flags
 				int(matchRes.group(9)),				# Lk
 				int(matchRes.group(10)), 			# Inf

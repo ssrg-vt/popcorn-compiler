@@ -333,7 +333,7 @@ public class Runtime {
 	AlignmentLogic.recordRanges(1);
 
 	/* Pierre */
-	AlignmentLogic.plogRangesInfo();
+	//AlignmentLogic.plogRangesInfo();
 
 	if (globalVars.DEBUG)
 	    System.out.println

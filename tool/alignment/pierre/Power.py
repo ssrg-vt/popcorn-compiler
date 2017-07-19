@@ -2,27 +2,23 @@
 
 import Globals
 from AbstractArchitecture import AbstractArchitecture
+from Arch import Arch
 
 class Power(AbstractArchitecture):
 	# Prefix for the gcc compiler name
-	_gcc_prefix = "powerpc64-linux-gnu"
-	# Executable name for the output of the last linking step
-	_gold_output = "TODO"
-	# Name of the map file taken as input by gold
-	_gold_map = "TODO"
+	_gccPrefix = "powerpc64-linux-gnu"
+	# Executable name
+	_executable = "bin_power"
+	# Name of the map file output by gold
+	_mapFile = "map_power"
 	# Linker script used for the last linking step
-	_linker_script = "TODO"
-	# log file containing gold std/err output
-	_linker_log = "TODO"
+	_linkerScript = "linker_script_power.x"
 	# set of libraries to search as a group during the last linking step
-	_gold_search_group = "TODO"
+	_goldSearchGroup = "TODO"
 	# ISA folder name in popcorn install dir
-	_popcorn_isa_folder = "TODO"
+	_popcornIsaFolder = "TODO"
 	# GNU gold emulation
-	_gold_emulation = "TODO" # probably elf64-powerpc
-
-	def getCrossCompile(self):
-		return True
+	_goldEmulation = "TODO" # probably elf64-powerpc
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,
@@ -31,21 +27,14 @@ class Power(AbstractArchitecture):
 	def getLibGccGoldInclusion(self):
 		raise exception.NotImplementedError
 
-	def getGoldOutput(self):
-		raise exception.NotImplementedError
-		#return self._gold_output
+	def getExecutable(self):
+		return self._executable
 
-	def getGoldMap(self):
-		raise exception.NotImplementedError
-		#return self._gold_map
+	def getMapFile(self):
+		return self._mapFile
 
 	def getLinkerScript(self):
-		raise exception.NotImplementedError
-		#return self._linker_script
-
-	def getLinkerLog(self):
-		raise exception.NotImplementedError
-		#return self._linker_log
+		return self._linkerScript
 
 	def getGoldSearchGroup(self):
 		raise exception.NotImplementedError
@@ -58,3 +47,6 @@ class Power(AbstractArchitecture):
 	def getGoldEmulation(self):
 		raise exception.NotImplementedError
 		#return self._gold_emulation
+
+	def getArch(self):
+		return Arch.POWER

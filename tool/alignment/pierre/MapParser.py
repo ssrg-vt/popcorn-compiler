@@ -1,23 +1,34 @@
 import re
 import sys
 import os
+from Arch import Arch
 
 class Symbol:
 	_name = ""
 	_address = 0x0
-	_size = 0x0
-	_alignment = 0x0
+	_sizes = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
+	_alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 
-	def __init__(self, name, address, size, alignment):
+	def __init__(self, name, address, sizeX86=-1, sizeArm=-1, sizePower=-1,
+		alignmentX86=-1, alignmentArm=-1, alignmentPower=-1):
 		self._name = name
 		self._address = address
-		self._size = size
-		self._alignment = alignment
+		self._sizes[Arch.X86] = sizeX86
+		self._sizes[Arch.ARM] = sizeArm
+		self._sizes[Arch.POWER] = sizePower
+		self._alignments[Arch.X86] = alignmentX86
+		self._alignments[Arch.ARM] = alignmentArm
+		self._alignments[Arch.POWER] = alignmentPower
 
 	def __str__(self):
-		return ("Symbol: name=" + self._name + ", address=" + 
-			str(self._address) + ", size=" + str(self._size) + ", alignment=" 
-			+ str(self._alignment))
+		return ("Symbol: name=" + self.getName() + 
+				", address=" + str(self.getAddress()) +
+				", sizeX86=" + str(self.getSizeX86()) +
+				", sizeArm=" + str(self.getSizeArm()) +
+				", sizePower=" + str(self.getSizePower()) +
+				", alignmentX86=" + str(self.getAlignmentX86()) +
+				", alignmentArm=" + str(self.getAlignmentArm()) +
+				", alignmentPower=" + str(self.getAlignmentPower()))
 
 	def setName(self, name):
 		self._name = name
@@ -25,11 +36,23 @@ class Symbol:
 	def setAddress(self, address):
 		self._address = address
 
-	def setSize(self, size):
-		self._siwe = size
+	def setSizeX86(self, size):
+		self._sizes[Arch.X86] = size
 
-	def setAlignment(self, alignment):
-		self._alignment = alignment
+	def setSizeArm(self, size):
+		self._sizes[Arch.ARM] = size
+
+	def setSizePower(self, size):
+		self._sizes[Arch.POWER] = size
+
+	def setAlignmentX86(self, alignment):
+		self._alignments[Arch.X86] = alignment
+	
+	def setAlignmentArm(self, alignment):
+		self._alignments[Arch.ARM] = alignment
+
+	def setAlignmentPower(self, alignment):
+		self._alignments[Arch.POWER] = alignment
 
 	def getName(self):
 		return self._name
@@ -37,11 +60,24 @@ class Symbol:
 	def getAddress(self):
 		return self._address;
 
-	def getSize(self):
-		return self._size;
+	def getSizeX86(self):
+		return self._sizes[Arch.X86]
 
-	def getAlignment(self):
-		return self._alignment
+	def getSizeArm(self):
+		return self._sizes[Arch.ARM]
+
+	def getSizePower(self):
+		return self._sizes[Arch.POWER]
+
+	def getAlignmentX86(self):
+		return self._alignments[Arch.X86]
+
+	def getAlignmentArm(self):
+		return self._alignments[Arch.ARM]
+
+	def getAlignmentPower(self):
+		return self._alignments[Arch.POWER]
+
 
 # Returns a list of Symbols instances extracted from the map file which 
 # path is filePath (should have been generalted by gold.ld -Map <file>

@@ -2,12 +2,22 @@ from Globals import *
 import subprocess
 import sys
 import os
+import ReadElfParser
+import MapParser
 
 # We put everything common to each arch here
 class AbstractArchitecture():
 	
 	def getGccName(self):
 		return self._gcc_prefix + "-gcc"
+
+	def getArch(self):
+		# should be implemented by the concrete class
+		raise NotImplementedError
+
+	def getLibGccGoldInclusion(self):
+		# shoud be implemented by the concrete class
+		raise NotImplementedError
 
 	# Returns the path the the folder containing libgcc.a for the calling 
 	# architecture.
@@ -17,7 +27,7 @@ class AbstractArchitecture():
 		try:
 			libGccALocation = subprocess.check_output([gcc_exec_name, 
 				'-print-libgcc-file-name'], stderr=subprocess.STDOUT)
-		except CalledProcessError as e:
+		except subprocess.CalledProcessError as e:
 			sys.stderr.write("ERROR: cannot execute %si" + 
 				" -print-libgcc-file-name to find libgcc.a" % gcc_exec_name)
 			sys.exit()
@@ -76,7 +86,7 @@ class AbstractArchitecture():
 		try:
 			gold_output = subprocess.check_output(cmd, 
 				stderr=subprocess.STDOUT)
-		except CalledProcessError as e:
+		except subprocess.CalledProcessError as e:
 			sys.stderr.write("ERROR: during gold link step:\n" + e.output)
 			sys.stderr.write("Command: " + ' '.join(cmd) + "\n")
 			sys.stderr.write("Output:\n" + e.output)
@@ -88,3 +98,30 @@ class AbstractArchitecture():
 			f.write(gold_output)
 
 		return
+
+	# symbolsList is a dictionary of lists, one per section, for example:
+	# symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [], 
+	# ".tdata" : [], ".tbss" : [] }
+	# This function TODO update descriptio and maybe change the name
+	# accordinglyn
+	# way to call it:
+	# Arch1.updateSymbolsList(list)
+	# Arch2.updateSymbolsList(list)
+	# Arch3.updateSymbolsList(list)
+	# etc.
+	def updateSymbolsList(self, symbolsList):
+		# Grab info about sections from the executable
+		sectionsInfo = ReadElfParser.getSectionInfo(self.getExecutable())
+		
+		# Grab symbols from the map file
+		symbolsToAdd = MapParser.parseMapFile(self.getMapFile())
+
+		for symbol in symbolsToAdd:
+			# TODO: here in Chris's script they merge multiple symbols like 
+			# that:
+			# [section.subsection.symbol1, section.subsection.symbol2]
+			#   --> section.subsection.*
+			# This is based on a super arbitrary rule:
+			# if (name.IndexOf(".", 8) > 7)
+			# should I do the same .....s
+			print symbol
