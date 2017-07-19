@@ -5,15 +5,15 @@
 #include "syscall.h"
 #include "pthread_impl.h"
 
- /* Return negative, zero, positive if A < B, A == B, A > B, respectively.
-    Assume the nanosecond components are in range, or close to it.  */
- static inline int
- timespec_cmp (struct timespec a, struct timespec b)
- {
-   return (a.tv_sec < b.tv_sec ? -1
-         : a.tv_sec > b.tv_sec ? 1
-         : a.tv_nsec - b.tv_nsec);
- }
+/* Return negative, zero, positive if A < B, A == B, A > B, respectively.
+   Assume the nanosecond components are in range, or close to it.  */
+static inline int
+timespec_cmp (struct timespec a, struct timespec b)
+{
+  return (a.tv_sec < b.tv_sec ? -1
+        : a.tv_sec > b.tv_sec ? 1
+        : a.tv_nsec - b.tv_nsec);
+}
 
 int __pthread_setcancelstate(int, int *);
 int __clock_gettime(clockid_t, struct timespec *);

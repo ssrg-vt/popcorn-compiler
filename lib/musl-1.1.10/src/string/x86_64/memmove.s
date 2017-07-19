@@ -1,5 +1,6 @@
 .global memmove
 .type memmove,@function
+.section .text.memmove
 memmove:
 	mov %rdi,%rax
 	sub %rsi,%rax

@@ -176,25 +176,29 @@ public:
     // The register used in the instruction
     // Note: will be converted to DWARF during metadata emission
     unsigned Reg;
+    int Offset;
 
-    RegInstructionBase(unsigned Reg) : Reg(Reg) {}
+    RegInstructionBase(unsigned Reg, int Offset) : Reg(Reg), Offset(Offset) {}
     virtual OpType opType() const { return Register; }
     unsigned getReg() const { return Reg; }
+    int getOffset() const { return Offset; }
     void setReg(unsigned Reg) { this->Reg = Reg; }
+    void setOffset(int Offset) { this->Offset = Offset; }
   };
 
   // Register-based instructions
   template<ValueGenInst::InstType Type>
   class RegInstruction : public RegInstructionBase {
     static_assert(Type == Set || Type == Add || Type == Subtract ||
-                  Type == Multiply || Type == Divide,
+                  Type == Multiply || Type == Divide || Type == Load,
                   INV_INST_TYPE " for register instruction");
   public:
-    RegInstruction(unsigned Reg) : RegInstructionBase(Reg) {}
+    RegInstruction(unsigned Reg, int Off) : RegInstructionBase(Reg, Off) {}
     virtual InstType type() const { return Type; }
     virtual std::string str() const {
       std::string buf = std::string(InstTypeStr[Type]) + " register " +
                         std::to_string(Reg);
+      if(Offset) buf += " offset " + std::to_string(Offset);
       return buf;
     }
 

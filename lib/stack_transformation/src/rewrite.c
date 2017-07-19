@@ -146,8 +146,8 @@ int st_rewrite_stack(st_handle handle_src,
   {
     ST_INFO("--> Rewriting frame %d <--\n", src->act);
 
-    rewrite_frame(src, dest);
     set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
+    rewrite_frame(src, dest);
     saved_fbp = get_savedfbp_loc(dest);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dest, true);
@@ -170,7 +170,9 @@ int st_rewrite_stack(st_handle handle_src,
   TIMER_PRINT;
 
 #ifdef _LOG
+#ifndef _PER_LOG_OPEN
   fflush(__log);
+#endif
 #endif
 
   return 0;

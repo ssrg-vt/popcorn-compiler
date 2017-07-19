@@ -242,8 +242,12 @@ VALUE_GEN_INST
     printf("register %u\n", record->operand_regnum);
     break;
   case SM_DIRECT:
-    printf("register %u + %ld\n", record->operand_regnum,
+    printf("value stored at register %u + %ld\n", record->operand_regnum,
           record->operand_offset_or_constant);
+    break;
+  case SM_INDIRECT:
+    printf("register %u + %ld\n", record->operand_regnum,
+           record->operand_offset_or_constant);
     break;
   case SM_CONSTANT:
     printf("value = %ld / 0x%lx\n", record->operand_offset_or_constant,

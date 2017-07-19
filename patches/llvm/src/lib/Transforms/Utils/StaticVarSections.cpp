@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -11,6 +12,19 @@ using namespace llvm;
 
 namespace
 {
+
+std::string UniquifySymbol(const Module &M,
+                           std::string &section,
+                           GlobalVariable &Sym)
+{
+  std::string newName;
+  auto filter = [](char c){ return !isalnum(c); };
+
+  newName = M.getName().str() + "_" + Sym.getName().str();
+  std::replace_if(newName.begin(), newName.end(), filter, '_');
+
+  return section + newName;
+}
 
 /**
  * This pass searches for static, i.e., module-private, global variables and
@@ -63,7 +77,7 @@ public:
           secName += "data.";
         }
 
-        secName += gl->getName().str();
+        secName = UniquifySymbol(M, secName, *gl);
         gl->setSection(secName);
         modified = true;
 

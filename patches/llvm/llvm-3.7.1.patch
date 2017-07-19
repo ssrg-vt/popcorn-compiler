@@ -570,7 +570,7 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -142,6 +142,12 @@
+@@ -142,6 +142,15 @@
  
    CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
  
@@ -580,10 +580,13 @@ Index: include/llvm/CodeGen/Passes.h
 +  bool emitStackTransformMetadata() const
 +  { return TM->emitStackTransformMetadata(); }
 +
++  bool emitLibcTransformMetadata() const
++  { return TM->emitLibcTransformMetadata(); }
++
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -448,6 +454,10 @@
+@@ -448,6 +457,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -723,7 +726,7 @@ Index: include/llvm/CodeGen/StackMaps.h
 +  /// Convert a list of instructions used to generate an architecture-specific
 +  /// live value into multiple individual records.
 +  void genArchValsFromInsts(ArchValues &AV,
-+                            const Location &Loc,
++                            Location &Loc,
 +                            const MachineLiveVal &MLV);
 +
 +  /// Add architecture-specific locations for the stackmap.
@@ -1382,7 +1385,15 @@ Index: include/llvm/InitializePasses.h
  void initializeInstructionCombiningPassPass(PassRegistry&);
  void initializeInstCountPass(PassRegistry&);
  void initializeInstNamerPass(PassRegistry&);
-@@ -162,6 +163,7 @@
+@@ -153,6 +154,7 @@
+ void initializeIntervalPartitionPass(PassRegistry&);
+ void initializeJumpThreadingPass(PassRegistry&);
+ void initializeLCSSAPass(PassRegistry&);
++void initializeLibcStackMapsPass(PassRegistry&);
+ void initializeLICMPass(PassRegistry&);
+ void initializeLazyValueInfoPass(PassRegistry&);
+ void initializeLibCallAliasAnalysisPass(PassRegistry&);
+@@ -162,6 +164,7 @@
  void initializeLiveRegMatrixPass(PassRegistry&);
  void initializeLiveStacksPass(PassRegistry&);
  void initializeLiveVariablesPass(PassRegistry&);
@@ -1390,7 +1401,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLoaderPassPass(PassRegistry&);
  void initializeLocalStackSlotPassPass(PassRegistry&);
  void initializeLoopDeletionPass(PassRegistry&);
-@@ -208,6 +210,7 @@
+@@ -208,6 +211,7 @@
  void initializeMetaRenamerPass(PassRegistry&);
  void initializeMergeFunctionsPass(PassRegistry&);
  void initializeModuleDebugInfoPrinterPass(PassRegistry&);
@@ -1398,7 +1409,7 @@ Index: include/llvm/InitializePasses.h
  void initializeNaryReassociatePass(PassRegistry&);
  void initializeNoAAPass(PassRegistry&);
  void initializeObjCARCAliasAnalysisPass(PassRegistry&);
-@@ -252,7 +255,8 @@
+@@ -252,7 +256,8 @@
  void initializeScalarEvolutionPass(PassRegistry&);
  void initializeShrinkWrapPass(PassRegistry &);
  void initializeSimpleInlinerPass(PassRegistry&);
@@ -1408,7 +1419,7 @@ Index: include/llvm/InitializePasses.h
  void initializeRegisterCoalescerPass(PassRegistry&);
  void initializeSingleLoopExtractorPass(PassRegistry&);
  void initializeSinkingPass(PassRegistry&);
-@@ -263,6 +267,7 @@
+@@ -263,6 +268,7 @@
  void initializeStackProtectorPass(PassRegistry&);
  void initializeStackColoringPass(PassRegistry&);
  void initializeStackSlotColoringPass(PassRegistry&);
@@ -1428,7 +1439,7 @@ Index: include/llvm/LinkAllPasses.h
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
  #include "llvm/Transforms/Vectorize.h"
-@@ -92,11 +93,13 @@
+@@ -92,11 +93,14 @@
        (void) llvm::createIPSCCPPass();
        (void) llvm::createInductiveRangeCheckEliminationPass();
        (void) llvm::createIndVarSimplifyPass();
@@ -1436,13 +1447,14 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createInstructionCombiningPass();
        (void) llvm::createInternalizePass();
        (void) llvm::createLCSSAPass();
++      (void) llvm::createLibcStackMapsPass();
        (void) llvm::createLICMPass();
        (void) llvm::createLazyValueInfoPass();
 +      (void) llvm::createLiveValuesPass();
        (void) llvm::createLoopExtractorPass();
        (void) llvm::createLoopInterchangePass();
        (void) llvm::createLoopSimplifyPass();
-@@ -110,6 +113,7 @@
+@@ -110,6 +114,7 @@
        (void) llvm::createLowerInvokePass();
        (void) llvm::createLowerSwitchPass();
        (void) llvm::createNaryReassociatePass();
@@ -1450,7 +1462,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createNoAAPass();
        (void) llvm::createObjCARCAliasAnalysisPass();
        (void) llvm::createObjCARCAPElimPass();
-@@ -134,6 +138,7 @@
+@@ -134,6 +139,7 @@
        (void) llvm::createSafeStackPass();
        (void) llvm::createScalarReplAggregatesPass();
        (void) llvm::createSingleLoopExtractorPass();
@@ -1462,7 +1474,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
 --- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
-@@ -32,6 +32,15 @@
+@@ -32,6 +32,19 @@
    ///
    CodeGenOpt::Level OptLevel;
  
@@ -1475,10 +1487,14 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +  /// metadata
 +  bool EmitStackTransformMetadata;
 +
++  /// EmitLibcTransformMetadata - Flag for emitting transformation metadata
++  /// for libc thread start routines
++  bool EmitLibcTransformMetadata;
++
  public:
    void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
                           CodeModel::Model CM = CodeModel::Default,
-@@ -43,8 +52,18 @@
+@@ -43,8 +56,23 @@
  
    CodeGenOpt::Level getOptLevel() const { return OptLevel; }
  
@@ -1487,6 +1503,8 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +  bool emitStackTransformMetadata() const
 +  { return EmitStackTransformMetadata; }
 +
++  bool emitLibcTransformMetadata() const { return EmitLibcTransformMetadata; }
++
    // Allow overriding OptLevel on a per-function basis.
    void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
 +
@@ -1494,6 +1512,9 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 +
 +  void setEmitStackTransformMetadata(bool Emit)
 +  { EmitStackTransformMetadata = Emit; }
++
++  void setEmitLibcTransformMetadata(bool Emit)
++  { EmitLibcTransformMetadata = Emit; }
  };
  } // namespace llvm
  
@@ -1525,7 +1546,7 @@ Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
-@@ -171,6 +171,19 @@
+@@ -171,6 +171,26 @@
    /// \brief Overrides the optimization level.
    void setOptLevel(CodeGenOpt::Level Level) const;
  
@@ -1541,6 +1562,13 @@ Index: include/llvm/Target/TargetMachine.h
 +
 +  /// \brief Enable/disable emitting of stack transformation metadata
 +  void setEmitStackTransformMetadata(bool Emit);
++
++  /// Returns whether or not we should emit transformation metadata for libc
++  /// thread start functions
++  bool emitLibcTransformMetadata() const;
++
++  /// \brief Enable/disable emitting of libc thread start function metadata
++  void setEmitLibcTransformMetadata(bool Emit);
 +
    void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
  
@@ -1624,13 +1652,17 @@ Index: include/llvm/Transforms/Instrumentation.h
 ===================================================================
 --- include/llvm/Transforms/Instrumentation.h	(revision 277823)
 +++ include/llvm/Transforms/Instrumentation.h	(working copy)
-@@ -136,6 +136,10 @@
+@@ -136,6 +136,14 @@
  /// protect against stack-based overflow vulnerabilities.
  FunctionPass *createSafeStackPass();
  
 +/// \brief This pass inserts stack map intrinsics at equivalence points in
 +/// order to record live value locations
 +ModulePass *createInsertStackMapsPass();
++
++/// \brief This pass inserts stack map intrinsics similarly to InsertStackMaps,
++/// but only in thread start functions inside of libc
++ModulePass *createLibcStackMapsPass();
 +
  } // End llvm namespace
  
@@ -2299,7 +2331,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
 --- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
-@@ -42,6 +42,12 @@
+@@ -42,6 +42,19 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
    cl::desc("Enable the \"fast\" instruction selector"));
  
@@ -2309,10 +2341,17 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  cl::init(false), cl::NotHidden,
 +  cl::desc("Enable generation of Popcorn stack transformation metadata"));
 +
++// Similar to "-emit-st-metadata", but *only* for specific libc thread start
++// functions
++static cl::opt<bool> EmitLibcTransformMetadata("emit-libc-metadata",
++  cl::init(false), cl::NotHidden,
++  cl::desc("Enable generation of transformation metadata for libc thread "
++           "start functions"));
++
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,6 +111,13 @@
+@@ -105,6 +118,19 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
@@ -2321,6 +2360,12 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  if(EmitStackTransformMetadata) {
 +    TM->setArchIROptLevel(CodeGenOpt::None);
 +    TM->setEmitStackTransformMetadata(true);
++  }
++
++  // Add libc instrumentation passes, remove late-stage IR optimizations
++  if(EmitLibcTransformMetadata) {
++    TM->setArchIROptLevel(CodeGenOpt::None);
++    TM->setEmitLibcTransformMetadata(true);
 +  }
 +
    PM.add(PassConfig);
@@ -2517,7 +2562,7 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -459,6 +459,11 @@
+@@ -459,6 +459,16 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -2526,10 +2571,15 @@ Index: lib/CodeGen/Passes.cpp
 +  if(emitStackTransformMetadata())
 +    addPass(createInsertStackMapsPass());
 +
++  // Similarly to creatInsertStackMaps pass, but only instruments libc thread
++  // start functions
++  if(emitLibcTransformMetadata())
++    addPass(createLibcStackMapsPass());
++
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +759,10 @@
+@@ -754,6 +764,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -2544,15 +2594,16 @@ Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
 --- lib/CodeGen/RegAllocFast.cpp	(revision 277823)
 +++ lib/CodeGen/RegAllocFast.cpp	(working copy)
-@@ -1078,6 +1078,12 @@
+@@ -1078,6 +1078,13 @@
  /// runOnMachineFunction - Register allocate the whole function
  ///
  bool RAFast::runOnMachineFunction(MachineFunction &Fn) {
 +  // TODO the fast register allocator behaves poorly for stackmaps with lots
 +  // of operands, and since it doesn't use the VirtRegRewriter pass we can't
 +  // capture correct stackmap operand locations
-+  assert(false && "fast register allocator not supported "
-+                  "for stack transformation");
++  if(Fn.getFrameInfo()->hasStackMap())
++    llvm_unreachable("Fast register allocator not supported for stack"
++                     "transformation");
 +
    DEBUG(dbgs() << "********** FAST REGISTER ALLOCATION **********\n"
                 << "********** Function: " << Fn.getName() << '\n');
@@ -2939,14 +2990,14 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +452,166 @@
+@@ -277,6 +452,167 @@
    return LiveOuts;
  }
  
 +/// Convert a list of instructions used to generate an architecture-specific
 +/// live value into multiple individual records.
 +void StackMaps::genArchValsFromInsts(ArchValues &AV,
-+                                     const Location &Loc,
++                                     Location &Loc,
 +                                     const MachineLiveVal &MLV) {
 +  assert(MLV.isGenerated() && "Invalid live value type");
 +
@@ -2976,6 +3027,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +              PI->getGenType() == InstType::Set) &&
 +             "Invalid frame object reference");
 +
++      Loc.Ptr = true; // Enable pointer-to-stack fixups in runtime
 +      Op.InstType = PI->getGenType();
 +      Op.OperandType = Location::Direct;
 +      Op.Size = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
@@ -3106,7 +3158,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +620,46 @@
+@@ -285,21 +621,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -3155,7 +3207,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +687,9 @@
+@@ -327,8 +688,9 @@
        MCSymbolRefExpr::create(MILabel, OutContext),
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
@@ -3167,7 +3219,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +772,11 @@
+@@ -411,8 +773,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -3180,7 +3232,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +784,15 @@
+@@ -420,6 +785,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3196,7 +3248,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +812,20 @@
+@@ -439,14 +813,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3221,7 +3273,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +834,25 @@
+@@ -455,6 +835,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -3247,7 +3299,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +868,29 @@
+@@ -470,23 +869,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3278,7 +3330,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +898,13 @@
+@@ -494,10 +899,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3293,7 +3345,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +916,31 @@
+@@ -509,6 +917,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -3325,7 +3377,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +947,7 @@
+@@ -515,7 +948,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3334,7 +3386,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +971,7 @@
+@@ -539,7 +972,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -4990,7 +5042,7 @@ Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
-@@ -149,6 +149,28 @@
+@@ -149,6 +149,39 @@
      CodeGenInfo->setOptLevel(Level);
  }
  
@@ -5014,6 +5066,17 @@ Index: lib/Target/TargetMachine.cpp
 +void TargetMachine::setEmitStackTransformMetadata(bool Emit) {
 +  if (CodeGenInfo)
 +    CodeGenInfo->setEmitStackTransformMetadata(Emit);
++}
++
++bool TargetMachine::emitLibcTransformMetadata() const {
++  if (!CodeGenInfo)
++    return false;
++  else return CodeGenInfo->emitLibcTransformMetadata();
++}
++
++void TargetMachine::setEmitLibcTransformMetadata(bool Emit) {
++  if (CodeGenInfo)
++    CodeGenInfo->setEmitLibcTransformMetadata(Emit);
 +}
 +
  TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
@@ -5296,14 +5359,17 @@ Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
 --- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 277823)
 +++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
-@@ -4,6 +4,7 @@
+@@ -4,8 +4,10 @@
    DataFlowSanitizer.cpp
    GCOVProfiling.cpp
    MemorySanitizer.cpp
 +  InsertStackMaps.cpp
    Instrumentation.cpp
    InstrProfiling.cpp
++  LibcStackMaps.cpp
    SafeStack.cpp
+   SanitizerCoverage.cpp
+   ThreadSanitizer.cpp
 Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
@@ -5634,7 +5700,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 +
 +INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
-+                      "Instrument equivalence points with stack maps ",
++                      "Instrument equivalence points with stack maps",
 +                      false, false)
 +INITIALIZE_PASS_DEPENDENCY(LiveValues)
 +INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
@@ -5650,14 +5716,250 @@ Index: lib/Transforms/Instrumentation/Instrumentation.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 277823)
 +++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
-@@ -25,6 +25,7 @@
+@@ -25,7 +25,9 @@
    initializeAddressSanitizerModulePass(Registry);
    initializeBoundsCheckingPass(Registry);
    initializeGCOVProfilerPass(Registry);
 +  initializeInsertStackMapsPass(Registry);
    initializeInstrProfilingPass(Registry);
++  initializeLibcStackMapsPass(Registry);
    initializeMemorySanitizerPass(Registry);
    initializeThreadSanitizerPass(Registry);
+   initializeSanitizerCoverageModulePass(Registry);
+Index: lib/Transforms/Instrumentation/LibcStackMaps.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/LibcStackMaps.cpp	(nonexistent)
++++ lib/Transforms/Instrumentation/LibcStackMaps.cpp	(working copy)
+@@ -0,0 +1,229 @@
++#include <map>
++#include <vector>
++#include "llvm/Pass.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/IR/Module.h"
++#include "llvm/IR/Type.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/Path.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "libc-stackmaps"
++
++using namespace llvm;
++
++namespace {
++
++/**
++ * Instrument thread starting points with stackmaps.  These are the only
++ * functions inside of libc for which we want to generate metadata, since we
++ * disallow migration inside the public libc API.
++ */
++// TODO: only implemented for musl-libc!
++class LibcStackMaps : public ModulePass
++{
++public:
++  static char ID;
++  size_t numInstrumented;
++
++  LibcStackMaps() : ModulePass(ID), numInstrumented(0) {
++    initializeLibcStackMapsPass(*PassRegistry::getPassRegistry());
++  }
++  ~LibcStackMaps() {}
++
++  /* ModulePass virtual methods */
++  virtual const char *getPassName() const
++  { return "Insert stackmaps in libc thread start functions"; }
++
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const
++  { AU.setPreservesCFG(); }
++
++  virtual bool runOnModule(Module &M)
++  {
++    int64_t smid;
++    bool modified = false;
++    Function *F;
++    std::map<std::string, std::vector<std::string> >::const_iterator file;
++
++    /* Is this a module (i.e., source file) we're interested in? */
++    if((file = funcs.find(sys::path::stem(M.getName()))) != funcs.end())
++    {
++      DEBUG(dbgs() << "\n********** Begin LibcStackMaps **********\n"
++                   << "********** Module: " << file->first << " **********\n\n");
++
++      this->createSMType(M);
++      modified |= this->addSMDeclaration(M);
++
++      /* Iterate over thread starting functions in the module */
++      for(size_t f = 0, fe = file->second.size(); f < fe; f++)
++      {
++        DEBUG(dbgs() << "LibcStackMaps: entering thread starting function "
++                     << file->second[f] << "\n");
++
++        F = M.getFunction(file->second[f]);
++        assert(F && !F->isDeclaration() && "No thread function definition");
++        modified |= this->removeOldStackmaps(F);
++        assert(smids.find(file->second[f]) != smids.end() && "No ID for function");
++        smid = smids.find(file->second[f])->second;
++
++        /*
++         * Look for & instrument a generic call instruction followed by a call
++         * to an exit function, e.g.,
++         *
++         *   %call = call i32 %main(...)
++         *   call void @exit(i32 %call)
++         */
++        for(Function::iterator bb = F->begin(), be = F->end(); bb != be; bb++)
++        {
++          bool track = false;
++          for(BasicBlock::reverse_iterator i = bb->rbegin(), ie = bb->rend();
++              i != ie; i++)
++          {
++            if(isExitCall(*i)) track = true;
++            else if(track && isa<CallInst>(*i))
++            {
++              IRBuilder<> builder(i->getNextNode());
++              std::vector<Value *> args(2);
++              args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), smid);
++              args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
++              this->numInstrumented++;
++              break;
++            }
++          }
++        }
++      }
++
++      DEBUG(dbgs() << "LibcStackMaps: finished module " << M.getName()
++                   << ", added " << this->numInstrumented << " stackmaps\n\n";);
++    }
++
++    if(numInstrumented > 0) modified = true;
++    return modified;
++  }
++
++private:
++  /* Name of stack map intrinsic */
++  static const StringRef SMName;
++
++  /* Stack map instruction creation */
++  Function *SMFunc;
++  FunctionType *SMTy; // Used for creating function declaration
++
++  /* Files, functions & IDs */
++  static const std::map<std::string, std::vector<std::string> > funcs;
++  static const std::map<std::string, int64_t> smids;
++  static const std::vector<std::string> exitFuncs;
++
++  /**
++   * Create the function type for the stack map intrinsic.
++   */
++  void createSMType(const Module &M)
++  {
++    std::vector<Type*> params(2);
++    params[0] = Type::getInt64Ty(M.getContext());
++    params[1] = Type::getInt32Ty(M.getContext());
++    this->SMTy = FunctionType::get(Type::getVoidTy(M.getContext()),
++                                                   ArrayRef<Type*>(params),
++                                                   true);
++  }
++
++  /**
++   * Add the stackmap intrinisic's function declaration if not already present.
++   * Return true if the declaration was added, or false if it's already there.
++   */
++  bool addSMDeclaration(Module &M)
++  {
++    if(!(this->SMFunc = M.getFunction(this->SMName)))
++    {
++      DEBUG(dbgs() << "Adding stackmap function declaration to " << M.getName() << "\n");
++      this->SMFunc = cast<Function>(M.getOrInsertFunction(this->SMName, this->SMTy));
++      this->SMFunc->setCallingConv(CallingConv::C);
++      return true;
++    }
++    else return false;
++  }
++
++  /**
++   * Iterate over all instructions, removing previously found stackmaps.
++   */
++  bool removeOldStackmaps(Function *F)
++  {
++    bool modified = false;
++    CallInst* CI;
++    const Function *CurF;
++
++    DEBUG(dbgs() << "Searching for/removing old stackmaps\n";);
++
++    for(Function::iterator bb = F->begin(), bbe = F->end(); bb != bbe; bb++) {
++      for(BasicBlock::iterator i = bb->begin(), ie = bb->end(); i != ie; i++) {
++        if((CI = dyn_cast<CallInst>(&*i))) {
++          CurF = CI->getCalledFunction();
++          if(CurF && CurF->hasName() && CurF->getName() == SMName) {
++            i = i->eraseFromParent()->getPrevNode();
++            modified = true;
++          }
++        }
++      }
++    }
++
++    DEBUG(if(modified) dbgs() << "WARNING: found previous stackmaps!\n";);
++    return modified;
++  }
++
++  /**
++   * Return whether or not the instruction is a call to an exit function.
++   */
++  bool isExitCall(Instruction &I)
++  {
++    CallInst *CI;
++    Function *F;
++
++    if((CI = dyn_cast<CallInst>(&I)))
++    {
++      F = CI->getCalledFunction();
++      if(F && F->hasName())
++        for(size_t i = 0, e = exitFuncs.size(); i < e; i++)
++          if(F->getName() == exitFuncs[i]) return true;
++    }
++
++    return false;
++  }
++};
++
++} /* end anonymous namespace */
++
++char LibcStackMaps::ID = 0;
++const StringRef LibcStackMaps::SMName = "llvm.experimental.stackmap";
++
++/**
++ * Map a source code filename (minus the extension) to the names of functions
++ * inside which are to be instrumented.
++ */
++const std::map<std::string, std::vector<std::string> > LibcStackMaps::funcs = {
++  {"__libc_start_main", {"__libc_start_main"}},
++  {"pthread_create", {"start", "start_c11"}}
++};
++
++/* Map a function name to the stackmap ID representing that function. */
++const std::map<std::string, int64_t> LibcStackMaps::smids = {
++  {"__libc_start_main", UINT64_MAX},
++  {"start", UINT64_MAX - 1},
++  {"start_c11", UINT64_MAX - 2}
++};
++
++/**
++ * Thread exit function names, used to search for starting function call site
++ * to be instrumented with stackmap.
++ */
++const std::vector<std::string> LibcStackMaps::exitFuncs = {
++  "exit", "pthread_exit", "__pthread_exit"
++};
++
++INITIALIZE_PASS(LibcStackMaps, "libc-stackmaps",
++  "Instrument libc thread start functions with stack maps", false, false)
++
++namespace llvm {
++  ModulePass *createLibcStackMapsPass() { return new LibcStackMaps(); }
++}
++
 Index: lib/Transforms/Utils/CMakeLists.txt
 ===================================================================
 --- lib/Transforms/Utils/CMakeLists.txt	(revision 277823)
@@ -5703,7 +6005,7 @@ Index: lib/Transforms/Utils/NameStringLiterals.cpp
 +
 +/**
 + * Generate unique name for private anonymous string literals.  Uses the
-+ * filename, LLVM's temporary name and(up to) the first 10 characters of the
++ * filename, LLVM's temporary name and (up to) the first 10 characters of the
 + * string.  Converts non-alphanumeric characters to underscores.
 + */
 +std::string UniquifySymbol(const Module &M, GlobalVariable &Sym)
@@ -5806,7 +6108,8 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 ===================================================================
 --- lib/Transforms/Utils/StaticVarSections.cpp	(nonexistent)
 +++ lib/Transforms/Utils/StaticVarSections.cpp	(working copy)
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,106 @@
++#include <algorithm>
 +#include "llvm/Pass.h"
 +#include "llvm/IR/Module.h"
 +#include "llvm/IR/GlobalVariable.h"
@@ -5820,6 +6123,19 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +
 +namespace
 +{
++
++std::string UniquifySymbol(const Module &M,
++                           std::string &section,
++                           GlobalVariable &Sym)
++{
++  std::string newName;
++  auto filter = [](char c){ return !isalnum(c); };
++
++  newName = M.getName().str() + "_" + Sym.getName().str();
++  std::replace_if(newName.begin(), newName.end(), filter, '_');
++
++  return section + newName;
++}
 +
 +/**
 + * This pass searches for static, i.e., module-private, global variables and
@@ -5872,7 +6188,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +          secName += "data.";
 +        }
 +
-+        secName += gl->getName().str();
++        secName = UniquifySymbol(M, secName, *gl);
 +        gl->setSection(secName);
 +        modified = true;
 +
