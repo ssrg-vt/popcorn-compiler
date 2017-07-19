@@ -153,8 +153,8 @@ int st_rewrite_stack(st_handle handle_src,
   {
     ST_INFO("--> Rewriting frame %d <--\n", src->act);
 
-    rewrite_frame(src, dest);
     set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
+    rewrite_frame(src, dest);
     saved_fbp = get_savedfbp_loc(dest);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dest, true);
@@ -377,15 +377,6 @@ static void unwind_and_size(rewrite_context src,
   src->num_acts++;
   dest->num_acts++;
   dest->act++;
-
-  if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
-    ST_ERR(1, "could not get source call site information (address=%p)\n",
-           REGOPS(src)->pc(ACT(src).regs));
-  if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
-    ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
-           REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
-
-  stack_size += ACT(dest).site.frame_size;
 
   ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
 
