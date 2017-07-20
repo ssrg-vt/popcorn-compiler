@@ -10,6 +10,8 @@
 #include "X86Values.h"
 #include "X86InstrInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/StackTransformTypes.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
@@ -18,73 +20,69 @@
 
 using namespace llvm;
 
-// Make types in MachineGeneratedVal more accessible
-typedef MachineGeneratedVal::ValueGenInst ValueGenInst;
-typedef MachineGeneratedVal::ValueGenInst::InstType InstType;
-typedef MachineGeneratedVal::ValueGenInstPtr ValueGenInstPtr;
-typedef MachineGeneratedVal::ValueGenInstList ValueGenInstList;
+typedef ValueGenInst::InstType InstType;
+template <InstType T> using RegInstruction = RegInstruction<T>;
+template <InstType T> using ImmInstruction = ImmInstruction<T>;
 
-template <InstType T>
-using RegInstruction = MachineGeneratedVal::RegInstruction<T>;
-template <InstType T>
-using ImmInstruction = MachineGeneratedVal::ImmInstruction<T>;
-template <InstType T>
-using PseudoInstruction = MachineGeneratedVal::PseudoInstruction<T>;
-
-void X86Values::genLEAInstructions(const MachineInstr *MI,
-                                   ValueGenInstList &IL) const {
-  int Index;
-  unsigned Reg;
+MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
+  unsigned Reg, Size;
   int64_t Imm;
-  unsigned Size = 8; // in bytes
+  ValueGenInstList IL;
 
   // TODO do we need to handle the segment register operand?
   switch(MI->getOpcode()) {
   case X86::LEA64r:
-    // Set the index register & scale (if we're doing indexing)
+    Size = 8;
+
+    // Initialize to index register * scale if indexing, or zero otherwise
     Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
     if(Reg) {
-      IL.push_back(ValueGenInstPtr(
-        new RegInstruction<InstType::Set>(Reg, 0)));
-
       Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
-      IL.push_back(ValueGenInstPtr(
-        new ImmInstruction<InstType::Multiply>(Size, Imm)));
+      IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
+      IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
     }
+    else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
 
-    if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
-      // The frame index becomes the base register + displacement after virtual
-      // register rewriting and stack slot allocation
-      Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
-      IL.push_back(ValueGenInstPtr(
-        new PseudoInstruction<InstType::StackSlot>(Index, InstType::Add)));
-    }
-    else {
-      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg());
+    // Add the base register & displacement
+    if(!MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
+      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
+             MI->getOperand(1 + X86::AddrDisp).isImm());
+
       Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
-      IL.push_back(ValueGenInstPtr(
-        new RegInstruction<InstType::Add>(Reg, 0)));
-
       Imm = MI->getOperand(1 + X86::AddrDisp).getImm();
-      IL.push_back(ValueGenInstPtr(
-        new ImmInstruction<InstType::Add>(Size, Imm)));
+      IL.emplace_back(new RegInstruction<InstType::Add>(Reg));
+      IL.emplace_back(new ImmInstruction<InstType::Add>(Size, Imm));
+      return new MachineGeneratedVal(IL, MI, true);
     }
+    // TODO what if we're referencing a frame? The frame index becomes the base
+    // register + displacement after register rewriting & stack slot allocation
+    //Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
+
     break;
   default:
-    llvm_unreachable("Unhandled LEA machine instruction");
+    DEBUG(dbgs() << "Unhandled LEA machine instruction");
     break;
   }
+  return nullptr;
 }
 
 MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   MachineLiveVal* Val = nullptr;
+  const MachineOperand *MO;
   const TargetInstrInfo *TII;
-  ValueGenInstList IL;
 
   switch(MI->getOpcode()) {
   case X86::LEA64r:
-    genLEAInstructions(MI, IL);
-    if(IL.size() > 0) Val = new MachineGeneratedVal(IL, MI);
+    Val = genLEAInstructions(MI);
+    break;
+  case X86::MOV64ri:
+    MO = &MI->getOperand(1);
+    if(MO->isGlobal())
+      Val = new MachineSymbolRef(MO->getGlobal()->getName(), MI, true);
+    else if(MO->isSymbol())
+      Val = new MachineSymbolRef(MO->getSymbolName(), MI, true);
+    else if(MO->isMCSymbol())
+      Val = new MachineSymbolRef(MO->getMCSymbol()->getName(), MI, true);
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
