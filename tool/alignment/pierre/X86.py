@@ -1,22 +1,24 @@
-import sys
+import Symbol
 from AbstractArchitecture import AbstractArchitecture 
 from Arch import Arch
 
 class X86(AbstractArchitecture):
-	# Prefix for the gcc compiler name
-	_gccPrefix = "x86_64-linux-gnu"
-	# Executable name
-	_executable = "bin_x86"
-	# Name of the map file used in multiple steps of the alignment process
-	_mapFile= "map_x86"
-	# Linker script used in multiple steps
-	_linker_script = "linker_script_x86.x"
-	# set of libraries to search as a group during linking
-	_goldSearchGroup = ""
-	# ISA folder name in popcorn install dir
-	_popcornIsaFolder = "x86_64"
-	# GNU gold emulation target
-	_goldEmulation = "elf_x86_64"
+
+	def __init__(self):
+		# Prefix for the gcc compiler name
+		self._gccPrefix = "x86_64-linux-gnu"
+		# Executable name
+		self._executable = "bin_x86"
+		# Name of the map file used in multiple steps of the alignment process
+		self._mapFile= "map_x86"
+		# Linker script used in multiple steps
+		self._linker_script = "linker_script_x86.x"
+		# set of libraries to search as a group during linking
+		self._goldSearchGroup = ""
+		# ISA folder name in popcorn install dir
+		self._popcornIsaFolder = "x86_64"
+		# GNU gold emulation target
+		self._goldEmulation = "elf_x86_64"
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,
@@ -45,3 +47,6 @@ class X86(AbstractArchitecture):
 
 	def getArch(self):
 		return Arch.X86
+
+	def getArchString(self):
+		return "X86"

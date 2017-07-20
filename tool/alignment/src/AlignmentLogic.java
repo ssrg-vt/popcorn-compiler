@@ -36,18 +36,19 @@ public class AlignmentLogic {
     static int bssCount = 0;
 
 	/* Pierre: print the content of RangesInfo */
-	public static void plogRangesInfo() {
-		Iterator it = RangesInfo.iterator();
-		
-		Plog.log("name\taddress\tsize\n");
-		Plog.log("-------------------\n");
-
-		while(it.hasNext()) {
-			Section < String, Long, Long> element = (Section)it.next();
-			Plog.log(element.getName() + "\t" + element.getAddr() + "\t" +
-				element.getSize() + "\n");
-		}	
-	}
+//	public static void plogRangesInfo() {
+//		Iterator it = RangesInfo.iterator();
+//		
+//		Plog.log("name\taddress\tsize\n");
+//		Plog.log("-------------------\n");
+//
+//		while(it.hasNext()) {
+//			Section < String, Long, Long> element = 
+//					(Section< String, Long, Long>)it.next();
+//			Plog.log(element.getName() + "\t" + element.getAddr() + "\t" +
+//				element.getSize() + "\n");
+//		}	
+//	}
 
 	/** recordRanges
 	 * @param option:
@@ -1229,8 +1230,10 @@ public class AlignmentLogic {
 		if (currList.get(t).getName().compareTo(name) == 0) {
 		    if (option == 0) {
 			//add to size x86
+			Plog.log("found duplicate symbol: " + name + "\n");
 			currList.get(t).updateBy1_MultAddressFlag();
 			if (currList.get(t).getMultAddressFlag() > 1) {
+
 			    if (globalVars.DEBUG)
 				System.out.println("x86$$$$$$$$$ " +
 						   currList.get(t).
@@ -1302,7 +1305,7 @@ public class AlignmentLogic {
 				    System.
 					out.println
 					("ERROR:\t ALIGNMENTS ARE \bNOT MULTIPLES OF THEMSELVES");
-				    System.exit(0);
+				    System.exit(-1);
 				}
 				currList.get(t).
 				    setAlignment_x86(alignment);

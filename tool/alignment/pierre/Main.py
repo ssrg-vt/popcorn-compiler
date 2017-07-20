@@ -88,4 +88,3 @@ if __name__ == "__main__":
 
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
-	

@@ -10,4 +10,4 @@ tags: *.py
 	ctags -R
 
 clean:
-	rm *.pyc
+	rm *.pyc tags

@@ -1,24 +1,26 @@
 # This file needs to be completed when the power compiler is working
 
-import Globals
 from AbstractArchitecture import AbstractArchitecture
 from Arch import Arch
+import Symbol
 
 class Power(AbstractArchitecture):
-	# Prefix for the gcc compiler name
-	_gccPrefix = "powerpc64-linux-gnu"
-	# Executable name
-	_executable = "bin_power"
-	# Name of the map file output by gold
-	_mapFile = "map_power"
-	# Linker script used for the last linking step
-	_linkerScript = "linker_script_power.x"
-	# set of libraries to search as a group during the last linking step
-	_goldSearchGroup = "TODO"
-	# ISA folder name in popcorn install dir
-	_popcornIsaFolder = "TODO"
-	# GNU gold emulation
-	_goldEmulation = "TODO" # probably elf64-powerpc
+	
+	def __init__(self):
+		# Prefix for the gcc compiler name
+		self._gccPrefix = "powerpc64-linux-gnu"
+		# Executable name
+		self._executable = "bin_power"
+		# Name of the map file output by gold
+		self._mapFile = "map_power"
+		# Linker script used for the last linking step
+		self._linkerScript = "linker_script_power.x"
+		# set of libraries to search as a group during the last linking step
+		self._goldSearchGroup = "TODO"
+		# ISA folder name in popcorn install dir
+		self._popcornIsaFolder = "TODO"
+		# GNU gold emulation
+		self._goldEmulation = "TODO" # probably elf64-powerpc
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,
@@ -50,3 +52,6 @@ class Power(AbstractArchitecture):
 
 	def getArch(self):
 		return Arch.POWER
+
+	def getArchString(self):
+		return "POWER"

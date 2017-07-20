@@ -6,17 +6,6 @@ import os
 # Represents a section. Each attribute is one of the fields reported by 
 # readelf -S
 class Section:
-	_index = -1
-	_name = ""
-	_secType = ""
-	_address = -1
-	_offset = -1
-	_size = -1
-	_es = -1   # entry size if section holds table
-	_flags = ""
-	_lk = -1   # index of another section
-	_inf = -1  # additional section information
-	_alignment = -1
 
 	def __init__(self, index, name, secType, address, offset, size, es, flags,
 			lk, inf, alignment):
@@ -26,10 +15,10 @@ class Section:
 		self._address = address
 		self._offset = offset
 		self._size = size
-		self._es = es
+		self._es = es		# entry size if section holds table
 		self._flags = flags
-		self._lk = lk
-		self._inf = inf
+		self._lk = lk		# index of another section
+		self._inf = inf		# additional section information
 		self._alignment = alignment
 
 	def __str__(self):
@@ -111,7 +100,6 @@ class Section:
 
 	# Returns true if a given address is located inside the address range 
 	# corresponding to this section
-	# FIXME is this needed?
 	def checkAddressInSection(self, address):
 		return (address >= self.getAddress() and 
 			address < (self.getAddress() + self.getSize()))
