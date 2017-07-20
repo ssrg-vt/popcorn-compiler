@@ -102,7 +102,7 @@ const char* inst_type_names[] = {
 #define X(inst) #inst,
 VALUE_GEN_INST
 #undef X
-}
+};
 #endif
 
 /*

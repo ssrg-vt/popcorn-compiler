@@ -428,7 +428,7 @@ static void apply_arch_operation(rewrite_context ctx,
       break;
     case SM_CONSTANT: /* Operand is int64_t */
       ST_RAW_INFO("%s constant %ld / %lx\n",
-                  val->inst_type,
+                  inst_type_names[val->inst_type],
                   val->operand_offset_or_constant,
                   val->operand_offset_or_constant);
       constant = val->operand_offset_or_constant;
