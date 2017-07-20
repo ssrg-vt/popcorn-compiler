@@ -90,11 +90,20 @@ typedef struct __attribute__((__packed__)) live_value {
 
 /* Operation types for generating architecture-specific values. */
 enum inst_type {
-#define X(inst, pseudo) inst,
+#define X(inst) inst,
 #include "StackTransformTypes.def"
 VALUE_GEN_INST
 #undef X
 };
+
+#ifdef _DEBUG
+/* Human-readable names for generating architecture-specific values. */
+const char* inst_type_names[] = {
+#define X(inst) #inst,
+VALUE_GEN_INST
+#undef X
+}
+#endif
 
 /*
  * An architecture-specific live values's location & value at a call site.
@@ -111,7 +120,8 @@ typedef struct __attribute__((__packed__)) arch_live_value {
   uint32_t offset;
 
   /* Operation/operand */
-  uint8_t operand_type : 4;
+  uint8_t operand_type : 3;
+  uint8_t is_gen : 1;
   uint8_t inst_type : 4;
   uint8_t operand_size;
   uint16_t operand_regnum;

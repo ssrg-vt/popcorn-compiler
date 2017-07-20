@@ -294,7 +294,6 @@ static void init_data_pools(rewrite_context ctx)
  */
 static void free_context(rewrite_context ctx)
 {
-  int i;
   node_t(fixup)* node;
 
   TIMER_START(free_context);
@@ -307,8 +306,11 @@ static void free_context(rewrite_context ctx)
     node = list_remove(fixup, &ctx->stack_pointers, node);
   }
 
+#ifdef _CHECKS
+  int i;
   for(i = 0; i < ctx->num_acts; i++)
-    free_activation(ctx->handle, &ctx->acts[i]);
+    clear_activation(ctx->handle, &ctx->acts[i]);
+#endif
   free_data_pools(ctx);
 #if _TLS_IMPL != COMPILER_TLS
   free(ctx);
@@ -445,7 +447,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
    */
   if((stack_addr = points_to_stack(src, val_src)))
   {
-    if(src->act == 0 || stack_addr >= PREV_ACT(src).cfa)
+    if(stack_addr >= PREV_ACT(src).cfa || src->act == 0)
     {
       ST_INFO("Adding fixup for pointer-to-stack %p\n", stack_addr);
       fixup_data.src_addr = stack_addr;
@@ -457,15 +459,14 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
       if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
     }
     // Note: it's an error for a pointer to point to frames down the call
-    // chain, this is most likely garbage pointer data
+    // chain, this is most likely uninitialized pointer data
     else
       ST_WARN("Pointer-to-stack points to called functions");
   }
   else put_val(src, val_src, dest, val_dest);
 
   /* Check if value is pointed to by other values & fix up if so. */
-  // Note: can only be pointed to if value is in memory, so optimize by
-  // filtering out non-allocas
+  // Note: can only be pointed to if value is in memory, i.e., allocas
   if(val_src->is_alloca)
   {
     fixup_node = list_begin(fixup, &dest->stack_pointers);
@@ -509,6 +510,9 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
   fixup_node = list_begin(fixup, &dest->stack_pointers);
   while(fixup_node)
   {
+    // TODO If the code creates a pointer to an argument, is LLVM forced to
+    // create an alloca and copy the argument into the local stack space?
+    // Otherwise, how does LLVM understand argument/register conventions?
     if(fixup_node->data.src_addr <= ACT(src).cfa) // Is fixup in this frame?
     {
       // Note: we should have resolved all fixups for this frame from frames
@@ -617,7 +621,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   for(i = 0; i < ACT(dest).site.num_arch_live; i++)
     put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
 
-  /* Fix up pointers to arguments or local values */
+  /* Fix up pointers to local values */
   if(needs_local_fixup) fixup_local_pointers(src, dest);
 
   TIMER_FG_STOP(rewrite_frame);

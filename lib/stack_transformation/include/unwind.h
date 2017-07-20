@@ -107,12 +107,12 @@ void* get_register_save_loc(rewrite_context ctx,
                             uint16_t reg);
 
 /*
- * Free the information describing the specified stack activation.
+ * Clear the information describing the specified stack activation.
  *
  * @param handle a stack transformation handle
  * @param act a stack activation
  */
-void free_activation(st_handle handle, activation* act);
+void clear_activation(st_handle handle, activation* act);
 
 #endif /* _UNWIND_H */
 
