@@ -12,7 +12,9 @@ class X86(AbstractArchitecture):
 		# Name of the map file used in multiple steps of the alignment process
 		self._mapFile= "map_x86"
 		# Linker script used in multiple steps
-		self._linker_script = "linker_script_x86.x"
+		self._linkerScript = "linker_script_x86.x"
+		# Linker script template
+		self._linkerScriptTemplate = "ls_x86.template"
 		# set of libraries to search as a group during linking
 		self._goldSearchGroup = ""
 		# ISA folder name in popcorn install dir
@@ -29,6 +31,12 @@ class X86(AbstractArchitecture):
 
 	def getExecutable(self):
 		return self._executable
+
+	def getLsTemplate(self):
+		return self._linkerScriptTemplate
+
+	def setLsTemplate(self, template):
+		self._linkerScriptTemplate = template
 
 	def getMapFile(self):
 		return self._mapFile

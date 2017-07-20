@@ -15,6 +15,8 @@ class Power(AbstractArchitecture):
 		self._mapFile = "map_power"
 		# Linker script used for the last linking step
 		self._linkerScript = "linker_script_power.x"
+		# Linker script template
+		self._linkerScriptTemplate = "ls_power.template"
 		# set of libraries to search as a group during the last linking step
 		self._goldSearchGroup = "TODO"
 		# ISA folder name in popcorn install dir
@@ -28,6 +30,12 @@ class Power(AbstractArchitecture):
 	# directly linking with the static archive doesnt work for arm
 	def getLibGccGoldInclusion(self):
 		raise exception.NotImplementedError
+
+	def getLsTemplate(self):
+		return self._linkerScriptTemplate
+
+	def setLsTemplate(self, template):
+		self._linkerScriptTemplate = template
 
 	def getExecutable(self):
 		return self._executable

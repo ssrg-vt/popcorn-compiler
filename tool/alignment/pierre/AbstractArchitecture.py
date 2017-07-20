@@ -228,7 +228,7 @@ class AbstractArchitecture():
 	# symbolsList is a dictionary of lists, one per section, for example:
 	# symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [], 
 	# ".tdata" : [], ".tbss" : [] }
-	# This function TODO update descriptio and maybe change the name
+	# This function TODO update description and maybe change the name
 	# accordinglyn
 	# way to call it:
 	# Arch1.updateSymbolsList(list)

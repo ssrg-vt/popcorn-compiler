@@ -13,6 +13,8 @@ class Arm(AbstractArchitecture):
 		self._mapFile = "map_arm"
 		# Linker linker script file used in multiple steps
 		self._linkerScript = "linker_script_arm.x"
+		# Linker script template
+		self._linkerScriptTemplate = ""
 		# set of libraries to search as a group during linking
 		self._goldSearchGroup = "-lgcc -lgcc_eh"
 		# ISA folder name in popcorn install dir

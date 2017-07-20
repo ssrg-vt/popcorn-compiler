@@ -2,6 +2,7 @@ import X86, Arm, Power
 import argparse
 import os, sys, shutil
 from Arch import Arch
+import Linker
 
 # Instantiate one object representing each architecture and put them
 # in a dictionary indexed by the Arch "enum" (see Arch.py)
@@ -9,12 +10,12 @@ x86_obj = X86.X86()
 arm_obj = Arm.Arm()
 power_obj = Power.Power()
 
-Archs = { 	Arch.X86 : x86_obj,
+archs = { 	Arch.X86 : x86_obj,
 			Arch.ARM : arm_obj,
 			Arch.POWER : power_obj,
 		}
 
-considered_archs = [Archs[Arch.X86]] #TODO add arm and power later
+considered_archs = [archs[Arch.X86]] #TODO add arm and power later
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata", 
 		".tbss"]
 
@@ -59,13 +60,15 @@ def prepareWorkDir(workDir, x86Bin, armBin, x86Map, armMap):
 
 	os.makedirs(workdir)
 	shutil.copyfile(args.x86_bin, workdir + "/" + 
-		Archs[Arch.X86].getExecutable())
+		archs[Arch.X86].getExecutable())
 	shutil.copyfile(args.arm_bin, workdir + "/" + 
-		Archs[Arch.ARM].getExecutable())
+		archs[Arch.ARM].getExecutable())
 	shutil.copyfile(args.x86_map, workdir + "/" + 
-		Archs[Arch.X86].getMapFile())
+		archs[Arch.X86].getMapFile())
 	shutil.copyfile(args.arm_map, workdir + "/" + 
-		Archs[Arch.ARM].getMapFile())
+		archs[Arch.ARM].getMapFile())
+
+	# TODO template filesu
 
 	return
 
@@ -88,3 +91,7 @@ if __name__ == "__main__":
 
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
+
+	
+	Linker.Linker.produceLinkerScript(work, archs[Arch.X86])
+	

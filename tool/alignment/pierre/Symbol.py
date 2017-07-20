@@ -53,4 +53,3 @@ class Symbol:
 	def getAlignment(self, arch):
 		Arch.sanityCheck(arch)
 		return self._alignments[arch]
-
