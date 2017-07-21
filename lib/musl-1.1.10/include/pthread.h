@@ -219,16 +219,9 @@ int pthread_setaffinity_np(pthread_t, size_t, const struct cpu_set_t *);
 int pthread_getattr_np(pthread_t, pthread_attr_t *);
 
 /* POPCORN MIGRATE APIs */
-void** pthread_migrate_regs();
 void** pthread_migrate_args();
-int* pthread_migrate_migration_phase();
-cpu_set_t* pthread_migrate_orig_cpus();
-cpu_set_t* pthread_migrate_cpus();
-int *pthread_migrate_fix_stack();
 /* END POPCORN MIGRATE APIs */
 #endif
-
-
 
 #ifdef __cplusplus
 }

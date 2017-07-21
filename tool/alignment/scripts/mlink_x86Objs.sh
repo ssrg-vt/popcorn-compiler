@@ -21,17 +21,16 @@ else
 fi
 
 POPCORN="/usr/local/popcorn"
+GCC_LIB="$(x86_64-linux-gnu-gcc -print-libgcc-file-name)"
 
 $POPCORN/bin/ld.gold -static \
  ${OUTPUT} ${INPUT} -z relro --hash-style=gnu --build-id -m elf_x86_64 \
- /usr/lib/gcc/x86_64-linux-gnu/4.8/libgcc.a \
+ $GCC_LIB \
  $POPCORN/x86_64/lib/crt1.o \
  $POPCORN/x86_64/lib/libc.a \
  $POPCORN/x86_64/lib/libmigrate.a \
  $POPCORN/x86_64/lib/libstack-transform.a \
  $POPCORN/x86_64/lib/libelf.a \
- $POPCORN/x86_64/lib/libpthread.a \
- $POPCORN/x86_64/lib/libbomp.a \
  $POPCORN/x86_64/lib/libpthread.a \
  $POPCORN/x86_64/lib/libc.a \
  $POPCORN/x86_64/lib/libm.a \

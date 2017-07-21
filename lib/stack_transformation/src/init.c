@@ -27,8 +27,10 @@ static void __attribute__((constructor))
 __st_ctor(void)
 {
 #ifdef _LOG
+#ifndef _PER_LOG_OPEN
   __log = fopen(LOG_FILE, "a");
   ASSERT(__log, "could not open log file\n");
+#endif
   ST_RAW_INFO("\n");
   ST_INFO("--> New execution started <--\n");
   ST_INFO("PID: %u\n", getpid());
@@ -44,7 +46,9 @@ __st_dtor(void)
 
 #ifdef _LOG
   ST_INFO("--> Finished execution <--\n");
+#ifndef _PER_LOG_OPEN
   if(__log) fclose(__log);
+#endif
 #endif
 }
 

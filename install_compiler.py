@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import urllib
+import multiprocessing
 
 #================================================
 # GLOBALS
@@ -52,7 +53,7 @@ def setup_argument_parsing():
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",
                         type=int,
-                        default=2)
+                        default=multiprocessing.cpu_count())
 
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
@@ -126,15 +127,25 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
+def _check_javac():
+    try:
+        out = subprocess.check_output(['javac', '-version'],
+                    stderr=subprocess.STDOUT)
+    except Exception:
+        print('javac not found!')
+        return None
+    else:
+        out = out.split('\n')[0]
+        return out
+
 def check_for_prerequisites():
     success = True
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['aarch64-linux-gnu-gcc',
-                         'sparc64-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++']
-    other_prequisites = ['flex', 'bison']
+    other_prequisites = ['flex', 'bison', 'svn', 'cmake']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -152,6 +163,9 @@ def check_for_prerequisites():
         if not out:
             success = False
 
+    if not _check_javac():
+        success = False
+
     return success
 
 def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
@@ -168,7 +182,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                    '-DLLVM_ENABLE_RTTI=ON']
 
     if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86;Sparc']
+        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86']
 
     with open(os.devnull, 'wb') as FNULL:
 
@@ -362,7 +376,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
-    sparc64_install_path = os.path.join(install_path, 'sparc64')
     x86_64_install_path = os.path.join(install_path, 'x86_64')
 
     with open(os.devnull, 'wb') as FNULL:
@@ -393,8 +406,8 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC=aarch64-linux-gnu-gcc',
-                                'CFLAGS="-ffunction-sections -fdata-sections"']),
+                                'CC={}/bin/clang'.format(install_path),
+                                'CFLAGS="-target aarch64-linux-gnu -popcorn-libc"']),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
@@ -439,7 +452,8 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CFLAGS="-ffunction-sections -fdata-sections -fasynchronous-unwind-tables"']),
+                                'CC={}/bin/clang'.format(install_path),
+                                'CFLAGS="-target x86_64-linux-gnu -popcorn-libc"']),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
@@ -568,23 +582,23 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         #=====================================================
         # CONFIGURE & INSTALL LIBBOMP
         #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/libbomp'))
+        #os.chdir(os.path.join(base_path, 'lib/libbomp'))
 
-        print('Making libbomp...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                        'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
-                                        'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-        os.chdir(cur_dir)
+        #print('Making libbomp...')
+        #try:
+        #    print('Running Make...')
+        #    rv = subprocess.check_call(['make', '-j', str(num_threads),
+        #                                'POPCORN={}'.format(install_path)])
+        #    rv = subprocess.check_call(['make', 'install',
+        #                                'POPCORN={}'.format(install_path)])
+        #except Exception as e:
+        #    print('Could not run Make ({})!'.format(e))
+        #    sys.exit(1)
+        #else:
+        #    if rv != 0:
+        #        print('Make failed.')
+        #        sys.exit(1)
+        #os.chdir(cur_dir)
 
         #=====================================================
         # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
@@ -658,21 +672,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
 def install_tools(base_path, install_path, num_threads):
         cur_dir = os.getcwd()
-
-        #=====================================================
-        # MODIFY MLINK_ARMOBJS.SH
-        #=====================================================
-        print("Updating alignment tool scripts to reflect system setup...")
-        try:
-            stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
-                                               '-print-libgcc-file-name'],
-                                               stdout=subprocess.PIPE).communicate()
-            loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
-            sed_cmd = "sed -i -e 's/GCC_LOC=\".*\"/GCC_LOC=\"-L{}\"/g' ./tool/alignment/scripts/mlink_armObjs.sh".format(loc)
-            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
-        except Exception as e:
-            print('Could not get/set libgcc location for aarch64 ({})!'.format(e))
-            sys.exit(1)
 
         #=====================================================
         # INSTALL ALIGNMENT TOOL
@@ -757,13 +756,6 @@ def install_utils(base_path, install_path, num_threads):
         tmp = install_path.replace('/', '\/')
         sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-
-        stdout, stderr = subprocess.Popen(['aarch64-linux-gnu-gcc',
-                                           '-print-libgcc-file-name'],
-                                           stdout=subprocess.PIPE).communicate()
-        loc = stdout.strip()[:stdout.rfind('/')].replace('/', '\/')
-        sed_cmd = "sed -i -e 's/ARM64_LIBGCC := .*/ARM64_LIBGCC := {}/g' ./util/Makefile.template".format(loc)
-        rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT, shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
     else:

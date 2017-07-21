@@ -17,8 +17,7 @@ public:
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 
 private:
-  void genLEAInstructions(const MachineInstr *LEA,
-                          MachineGeneratedVal::ValueGenInstList &IL) const;
+  MachineLiveVal *genLEAInstructions(const MachineInstr *LEA) const;
 };
 
 }

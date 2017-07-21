@@ -273,8 +273,7 @@ int st_userspace_rewrite_x86_64(void* sp,
 static bool prep_stack(void)
 {
   long ret;
-  long page_size;
-  size_t stack_size, num_touched = 0, offset;
+  size_t offset;
   struct rlimit rlim;
 #if _TLS_IMPL == PTHREAD_TLS
   stack_bounds bounds;
@@ -287,31 +286,33 @@ static bool prep_stack(void)
   ASSERT(!ret, "could not allocate TLS data for main thread\n");
 #endif
 
-  if((page_size = sysconf(_SC_PAGESIZE)) < 0) return false;
   if(!get_main_stack(&bounds)) return false;
   if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
-  bounds.low = bounds.high;
-  stack_size = rlim.rlim_cur;
   if(!ret)
   {
-    while(stack_size > 0)
-    {
-      bounds.low -= page_size;
-      stack_size -= page_size;
-
-      // Note: assembly memory read to prevent optimization, equivalent to:
-      // ret = *(uint64_t*)bounds.low;
+    // Note: the Linux kernel grows the stack automatically, but some versions
+    // check to ensure that the stack pointer is near the page being accessed.
+    // To grow the stack:
+    //   1. Save the current stack pointer
+    //   2. Move stack pointer to bottom of stack (according to rlimit)
+    //   3. Touch the page using the stack pointer
+    //   4. Restore the original stack pointer
+    bounds.low = bounds.high - rlim.rlim_cur;
 #ifdef __aarch64__
-      asm volatile("ldr %0, [%1]" : "=r" (ret) : "r" (bounds.low) : );
+    asm volatile("mov x27, sp;"
+                 "mov sp, %0;"
+                 "ldr x28, [sp];"
+                 "mov sp, x27" : : "r" (bounds.low) : "x27", "x28");
 #elif defined(__x86_64__)
-      asm volatile("mov (%1), %0" : "=r" (ret) : "r" (bounds.low) : );
+    asm volatile("mov %%rsp, %%r14;"
+                 "mov %0, %%rsp;"
+                 "mov (%%rsp), %%r15;"
+                 "mov %%r14, %%rsp" : : "g" (bounds.low) : "r14", "r15");
 #endif
-      num_touched++;
-    }
   }
 
-  ST_INFO("Prepped %lu stack pages for main thread, addresses %p -> %p\n",
-          num_touched, bounds.low, bounds.high);
+  ST_INFO("Prepped stack for main thread, addresses %p -> %p\n",
+          bounds.low, bounds.high);
 
   /*
    * Get offset of main thread's stack pointer from stack base so we can avoid
@@ -393,8 +394,11 @@ static bool get_thread_stack(stack_bounds* bounds)
     // TODO is there any important data stored above muslc/start's stack frame?
     bounds->high = bounds->low + stack_size;
     if(stack_size != MAX_STACK_SIZE)
-      ST_WARN("unexpected stack size: expected %lu, got %lu\n",
+    {
+      ST_WARN("unexpected stack size: expected %lx, got %lx\n",
               MAX_STACK_SIZE, stack_size);
+      bounds->low = bounds->high - MAX_STACK_SIZE;
+    }
     retval = true;
   }
   else

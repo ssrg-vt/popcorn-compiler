@@ -1,9 +1,9 @@
 #include "stdio_impl.h"
 
-static unsigned char buf_stdout[BUFSIZ+UNGET];
+static unsigned char buf[BUFSIZ+UNGET];
 static FILE f = {
-	.buf = buf_stdout+UNGET,
-	.buf_size = sizeof buf_stdout-UNGET,
+	.buf = buf+UNGET,
+	.buf_size = sizeof buf-UNGET,
 	.fd = 1,
 	.flags = F_PERM | F_NORD,
 	.lbf = '\n',
