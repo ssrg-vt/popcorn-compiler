@@ -31,7 +31,7 @@ typedef struct htm_log_entry {
 } htm_log_entry;
 
 /* Default initial capacity for the log. */
-#define DEFAULT_CAPACITY 1024
+#define DEFAULT_CAPACITY 8192
 
 /* Rate-limit adding entries to the log based on MIN_PERIOD. */
 #define RATE_LIMIT 1
