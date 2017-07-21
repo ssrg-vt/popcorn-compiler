@@ -13,7 +13,6 @@
 
 #include <stdbool.h>
 #include "transaction.h"
-#include "statistics.h"
 #include "tsx_assert.h"
 
 /* Last time an entry was added to the log.  Used to limit the rate at which

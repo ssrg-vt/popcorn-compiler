@@ -39,6 +39,10 @@ typedef enum transaction_status {
 /* Get human-readable names of statuses enumerated above. */
 extern const char *status_name(transaction_status status);
 
+#ifdef _STATISTICS
+#include "statistics.h"
+#endif
+
 /*
  * Per-architecture HTM definitions.  Each header should define that ISA's
  * implementation for:
