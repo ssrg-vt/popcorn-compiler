@@ -127,14 +127,14 @@ def setObjectFiles(args):
 # main
 ###############################################################################
 if __name__ == "__main__":
+	# Argument parsing stuff
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
 
-
+	# Prepare work directory and switch to it as cwd
 	prepareWorkDir(args)
-	setObjectFiles(args)
-	# Switch to the workdir as CWD
 	os.chdir(args.work_dir)
+	setObjectFiles(args)
 
 	# List of per-section symbols that we are going to fill and manipulate
 	work = {}

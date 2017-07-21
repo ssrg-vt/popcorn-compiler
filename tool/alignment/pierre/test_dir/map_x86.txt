@@ -2825,7 +2825,7 @@ Memory map
  .data          0x0000000000424000        0x0 0x4 /usr/local/popcorn/x86_64/lib/libc.a(stdout.o)
  .data.src_stdio_stdout_c_f
                 0x0000000000424000       0xe0 0x8 /usr/local/popcorn/x86_64/lib/libc.a(stdout.o)
- .data.__stdout_used
+ .data.__stdout_use
                 0x00000000004240e0        0x8 0x8 /usr/local/popcorn/x86_64/lib/libc.a(stdout.o)
                 0x00000000004240e0                __stdout_used
  .data          0x00000000004240e8        0x0 0x4 /usr/local/popcorn/x86_64/lib/libc.a(vfprintf.o)

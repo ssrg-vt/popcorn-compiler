@@ -2,7 +2,7 @@ POPCORN_INSTALL=/usr/local/popcorn
 BINARY=align-python
 TMP_ZIPFILE=align.zip
 BOOTSTRAP=align.script
-TEMPLATES=templates/
+TEMPLATES=templates/*
 PYTHON_MAIN="__main__.py"
 
 all: test

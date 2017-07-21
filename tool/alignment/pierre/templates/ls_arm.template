@@ -52,7 +52,7 @@ __TEXT__		/* marker for the TEXT section insertion */
   PROVIDE (_etext = .);
   PROVIDE (etext = .);
   
- __RODATA__		/* marker for the RODATA section insertion */	
+__RODATA__		/* marker for the RODATA section insertion */	
   
   .rodata1        : { *(.rodata1) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }

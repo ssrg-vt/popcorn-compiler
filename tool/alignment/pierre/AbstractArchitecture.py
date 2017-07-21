@@ -212,23 +212,35 @@ class AbstractArchitecture():
 	# symbol is a Symbol instance, sectionInfo is a list of Section object, the
 	# list that is returned by ReadElfParser.getSectionInfo()
 	def getSection(self, symbol, sectionInfo):
-		res = "." + symbol.getName().split(".")[1]
-		sectionsNames = [section.getName() for section in sectionInfo]
-		if res in sectionsNames:
-			# Sanity check on the address, is it falling into the section?
-			section = next((s for s in sectionInfo if s.getName() == res))
-			if not section.checkAddressInSection(symbol.getAddress(
-				self.getArch())):
-				er("ERROR: symbol address not falling into the expected " +
-					"section range\n")
-				er("Symbol: " + str(symbol) + "\nSection: " + str(section) +
-					"\n")
-				erStack("Arch: " + self.getArchString() + "\n")
-				sys.exit(-1)
-		else:
-			er("ERROR: symbol not in extracted section list:\n")
-			erStack(str(symbol))
-			sys.exit(-1)
+		addr = symbol.getAddress(self.getArch())
+		res = None
+
+		for section in sectionInfo:
+			sectionAddr = section.getAddress()
+			sectionSize = section.getSize()
+			sectionName = section.getName()
+			if (addr >= sectionAddr) and (addr < (sectionAddr + sectionSize)):
+				res = sectionName
+				if not symbol.getName().startswith(sectionName):
+				# Sanity check if the names fit. is it possible to have a symbol
+				# name _not_ starting with the containing section name?
+					er("WARNING: symbol does not have the same name as the " +
+							"containing section\n")
+				break
+
+			# Super special case, I have seen this in some map files, don't
+			# really know what it means ...
+			if (addr == (sectionAddr + sectionSize)):
+				res = sectionName
+				#er("WARNING: symbol at section_end + 1:\n" + str(symbol) + 
+				#	"\n")
+				break
+
+		if not res:
+			print (self.getArchString() + ": " + symbol.getName() + 
+				" not in considered sections")
+			# The symbol is not in the considered sections, pass
+			pass
 
 		return res
 
@@ -267,12 +279,15 @@ class AbstractArchitecture():
 			
 			# First find the section
 			sectionName = self.getSection(symbol, sectionsInfo)
+			if not sectionName:  #Symbol not in one of the considered sections
+				continue
 
 			# TODO remove this check if the symbol parser does not return only
 			# the symbols from the considered sections
 			if sectionName not in symbolsList.keys():
-				sys.stderr.write("ERROR: found a symbol from a " +
-					"non-considered section\n")
+				er("ERROR: found a symbol from a non-considered section:\n")
+				er("Section name: " + str(sectionName) + "\n")
+				erStack(str(symbol) + "\n")
 				sys.exit(-1)
 
 			# is there already a symbol with that name in symbolLists?

@@ -1,0 +1,6 @@
+- I feel there are not enough symbols parsed for ARM, the linker script sections
+  are nearly empty
+
+- I feel some symbols are not correctly updated for ARM or x86 as I see a lot
+  of stuff with (size_arm = X and size_x86 = -1) OR (size_arm = -1 and
+  size_x86 = X)
