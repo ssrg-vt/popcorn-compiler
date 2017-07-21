@@ -23,6 +23,8 @@ class Power(AbstractArchitecture):
 		self._popcornIsaFolder = "TODO"
 		# GNU gold emulation
 		self._goldEmulation = "TODO" # probably elf64-powerpc
+		# list of object files, to be set at runtime
+		self._objectFiles = []
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,

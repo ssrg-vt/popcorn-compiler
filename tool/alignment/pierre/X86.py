@@ -21,6 +21,8 @@ class X86(AbstractArchitecture):
 		self._popcornIsaFolder = "x86_64"
 		# GNU gold emulation target
 		self._goldEmulation = "elf_x86_64"
+		# list of object files, to be set at runtime
+		self._objectFiles = []
 
 	# Hacky way to manage the difference in the way libgcc is linked between
 	# different architectures (using the static archive libgcc.a for X86,

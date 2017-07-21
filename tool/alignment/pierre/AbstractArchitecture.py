@@ -1,4 +1,5 @@
-from Globals import *
+import Globals
+from Globals import er, erStack
 import subprocess
 import sys
 import os
@@ -14,7 +15,7 @@ class AbstractArchitecture():
 ###############################################################################
 
 	def getGccName(self):
-		return self._gcc_prefix + "-gcc"
+		return self._gccPrefix + "-gcc"
 
 	def getArch(self):
 		# should be implemented by the concrete class
@@ -25,6 +26,12 @@ class AbstractArchitecture():
 
 	def getLibGccGoldInclusion(self):
 		raise NotImplementedError
+
+	def getObjectFiles(self):
+		return self._objectFiles
+
+	def setObjectFiles(self, objectFileList):
+		self._objectFiles = objectFileList
 
 #	def createArchSpecificSymbol(self, name, address, size, alignment):
 #		raise NotImplementedError
@@ -134,12 +141,12 @@ class AbstractArchitecture():
 	def goldLink(self, inputs):
 		cmd = []
 
-		gold = POPCORN_LOCATION + "/bin/ld.gold"
+		gold = Globals.POPCORN_LOCATION + "/bin/ld.gold"
 		cmd.append(gold)
 
 		cmd.append("-static")
 		cmd.append("--output") 
-		cmd.append(self.getGoldOutput())
+		cmd.append(self.getExecutable())
 		
 		for object_file in inputs:
 			cmd.append(object_file)
@@ -154,15 +161,18 @@ class AbstractArchitecture():
 		cmd.append(self.getGoldEmulation())		
 
 		isa_folder = self.getPopcornIsaFolder()
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/crt1.o")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libmigrate.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + 
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/crt1.o")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
+			"/lib/libmigrate.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
 			"/lib/libstack-transform.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libelf.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libpthread.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
-		cmd.append(POPCORN_LOCATION + "/" + isa_folder + "/lib/libm.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
+			"/lib/libelf.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
+			"/lib/libpthread.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
+		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libm.a")
 
 		cmd.append("--start-group")
 		search_group = self.getGoldSearchGroup()
@@ -172,10 +182,11 @@ class AbstractArchitecture():
 		cmd.append("--end-group")
 
 		cmd.append("-Map")
-		cmd.append(self.getGoldMap())
+		cmd.append(self.getMapFile())
 		cmd.append("--script")
 		cmd.append(self.getLinkerScript())
 
+		logfile = Globals.GOLD_LOG_NAME + "_" + self.getArchString() + ".log"
 		try:
 			gold_output = subprocess.check_output(cmd, 
 				stderr=subprocess.STDOUT)
@@ -183,15 +194,14 @@ class AbstractArchitecture():
 			sys.stderr.write("ERROR: during gold link step:\n" + e.output)
 			sys.stderr.write("Command: " + ' '.join(cmd) + "\n")
 			sys.stderr.write("Output:\n" + e.output)
-			with open(self.getLinkerLog(), "w+") as f:
+			with open(logfile, "w+") as f:
 				f.write(e.output)
 				sys.exit()
 
-		with open(self.getLinkerLog(), "w+") as f:
+		with open(logfile, "w+") as f:
 			f.write(gold_output)
 
 		return
-
 
 ###############################################################################
 # getSection
@@ -208,15 +218,15 @@ class AbstractArchitecture():
 			section = next((s for s in sectionInfo if s.getName() == res))
 			if not section.checkAddressInSection(symbol.getAddress(
 				self.getArch())):
-				sys.stderr.write("ERROR: symbol address not falling into the " +
-					"expected section range")
-				sys.stderr.write("Symbol: " + str(symbol) + "\nSection: " +
-					str(section) + "\n")
-				sys.stderr.write("Arch: " + self.getArchString() + "\n")
+				er("ERROR: symbol address not falling into the expected " +
+					"section range\n")
+				er("Symbol: " + str(symbol) + "\nSection: " + str(section) +
+					"\n")
+				erStack("Arch: " + self.getArchString() + "\n")
 				sys.exit(-1)
 		else:
-			sys.stderr.write("ERROR: symbol not in extracted section list:\n")
-			sys.stderr.write(str(symbol))
+			er("ERROR: symbol not in extracted section list:\n")
+			erStack(str(symbol))
 			sys.exit(-1)
 
 		return res
@@ -271,11 +281,13 @@ class AbstractArchitecture():
 				# if it is the case, it this really needed?
 				symbolsList[sectionName].append(symbol)
 			else:
-				print "Duplicate symbol, want to add:"
-				print str(symbol)
-				print "but this is already in the list:"
-				already_there = next((s for s in symbolsList[sectionName] if 
-					s.getName() == symbol.getName()))
-				print already_there
-				print "------------------------------------------------------"
+				pass
+				#TODO
+				#print "Duplicate symbol, want to add:"
+				#print str(symbol)
+				#print "but this is already in the list:"
+				#already_there = next((s for s in symbolsList[sectionName] if 
+				#	s.getName() == symbol.getName()))
+				#print already_there
+				#print "------------------------------------------------------"
 
