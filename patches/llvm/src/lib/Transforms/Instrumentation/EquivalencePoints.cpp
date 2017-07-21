@@ -84,6 +84,7 @@ public:
   virtual bool doInitialization(Module &M) {
     // Make sure HTM is supported on this architecture if attempting to
     // instrument with transactional execution
+    doHTMAsmInstrumentation = false;
     if(HTMExec) {
       Triple Arch(M.getTargetTriple());
       if(HTMAsm.find(Arch.getArchName()) == HTMAsm.end()) {
@@ -92,11 +93,9 @@ public:
         Msg += "'";
         DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
         M.getContext().diagnose(DI);
-        doHTMAsmInstrumentation = false;
       }
       else doHTMAsmInstrumentation = true;
     }
-
     return false;
   }
 
@@ -106,10 +105,10 @@ public:
     numInstrumented = 0;
 
     // Instrument function boundaries, i.e., entry and return points
-    addEquivalencePoint(*F.getEntryBlock().getFirstInsertionPt());
+    addEquivalencePoint(F.getEntryBlock().getFirstInsertionPt());
     for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
       if(isa<ReturnInst>(BB->getTerminator())) {
-        addEquivalencePoint(*BB->getTerminator());
+        addEquivalencePoint(BB->getTerminator());
       }
     }
 
@@ -171,10 +170,10 @@ private:
   }
 
   /// Insert an equivalence point directly before the specified instruction
-  void addEquivalencePoint(Instruction &I) {
-    IRBuilder<> Worker(&I);
+  void addEquivalencePoint(Instruction *I) {
+    IRBuilder<> Worker(I);
 
-    if(doHTMAsmInstrumentation) Worker.CreateCall(getHTMAsm(*I.getModule()));
+    if(doHTMAsmInstrumentation) Worker.CreateCall(getHTMAsm(*I->getModule()));
     // TODO insert flag check & migration call if flag is set
 
     numInstrumented++;
@@ -187,7 +186,7 @@ char EquivalencePoints::ID = 0;
 
 const StringMap<EquivalencePoints::HTMAsmSpec> EquivalencePoints::HTMAsm = {
   {"x86_64", {"xtest;jz 1f;xend;1:xbegin 2f;2:",
-              "~{dirflag},~{fpsr},~{flags}",
+              "~{eax},~{dirflag},~{fpsr},~{flags}",
               true, false, InlineAsm::AD_ATT}}
   // TODO PowerPC assembly
 };
