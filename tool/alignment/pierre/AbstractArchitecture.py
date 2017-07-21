@@ -58,7 +58,6 @@ class AbstractArchitecture():
 	# Returns a list of Symbols instances extracted from the map file which 
 	# path is filePath (should have been generalted by gold.ld -Map <file>
 	def parseMapFile(self):
-		tmp = 0 #TODO remove me	
 		filePath = self.getMapFile()
 		res = []
 
@@ -113,11 +112,11 @@ class AbstractArchitecture():
 							self.getArch())
 
 				if s:
-					for section_name in ["text", "data", "rodata", "bss", 
-						"tdata", "tbss"]:
-						if s.getName().startswith("." + section_name + "."):
-							# We are only interested in text/data/rodata/bss
-							res.append(s)
+	#				for section_name in ["text", "data", "rodata", "bss", 
+	#					"tdata", "tbss"]:
+	#					if s.getName().startswith("." + section_name + "."):
+						# We are only interested in text/data/rodata/bss
+					res.append(s)
 		#			print "Symbol found: "
 		#			print " " + str(s)
 		#			print "Line: "
@@ -206,6 +205,8 @@ class AbstractArchitecture():
 ###############################################################################
 # getSection
 ###############################################################################
+	# TODO modify this function to rather look at the address of the 
+	# symbol and see which section it fits in
 
 	# Return the section associated with a symbol as a string (ex: ".text")
 	# symbol is a Symbol instance, sectionInfo is a list of Section object, the
@@ -247,8 +248,10 @@ class AbstractArchitecture():
 	# etc.
 	def updateSymbolsList(self, symbolsList):
 		# Grab info about sections from the executable
-		sectionsInfo = ReadElfParser.getSectionInfo(self.getExecutable())
-		
+		consideredSections = symbolsList.keys()
+		sectionsInfo = ReadElfParser.getSectionInfo(self.getExecutable(),
+			filterSections=consideredSections)
+
 		# Grab symbols from the map file
 		symbolsToAdd = self.parseMapFile()
 
@@ -277,7 +280,7 @@ class AbstractArchitecture():
 				symbolsList[sectionName]]
 			if symbol.getName() not in currentSymbolsNames:
 				# TODO here Chris is checking if there is no other symbol
-				# with the same address and seting a flag in that symbol
+				# with the same address and setting a flag in that symbol
 				# if it is the case, it this really needed?
 				symbolsList[sectionName].append(symbol)
 			else:

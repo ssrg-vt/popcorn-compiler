@@ -24,11 +24,12 @@ class Section:
 	def __str__(self):
 		res = ("Section, index=" + str(self.getIndex()) +
 			", name=" + self.getName() + ", secType=" + self.getSecType() +
-			", address=" + str(self.getAddress()) +", offset=" + 
-			str(self.getOffset()) +	", size=" + str(self.getSize()) + 
-			", es=" + str(self.getEs()) + ", flags=" + self.getFlags() + 
-			", lk=" + str(self.getLk()) + ", inf=" + str(self.getInf()) + 
-			", alignment=" + str(self.getAlignment()))
+			", address=" + str(hex(self.getAddress())) +", offset=" + 
+			str(hex(self.getOffset())) +	", size=" + 
+			str(hex(self.getSize())) + 	", es=" + str(hex(self.getEs())) + 
+			", flags=" + self.getFlags() + ", lk=" + str(self.getLk()) + 
+			", inf=" + str(self.getInf()) + ", alignment=" + 
+			str(self.getAlignment()))
 		return res
 
 	def getIndex(self):
@@ -106,8 +107,10 @@ class Section:
 
 # This function takes a path to an ELF binary as parameter, executes readelf
 # on it, parsing the output, building then returning a list of sections 
-# objects
-def getSectionInfo(binaryPath):
+# object
+# filterSections is a list of sections to consider (i.e. the result returned
+# will only contain info about these), ex: [".data", ".text", etc.]
+def getSectionInfo(binaryPath, filterSections=None):
 	absolutePath = os.path.abspath(binaryPath)
 	cmd = ["readelf", "-SW", absolutePath]
 	res = []
@@ -140,6 +143,10 @@ def getSectionInfo(binaryPath):
 				int(matchRes.group(9)),				# Lk
 				int(matchRes.group(10)), 			# Inf
 				int(matchRes.group(11)))			# alignment
+			
+			if filterSections and (s.getName() not in filterSections):
+				continue
+
 			res.append(s)
 
 	return res

@@ -13,15 +13,15 @@ class Symbol:
 
 	def __str__(self):
 		return ("Symbol: name=" + self.getName() + 
-				", addressX86=" + str(self.getAddress(Arch.X86)) +
-				", addressArm=" + str(self.getAddress(Arch.ARM)) +
-				", addressPower=" + str(self.getAddress(Arch.POWER)) +
-				", sizeX86=" + str(self.getSize(Arch.X86)) +
-				", sizeArm=" + str(self.getSize(Arch.ARM)) +
-				", sizePower=" + str(self.getSize(Arch.POWER)) +
-				", alignmentX86=" + str(self.getAlignment(Arch.X86)) +
-				", alignmentArm=" + str(self.getAlignment(Arch.ARM)) +
-				", alignmentPower=" + str(self.getAlignment(Arch.POWER)))
+				", addressX86=" + str(hex(self.getAddress(Arch.X86))) +
+				", addressArm=" + str(hex(self.getAddress(Arch.ARM))) +
+				", addressPower=" + str(hex(self.getAddress(Arch.POWER))) +
+				", sizeX86=" + str(hex(self.getSize(Arch.X86))) +
+				", sizeArm=" + str(hex(self.getSize(Arch.ARM))) +
+				", sizePower=" + str(hex(self.getSize(Arch.POWER))) +
+				", alignmentX86=" + str(hex(self.getAlignment(Arch.X86))) +
+				", alignmentArm=" + str(hex(self.getAlignment(Arch.ARM))) +
+				", alignmentPower=" + str(hex(self.getAlignment(Arch.POWER))))
 
 	def setName(self, name):
 		self._name = name
