@@ -5,6 +5,7 @@ from Arch import Arch
 import Linker
 import Globals
 import glob
+from Globals import er
 
 # Instantiate one object representing each architecture and put them
 # in a dictionary indexed by the Arch "enum" (see Arch.py)
@@ -71,8 +72,7 @@ def prepareWorkDir(args):
 	workdir = args.work_dir
 	if os.path.exists(workdir):
 		if not os.path.isdir(workdir):
-			sys.stderr.write("ERROR: " + workdir + " exists and is not a " +
-				"directory, remove it first")
+			er(workdir + " exists and is not a directory, remove it first")
 			sys.exit(-1)
 		shutil.rmtree(workdir)
 

@@ -2,6 +2,7 @@ import sys
 import subprocess
 import re
 import os
+from Globals import er
 
 # Represents a section. Each attribute is one of the fields reported by 
 # readelf -S
@@ -122,9 +123,8 @@ def getSectionInfo(binaryPath, filterSections=None):
 		readelf_output = subprocess.check_output(cmd,
 			stderr=subprocess.STDOUT)
 	except subprocess.CalledProcessError as e:
-		sys.stderr.write("ERROR: executing readelf " + absolutePath + 
-			" :\n")
-		sys.stderr.write(e.output)
+		er("executing readelf " + absolutePath + " :\n")
+		er(e.output)
 		sys.exit()
 
 	for line in readelf_output.split("\n"):

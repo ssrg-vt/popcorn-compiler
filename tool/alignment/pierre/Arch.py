@@ -2,6 +2,7 @@
 
 import sys
 import traceback
+from Globals import er
 
 class Arch():
 	X86 = 0
@@ -11,8 +12,7 @@ class Arch():
 	@classmethod
 	def sanityCheck(cls, val):
 		if val != cls.X86 and val != cls.ARM and val != cls.POWER:
-			sys.stderr.write("ERROR: bad value for Arch enum: " + str(val) +
-				"\n")
+			er("bad value for Arch enum: " + str(val) + "\n")
 			for line in traceback.format_stack():
 				print line.strip()
 			sys.exit(-1)

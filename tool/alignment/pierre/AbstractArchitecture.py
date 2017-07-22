@@ -1,5 +1,5 @@
 import Globals
-from Globals import er, erStack
+from Globals import er, erStack, warn
 import subprocess
 import sys
 import os
@@ -45,8 +45,8 @@ class AbstractArchitecture():
 			libGccALocation = subprocess.check_output([gcc_exec_name, 
 				'-print-libgcc-file-name'], stderr=subprocess.STDOUT)
 		except subprocess.CalledProcessError as e:
-			sys.stderr.write("ERROR: cannot execute %si" + 
-				" -print-libgcc-file-name to find libgcc.a" % gcc_exec_name)
+			er("cannot execute %s -print-libgcc-file-name to find libgcc.a" 
+				% gcc_exec_name)
 			sys.exit()
 
 		return os.path.dirname(libGccALocation)
@@ -96,10 +96,9 @@ class AbstractArchitecture():
 						s = Symbol.Symbol(name, address, size, alignment,
 							self.getArch())
 					else:
-						sys.stderr.write("ERROR! missed a two lines symbol " + 
-						"while parsing "	+ "mapfile")
-						print "line1: " + line
-						print "line2: " + nextLine
+						er("missed a two lines symbol while parsing	mapfile:\n")
+						er("line1: " + line + "\n")
+						er("line2: " + nextLine + "\n")
 						sys.exit(-1)
 				else:
 					matchResult3 = re.match(oneLineRe, line)
@@ -190,9 +189,9 @@ class AbstractArchitecture():
 			gold_output = subprocess.check_output(cmd, 
 				stderr=subprocess.STDOUT)
 		except subprocess.CalledProcessError as e:
-			sys.stderr.write("ERROR: during gold link step:\n" + e.output)
-			sys.stderr.write("Command: " + ' '.join(cmd) + "\n")
-			sys.stderr.write("Output:\n" + e.output)
+			er("during gold link step:\n" + e.output)
+			er("Command: " + ' '.join(cmd) + "\n")
+			er("Output:\n" + e.output)
 			with open(logfile, "w+") as f:
 				f.write(e.output)
 				sys.exit()
@@ -237,12 +236,28 @@ class AbstractArchitecture():
 				break
 
 		if not res:
-			print (self.getArchString() + ": " + symbol.getName() + 
-				" not in considered sections")
+			#print (self.getArchString() + ": " + symbol.getName() + 
+			#	" not in considered sections")
 			# The symbol is not in the considered sections, pass
 			pass
 
 		return res
+
+	def updateSymbolInSymbolsList(self, symbolToUpdate, sectionName, 
+		symbolsList):
+		
+		# First search for the symbol in the list
+		for symbol in (symbolsList[sectionName]):
+			if symbol.getName() == symbolToUpdate.getName():
+				# is it the first time we touch taht symbol for this arch?
+				arch = self.getArch()
+				if symbol.getAddress(arch) == -1:
+					symbol.setAddress(symbolToUpdate.getAddress(arch), arch)
+					symbol.setSize(symbolToUpdate.getSize(arch), arch)
+					symbol.setAlignment(symbolToUpdate.getAlignment(arch), arch)
+				else:
+					warn(self.getArchString() + ": duplicate symbol in "
+						" same arch: " + symbol.getName() + "\n")
 
 ###############################################################################
 # updateSymbolsList
@@ -285,12 +300,12 @@ class AbstractArchitecture():
 			# TODO remove this check if the symbol parser does not return only
 			# the symbols from the considered sections
 			if sectionName not in symbolsList.keys():
-				er("ERROR: found a symbol from a non-considered section:\n")
+				er("found a symbol from a non-considered section:\n")
 				er("Section name: " + str(sectionName) + "\n")
 				erStack(str(symbol) + "\n")
 				sys.exit(-1)
 
-			# is there already a symbol with that name in symbolLists?
+			# is there already a symbol with that name in symbolsLists?
 			currentSymbolsNames = [s.getName() for s in 
 				symbolsList[sectionName]]
 			if symbol.getName() not in currentSymbolsNames:
@@ -299,13 +314,6 @@ class AbstractArchitecture():
 				# if it is the case, it this really needed?
 				symbolsList[sectionName].append(symbol)
 			else:
-				pass
-				#TODO
-				#print "Duplicate symbol, want to add:"
-				#print str(symbol)
-				#print "but this is already in the list:"
-				#already_there = next((s for s in symbolsList[sectionName] if 
-				#	s.getName() == symbol.getName()))
-				#print already_there
-				#print "------------------------------------------------------"
-
+				# Duplicate symbol for an arch, or the symbol was previously
+				# added by another arch, or both
+				self.updateSymbolInSymbolsList(symbol, sectionName, symbolsList)
