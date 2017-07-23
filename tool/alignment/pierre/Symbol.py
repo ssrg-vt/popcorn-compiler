@@ -10,6 +10,9 @@ class Symbol:
 		self._sizes[arch] = size
 		self._alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._alignments[arch] = alignment
+		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 
+			Arch.POWER : False }
+		self._isReferenced[arch] = True
 
 	def __str__(self):
 		return ("Symbol: name=" + self.getName() + 
@@ -38,6 +41,24 @@ class Symbol:
 	def setAlignment(self, alignment, arch):
 		Arch.sanityCheck(arch)
 		self._alignments[arch] = alignment
+
+	def setReference(self, arch):
+		self._isReferenced[arch] = True
+
+	def getReference(self, arch):
+		return self._isReferenced(arch)
+
+	def getArchitecturesReferencing(self):
+		res = []
+		for arch in self._isReferenced.keys():
+			if self._isReferenced[arch]:
+				res.append(arch)
+		return res
+
+	def getArchitecturesNotReferencing(self):
+		archsReferencing = self.getArchitecturesReferencing()
+		return [arch for arch in self._isReferenced.keys() if arch not in
+			archsReferencing]
 
 	def getName(self):
 		return self._name

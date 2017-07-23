@@ -124,6 +124,40 @@ def setObjectFiles(args):
 	# TODO power
 
 ###############################################################################
+# Order symbols
+###############################################################################
+# in each section, the symbols will be ordered by number of architectures 
+# referencing the symbols in questions
+# sl is a list of Symbol instances (should correspond to one section)
+# return as a result an ordered symbol list
+def orderSymbolList(sl):
+	res = []
+
+	# TODO Explain the trick
+	for order in list(reversed(range(1, len(considered_archs)+1))):
+		for symbol in sl:
+			referencingArchs = len(considered_archs)
+			for arch_instance in considered_archs:
+				arch = arch_instance.getArch()
+				if symbol.getAddress(arch) == -1:  # not referenced by this arch
+					referencingArchs -= 1
+
+			if referencingArchs == order:
+				res.append(symbol)
+
+	return res
+
+###############################################################################
+# align
+##############################################################################
+# sl is a list of symbols (same as for orderSymbolsList that should correspond
+# to one section
+def align(sl):
+	dot = 0		# starting offset of the section
+
+
+
+###############################################################################
 # main
 ###############################################################################
 if __name__ == "__main__":
@@ -141,9 +175,18 @@ if __name__ == "__main__":
 	for section in considered_sections:
 		work[section] = []
 
+	# Add symbols to the list
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
-	
+
+	# Order symbols in each section based on the number of arch referencing 
+	# each symbol 
+	for section in considered_sections:
+		work[section] = orderSymbolList(work[section])
+
+	# perform the alignment
+
+
 	for arch in considered_archs:
 		Linker.Linker.produceLinkerScript(work, arch)
 		arch.goldLink(arch.getObjectFiles())	
