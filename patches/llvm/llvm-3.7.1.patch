@@ -5652,7 +5652,7 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/EquivalencePoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/EquivalencePoints.cpp	(working copy)
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,276 @@
 +//===- EquivalencePoints.cpp ----------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5890,19 +5890,18 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +
 +// TODO PowerPC assembly
 +const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMBegin = {
-+  {"x86_64", {"xbegin 1f;1:", "~{eax},~{dirflag},~{fpsr},~{flags}",
-+              true, false, InlineAsm::AD_ATT}}
++  {"x86_64", {"xbegin 1f;1:", "~{eax},~{flags}",
++              false, false, InlineAsm::AD_ATT}}
 +};
 +
 +const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEnd = {
-+  {"x86_64", {"xtest;jz 1f;xend;1:", "~{dirflag},~{fpsr},~{flags}",
-+              true, false, InlineAsm::AD_ATT}}
++  {"x86_64", {"xtest;jz 1f;xend;1:", "~{eax},~{flags}",
++              false, false, InlineAsm::AD_ATT}}
 +};
 +
 +const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEqPoint = {
 +  {"x86_64", {"xtest;jz 1f;xend;1:xbegin 2f;2:",
-+              "~{eax},~{dirflag},~{fpsr},~{flags}",
-+              true, false, InlineAsm::AD_ATT}}
++              "~{eax},~{flags}", false, false, InlineAsm::AD_ATT}}
 +};
 +
 +INITIALIZE_PASS(EquivalencePoints, "equivalence-points",
