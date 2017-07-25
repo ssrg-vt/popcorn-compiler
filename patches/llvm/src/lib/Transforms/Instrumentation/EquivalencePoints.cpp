@@ -233,7 +233,7 @@ private:
 
 char EquivalencePoints::ID = 0;
 
-// TODO PowerPC assembly
+// TODO LLVM has intrinsics for x86 & PPC HTM inline assembly
 const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMBegin = {
   {"x86_64", {"xbegin 1f;1:", "~{eax},~{flags}",
               false, false, InlineAsm::AD_ATT}}
@@ -241,7 +241,7 @@ const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMBegin = {
 
 const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEnd = {
   {"x86_64", {"xtest;jz 1f;xend;1:", "~{eax},~{flags}",
-              false, false, InlineAsm::AD_ATT}}
+              true, false, InlineAsm::AD_ATT}}
 };
 
 const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEqPoint = {
