@@ -15,6 +15,7 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/StackTransformTypes.def"
 #include "llvm/ADT/SmallVector.h"
 
@@ -225,7 +226,7 @@ protected:
 /// MachineSymbolRef - a reference to a global symbol
 class MachineSymbolRef : public MachineReference {
 public:
-  MachineSymbolRef(const std::string &Symbol,
+  MachineSymbolRef(const MachineOperand &Symbol,
                    const MachineInstr *DefMI,
                    bool Ptr = false)
     : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
@@ -237,16 +238,13 @@ public:
   virtual bool isSymbolRef() const { return true; }
 
   virtual bool operator==(const MachineLiveVal &RHS) const;
-
-  virtual std::string toString() const
-  { return "reference to symbol '" + Symbol + "'"; }
-
+  virtual std::string toString() const;
   virtual MCSymbol *getReference(AsmPrinter &AP) const;
 
 private:
-  // Note: MCSymbols may not exist yet, so instead store symbol name and look
-  // up MCSymbol to generate label at metadata emission time
-  std::string Symbol;
+  // Note: MCSymbols may not exist yet, so instead store operand and look up
+  // MCSymbol to generate label at metadata emission time
+  const MachineOperand &Symbol;
 };
 
 /// MachineConstPoolRef - a reference to a constant pool entry

@@ -106,12 +106,8 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     MO = &MI->getOperand(1);
     if(MO->isCPI())
       Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
-    else if(MO->isGlobal())
-      Val = new MachineSymbolRef(MO->getGlobal()->getName(), MI, true);
-    else if(MO->isSymbol())
-      Val = new MachineSymbolRef(MO->getSymbolName(), MI, true);
-    else if(MO->isMCSymbol())
-      Val = new MachineSymbolRef(MO->getMCSymbol()->getName(), MI, true);
+    else if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
+      Val = new MachineSymbolRef(*MO, MI, true);
     break;
   case AArch64::COPY:
     MO = &MI->getOperand(1);

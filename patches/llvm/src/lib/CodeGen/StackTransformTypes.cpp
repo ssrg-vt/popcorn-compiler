@@ -10,6 +10,7 @@
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/StackTransformTypes.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetFrameLowering.h"
@@ -52,13 +53,55 @@ std::string ValueGenInst::getInstNameStr(enum InstType Type) {
 bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
   if(RHS.isSymbolRef()) {
     const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
-    if(MSR.Symbol == Symbol) return true;
+    if(&MSR.Symbol == &Symbol) return true;
   }
   return false;
 }
 
+std::string MachineSymbolRef::toString() const {
+  std::string buf = "reference to symbol '";
+  switch(Symbol.getType()) {
+  case MachineOperand::MO_GlobalAddress:
+    buf += Symbol.getGlobal()->getName();
+    break;
+  case MachineOperand::MO_ExternalSymbol:
+    buf += Symbol.getSymbolName();
+    break;
+  case MachineOperand::MO_MCSymbol:
+    buf += Symbol.getMCSymbol()->getName();
+    break;
+  default:
+    buf += "(unhandled)";
+    break;
+  }
+  return buf + "'";
+}
+
+static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
+  SmallString<60> Name;
+  Mangler::getNameWithPrefix(Name, Sym, *AP.TM.getDataLayout());
+  return AP.OutContext.lookupSymbol(Name);
+}
+
 MCSymbol *MachineSymbolRef::getReference(AsmPrinter &AP) const {
-  return AP.OutContext.lookupSymbol(Symbol);
+  MCSymbol *Sym = nullptr;
+
+  switch(Symbol.getType()) {
+  case MachineOperand::MO_ExternalSymbol:
+    Sym = GetExternalSymbol(AP, Symbol.getSymbolName());
+    break;
+  case MachineOperand::MO_GlobalAddress:
+    Sym = AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
+    break;
+  case MachineOperand::MO_MCSymbol:
+    Sym = Symbol.getMCSymbol();
+    break;
+  default:
+    llvm_unreachable("Invalid machine operand type");
+    break;
+  }
+  assert(Sym && "Could not get symbol reference");
+  return Sym;
 }
 
 //===----------------------------------------------------------------------===//
@@ -74,7 +117,9 @@ bool MachineConstPoolRef::operator==(const MachineLiveVal &RHS) const {
 }
 
 MCSymbol *MachineConstPoolRef::getReference(AsmPrinter &AP) const {
-  return AP.GetCPISymbol(Index);
+  MCSymbol *Sym = AP.GetCPISymbol(Index);
+  assert(Sym && "Could not get constant pool reference");
+  return Sym;
 }
 
 //===----------------------------------------------------------------------===//

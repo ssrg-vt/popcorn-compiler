@@ -77,12 +77,8 @@ MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
     break;
   case X86::MOV64ri:
     MO = &MI->getOperand(1);
-    if(MO->isGlobal())
-      Val = new MachineSymbolRef(MO->getGlobal()->getName(), MI, true);
-    else if(MO->isSymbol())
-      Val = new MachineSymbolRef(MO->getSymbolName(), MI, true);
-    else if(MO->isMCSymbol())
-      Val = new MachineSymbolRef(MO->getMCSymbol()->getName(), MI, true);
+    if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
+      Val = new MachineSymbolRef(*MO, MI, true);
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
