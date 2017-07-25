@@ -43,6 +43,9 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
+						# First add padding before
+						# TODO
+
 						# check if the symbol is actually enabled for this arch
 						if symbol.getSize(arch.getArch()) >= 0:
 							output_buffer.append("\t. = ALIGN(" + 
@@ -50,7 +53,9 @@ class Linker:
 								");\n")
 							output_buffer.append("\t*(" + symbol.getName() +
 								");\n")
-							# TODO: padding
+
+						# Then add padding after
+						# TODO
 
 					# Section "closing" part
 					output_buffer.append("}\n")

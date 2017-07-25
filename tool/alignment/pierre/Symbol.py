@@ -13,6 +13,8 @@ class Symbol:
 		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 
 			Arch.POWER : False }
 		self._isReferenced[arch] = True
+		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
+		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 
 	def __str__(self):
 		return ("Symbol: name=" + self.getName() + 
@@ -24,7 +26,16 @@ class Symbol:
 				", sizePower=" + str(hex(self.getSize(Arch.POWER))) +
 				", alignmentX86=" + str(hex(self.getAlignment(Arch.X86))) +
 				", alignmentArm=" + str(hex(self.getAlignment(Arch.ARM))) +
-				", alignmentPower=" + str(hex(self.getAlignment(Arch.POWER))))
+				", alignmentPower=" + str(hex(self.getAlignment(Arch.POWER))) +
+				", referencedX86=" + str(self.getReference(Arch.X86)) +
+				", referencedARM=" + str(self.getReference(Arch.ARM)) +
+				", referencedPOWER=" + str(self.getReference(Arch.POWER)) +
+			", paddingBeforeX86=" + hex(str(self.getPaddingBefore(Arch.x86))) +
+			", paddingBeforeARM=" + hex(str(self.getPaddingBefore(Arch.ARM))) +
+			", paddingBeforePOWER=" + hex(str(self.getPaddingBefore(Arch.POWER))) +
+			", paddingAfterX86=" + hex(str(self.getPaddingAfter(Arch.x86))) +
+			", paddingAfterARM=" + hex(str(self.getPaddingAfter(Arch.ARM))) +
+			", paddingAfterPOWER=" + hex(str(self.getPaddingAfter(Arch.POWER))))
 
 	def setName(self, name):
 		self._name = name
@@ -48,6 +59,32 @@ class Symbol:
 	def getReference(self, arch):
 		return self._isReferenced(arch)
 
+	def getPaddingBefore(self, arch):
+		return self._paddingBefore[arch]
+
+	def getPaddingAfter(self, arch):
+		return self._paddingAfter[arch]
+
+	def incrPaddingBefore(self, paddingToAdd, arch):
+		self._paddingBefore[arch] += paddingToAdd
+
+	def incrPaddingAfter(self, paddingToAdd, arch):
+		self._paddingAfter[arch] += paddingToAdd
+
+	def getLargetSizeArch(self):
+		res = None
+		largestSize = -1
+		for arch in self._sizes.keys():
+			size = self.getSize(arch)
+			if size > largestSize:
+				largestSize = size
+				res = arch
+		return res
+
+	def getLargetSizeVal(self):
+		return self.getSize(self.getLargetSizeArch())
+
+	# Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch instance
 	def getArchitecturesReferencing(self):
 		res = []
 		for arch in self._isReferenced.keys():
@@ -74,3 +111,18 @@ class Symbol:
 	def getAlignment(self, arch):
 		Arch.sanityCheck(arch)
 		return self._alignments[arch]
+
+	# set the alignement for all referenced arch to the largest alignement of 
+	# the referencing archs
+	# also return the alignement
+	def setLargestAlignment(self):
+		largestAlignment = -1
+		for arch in self._alignments.keys():
+			alignment = self.getAlignment(arch)
+			if alignment > largestAlignment:
+				largestAlignment = alignment
+
+		for arch in self.getArchitecturesReferencing():
+			self.setAlignment(largestAlignment, arch)
+
+		return largestAlignment
