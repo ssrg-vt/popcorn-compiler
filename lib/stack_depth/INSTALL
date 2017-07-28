@@ -1,0 +1,20 @@
+-------------------------
+Installing libstack-depth
+-------------------------
+
+NOTE: binaries cannot be linked against both libstack-depth and libmigration
+because they provide different implementations of the same functions
+
+This library is only suitable for vanilla applications.  Currently, it is only
+compiled for x86-64.
+
+1. Build & install libstack-depth for x86_64:
+
+  $ make install
+
+2. To generate stack statistics, run the application to generate the data file
+   and pass it to the stack-depth-info.py script:
+
+  $ ./<binary> # Will automatically generate stack_depth.dat
+  $ ./util/scripts/stack-depth-info.py -d ./stack_depth.dat ...
+

@@ -1,0 +1,19 @@
+--------
+Overview
+--------
+
+The migration library is responsible for checking whether or not the scheduler
+has requested a migration, and if so, prepare and migrate threads between
+architectures.  Currently, the scheduler cannot interrupt applications at
+arbitrary points in execution to migrate threads.  Therefore, it has to set a
+flag in userspace to request threads migrate.  When threads reach a known-good
+migration point (e.g., one in which there is a valid state transformation
+between ABI-specified state and a direct mapping in program execution
+location), they check if the flag has been set.  If so, the migration library
+initiates stack transformation to prepare for execution post-migration, and
+invokes the OS's thread migration service via system call.
+
+The migration library thus provides glue for scheduler policy call-outs, state
+transformation (including a well-known location to bootstrap the runtime) and
+thread migration.
+

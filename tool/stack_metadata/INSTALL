@@ -1,0 +1,8 @@
+--------------------
+Installing the tools
+--------------------
+
+1. Build and install the tools:
+
+  $ make install
+

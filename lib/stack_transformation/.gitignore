@@ -1,0 +1,7 @@
+build/
+aarch.s
+ppc.s
+README.harubyy
+TODO
+x86.s
+*.swp

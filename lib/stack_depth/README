@@ -1,0 +1,17 @@
+--------
+Overview
+--------
+
+The stack depth library can be used to profile the call behavior of an
+application.  It records which functions were called and the depth of a
+thread's call stack for each function call in the application.  It generates a
+data file at the end of an application's execution containing this information,
+which can be parsed by the script in util/scripts/stack-depth-info.py.  It
+generates statistic like maximum stack depth, most called functions, who called
+each function, etc.
+
+To use the library, applications should be compiled with the
+"-finstrument-functions" flag and linked against the library.  Running the
+application will automatically generate a stack_depth.dat file containing
+statistics which are parsed by stack-depth-info.py.
+

@@ -1,0 +1,55 @@
+------------------------
+Known compilation issues
+------------------------
+
+- musl-libc is not compiled with clang and therefore some variables are not
+  able to be aligned.  The following symbols are known to not align, but
+  shouldn't prevent running the application:
+
+  __LLVM_StackMaps
+  __aio_close
+  __clone
+  __fini_array_end
+  __fini_array_start
+  __funcs_on_exit
+  __init_array_end
+  __init_array_start
+  __lctrans_impl
+  __set_thread_area
+  __syscall
+  __unlist_locked_file
+  __unmapself
+  _end
+  _fini
+  _start
+  byte_copy
+  dummy
+  fabs
+  fmodl
+  memmove
+
+- Additionally, OpenMP symbols for outlined functions are known to not align
+  (due to clashing symbol names across binaries) but shouldn't cause issues,
+  e.g., ".omp_outlined."
+
+- Stackmaps in the migration library in "__migrate_shim_internal" have
+  different numbers of location records
+
+- Because ".omp_outlined.*" functions cannot be aligned, the stackmap-checking
+  tool will complain that stackmaps in those functions refer to different
+  functions
+
+- The toolchain compiles to LLVM bitcode with the aarch64 target because all IR
+  generated for that target will also correctly codegen for x86-64 (whereas the
+  reverse is not true).  However, when compiling using the x86-64 backend clang
+  will complain about the aarch64-specific feature "neon"
+
+--------------------
+Known runtime issues
+--------------------
+
+- Functions declared with __attribute__((destructor)) may not work correctly,
+  and may cause the application to segfault when exiting
+
+- TODO Pointers to the stack embedded in structs
+

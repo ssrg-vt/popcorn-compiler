@@ -1,0 +1,20 @@
+libelf, released under GNU Library GPLv2 and downloaded from
+http://www.mr511.de/software/english.html
+
+--------
+Overview
+--------
+
+The libelf library is used by libdwarf, the stack transformation metadata
+generation tool, and the stack transformation runtime to read and modify ELF
+files.  The libdwarf library uses libelf for accessing the DWARF debugging
+sections of ELF object files.  The stack transformation metadata generation
+tool uses libelf to add several ELF sections containing cross-architecture
+location mapping information and live value location information at those
+locations.  The stack transformation runtime uses libelf to read this generated
+metadata to correlate return addresses when rewriting and to locate live
+values.
+
+We use libelf unmodified, except for a couple of changes in the build procedure
+to cross-compile for aarch64.
+

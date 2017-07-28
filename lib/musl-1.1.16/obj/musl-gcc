@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${REALGCC:-powerpc64le-linux-gnu-gcc}" "$@" -specs "/usr/local/popcorn/powerpc64/lib/musl-gcc.specs"

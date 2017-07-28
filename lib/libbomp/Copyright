@@ -1,0 +1,12 @@
+ 
+cthread Copyright Antonio Barbalace, 2013 - 2014, cthread includes: cthread.c,
+cthread.h, self_info.c, stack.c, check-libc_config.c, run-test.sh,
+tst-cthread.c, tst-cthread1.c, tst-cthread2.c, tst-cthread3.c .
+
+tst-oddstacklimit.c, xtrace.sh Copyright GNU software fundation. As part of
+GNU C Library (libc).
+
+All the other code Copyright ETH Zurich, 2007 - 2009.
+
+This code was firstly written to fit the Barrelfish operating system,
+we modify it to fit Popcorn with and without pthread library.

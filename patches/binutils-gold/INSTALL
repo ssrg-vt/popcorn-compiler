@@ -1,0 +1,35 @@
+-------------------
+Installing binutils
+-------------------
+
+1. Download binutils 2.27:
+
+  $ wget http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2
+  $ tar -xf binutils-2.27.tar.bz2 && mv binutils-2.27 /usr/local/popcorn/src
+
+2. Patch binutils:
+
+  $ patch -p0 -d /usr/local/popcorn/src/binutils-2.27 < binutils-2.27-gold.patch
+
+3. Build & install binutils:
+
+  $ cd /usr/local/popcorn/src/binutils-2.27
+  $ mkdir build && cd build
+  $ ../configure --prefix=/usr/local/popcorn \
+                 --enable-gold \
+                 --disable-ld \
+                 --disable-libquadmath \
+                 --disable-libquadmath-support \
+                 --disable-libstdcxx
+  $ make
+  $ make install
+
+4. You can speed the build up by enabling parallel jobs:
+
+  $ make -j<# of parallel jobs> install
+
+Note: you'll need bison and flex, otherwise the installation will fail.
+However, since we only need gold you may be able to manually dive into
+/usr/local/popcorn/src/binutils-2.27/build/gold and do a "make install" from
+there to avoid this issue.
+

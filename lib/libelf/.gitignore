@@ -1,0 +1,13 @@
+*.o
+Makefile
+config.h
+config.log
+config.status
+libelf.pc
+stamp-h
+po/de.cat
+lib/stamp-h
+lib/sys_elf.h
+lib/libelf.a
+lib/*.o
+*.swp

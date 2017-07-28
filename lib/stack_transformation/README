@@ -1,0 +1,42 @@
+--------
+Overview
+--------
+
+The stack transformation library provides the stack transformation runtime for
+multi-ISA binaries.  At migration points (when a migration has been triggered)
+the runtime attaches to a thread's stack and rewrites it from the current
+architecture's ABI to the destination architecture's ABI.  The runtime attaches
+to the outermost frame (i.e., the call frame of the most recently called
+function) and unwinds the stack in its entirety, alternating between rewriting
+and popping frames (for both the current and destination stacks).
+
+The runtime logically divides a thread's stack into two halves and rewrites
+from the current half to the other half, e.g., for an 8MB stack, it rewrites
+from the top 4MB to the lower 4MB.  The runtime begins by completely unwinding
+the source stack to find the current live function activations.  Using this
+information, it determines the size of the destination stack and sets the stack
+pointer for when execution resumes post-migration.  The runtime then begins
+transformation, a frame at a time.
+
+The runtime uses LLVM-generated live value location and frame unwinding
+metadata to rewrite individual frames*.  The runtime iterates over all live
+values at a transformation site, copying variables from their current location
+to the destination stack.  The runtime also fixes up pointers to the stack so
+that they point to the correct stack memory after migration.  After the runtime
+finishes copying values between frames, it reads the frame unwinding procedure
+for each architecture and pops the frame from the stack.  If the runtime
+encounters a value live in a register saved as part of this procedure (e.g., in
+the function's epilogue), it propagates the value down the call chain and puts
+it in the correct register save slot on the stack.
+
+After transformation has finished, the runtime copies out the transformed
+register state needed to resume execution post-migration.  This includes the
+transformaed stack and frame pointer, the instruction pointer, and any required
+architecture-specific registers (e.g., the link register for aarch64).
+
+In Progress: on-demand stack transformation, i.e., only transforming frames as
+needed when returng back through the call chain
+
+NOTE: the stack transformation library has been tested with the Popcorn
+compiler, based on LLVM.
+

@@ -1,0 +1,11 @@
+--------
+Overview
+--------
+
+This patch is for binutils' gold ld linker, v2.27.  It achieves two things:
+
+1. Adjusts aarch64's TLS layout to conform to x86-64's layout
+2. Print detailed size and alignment information for all data/function symbols
+   in the generated binaries.
+
+# TODO add information about how the layout is changed, i.e., is it inverted?

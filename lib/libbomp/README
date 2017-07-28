@@ -1,0 +1,53 @@
+Original libbomp, Copyright ETH Zurich Barrelfish, 2007 - 2009
+cthread Components, Copyright Antonio Barbalace, 2013 - 2014
+Parts are released as part of GNU C Library (libc).
+
+Finally,
+Popcorn Threadpool Components, Copyright Christopher Jelesnianski &
+System Software Research Group Virginia Tech, 2016
+
+See Copyright for additional Information
+
+--------
+Overview
+--------
+
+The libbomp library is a customized implementation of the OpenMP
+multi-threading library. This library uses the same API as the
+original OpenMP interface to modify the runtime, so no explicit
+differences for the developer exist interchanging this library
+with OpenMP.
+
+The previous version of libbomp functioned by spawning new threads
+whenever a parallel region was reached (and assumed the child
+processes would die once the parallel regions task was completed).
+This is not optimal as there is a cost for spawning new threads
+every time an OMP parallel region is reached. 
+
+To optimize the multi-threading library, it was modified to
+utilize a threadpool instead. With this mechanism, the library
+starts up a certain number of threads before the application
+begins running (via _start constructor). The developer need
+only follow traditional OpenMP semanics/API methods to
+modify the OpenMP runtime such as changing the number of threads
+in the threadpool, denoting a parallelizable region, declaring
+threadprivate variables, etc.
+
+Currently, libbomp detects how many cores are present on the machine
+the application is started on and sets that as the default
+number of threads available to be given tasks during parallel
+execution. This number can be changed using the appropriate
+API call (omp_set_num_threads, etc.)
+
+^^^^^^
+NOTE: The threadpool is dependent on the pthreads implementation.
+As such the current Pthread implementation within musl uses a
+spin lock within threads to put them "to sleep" temporarily.
+With a threadpool implementation this is not compatible as the
+"sleeping" threads are still using a resource within the
+machine as they spin, instead of actually "sleeping".
+The Musl Libc implementation of Pthreads would need to be
+modified to remedy this in-efficient behaviour.
+
+Libbomp has been largely revamped to accommodate the discussed
+threadpool mechanism.
