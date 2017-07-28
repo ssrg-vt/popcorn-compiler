@@ -815,7 +815,7 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-popcorn-alignment");
 +    CmdArgs.push_back("-popcorn-migratable");
 +    CmdArgs.push_back("-mllvm");
-+    CmdArgs.push_back("-emit-st-metadata");
++    CmdArgs.push_back("-popcorn-instrument=migration");
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-optimize-regalloc");
 +  }
@@ -824,7 +824,7 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
 +    CmdArgs.push_back("-mllvm");
-+    CmdArgs.push_back("-emit-libc-metadata");
++    CmdArgs.push_back("-popcorn-instrument=libc");
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
 +    // Forward Popcorn alignment flag and add -f*-sections flags for symbol

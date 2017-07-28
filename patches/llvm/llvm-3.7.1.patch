@@ -1,21 +1,3 @@
-Index: include/llvm/ADT/StringMap.h
-===================================================================
---- include/llvm/ADT/StringMap.h	(revision 277823)
-+++ include/llvm/ADT/StringMap.h	(working copy)
-@@ -227,6 +227,13 @@
-     : StringMapImpl(InitialSize, static_cast<unsigned>(sizeof(MapEntryTy))),
-       Allocator(A) {}
- 
-+  StringMap(std::initializer_list<std::pair<StringRef, ValueTy>> List)
-+      : StringMapImpl(List.size(), static_cast<unsigned>(sizeof(MapEntryTy))) {
-+    for (const auto &P : List) {
-+      insert(P);
-+    }
-+  }
-+
-   StringMap(StringMap &&RHS)
-       : StringMapImpl(std::move(RHS)), Allocator(std::move(RHS.Allocator)) {}
- 
 Index: include/llvm/ADT/StringSet.h
 ===================================================================
 --- include/llvm/ADT/StringSet.h	(revision 277823)
@@ -598,23 +580,60 @@ Index: include/llvm/CodeGen/Passes.h
 ===================================================================
 --- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
-@@ -142,6 +142,15 @@
+@@ -123,6 +123,15 @@
+   /// Default setting for -enable-shrink-wrap on this target.
+   bool EnableShrinkWrap;
+ 
++  /// Add equivalence points into the application
++  bool AddEquivalencePoints;
++
++  /// Add stackmaps at function call sites & equivalence points
++  bool AddStackMaps;
++
++  /// Add stackmaps describing stack state in libc thread start functions
++  bool AddLibcStackMaps;
++
+ public:
+   TargetPassConfig(TargetMachine *tm, PassManagerBase &pm);
+   // Dummy constructor.
+@@ -142,6 +151,9 @@
  
    CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
  
 +  CodeGenOpt::Level getArchIROptLevel() const
 +  { return TM->getArchIROptLevel(); }
 +
-+  bool emitStackTransformMetadata() const
-+  { return TM->emitStackTransformMetadata(); }
-+
-+  bool emitLibcTransformMetadata() const
-+  { return TM->emitLibcTransformMetadata(); }
-+
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -448,6 +457,10 @@
+@@ -193,6 +205,26 @@
+   /// Return true if shrink wrapping is enabled.
+   bool getEnableShrinkWrap() const;
+ 
++  /// Return whether we should instrument the code with equivalence points.
++  bool addEquivalencePoints() const { return AddEquivalencePoints; }
++
++  /// Return whether we should emit stack transformation metadata by
++  /// instrumenting the code with IR-level StackMaps.
++  bool addStackMaps() const { return AddStackMaps; }
++
++  /// Return whether we should emit transformation metadata (via IR-level
++  /// StackMaps) for libc thread start functions.
++  bool addLibcStackMaps() const { return AddLibcStackMaps; }
++
++  /// \brief Enable/disable adding equivalence points.
++  void setAddEquivalencePoints(bool Set) { AddEquivalencePoints = Set; }
++
++  /// \brief Enable/disable adding StackMaps.
++  void setAddStackMaps(bool Set) { AddStackMaps = Set; }
++
++  /// \brief Enable/disable adding StackMaps to libc thread start function.
++  void setAddLibcStackMaps(bool Set) { AddLibcStackMaps = Set; }
++
+   /// Return true if the default global register allocator is in use and
+   /// has not be overriden on the command line with '-regalloc=...'
+   bool usingDefaultRegAlloc() const;
+@@ -448,6 +480,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -1547,47 +1566,28 @@ Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
 --- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
-@@ -32,6 +32,19 @@
+@@ -32,6 +32,11 @@
    ///
    CodeGenOpt::Level OptLevel;
  
 +  /// ArchIROptLevel - Optimization level (architecture-specific IR
-+  /// optimizations only).
++  /// optimizations only).  Defaults to OptLevel.
 +  ///
 +  CodeGenOpt::Level ArchIROptLevel;
-+
-+  /// EmitStackTransformMetadata - Flag for emitting stack transformation
-+  /// metadata
-+  bool EmitStackTransformMetadata;
-+
-+  /// EmitLibcTransformMetadata - Flag for emitting transformation metadata
-+  /// for libc thread start routines
-+  bool EmitLibcTransformMetadata;
 +
  public:
    void initMCCodeGenInfo(Reloc::Model RM = Reloc::Default,
                           CodeModel::Model CM = CodeModel::Default,
-@@ -43,8 +56,23 @@
+@@ -43,8 +48,12 @@
  
    CodeGenOpt::Level getOptLevel() const { return OptLevel; }
  
 +  CodeGenOpt::Level getArchIROptLevel() const { return ArchIROptLevel; }
 +
-+  bool emitStackTransformMetadata() const
-+  { return EmitStackTransformMetadata; }
-+
-+  bool emitLibcTransformMetadata() const { return EmitLibcTransformMetadata; }
-+
    // Allow overriding OptLevel on a per-function basis.
    void setOptLevel(CodeGenOpt::Level Level) { OptLevel = Level; }
 +
 +  void setArchIROptLevel(CodeGenOpt::Level Level) { ArchIROptLevel = Level; }
-+
-+  void setEmitStackTransformMetadata(bool Emit)
-+  { EmitStackTransformMetadata = Emit; }
-+
-+  void setEmitLibcTransformMetadata(bool Emit)
-+  { EmitLibcTransformMetadata = Emit; }
  };
  } // namespace llvm
  
@@ -1619,7 +1619,7 @@ Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
-@@ -171,6 +171,26 @@
+@@ -171,6 +171,13 @@
    /// \brief Overrides the optimization level.
    void setOptLevel(CodeGenOpt::Level Level) const;
  
@@ -1629,19 +1629,6 @@ Index: include/llvm/Target/TargetMachine.h
 +
 +  /// \brief Overrides the architecture-specific IR optimization level.
 +  void setArchIROptLevel(CodeGenOpt::Level Level) const;
-+
-+  /// Returns whether or not we should emit stack transformation metadata
-+  bool emitStackTransformMetadata() const;
-+
-+  /// \brief Enable/disable emitting of stack transformation metadata
-+  void setEmitStackTransformMetadata(bool Emit);
-+
-+  /// Returns whether or not we should emit transformation metadata for libc
-+  /// thread start functions
-+  bool emitLibcTransformMetadata() const;
-+
-+  /// \brief Enable/disable emitting of libc thread start function metadata
-+  void setEmitLibcTransformMetadata(bool Emit);
 +
    void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
  
@@ -2429,41 +2416,58 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
 --- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
-@@ -42,6 +42,19 @@
+@@ -42,6 +42,26 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
    cl::desc("Enable the \"fast\" instruction selector"));
  
-+// Enable generation of stack transformation metadata, which also requires
-+// disabling late-stage optimizations.
-+static cl::opt<bool> EmitStackTransformMetadata("emit-st-metadata",
-+  cl::init(false), cl::NotHidden,
-+  cl::desc("Enable generation of Popcorn stack transformation metadata"));
++// Popcorn-specific IR-level instrumentation
++enum PopcornInstrumentation {
++  none, // No instrumentation
++  eqpoints, // Only add equivalence points, don't generate rewriting metadata
++  migration, // Add equivalence points & generate rewriting metadata for migration
++  libc // Generate rewriting metadata for libc thread start functions
++};
 +
-+// Similar to "-emit-st-metadata", but *only* for specific libc thread start
-+// functions
-+static cl::opt<bool> EmitLibcTransformMetadata("emit-libc-metadata",
-+  cl::init(false), cl::NotHidden,
-+  cl::desc("Enable generation of transformation metadata for libc thread "
-+           "start functions"));
++static cl::opt<PopcornInstrumentation> PopcornInstrument("popcorn-instrument",
++  cl::desc("Add Popcorn-specific instrumentation to applications"),
++  cl::init(none),
++  cl::values(
++    clEnumVal(none, "No instrumentation (default)"),
++    clEnumVal(eqpoints, "Only add equivalence points (no migration metadata)"),
++    clEnumVal(migration, "Add equivalence points & migration metadata"),
++    clEnumVal(libc, "Instrument libc thread start functions for migration"),
++    NULL
++  )
++);
 +
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,6 +118,19 @@
+@@ -105,6 +125,29 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
-+  // Add stack transformation instrumentation passes, remove late-stage IR
-+  // optimizations
-+  if(EmitStackTransformMetadata) {
++  /// Popcorn compiler - multi-ISA binary configurations.  Requires that IR
++  /// passed to backends is identical, save for certain architecture-specific
++  /// quirks like atomic operations or intrinsics
++  if(PopcornInstrument != PopcornInstrumentation::none) {
 +    TM->setArchIROptLevel(CodeGenOpt::None);
-+    TM->setEmitStackTransformMetadata(true);
-+  }
 +
-+  // Add libc instrumentation passes, remove late-stage IR optimizations
-+  if(EmitLibcTransformMetadata) {
-+    TM->setArchIROptLevel(CodeGenOpt::None);
-+    TM->setEmitLibcTransformMetadata(true);
++    switch(PopcornInstrument) {
++    case PopcornInstrumentation::eqpoints:
++      PassConfig->setAddEquivalencePoints(true);
++      break;
++    case PopcornInstrumentation::migration:
++      PassConfig->setAddEquivalencePoints(true);
++      PassConfig->setAddStackMaps(true);
++      break;
++    case PopcornInstrumentation::libc:
++      PassConfig->setAddLibcStackMaps(true);
++      break;
++    default:
++      llvm_unreachable("Invalid instrumentation type");
++      break;
++    }
 +  }
 +
    PM.add(PassConfig);
@@ -2658,26 +2662,29 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -459,6 +459,18 @@
+@@ -459,6 +459,21 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
-+  // Add pass to instrument IR with equivalence points & stackmap instructions,
-+  // which get lowered to metadata needed for Popcorn's stack transformation
-+  if(emitStackTransformMetadata()) {
-+    addPass(createEquivalencePointsPass());
-+    addPass(createInsertStackMapsPass());
-+  }
++  // Add pass to instrument IR with equivalence points, which are implemented
++  // various ways depending on other command-line arguments
++  if(AddEquivalencePoints) addPass(createEquivalencePointsPass());
 +
-+  // Similarly to creatInsertStackMaps pass, but only instruments libc thread
++  assert(!(AddStackMaps && AddLibcStackMaps) &&
++    "Cannot add both InsertStackMapsPass and LibcStackMapsPass");
++
++  // Add pass to instrument IR with stackmap instructions, which get lowered to
++  // metadata needed for Popcorn's stack transformation
++  if(AddStackMaps) addPass(createInsertStackMapsPass());
++
++  // Similar to creatInsertStackMaps pass, but only instruments libc thread
 +  // start functions
-+  if(emitLibcTransformMetadata())
-+    addPass(createLibcStackMapsPass());
++  if(AddLibcStackMaps) addPass(createLibcStackMapsPass());
 +
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +766,10 @@
+@@ -754,6 +769,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -4881,12 +4888,11 @@ Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
 --- lib/MC/MCCodeGenInfo.cpp	(revision 277823)
 +++ lib/MC/MCCodeGenInfo.cpp	(working copy)
-@@ -20,4 +20,6 @@
+@@ -20,4 +20,5 @@
    RelocationModel = RM;
    CMModel = CM;
    OptLevel = OL;
 +  ArchIROptLevel = OL;
-+  EmitStackTransformMetadata = false;
  }
 Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
@@ -5327,7 +5333,7 @@ Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
-@@ -149,6 +149,39 @@
+@@ -149,6 +149,17 @@
      CodeGenInfo->setOptLevel(Level);
  }
  
@@ -5340,28 +5346,6 @@ Index: lib/Target/TargetMachine.cpp
 +void TargetMachine::setArchIROptLevel(CodeGenOpt::Level Level) const {
 +  if (CodeGenInfo)
 +    CodeGenInfo->setArchIROptLevel(Level);
-+}
-+
-+bool TargetMachine::emitStackTransformMetadata() const {
-+  if (!CodeGenInfo)
-+    return false;
-+  else return CodeGenInfo->emitStackTransformMetadata();
-+}
-+
-+void TargetMachine::setEmitStackTransformMetadata(bool Emit) {
-+  if (CodeGenInfo)
-+    CodeGenInfo->setEmitStackTransformMetadata(Emit);
-+}
-+
-+bool TargetMachine::emitLibcTransformMetadata() const {
-+  if (!CodeGenInfo)
-+    return false;
-+  else return CodeGenInfo->emitLibcTransformMetadata();
-+}
-+
-+void TargetMachine::setEmitLibcTransformMetadata(bool Emit) {
-+  if (CodeGenInfo)
-+    CodeGenInfo->setEmitLibcTransformMetadata(Emit);
 +}
 +
  TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
@@ -5687,7 +5671,7 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/EquivalencePoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/EquivalencePoints.cpp	(working copy)
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,313 @@
 +//===- EquivalencePoints.cpp ----------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5711,12 +5695,13 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +//
 +//===----------------------------------------------------------------------===//
 +
++#include <map>
 +#include "llvm/Pass.h"
-+#include "llvm/ADT/StringMap.h"
++#include "llvm/ADT/Statistic.h"
 +#include "llvm/ADT/StringSet.h"
 +#include "llvm/ADT/Triple.h"
 +#include "llvm/IR/DiagnosticInfo.h"
-+#include "llvm/IR/InlineAsm.h"
++#include "llvm/IR/Intrinsics.h"
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
 +#include "llvm/IR/Module.h"
@@ -5733,6 +5718,12 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +HTMExec("htm-execution", cl::NotHidden, cl::init(false),
 +  cl::desc("Instrument equivalence points with HTM execution "
 +           "(only supported on PowerPC & x86-64)"));
++
++/// Disable wrapping libc functions which are likely to cause HTM aborts with
++/// HTM stop/start intrinsics.  Wrapping happens by default with HTM execution.
++static cl::opt<bool>
++NoWrapLibc("htm-no-wrap-libc", cl::Hidden, cl::init(false),
++  cl::desc("Disable wrapping libc functions with HTM stop/start"));
 +
 +/// Insert more equivalence points into the body of a function.  Analyze memory
 +/// usage & attempt to instrument the code to reduce the time until the thread
@@ -5757,6 +5748,8 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +  cl::desc("HTM analysis tuning - HTM write buffer size, in kilobytes"),
 +  cl::value_desc("size"));
 +
++STATISTIC(NumEqPoints, "Number of equivalence points added");
++
 +namespace {
 +
 +/// EquivalencePoints - insert equivalence points into functions, optionally
@@ -5766,116 +5759,152 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +public:
 +  static char ID;
 +
-+  EquivalencePoints() : FunctionPass(ID), numInstrumented(0) {}
++  EquivalencePoints() : FunctionPass(ID), NumInstr(0) {}
 +  ~EquivalencePoints() {}
 +
 +  virtual const char *getPassName() const
 +  { return "Insert equivalence points"; }
 +
 +  virtual bool doInitialization(Module &M) {
-+    // Make sure HTM is supported on this architecture if attempting to
-+    // instrument with transactional execution
-+    doHTMInstrumentation = false;
-+    if(HTMExec) {
-+      Triple Arch(M.getTargetTriple());
-+      if(HTMEqPoint.find(Arch.getArchName()) == HTMEqPoint.end()) {
++    bool modified = false;
++
++    // Ensure HTM is supported on this architecture if attempting to instrument
++    // with transactional execution, otherwise disable it and warn the user
++    DoHTMInstrumentation = HTMExec;
++    if(DoHTMInstrumentation) {
++      Triple TheTriple(M.getTargetTriple());
++      Arch = TheTriple.getArch();
++
++      // TODO need to check for HTM attributes, e.g., on Intel "+rtm"
++
++      if(HTMBegin.find(Arch) != HTMBegin.end()) {
++        // Add intrinsic declarations, used to create call instructions
++        HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
++        HTMEndDecl = addIntrinsicDecl(M, HTMEnd);
++        HTMTestDecl = addIntrinsicDecl(M, HTMTest);
++        modified = true;
++      }
++      else {
 +        std::string Msg("HTM instrumentation not supported for '");
-+        Msg += Arch.getArchName();
++        Msg += TheTriple.getArchName();
 +        Msg += "'";
 +        DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
 +        M.getContext().diagnose(DI);
++        DoHTMInstrumentation = false;
 +      }
-+      else doHTMInstrumentation = true;
 +    }
-+    return false;
++
++    return modified;
 +  }
 +
 +  /// Insert equivalence points into functions
 +  virtual bool runOnFunction(Function &F)
 +  {
-+    numInstrumented = 0;
++    NumInstr = 0;
++    SmallVector<Instruction *, 16> Returns;
 +
-+    // Instrument function boundaries, i.e., entry and return points
++    // Instrument function boundaries, i.e., entry and return points.  Collect
++    // returns first & then instrument, otherwise we can inadvertently create
++    // more return instructions & infinitely loop.
 +    addEquivalencePoint(F.getEntryBlock().getFirstInsertionPt());
-+    for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
-+      if(isa<ReturnInst>(BB->getTerminator())) {
-+        addEquivalencePoint(BB->getTerminator());
-+      }
-+    }
++    for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
++      if(isa<ReturnInst>(BB->getTerminator()))
++        Returns.push_back(BB->getTerminator());
++    for(auto &I : Returns) addEquivalencePoint(I);
 +
 +    // Some libc functions (e.g., I/O) will cause aborts from system calls.
 +    // Instrument libc calls to stop & resume transactions afterwards.
-+    if(doHTMInstrumentation) wrapLibcWithHTM(F);
++    if(DoHTMInstrumentation && !NoWrapLibc) wrapLibcWithHTM(F);
 +
-+    return numInstrumented > 0;
++    NumEqPoints += NumInstr;
++    return NumInstr > 0;
 +  }
 +
 +private:
 +  /// Number of equivalence points added to the application
-+  size_t numInstrumented;
++  size_t NumInstr;
 +
 +  /// Rather than modifying the command-line argument (which can mess up
 +  /// compile configurations for multi-ISA binary generation), store a
 +  /// per-module value during intialization
-+  bool doHTMInstrumentation;
++  bool DoHTMInstrumentation;
 +
-+  /// HTM inline assembly for a given architecture
-+  struct AsmSpec {
-+    /// Assembly template, i.e., assembler instructions.
-+    std::string Template;
++  /// The current architecture - used to access architecture-specific HTM calls
++  Triple::ArchType Arch;
 +
-+    /// Constraints (inputs, outputs, clobbers) for the assembly template
-+    std::string Constraints;
++  /// Function declarations for HTM intrinsics
++  Value *HTMBeginDecl;
++  Value *HTMEndDecl;
++  Value *HTMTestDecl;
 +
-+    /// Do we have side-effects?
-+    bool SideEffects;
-+
-+    /// Do we need to align the stack?
-+    bool AlignsStack;
-+
-+    /// Assembly dialect (LLVM only supports AT&T or Intel)
-+    InlineAsm::AsmDialect Dialect;
-+  };
-+
-+  /// Per-architecture inline assembly for HTM execution
-+  const static StringMap<AsmSpec> HTMBegin;
-+  const static StringMap<AsmSpec> HTMEnd;
-+  const static StringMap<AsmSpec> HTMEqPoint;
++  /// Per-architecture LLVM intrinsic IDs for HTM begin, HTM end, and testing
++  /// if executing transactionally
++  typedef std::map<Triple::ArchType, Intrinsic::ID> IntrinsicMap;
++  const static IntrinsicMap HTMBegin;
++  const static IntrinsicMap HTMEnd;
++  const static IntrinsicMap HTMTest;
 +
 +  /// libc functions which are likely to cause an HTM abort through a syscall
 +  // TODO LLVM has to have a better way to detect these
 +  const static StringSet<> LibcIO;
 +
-+  /// Get an architecture-specific inline ASM statement for transactional
-+  /// execution at equivalence points.  The template argument specifies which
-+  /// assembly to generate, e.g., HTM begin/end, or HTM equivalence points.
-+  template<const StringMap<AsmSpec> &Asm>
-+  static InlineAsm *getHTMAsm(const Module &M) {
-+    StringMap<AsmSpec>::const_iterator It;
-+    Triple Arch(M.getTargetTriple());
-+
-+    FunctionType *FuncTy =
-+      FunctionType::get(Type::getVoidTy(M.getContext()), false);
-+    It = Asm.find(Arch.getArchName());
-+    assert(It != Asm.end() && "Unsupported architecture");
-+    const AsmSpec &Spec = It->second;
-+    return InlineAsm::get(FuncTy,
-+                          Spec.Template,
-+                          Spec.Constraints,
-+                          Spec.SideEffects,
-+                          Spec.AlignsStack,
-+                          Spec.Dialect);
++  /// Add a declaration for an architecture-specific intrinsic (contained in
++  /// the map).
++  Constant *addIntrinsicDecl(Module &M, const IntrinsicMap &Map) {
++    IntrinsicMap::const_iterator It = Map.find(Arch);
++    assert(It != Map.end() && "Unsupported architecture");
++    FunctionType *FuncTy = Intrinsic::getType(M.getContext(), It->second);
++    return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
 +  }
 +
-+  /// Insert an equivalence point directly before the specified instruction
-+  void addEquivalencePoint(Instruction *I) {
++  /// Add a transactional execution begin intrinsic
++  void addHTMBegin(Instruction *I) {
 +    IRBuilder<> Worker(I);
++    Worker.CreateCall(HTMBeginDecl);
++  }
 +
-+    if(doHTMInstrumentation)
-+      Worker.CreateCall(getHTMAsm<HTMEqPoint>(*I->getModule()));
++  /// Add transactional execution check & end intrinsics before an instruction.
++  void addHTMCheckAndEnd(Instruction *I) {
++    LLVMContext &C = I->getContext();
++    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
++    Function *CurF = CurBB->getParent();
++
++    // Create a new successor which contains all instructions after the HTM
++    // check & end
++    NewSuccBB =
++      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
++
++    // Create an HTM end block, which ends the transaction and jumps to the
++    // new successor
++    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
++                                  CurF, NewSuccBB);
++    IRBuilder<> EndWorker(HTMEndBB);
++    EndWorker.CreateCall(HTMEndDecl);
++    EndWorker.CreateBr(NewSuccBB);
++
++    // Finally, add the HTM test & replace the unconditional branch created by
++    // splitBasicBlock() with a conditional branch to end the transaction or
++    // continue on to the new successor
++    IRBuilder<> PredWorker(CurBB->getTerminator());
++    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
++    IntegerType *I32 = IntegerType::getInt32Ty(C);
++    ConstantInt *Zero = ConstantInt::get(I32, 0, true);
++    Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
++                                         "htmcmp" + std::to_string(NumInstr));
++    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
++    CurBB->getTerminator()->eraseFromParent();
++  }
++
++  /// Insert an equivalence point directly before an instruction
++  void addEquivalencePoint(Instruction *I) {
++
++    if(DoHTMInstrumentation) {
++      addHTMCheckAndEnd(I);
++      addHTMBegin(I);
++    }
 +    // TODO insert flag check & migration call if flag is set
 +
-+    numInstrumented++;
++    NumInstr++;
 +  }
 +
 +  /// Return whether the call instruction is a libc I/O call
@@ -5895,26 +5924,20 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +    return false;
 +  }
 +
-+  /// Search for & wrap libc functions which are likely to can an HTM abort
++  /// Search for & wrap libc functions which are likely to cause an HTM abort
 +  void wrapLibcWithHTM(Function &F) {
-+    Instruction *Start, *End;
++    SmallVector<Instruction *, 16> LibcCalls;
 +
-+    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
-+      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
-+        if(isLibcIO(&*I)) {
-+          // Wrap multiple consecutive I/O calls together
-+          Start = End = &*I;
-+          while(isLibcIO(End->getNextNode())) {
-+            End = End->getNextNode();
-+            I++;
-+          }
++    // Add libc call instructions to the work list & then instrument (same
++    // reasoning as for instrumenting function returns)
++    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++)
++      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++)
++        if(isLibcIO(&*I)) LibcCalls.push_back(&*I);
 +
-+          IRBuilder<> Worker(Start);
-+          Worker.CreateCall(getHTMAsm<HTMEnd>(*Start->getModule()));
-+          Worker.SetInsertPoint(End->getNextNode());
-+          Worker.CreateCall(getHTMAsm<HTMBegin>(*Start->getModule()));
-+        }
-+      }
++    // Add HTM check/end control flow before and HTM begins after calls
++    for(auto &Inst : LibcCalls) {
++      addHTMCheckAndEnd(Inst);
++      addHTMBegin(Inst->getNextNode());
 +    }
 +  }
 +};
@@ -5924,19 +5947,17 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +char EquivalencePoints::ID = 0;
 +
 +// TODO LLVM has intrinsics for x86 & PPC HTM inline assembly
-+const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMBegin = {
-+  {"x86_64", {"xbegin 1f;1:", "~{eax},~{flags}",
-+              false, false, InlineAsm::AD_ATT}}
++const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMBegin = {
++  {Triple::x86_64, Intrinsic::x86_xbegin},
++  {Triple::ppc64le, Intrinsic::ppc_tbegin}
 +};
 +
-+const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEnd = {
-+  {"x86_64", {"xtest;jz 1f;xend;1:", "~{eax},~{flags}",
-+              true, false, InlineAsm::AD_ATT}}
++const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMEnd = {
++  {Triple::x86_64, Intrinsic::x86_xend}
 +};
 +
-+const StringMap<EquivalencePoints::AsmSpec> EquivalencePoints::HTMEqPoint = {
-+  {"x86_64", {"xtest;jz 1f;xend;1:xbegin 2f;2:",
-+              "~{eax},~{flags}", false, false, InlineAsm::AD_ATT}}
++const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMTest = {
++  {Triple::x86_64, Intrinsic::x86_xtest}
 +};
 +
 +INITIALIZE_PASS(EquivalencePoints, "equivalence-points",
