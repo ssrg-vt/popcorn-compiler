@@ -93,8 +93,9 @@ class AbstractArchitecture():
 						address = int(matchResult2.group(1), 0)
 						size = int(matchResult2.group(2), 0)
 						alignment = int(matchResult2.group(3), 0)
-						s = Symbol.Symbol(name, address, size, alignment,
-							self.getArch())
+						objectFile = matchResult2.group(4)
+						s = Symbol.Symbol(name, address, size, alignment, 
+						objectFile, self.getArch())
 					else:
 						er("missed a two lines symbol while parsing	mapfile:\n")
 						er("line1: " + line + "\n")
@@ -107,8 +108,9 @@ class AbstractArchitecture():
 						address = int(matchResult3.group(2), 0)
 						size = int(matchResult3.group(3), 0)
 						alignment = int(matchResult3.group(4), 0)
+						objectFile = matchResult3.group(5)
 						s = Symbol.Symbol(name, address, size, alignment,
-							self.getArch())
+							objectFile, self.getArch())
 
 				if s:
 	#				for section_name in ["text", "data", "rodata", "bss", 
@@ -246,18 +248,71 @@ class AbstractArchitecture():
 	def updateSymbolInSymbolsList(self, symbolToUpdate, sectionName, 
 		symbolsList):
 		
+		arch = self.getArch()
+
 		# First search for the symbol in the list
 		for symbol in (symbolsList[sectionName]):
 			if symbol.getName() == symbolToUpdate.getName():
 				# is it the first time we touch taht symbol for this arch?
-				arch = self.getArch()
-				if symbol.getAddress(arch) == -1:
+				# Just add the symbol to the list
+				if symbol.getAddress(arch) == -1: #TODO replace with reference
 					symbol.setAddress(symbolToUpdate.getAddress(arch), arch)
 					symbol.setSize(symbolToUpdate.getSize(arch), arch)
 					symbol.setAlignment(symbolToUpdate.getAlignment(arch), arch)
+					symbol.setReference(arch)
+					symbol.setObjectFile(symbolToUpdate.getObjectFile(arch), 
+						arch)
 				else:
-					warn(self.getArchString() + ": duplicate symbol in "
-						" same arch: " + symbol.getName() + "\n")
+					pass
+				# We found a duplicate symbol for this architecture. We are
+				# going to pack all the symbols with the same name one after
+				# the other in the address space, and that set is represented
+				# by a single instance of Symbol in our representation.
+				# we need to compute the size of this set, and the difficulty is
+				# that each symbol inside the set might have different alignment
+				# constraint. So when we find a dulpicate symbol 'sd' we must 
+				# update the Symbol 'se' representing the set as follows:
+				# 1. If sd alignment constraint is greater than se, set se 
+				#    constraint equal to the one of sd. 
+				# 2. If se alignment constraint is greater than the constraint 
+				#    of sd, then set sd constraint to the one of se.
+				# 3. TODO multiple shit
+				# That way, we assure that each symbol inside the set will have 
+				# the same alignment constraint so we can make assumption about 
+				# the padding that the linker will add before the symbol we are 
+				# currently inserting: the size of the set after insertion will 
+				# then be: old_set_size + some_padding + inserted_symbol_size.
+				# some_padding can be easily computed as we ensured than the 
+				# first symbol of the set and the inserted one have the same
+				# alignment constraints
+
+					# Compute the new alignment
+#					existingAl = symbol.getAlignment(arch)
+#					insertedAl = symbolToUpdate.getAlignment(arch)
+#					newAl = max(existingAl, insertedAl)
+#					if ((existingAl % insertedAl != 0) or
+#						(insertedAl % existingAl != 0)):
+#						newAl = Globals.lcm(existingAl , insertedAl)
+#						print "Fancy alignment: " + str(hex(newAl))
+#						print " existing was:" + str(hex(existingAl))
+#						print " inserted is :" + str(hex(insertedAl))
+
+					# Compute the padding
+#					existingSize = symbol.getSize(arch)
+#					insertedSize = symbolToUpdate.getSize(arch)
+#					padding = 0
+#					while ((existingSize + insertedSize + 
+#						padding) % newAl) != 0:
+#						padding += 1
+
+
+					# Set the new size and alignment
+#					symbol.setSize(existingSize + insertedSize + padding, arch)
+#					symbol.setAlignment(newAl, arch)
+
+#					print ("New size for " + symbol.getName() + ": " +
+#						str(hex(symbol.getSize(arch))) + ", alignment=" +
+#						str(hex(symbol.getAlignment(arch))))
 
 ###############################################################################
 # updateSymbolsList

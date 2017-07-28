@@ -24,6 +24,7 @@ class Linker:
 	@classmethod
 	def produceLinkerScript(cls, symbolsList, arch):
 		template = arch.getLsTemplate()
+		archEnum = arch.getArch()
 	
 		with open(template, "r") as f:
 			lines = f.readlines()
@@ -43,24 +44,35 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-						# First add padding before
-						# TODO
+						# First add padding before if needed
+						if not symbol.getReference(archEnum):
+							padding_before = symbol.getPaddingBefore(archEnum)
+							if padding_before:
+								output_buffer.append("\t. = . + " +	
+									hex(padding_before) + 
+									"; /* padding before "+ 
+									symbol.getName() + " */\n")
 
 						# check if the symbol is actually enabled for this arch
 						if symbol.getSize(arch.getArch()) >= 0:
 							output_buffer.append("\t. = ALIGN(" + 
-								str(hex(symbol.getAlignment(arch.getArch()))) + 
-								");\n")
-							output_buffer.append("\t*(" + symbol.getName() +
-								");\n")
+								str(hex(symbol.getAlignment(archEnum))) + 
+								"); /* align for " + symbol.getName() + " */\n")
 
-						# Then add padding after
-						# TODO
+							output_buffer.append("\t*(" + symbol.getName() +
+								"); /* size " + hex(symbol.getSize(archEnum)) +
+								" */\n")
+
+						# Then add padding after if needed
+						padding_after = symbol.getPaddingAfter(archEnum)
+						if padding_after:
+							output_buffer.append("\t. = . + " + 
+								hex(padding_after) + "; /* padding after " + 
+								symbol.getName() + " */\n")
 
 					# Section "closing" part
 					output_buffer.append("}\n")
 
-				
 			if not foundMarker:
 				output_buffer.append(line)
 
