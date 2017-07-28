@@ -26,6 +26,7 @@ bin:
 
 install: bin
 	cp $(BINARY) $(POPCORN_INSTALL)/bin
+	mkdir $(POPCORN_INSTALL)/share/align-script-templates &> /dev/null
 	cp -r $(TEMPLATES) $(POPCORN_INSTALL)/share/align-script-templates
 
 clean:

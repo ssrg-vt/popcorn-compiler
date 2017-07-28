@@ -285,34 +285,37 @@ class AbstractArchitecture():
 				# some_padding can be easily computed as we ensured than the 
 				# first symbol of the set and the inserted one have the same
 				# alignment constraints
+				# TODO this is shit when we set a new alignment we need to
+				# recompute the padding for the entire set of symbols inside
+				# the set !
 
 					# Compute the new alignment
-#					existingAl = symbol.getAlignment(arch)
-#					insertedAl = symbolToUpdate.getAlignment(arch)
-#					newAl = max(existingAl, insertedAl)
-#					if ((existingAl % insertedAl != 0) or
-#						(insertedAl % existingAl != 0)):
-#						newAl = Globals.lcm(existingAl , insertedAl)
-#						print "Fancy alignment: " + str(hex(newAl))
-#						print " existing was:" + str(hex(existingAl))
-#						print " inserted is :" + str(hex(insertedAl))
+					existingAl = symbol.getAlignment(arch)
+					insertedAl = symbolToUpdate.getAlignment(arch)
+					newAl = max(existingAl, insertedAl)
+					if ((existingAl % insertedAl != 0) or
+						(insertedAl % existingAl != 0)):
+						newAl = Globals.lcm(existingAl , insertedAl)
+						print "Fancy alignment: " + str(hex(newAl))
+						print " existing was:" + str(hex(existingAl))
+						print " inserted is :" + str(hex(insertedAl))
 
 					# Compute the padding
-#					existingSize = symbol.getSize(arch)
-#					insertedSize = symbolToUpdate.getSize(arch)
-#					padding = 0
-#					while ((existingSize + insertedSize + 
-#						padding) % newAl) != 0:
-#						padding += 1
+					existingSize = symbol.getSize(arch)
+					insertedSize = symbolToUpdate.getSize(arch)
+					padding = 0
+					while ((existingSize + insertedSize + 
+						padding) % newAl) != 0:
+						padding += 1
 
 
 					# Set the new size and alignment
-#					symbol.setSize(existingSize + insertedSize + padding, arch)
-#					symbol.setAlignment(newAl, arch)
+					symbol.setSize(existingSize + insertedSize + padding, arch)
+					symbol.setAlignment(newAl, arch)
 
-#					print ("New size for " + symbol.getName() + ": " +
-#						str(hex(symbol.getSize(arch))) + ", alignment=" +
-#						str(hex(symbol.getAlignment(arch))))
+					print ("New size for " + symbol.getName() + ": " +
+						str(hex(symbol.getSize(arch))) + ", alignment=" +
+						str(hex(symbol.getAlignment(arch))))
 
 ###############################################################################
 # updateSymbolsList
