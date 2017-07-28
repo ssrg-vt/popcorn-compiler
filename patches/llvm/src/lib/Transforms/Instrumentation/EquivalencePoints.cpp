@@ -38,12 +38,20 @@ using namespace llvm;
 
 #define DEBUG_TYPE "equivalence-points"
 
+/// Insert more equivalence points into the body of a function.  Analyze memory
+/// usage & attempt to instrument the code to reduce the time until the thread
+/// reaches an equivalence point.  If HTM instrumentation is enabled, analysis
+/// is tailored to avoid hardware transactional memory (HTM) capacity aborts.
+static cl::opt<bool>
+MoreEqPoints("more-eq-points", cl::Hidden, cl::init(false),
+  cl::desc("Add additional equivalence points into the body of functions"));
+
 /// Cover the application in transactional execution by inserting HTM
 /// stop/start instructions at equivalence points.
 static cl::opt<bool>
 HTMExec("htm-execution", cl::NotHidden, cl::init(false),
   cl::desc("Instrument equivalence points with HTM execution "
-           "(only supported on PowerPC & x86-64)"));
+           "(only supported on PowerPC (64-bit) & x86-64)"));
 
 /// Disable wrapping libc functions which are likely to cause HTM aborts with
 /// HTM stop/start intrinsics.  Wrapping happens by default with HTM execution.
@@ -51,14 +59,11 @@ static cl::opt<bool>
 NoWrapLibc("htm-no-wrap-libc", cl::Hidden, cl::init(false),
   cl::desc("Disable wrapping libc functions with HTM stop/start"));
 
-/// Insert more equivalence points into the body of a function.  Analyze memory
-/// usage & attempt to instrument the code to reduce the time until the thread
-/// reaches an equivalence point.  Analysis is tailored to avoid hardware
-/// transactional memory (HTM) capacity aborts.
+/// Disable rollback-only transactions for PowerPC
 static cl::opt<bool>
-MoreEqPoints("more-eq-points", cl::Hidden, cl::init(false),
-  cl::desc("Add additional equivalence points into the body of functions "
-           "(implies '-eq-points')"));
+NoROTPPC("htm-ppc-no-rot", cl::Hidden, cl::init(false),
+  cl::desc("Disable rollback-only transactions in HTM instrumentation "
+           "(PowerPC only)"));
 
 /// HTM memory read buffer size for tuning analysis when inserting additional
 /// equivalence points.
@@ -101,8 +106,6 @@ public:
       Triple TheTriple(M.getTargetTriple());
       Arch = TheTriple.getArch();
 
-      // TODO need to check for HTM attributes, e.g., on Intel "+rtm"
-
       if(HTMBegin.find(Arch) != HTMBegin.end()) {
         // Add intrinsic declarations, used to create call instructions
         HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
@@ -128,6 +131,9 @@ public:
   {
     NumInstr = 0;
     SmallVector<Instruction *, 16> Returns;
+
+    // TODO need to check for HTM attributes, e.g., "+rtm" on Intel and "+htm"
+    // on POWER8
 
     // Instrument function boundaries, i.e., entry and return points.  Collect
     // returns first & then instrument, otherwise we can inadvertently create
@@ -183,14 +189,66 @@ private:
     return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
   }
 
-  /// Add a transactional execution begin intrinsic
-  void addHTMBegin(Instruction *I) {
+  // TODO because we're only supporting 2 architectures for now, we're not
+  // going to abstract this out into the appropriate Target/* folders
+
+  /// Add a transactional execution begin intrinsic for PowerPC, optionally
+  /// with rollback-only transactions
+  void addPowerPCHTMBegin(Instruction *I) {
+    LLVMContext &C = I->getContext();
+    IRBuilder<> Worker(I);
+    ConstantInt *ROT = ConstantInt::get(IntegerType::getInt32Ty(C),
+                                        !NoROTPPC, false);
+    Worker.CreateCall(HTMBeginDecl, ArrayRef<Value *>(ROT));
+  }
+
+  /// Add a transactional execution begin intrinsic for x86
+  void addX86HTMBegin(Instruction *I) {
     IRBuilder<> Worker(I);
     Worker.CreateCall(HTMBeginDecl);
   }
 
-  /// Add transactional execution check & end intrinsics before an instruction.
-  void addHTMCheckAndEnd(Instruction *I) {
+  /// Add transactional execution check & end intrinsics for PowerPC before an
+  /// instruction.
+  void addPowerPCHTMCheckAndEnd(Instruction *I) {
+    LLVMContext &C = I->getContext();
+    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
+    Function *CurF = CurBB->getParent();
+
+    // Create a new successor which contains all instructions after the HTM
+    // check & end
+    NewSuccBB =
+      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
+
+    // Create an HTM end block, which ends the transaction and jumps to the
+    // new successor
+    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
+                                  CurF, NewSuccBB);
+    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C),
+                                         0, false);
+    IRBuilder<> EndWorker(HTMEndBB);
+    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(Zero));
+    EndWorker.CreateBr(NewSuccBB);
+
+    // Finally, add the HTM test & replace the unconditional branch created by
+    // splitBasicBlock() with a conditional branch to end the transaction or
+    // continue on to the new successor
+    IRBuilder<> PredWorker(CurBB->getTerminator());
+    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
+    ConstantInt *HTMStateMask = ConstantInt::get(IntegerType::getInt64Ty(C),
+                                                 4, false);
+    Value *Mask = PredWorker.CreateAnd(HTMTestVal, HTMStateMask);
+    ConstantInt *IsTransactional = ConstantInt::get(IntegerType::getInt64Ty(C),
+                                                    4, false);
+    Value *Cmp = PredWorker.CreateICmpEQ(Mask, IsTransactional,
+                                         "htmcmp" + std::to_string(NumInstr));
+    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
+    CurBB->getTerminator()->eraseFromParent();
+  }
+
+  /// Add transactional execution check & end intrinsics for x86  before an
+  /// instruction.
+  void addX86HTMCheckAndEnd(Instruction *I) {
     LLVMContext &C = I->getContext();
     BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
     Function *CurF = CurBB->getParent();
@@ -213,8 +271,7 @@ private:
     // continue on to the new successor
     IRBuilder<> PredWorker(CurBB->getTerminator());
     CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
-    IntegerType *I32 = IntegerType::getInt32Ty(C);
-    ConstantInt *Zero = ConstantInt::get(I32, 0, true);
+    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
     Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
                                          "htmcmp" + std::to_string(NumInstr));
     PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
@@ -225,8 +282,19 @@ private:
   void addEquivalencePoint(Instruction *I) {
 
     if(DoHTMInstrumentation) {
-      addHTMCheckAndEnd(I);
-      addHTMBegin(I);
+      switch(Arch) {
+      case Triple::x86_64:
+        addX86HTMCheckAndEnd(I);
+        addX86HTMBegin(I);
+        break;
+      case Triple::ppc64le:
+        addPowerPCHTMCheckAndEnd(I);
+        addPowerPCHTMBegin(I);
+        break;
+      default:
+        llvm_unreachable("HTM -- unsupported architecture");
+        break;
+      }
     }
     // TODO insert flag check & migration call if flag is set
 
@@ -262,8 +330,19 @@ private:
 
     // Add HTM check/end control flow before and HTM begins after calls
     for(auto &Inst : LibcCalls) {
-      addHTMCheckAndEnd(Inst);
-      addHTMBegin(Inst->getNextNode());
+      switch(Arch) {
+      case Triple::x86_64:
+        addX86HTMCheckAndEnd(Inst);
+        addX86HTMBegin(Inst->getNextNode());
+        break;
+      case Triple::ppc64le:
+        addPowerPCHTMCheckAndEnd(Inst);
+        addPowerPCHTMBegin(Inst->getNextNode());
+        break;
+      default:
+        llvm_unreachable("HTM -- unsupported architecture");
+        break;
+      }
     }
   }
 };
@@ -272,18 +351,19 @@ private:
 
 char EquivalencePoints::ID = 0;
 
-// TODO LLVM has intrinsics for x86 & PPC HTM inline assembly
 const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMBegin = {
   {Triple::x86_64, Intrinsic::x86_xbegin},
   {Triple::ppc64le, Intrinsic::ppc_tbegin}
 };
 
 const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMEnd = {
-  {Triple::x86_64, Intrinsic::x86_xend}
+  {Triple::x86_64, Intrinsic::x86_xend},
+  {Triple::ppc64le, Intrinsic::ppc_tend}
 };
 
 const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMTest = {
-  {Triple::x86_64, Intrinsic::x86_xtest}
+  {Triple::x86_64, Intrinsic::x86_xtest},
+  {Triple::ppc64le, Intrinsic::ppc_ttest}
 };
 
 INITIALIZE_PASS(EquivalencePoints, "equivalence-points",
