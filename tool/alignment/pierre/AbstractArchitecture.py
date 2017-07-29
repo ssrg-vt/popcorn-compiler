@@ -206,9 +206,6 @@ class AbstractArchitecture():
 ###############################################################################
 # getSection
 ###############################################################################
-	# TODO modify this function to rather look at the address of the 
-	# symbol and see which section it fits in
-
 	# Return the section associated with a symbol as a string (ex: ".text")
 	# symbol is a Symbol instance, sectionInfo is a list of Section object, the
 	# list that is returned by ReadElfParser.getSectionInfo()
@@ -244,6 +241,23 @@ class AbstractArchitecture():
 			pass
 
 		return res
+###############################################################################
+# recomputeSizeOnNewAlignment
+###############################################################################
+
+	def recomputeSizeOnNewAlignment(self, symbol, newAlignment):
+		arch = self.getArch()
+		size = 0
+
+		# Align each existing internal symbol
+		for internalSymbol in symbol.getInternalSymbols(arch):
+			size += internalSymbol
+			while (size % newAlignment) != 0:
+				size += 1
+
+###############################################################################
+# updateSymbolInSymbolsList
+###############################################################################
 
 	def updateSymbolInSymbolsList(self, symbolToUpdate, sectionName, 
 		symbolsList):
@@ -262,8 +276,8 @@ class AbstractArchitecture():
 					symbol.setReference(arch)
 					symbol.setObjectFile(symbolToUpdate.getObjectFile(arch), 
 						arch)
+					symbol.addInternalSymbol(symbolToUpdate.getSize(arch), arch)
 				else:
-					pass
 				# We found a duplicate symbol for this architecture. We are
 				# going to pack all the symbols with the same name one after
 				# the other in the address space, and that set is represented
@@ -285,9 +299,6 @@ class AbstractArchitecture():
 				# some_padding can be easily computed as we ensured than the 
 				# first symbol of the set and the inserted one have the same
 				# alignment constraints
-				# TODO this is shit when we set a new alignment we need to
-				# recompute the padding for the entire set of symbols inside
-				# the set !
 
 					# Compute the new alignment
 					existingAl = symbol.getAlignment(arch)
@@ -296,9 +307,14 @@ class AbstractArchitecture():
 					if ((existingAl % insertedAl != 0) or
 						(insertedAl % existingAl != 0)):
 						newAl = Globals.lcm(existingAl , insertedAl)
-						print "Fancy alignment: " + str(hex(newAl))
-						print " existing was:" + str(hex(existingAl))
-						print " inserted is :" + str(hex(insertedAl))
+					#	print "Fancy alignment: " + str(hex(newAl))
+					#	print " existing was:" + str(hex(existingAl))
+					#	print " inserted is :" + str(hex(insertedAl))
+
+					if newAl != existingAl:
+					# we need to recompute the size of the current set as 
+					# padding will be applied to every symbol in the set
+						self.recomputeSizeOnNewAlignment(symbol, newAl)
 
 					# Compute the padding
 					existingSize = symbol.getSize(arch)
@@ -308,14 +324,14 @@ class AbstractArchitecture():
 						padding) % newAl) != 0:
 						padding += 1
 
-
-					# Set the new size and alignment
+					# Set the new size and alignment, increment the ref. num
 					symbol.setSize(existingSize + insertedSize + padding, arch)
 					symbol.setAlignment(newAl, arch)
+					symbol.addInternalSymbol(insertedSize, arch)
 
-					print ("New size for " + symbol.getName() + ": " +
-						str(hex(symbol.getSize(arch))) + ", alignment=" +
-						str(hex(symbol.getAlignment(arch))))
+					#print ("New size for " + symbol.getName() + ": " +
+					#	str(hex(symbol.getSize(arch))) + ", alignment=" +
+					#	str(hex(symbol.getAlignment(arch))))
 
 ###############################################################################
 # updateSymbolsList

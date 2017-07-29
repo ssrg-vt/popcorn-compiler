@@ -17,6 +17,12 @@ class Symbol:
 		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 		self._objectFiles =  { Arch.X86 : "", Arch.ARM : "", Arch.POWER : "" }
 		self._objectFiles[arch] = objectFile
+		
+		# In some cases, multiple symbols can have the same name. We store
+		# them as a single Symbol instance and keep track of the actual size of 
+		# each symbol related to that name in per-arch lists
+		self._internalSymbols = { Arch.X86 : [], Arch.ARM : [], Arch.POWER : []}
+		self._internalSymbols[arch].append(size)
 
 	def __str__(self):
 		return ("Symbol: name=" + self.getName() + 
@@ -44,6 +50,12 @@ class Symbol:
 
 	def setName(self, name):
 		self._name = name
+
+	def getInternalSymbols(self, arch):
+		return self._internalSymbols[arch]
+
+	def addInternalSymbol(self, size, arch):
+		self._internalSymbols[arch].append(size)
 
 	def getObjectFile(self, arch):
 		return self._objectFiles[arch]
