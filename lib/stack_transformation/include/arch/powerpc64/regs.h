@@ -331,7 +331,7 @@ struct regset_powerpc64
 #define GET_CTR( var )  asm volatile( "mfctr 22; std 22,%0" : "=m" (var) : : "r22" )
 
 // TODO: This is wrong?
-#define SET_LR( )  asm volatile( "ld 3,0(1) ; ld 3,16(3); mtlr 3" : : : "r3" )
+#define SET_LR( )  asm volatile( "ld 17,0(1) ; ld 17,16(17)" : : : "r17" )
 
 /*
  * The only way to set the PC is through control flow operations.
