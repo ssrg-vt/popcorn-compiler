@@ -13,10 +13,13 @@
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
+
+#define DEBUG_TYPE "stacktransform"
 
 using namespace llvm;
 
@@ -50,6 +53,29 @@ std::string ValueGenInst::getInstNameStr(enum InstType Type) {
 // MachineSymbolRef implementation
 //
 
+MachineSymbolRef::MachineSymbolRef(const MachineOperand &Symbol,
+                                   const MachineInstr *DefMI,
+                                   bool Ptr = false)
+  : MachineReference(DefMI, Ptr), Symbol(Symbol), Type(Symbol.getType()) {
+  switch(Symbol.getType()) {
+  case MachineOperand::MO_GlobalAddress:
+    Name = Symbol.getGlobal()->getName();
+    break;
+  case MachineOperand::MO_ExternalSymbol:
+    Name = Symbol.getSymbolName();
+    break;
+  case MachineOperand::MO_MCSymbol:
+    Name = Symbol.getMCSymbol()->getName();
+    break;
+  default:
+    DEBUG(dbgs() << "Unhandled reference type: ";
+          Symbol.print(dbgs());
+          dbgs() << "\n";);
+    Name = "(unknown)";
+    break;
+  }
+}
+
 bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
   if(RHS.isSymbolRef()) {
     const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
@@ -59,22 +85,19 @@ bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
 }
 
 std::string MachineSymbolRef::toString() const {
-  std::string buf = "reference to symbol '";
-  switch(Symbol.getType()) {
-  case MachineOperand::MO_GlobalAddress:
-    buf += Symbol.getGlobal()->getName();
-    break;
-  case MachineOperand::MO_ExternalSymbol:
-    buf += Symbol.getSymbolName();
-    break;
-  case MachineOperand::MO_MCSymbol:
-    buf += Symbol.getMCSymbol()->getName();
-    break;
+  std::string buf = "reference to symbol '" + Name + "' (";
+  switch(Type) {
+  case MachineOperand::MO_GlobalAddress: buf += "global)"; break;
+  case MachineOperand::MO_ExternalSymbol: buf += "external)"; break;
+  case MachineOperand::MO_MCSymbol: buf += "MC symbol)"; break;
   default:
-    buf += "(unhandled)";
+    DEBUG(dbgs() << "Unhandled reference type: ";
+          Symbol.print(dbgs());
+          dbgs() << "\n";);
+    buf += "unknown type)";
     break;
   }
-  return buf + "'";
+  return buf;
 }
 
 static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
@@ -84,24 +107,32 @@ static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
 }
 
 MCSymbol *MachineSymbolRef::getReference(AsmPrinter &AP) const {
-  MCSymbol *Sym = nullptr;
 
   switch(Symbol.getType()) {
   case MachineOperand::MO_ExternalSymbol:
-    Sym = GetExternalSymbol(AP, Symbol.getSymbolName());
-    break;
+    return GetExternalSymbol(AP, Symbol.getSymbolName());
   case MachineOperand::MO_GlobalAddress:
-    Sym = AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
-    break;
+    return AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
   case MachineOperand::MO_MCSymbol:
-    Sym = Symbol.getMCSymbol();
-    break;
+    return Symbol.getMCSymbol();
   default:
-    llvm_unreachable("Invalid machine operand type");
+    DEBUG(dbgs() << "Reference to '" << Name << "' converted to: ";
+          Symbol.print(dbgs());
+          dbgs() << "\n";);
     break;
   }
-  assert(Sym && "Could not get symbol reference");
-  return Sym;
+
+  // Optimizations may have converted the reference to another operand type,
+  // e.g., register.  Look up the symbol using the name & type
+  switch(Type) {
+  case MachineOperand::MO_ExternalSymbol:
+    return GetExternalSymbol(AP, Name);
+  case MachineOperand::MO_GlobalAddress:
+    return AP.OutContext.lookupSymbol(Name);
+  default:
+    llvm_unreachable("Unhandled symbol reference");
+    return nullptr;
+  }
 }
 
 //===----------------------------------------------------------------------===//

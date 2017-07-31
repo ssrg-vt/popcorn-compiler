@@ -228,10 +228,9 @@ class MachineSymbolRef : public MachineReference {
 public:
   MachineSymbolRef(const MachineOperand &Symbol,
                    const MachineInstr *DefMI,
-                   bool Ptr = false)
-    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
+                   bool Ptr);
   MachineSymbolRef(const MachineSymbolRef &C)
-    : MachineReference(C), Symbol(C.Symbol) {}
+    : MachineReference(C), Symbol(C.Symbol), Type(C.Type), Name(C.Name) {}
   virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 
   virtual enum Type getType() const { return SymbolRef; }
@@ -242,9 +241,14 @@ public:
   virtual MCSymbol *getReference(AsmPrinter &AP) const;
 
 private:
-  // Note: MCSymbols may not exist yet, so instead store operand and look up
-  // MCSymbol to generate label at metadata emission time
+  // MCSymbols may not exist yet, so instead store the operand type and name
+  // to look up the MCSymbol at metadata emission time
   const MachineOperand &Symbol;
+
+  // Note: optimizations may convert the symbol into another machine operand
+  // type, e.g., register.  Store the name and type as a backup.
+  enum MachineOperand::MachineOperandType Type;
+  std::string Name;
 };
 
 /// MachineConstPoolRef - a reference to a constant pool entry

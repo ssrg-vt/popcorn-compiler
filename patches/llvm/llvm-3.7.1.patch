@@ -836,7 +836,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,499 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1067,10 +1067,9 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +public:
 +  MachineSymbolRef(const MachineOperand &Symbol,
 +                   const MachineInstr *DefMI,
-+                   bool Ptr = false)
-+    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
++                   bool Ptr);
 +  MachineSymbolRef(const MachineSymbolRef &C)
-+    : MachineReference(C), Symbol(C.Symbol) {}
++    : MachineReference(C), Symbol(C.Symbol), Type(C.Type), Name(C.Name) {}
 +  virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 +
 +  virtual enum Type getType() const { return SymbolRef; }
@@ -1081,9 +1080,14 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual MCSymbol *getReference(AsmPrinter &AP) const;
 +
 +private:
-+  // Note: MCSymbols may not exist yet, so instead store operand and look up
-+  // MCSymbol to generate label at metadata emission time
++  // MCSymbols may not exist yet, so instead store the operand type and name
++  // to look up the MCSymbol at metadata emission time
 +  const MachineOperand &Symbol;
++
++  // Note: optimizations may convert the symbol into another machine operand
++  // type, e.g., register.  Store the name and type as a backup.
++  enum MachineOperand::MachineOperandType Type;
++  std::string Name;
 +};
 +
 +/// MachineConstPoolRef - a reference to a constant pool entry
@@ -2662,7 +2666,18 @@ Index: lib/CodeGen/Passes.cpp
 ===================================================================
 --- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
-@@ -459,6 +459,21 @@
+@@ -217,7 +217,9 @@
+     : ImmutablePass(ID), PM(&pm), StartBefore(nullptr), StartAfter(nullptr),
+       StopAfter(nullptr), Started(true), Stopped(false),
+       AddingMachinePasses(false), TM(tm), Impl(nullptr), Initialized(false),
+-      DisableVerify(false), EnableTailMerge(true), EnableShrinkWrap(false) {
++      DisableVerify(false), EnableTailMerge(true), EnableShrinkWrap(false),
++      AddEquivalencePoints(false), AddStackMaps(false),
++      AddLibcStackMaps(false) {
+ 
+   Impl = new PassConfigImpl();
+ 
+@@ -459,6 +461,21 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -2684,7 +2699,7 @@ Index: lib/CodeGen/Passes.cpp
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +769,10 @@
+@@ -754,6 +771,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -4479,7 +4494,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformTypes.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformTypes.cpp	(working copy)
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,251 @@
 +//===-- llvm/Target/TargetValueGenerator.cpp - Value Generator --*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4495,10 +4510,13 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +#include "llvm/IR/Mangler.h"
 +#include "llvm/MC/MCContext.h"
 +#include "llvm/MC/MCSymbol.h"
++#include "llvm/Support/Debug.h"
 +#include "llvm/Target/TargetFrameLowering.h"
 +#include "llvm/Target/TargetMachine.h"
 +#include "llvm/Target/TargetRegisterInfo.h"
 +#include "llvm/Target/TargetSubtargetInfo.h"
++
++#define DEBUG_TYPE "stacktransform"
 +
 +using namespace llvm;
 +
@@ -4532,6 +4550,29 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +// MachineSymbolRef implementation
 +//
 +
++MachineSymbolRef::MachineSymbolRef(const MachineOperand &Symbol,
++                                   const MachineInstr *DefMI,
++                                   bool Ptr = false)
++  : MachineReference(DefMI, Ptr), Symbol(Symbol), Type(Symbol.getType()) {
++  switch(Symbol.getType()) {
++  case MachineOperand::MO_GlobalAddress:
++    Name = Symbol.getGlobal()->getName();
++    break;
++  case MachineOperand::MO_ExternalSymbol:
++    Name = Symbol.getSymbolName();
++    break;
++  case MachineOperand::MO_MCSymbol:
++    Name = Symbol.getMCSymbol()->getName();
++    break;
++  default:
++    DEBUG(dbgs() << "Unhandled reference type: ";
++          Symbol.print(dbgs());
++          dbgs() << "\n";);
++    Name = "(unknown)";
++    break;
++  }
++}
++
 +bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
 +  if(RHS.isSymbolRef()) {
 +    const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
@@ -4541,22 +4582,19 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +}
 +
 +std::string MachineSymbolRef::toString() const {
-+  std::string buf = "reference to symbol '";
-+  switch(Symbol.getType()) {
-+  case MachineOperand::MO_GlobalAddress:
-+    buf += Symbol.getGlobal()->getName();
-+    break;
-+  case MachineOperand::MO_ExternalSymbol:
-+    buf += Symbol.getSymbolName();
-+    break;
-+  case MachineOperand::MO_MCSymbol:
-+    buf += Symbol.getMCSymbol()->getName();
-+    break;
++  std::string buf = "reference to symbol '" + Name + "' (";
++  switch(Type) {
++  case MachineOperand::MO_GlobalAddress: buf += "global)"; break;
++  case MachineOperand::MO_ExternalSymbol: buf += "external)"; break;
++  case MachineOperand::MO_MCSymbol: buf += "MC symbol)"; break;
 +  default:
-+    buf += "(unhandled)";
++    DEBUG(dbgs() << "Unhandled reference type: ";
++          Symbol.print(dbgs());
++          dbgs() << "\n";);
++    buf += "unknown type)";
 +    break;
 +  }
-+  return buf + "'";
++  return buf;
 +}
 +
 +static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
@@ -4566,24 +4604,32 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +}
 +
 +MCSymbol *MachineSymbolRef::getReference(AsmPrinter &AP) const {
-+  MCSymbol *Sym = nullptr;
 +
 +  switch(Symbol.getType()) {
 +  case MachineOperand::MO_ExternalSymbol:
-+    Sym = GetExternalSymbol(AP, Symbol.getSymbolName());
-+    break;
++    return GetExternalSymbol(AP, Symbol.getSymbolName());
 +  case MachineOperand::MO_GlobalAddress:
-+    Sym = AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
-+    break;
++    return AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
 +  case MachineOperand::MO_MCSymbol:
-+    Sym = Symbol.getMCSymbol();
-+    break;
++    return Symbol.getMCSymbol();
 +  default:
-+    llvm_unreachable("Invalid machine operand type");
++    DEBUG(dbgs() << "Reference to '" << Name << "' converted to: ";
++          Symbol.print(dbgs());
++          dbgs() << "\n";);
 +    break;
 +  }
-+  assert(Sym && "Could not get symbol reference");
-+  return Sym;
++
++  // Optimizations may have converted the reference to another operand type,
++  // e.g., register.  Look up the symbol using the name & type
++  switch(Type) {
++  case MachineOperand::MO_ExternalSymbol:
++    return GetExternalSymbol(AP, Name);
++  case MachineOperand::MO_GlobalAddress:
++    return AP.OutContext.lookupSymbol(Name);
++  default:
++    llvm_unreachable("Unhandled symbol reference");
++    return nullptr;
++  }
 +}
 +
 +//===----------------------------------------------------------------------===//
