@@ -339,7 +339,7 @@ static void free_data_pools(rewrite_context ctx)
 static void unwind_and_size(rewrite_context src,
                             rewrite_context dest)
 {
-  size_t stack_size = 0;
+  size_t stack_size = 8; // Account for possible already-pushed return address
   void* fn;
 
   TIMER_START(unwind_and_size);

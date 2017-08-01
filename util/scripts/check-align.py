@@ -35,7 +35,7 @@ def getSectionInfo(binaryPath):
 	res = []
 	readelfRe = ("^[\s]*\[([\s0-9]+)\]\s([.\S]*)?\s+([.\S]+)\s+([0-9a-f]+)" +
 		"\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([.\S]*)\s+([0-9a-f]+)" +
-		"\s+([0-9a-f]+)\s+([0-9a-f]+)$"
+		"\s+([0-9a-f]+)\s+([0-9a-f]+)$")
 
 	try:
 		readelfOutput = subprocess.check_output(cmd,
