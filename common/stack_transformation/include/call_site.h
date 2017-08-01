@@ -96,15 +96,6 @@ VALUE_GEN_INST
 #undef X
 };
 
-#ifdef _DEBUG
-/* Human-readable names for generating architecture-specific values. */
-const char* inst_type_names[] = {
-#define X(inst) #inst,
-VALUE_GEN_INST
-#undef X
-};
-#endif
-
 /*
  * An architecture-specific live values's location & value at a call site.
  * Similar to a call_site_value, but also contains instructions for populating

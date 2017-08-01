@@ -36,6 +36,8 @@ static void __attribute__((constructor)) __init_cpu_sets()
     fclose(fd);
   }
   else cpus_x86 = 8;
+
+  *pthread_migrate_args() = NULL;
 }
 
 /* Returns a CPU set for architecture AR. */

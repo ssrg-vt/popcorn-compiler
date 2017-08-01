@@ -56,6 +56,15 @@ static void apply_arch_operation(rewrite_context ctx,
                                  void* callee_dest,
                                  const arch_live_value* val);
 
+#ifdef _DEBUG
+/* Human-readable names for generating architecture-specific values. */
+static const char* inst_type_names[] = {
+#define X(inst) #inst,
+VALUE_GEN_INST
+#undef X
+};
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // Data access
 ///////////////////////////////////////////////////////////////////////////////
