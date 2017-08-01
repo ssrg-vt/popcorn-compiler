@@ -111,7 +111,10 @@ static inline void setup_frame_bounds(rewrite_context ctx, int act)
  */
 bool first_frame(uint64_t id)
 {
-  if(id == UINT64_MAX || id == UINT64_MAX - 1) return true;
+  if(id == UINT64_MAX || /* "__libc_start_main()" in __libc_start_main.c */
+     id == UINT64_MAX - 1 || /* "start()" in pthread_create.c */
+     id == UINT64_MAX - 2) /* "start_c11()" in pthread_create.c */
+    return true;
   else return false;
 }
 
@@ -122,6 +125,7 @@ bool first_frame(uint64_t id)
 inline void* calculate_cfa(rewrite_context ctx, int act)
 {
   ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
+  ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs), "Invalid stack pointer\n");
   return REGOPS(ctx)->sp(ctx->acts[act].regs) + ctx->acts[act].site.frame_size;
 }
 
@@ -130,11 +134,12 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
  * initialization as pop_frame performs the same functionality during
  * unwinding.
  */
-void bootstrap_first_frame(rewrite_context ctx)
+void bootstrap_first_frame(rewrite_context ctx, void* regset)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ctx->acts[ctx->act].cfa = calculate_cfa(ctx, ctx->act);
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->regset_copyin(ctx->acts[0].regs, regset);
 }
 
 /*
@@ -143,12 +148,13 @@ void bootstrap_first_frame(rewrite_context ctx)
  * directly upon function entry.  Only needed during initialization as
  * pop_frame_funcentry performs the same functionality during unwinding.
  */
-void bootstrap_first_frame_funcentry(rewrite_context ctx)
+void bootstrap_first_frame_funcentry(rewrite_context ctx, void* sp)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ACT(ctx).cfa = REGOPS(ctx)->sp(ACT(ctx).regs) +
-                 PROPS(ctx)->cfa_offset_funcentry;
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->set_sp(ctx->acts[0].regs, sp);
+  ctx->acts[0].cfa = sp + PROPS(ctx)->cfa_offset_funcentry;
 }
 
 /*
@@ -253,16 +259,14 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
 /*
  * Free a stack activation's information.
  */
-void free_activation(st_handle handle, activation* act)
+void clear_activation(st_handle handle, activation* act)
 {
   ASSERT(act, "invalid arguments to free_activation()\n");
 
-#ifdef _CHECKS
   memset(&act->site, 0, sizeof(call_site));
   act->cfa = NULL;
   memset(act->regs, 0, handle->regops->regset_size);
   act->regs = NULL;
   memset(&act->callee_saved, 0, sizeof(bitmap));
-#endif
 }
 

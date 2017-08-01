@@ -34,13 +34,12 @@ static rewrite_context init_src_context(st_handle handle,
 
 /*
  * Initialize an architecture-specific (destination) context using destination
- * stack SP_BASE and program location PC.  Store destination REGSET pointer
- * to be filled with destination thread's resultant register state.
+ * stack SP_BASE.  Store destination REGSET pointer to be filled with
+ * destination thread's resultant register state.
  */
 static rewrite_context init_dest_context(st_handle handle,
                                          void* regset,
-                                         void* sp_base,
-                                         void* pc);
+                                         void* sp_base);
 
 /*
  * Initialize data pools for constant-time allocation.
@@ -98,7 +97,6 @@ int st_rewrite_stack(st_handle handle_src,
 {
   rewrite_context src, dest;
   uint64_t* saved_fbp;
-  void* fn;
 
   if(!handle_src || !regset_src || !sp_base_src ||
      !handle_dest || !regset_dest || !sp_base_dest)
@@ -113,13 +111,8 @@ int st_rewrite_stack(st_handle handle_src,
           arch_name(handle_src->arch), arch_name(handle_dest->arch));
 
   /* Initialize rewriting contexts. */
-  // Note: functions are aligned & we're only transforming starting at the
-  // beginning of functions, so source pc == destination pc.
   src = init_src_context(handle_src, regset_src, sp_base_src);
-  fn = get_function_address(handle_src, REGOPS(src)->pc(ACT(src).regs));
-  ASSERT(fn, "Could not find function address of outermost frame\n");
-  ST_INFO("Rewriting destination as if entering function @ %p\n", fn);
-  dest = init_dest_context(handle_dest, regset_dest, sp_base_dest, fn);
+  dest = init_dest_context(handle_dest, regset_dest, sp_base_dest);
 
   if(!src || !dest)
   {
@@ -161,6 +154,8 @@ int st_rewrite_stack(st_handle handle_src,
     *saved_fbp = (uint64_t)REGOPS(dest)->fbp(ACT(dest).regs);
     ST_INFO("Old FP saved to %p\n", saved_fbp);
   }
+  ST_INFO("--> Skipping frame %d (no state in libc start function) <--\n",
+          src->act);
 
   TIMER_STOP(rewrite_stack);
 
@@ -223,23 +218,26 @@ static rewrite_context init_src_context(st_handle handle,
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
-  ctx->num_acts = 0;
+  ctx->num_acts = 1;
   ctx->act = 0;
-  init_data_pools(ctx);
-  list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = ctx->regset_pool;
-  REGOPS(ctx)->regset_copyin(ACT(ctx).regs, regset);
   ctx->regs = regset;
   ctx->stack_base = sp_base;
-  ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
 
+  init_data_pools(ctx);
+  list_init(fixup, &ctx->stack_pointers);
+  bootstrap_first_frame(ctx, regset); // Sets up initial register set
+  ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
+  ASSERT(ctx->stack, "invalid stack pointer\n");
+
+  /*
+   * Find the initial call site and set up the outermost frame's CFA in
+   * preparation for unwinding the stack.
+   */
+  // Note: we need both the SP & call site information to set up CFA
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
     ST_ERR(1, "could not get source call site information for outermost frame "
            "(address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
-  ASSERT(ctx->stack, "invalid stack pointer\n");
-
-  // Note: *must* call after looking up call site in order to calculate CFA
-  bootstrap_first_frame(ctx);
+  ACT(ctx).cfa = calculate_cfa(ctx, 0);
 
   TIMER_STOP(init_src_context);
   return ctx;
@@ -252,8 +250,7 @@ static rewrite_context init_src_context(st_handle handle,
  */
 static rewrite_context init_dest_context(st_handle handle,
                                          void* regset,
-                                         void* sp_base,
-                                         void* pc)
+                                         void* sp_base)
 {
   rewrite_context ctx;
 
@@ -265,18 +262,16 @@ static rewrite_context init_dest_context(st_handle handle,
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
-  ctx->num_acts = 0;
+  ctx->num_acts = 1;
   ctx->act = 0;
-  init_data_pools(ctx);
-  list_init(fixup, &ctx->stack_pointers);
-  ACT(ctx).regs = ctx->regset_pool;
-  REGOPS(ctx)->set_pc(ACT(ctx).regs, pc);
-  ACT(ctx).site = EMPTY_CALL_SITE;
-
   ctx->regs = regset;
   ctx->stack_base = sp_base;
-  // Note: cannot setup frame information because CFA will be invalid (need to
-  // set up SP first)
+
+  init_data_pools(ctx);
+  list_init(fixup, &ctx->stack_pointers);
+
+  // Note: cannot setup frame information because CFA will be invalid, need to
+  // set up SP & find call site information
 
   TIMER_STOP(init_dest_context);
   return ctx;
@@ -299,7 +294,6 @@ static void init_data_pools(rewrite_context ctx)
  */
 static void free_context(rewrite_context ctx)
 {
-  int i;
   node_t(fixup)* node;
 
   TIMER_START(free_context);
@@ -312,8 +306,11 @@ static void free_context(rewrite_context ctx)
     node = list_remove(fixup, &ctx->stack_pointers, node);
   }
 
+#ifdef _CHECKS
+  int i;
   for(i = 0; i < ctx->num_acts; i++)
-    free_activation(ctx->handle, &ctx->acts[i]);
+    clear_activation(ctx->handle, &ctx->acts[i]);
+#endif
   free_data_pools(ctx);
 #if _TLS_IMPL != COMPILER_TLS
   free(ctx);
@@ -329,6 +326,10 @@ static void free_data_pools(rewrite_context ctx)
 {
   free(ctx->callee_saved_pool);
   free(ctx->regset_pool);
+#ifdef _DEBUG
+  ctx->callee_saved_pool = NULL;
+  ctx->regset_pool = NULL;
+#endif
 }
 
 /*
@@ -338,7 +339,8 @@ static void free_data_pools(rewrite_context ctx)
 static void unwind_and_size(rewrite_context src,
                             rewrite_context dest)
 {
-  size_t stack_size = 0;
+  size_t stack_size = 8; // Account for possible already-pushed return address
+  void* fn;
 
   TIMER_START(unwind_and_size);
 
@@ -363,20 +365,11 @@ static void unwind_and_size(rewrite_context src,
     /* Update stack size with newly discovered stack frame's size */
     stack_size += ACT(dest).site.frame_size;
 
-    /*
-     * Set the CFA for the current frame in order to set the SP when unwinding
-     * to the next frame.  However, we can only set the CFA after we've gotten
-     * the call site metadata.
-     */
+    /* Set the CFA for the current frame, which becomes the next frame's SP */
+    // Note: we need both the SP & call site information to set up CFA
     ACT(src).cfa = calculate_cfa(src, src->act);
   }
   while(!first_frame(ACT(src).site.id));
-
-  /* Do one more iteration for starting function */
-  pop_frame(src, false);
-  src->num_acts++;
-  dest->num_acts++;
-  dest->act++;
 
   ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
 
@@ -387,20 +380,24 @@ static void unwind_and_size(rewrite_context src,
   src->act = 0;
   dest->act = 0;
 
-  /* Set destination stack pointer (align if necessary). */
+  /*
+   * Set destination stack pointer (align if necessary) and finish setting up
+   * outermost frame.
+   */
   dest->stack = dest->stack_base - stack_size;
   if(PROPS(dest)->sp_needs_align)
     dest->stack = PROPS(dest)->align_sp(dest->stack);
-  REGOPS(dest)->set_sp(ACT(dest).regs, dest->stack);
+  bootstrap_first_frame_funcentry(dest, dest->stack);
+  fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
+  ASSERT(fn, "Could not find function address of outermost frame\n");
+  REGOPS(dest)->set_pc(ACT(dest).regs, fn);
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
+  ST_INFO("Rewriting destination as if entering function @ %p\n", fn);
 
   /* Clear the callee-saved bitmaps for all destination frames. */
   memset(dest->callee_saved_pool, 0, bitmap_size(REGOPS(dest)->num_regs) *
                                      dest->num_acts);
-
-  /* Set up outermost activation for destination since we have a SP. */
-  bootstrap_first_frame_funcentry(dest);
 
   TIMER_STOP(unwind_and_size);
 }
@@ -450,7 +447,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
    */
   if((stack_addr = points_to_stack(src, val_src)))
   {
-    if(src->act == 0 || stack_addr >= PREV_ACT(src).cfa)
+    if(stack_addr >= PREV_ACT(src).cfa || src->act == 0)
     {
       ST_INFO("Adding fixup for pointer-to-stack %p\n", stack_addr);
       fixup_data.src_addr = stack_addr;
@@ -462,15 +459,14 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
       if(stack_addr < ACT(src).cfa) needs_local_fixup = true;
     }
     // Note: it's an error for a pointer to point to frames down the call
-    // chain, this is most likely garbage pointer data
+    // chain, this is most likely uninitialized pointer data
     else
       ST_WARN("Pointer-to-stack points to called functions");
   }
   else put_val(src, val_src, dest, val_dest);
 
   /* Check if value is pointed to by other values & fix up if so. */
-  // Note: can only be pointed to if value is in memory, so optimize by
-  // filtering out non-allocas
+  // Note: can only be pointed to if value is in memory, i.e., allocas
   if(val_src->is_alloca)
   {
     fixup_node = list_begin(fixup, &dest->stack_pointers);
@@ -514,6 +510,9 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
   fixup_node = list_begin(fixup, &dest->stack_pointers);
   while(fixup_node)
   {
+    // TODO If the code creates a pointer to an argument, is LLVM forced to
+    // create an alloca and copy the argument into the local stack space?
+    // Otherwise, how does LLVM understand argument/register conventions?
     if(fixup_node->data.src_addr <= ACT(src).cfa) // Is fixup in this frame?
     {
       // Note: we should have resolved all fixups for this frame from frames
@@ -622,7 +621,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   for(i = 0; i < ACT(dest).site.num_arch_live; i++)
     put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
 
-  /* Fix up pointers to arguments or local values */
+  /* Fix up pointers to local values */
   if(needs_local_fixup) fixup_local_pointers(src, dest);
 
   TIMER_FG_STOP(rewrite_frame);

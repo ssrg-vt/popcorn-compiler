@@ -801,7 +801,7 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,36 @@
+@@ -4934,6 +4934,35 @@
        A->render(Args, CmdArgs);
    }
  
@@ -810,13 +810,12 @@ Index: lib/Driver/Tools.cpp
 +  if(Args.hasArg(options::OPT_popcorn_migratable)) {
 +    // Forward Popcorn migratable flag and add -finstrument-functions to insert
 +    // migration points
-+    CmdArgs.push_back("-finstrument-functions");
 +    CmdArgs.push_back("-ffunction-sections");
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
 +    CmdArgs.push_back("-popcorn-migratable");
 +    CmdArgs.push_back("-mllvm");
-+    CmdArgs.push_back("-emit-st-metadata");
++    CmdArgs.push_back("-popcorn-instrument=migration");
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-optimize-regalloc");
 +  }
@@ -825,7 +824,7 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
 +    CmdArgs.push_back("-mllvm");
-+    CmdArgs.push_back("-emit-libc-metadata");
++    CmdArgs.push_back("-popcorn-instrument=libc");
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
 +    // Forward Popcorn alignment flag and add -f*-sections flags for symbol
