@@ -304,6 +304,8 @@ struct regset_powerpc64
 #define SET_R30( var ) SET_REG64( var, "30" )
 #define SET_R31( var ) SET_REG64( var, "31" )
 
+
+
 /*
  * The stack pointer is directly accesible for powerpc.
  */
@@ -330,7 +332,6 @@ struct regset_powerpc64
 #define GET_LR( var )  asm volatile( "mflr 22; std 22,%0" : "=m" (var) : : "r22" )
 #define GET_CTR( var )  asm volatile( "mfctr 22; std 22,%0" : "=m" (var) : : "r22" )
 
-// TODO: This is wrong?
 #define SET_LR( )  asm volatile( "ld 17,0(1) ; ld 17,16(17)" : : : "r17" )
 
 /*
@@ -627,21 +628,41 @@ struct regset_powerpc64
   printf("r29:%ld\n",(regset_powerpc64).r[29]); \
   printf("r30:%ld\n",(regset_powerpc64).r[30]); \
   printf("r31:%ld\n",(regset_powerpc64).r[31]); \
+  printf("sp:%p\n",(regset_powerpc64).sp); \
+  printf("lr:%p\n",(regset_powerpc64).lr); \
+  printf("pc:%p\n",(regset_powerpc64).pc); \
 }
 
+#define read_stack_regs_from_memory( regset_powerpc64 ) \
+{\
+  printf("sp:%p\n",(regset_powerpc64).sp); \
+  printf("lr:%p\n",(regset_powerpc64).lr); \
+  printf("pc:%p\n",(regset_powerpc64).pc); \
+}
+
+#define read_stack_regs() \
+{\
+  void* sp; \
+  void* lr; \
+  uint64_t fbp; \
+  asm volatile("std 1,%0" : "=m" (sp) : :); \
+  asm volatile("std 31,%0" : "=m" (fbp) : : ); \
+  asm volatile("mflr 17 ; std 17,%0" : "=m" (lr) : : "r17"); \
+  printf("sp:%p\n", sp); \
+  printf("fbp:%lx\n", fbp); \
+  printf("lr:%p\n", lr); \
+}
+
+// TODO: How about these?
 //  SET_R0((regset_powerpc64).r[0]); \
 //  SET_R1((regset_powerpc64).r[1]); \
 //  SET_R2((regset_powerpc64).r[2]); \
 //  SET_R13((regset_powerpc64).r[13]); \
-//  printf("r3:%ld\n",(regset_powerpc64).r[3]); \
-//  printf("r3:%ld\n",(regset_powerpc64).r[3]); \
-//  asm volatile("ld 3,%0" : : "m" ((regset_powerpc64).r[3]) : "3" ); 
 
 /* Set all registers from a register set. */
 // Note: do not set PC, SP(r1) and FBP(r31) as they require special handling
 #define SET_REGS_POWERPC64( regset_powerpc64 ) \
 { \
-  printf("set regs begin\n"); \
   SET_R3((regset_powerpc64).r[3]); \
   SET_R4((regset_powerpc64).r[4]); \
   SET_R5((regset_powerpc64).r[5]); \
@@ -668,7 +689,6 @@ struct regset_powerpc64
   SET_R27((regset_powerpc64).r[27]); \
   SET_R28((regset_powerpc64).r[28]); \
   SET_R30((regset_powerpc64).r[30]); \
-  printf("before setting fp regs \n"); \
   SET_FP_REGS_POWERPC64(regset_powerpc64); \
 }
 
@@ -685,7 +705,7 @@ struct regset_powerpc64
 
 /* Set frame after stack transformation.  Simulates function entry. */
 #define SET_FRAME_POWERPC64( bp, sp ) \
-  asm volatile("mr 1,%0; mr 31,%1;" : : "r" (sp), "r" (bp) )
+  asm volatile("ld 1,%0; ld 31,%1;" : : "m" (sp), "m" (bp) )
 
 #endif /* __powerpc64__ */
 
