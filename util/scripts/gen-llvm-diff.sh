@@ -11,7 +11,7 @@ function print_help {
   echo "Usage: gen-llvm-diff.sh [ OPTIONS ]"
   echo "Options"
   echo "  -h | --help : print help & exit"
-  echo "  -l source   : LLVM source directory (required)"
+  echo "  -s source   : LLVM source directory (required)"
   echo
   echo "Note: we assume the clang source is at <LLVM src>/tools/clang"
   echo "Note: to track new source files, you must add them to the svn index" \
@@ -90,13 +90,13 @@ function gen_compare_patch {
 
 while [ "$1" != "" ]; do
   case $1 in
-    -l)
+    -s)
       LLVM_SRC=$2
       CLANG_SRC=$2/tools/clang
       shift ;;
     -h | --help)
       print_help
-      exit 0
+      exit 0 ;;
   esac
   shift
 done
