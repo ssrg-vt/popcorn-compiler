@@ -132,16 +132,10 @@ def setObjectFiles(args):
 # return as a result an ordered symbol list
 def orderSymbolList(sl):
 	res = []
-	tmp_res = [] #TODO remove
 
 	# TODO Explain the trick
 	for order in list(reversed(range(1, len(considered_archs)+1))):
 		for symbol in sl:
-			# TODO remove this shit
-			if symbol.getName() == ".text" or symbol.getName() == ".text.dummy":
-				tmp_res.append(symbol)
-				continue
-			# TODO end remove this shit
 			referencingArchs = len(considered_archs)
 			for arch_instance in considered_archs:
 				arch = arch_instance.getArch()
@@ -150,9 +144,6 @@ def orderSymbolList(sl):
 
 			if referencingArchs == order:
 				res.append(symbol)
-
-	# TODO remove
-	res = res + tmp_res
 
 	return res
 
