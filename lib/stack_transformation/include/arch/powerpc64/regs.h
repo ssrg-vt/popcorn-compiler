@@ -332,13 +332,14 @@ struct regset_powerpc64
 #define GET_LR( var )  asm volatile( "mflr 22; std 22,%0" : "=m" (var) : : "r22" )
 #define GET_CTR( var )  asm volatile( "mfctr 22; std 22,%0" : "=m" (var) : : "r22" )
 
-#define SET_LR( )  asm volatile( "ld 17,0(1) ; ld 17,16(17)" : : : "r17" )
+#define SET_SAVED_LR( )  asm volatile( "ld 17,0(1) ; ld 17,16(17)" : : : "r17" )
+#define SET_LR( var )  asm volatile( "ld 17,%0 ; mtlr 17" : : "m" (var) : "r17" )
 
 /*
  * The only way to set the PC is through control flow operations.
  */
 //#define SET_PC_IMM( val ) asm volatile("bcl 20,31,%0" : : "i" (val) )
-#define SET_PC_IMM( val ) asm volatile("bl %0" : : "i" (val) );
+#define SET_PC_IMM( val ) asm volatile("b %0" : : "i" (val) );
 #define SET_PC_REG( val ) asm volatile("mflr 4; mtlr %0 ; bclrl 20,31"  : : "r" (val): "r4" );
 
 /* Floating-point unit (FPU)/SIMD registers */
@@ -377,7 +378,40 @@ struct regset_powerpc64
 #define GET_F31( var ) GET_FP_REG( var, "31" )
 
 // TODO couldn't set reg as clobber
-#define SET_FP_REG( var, reg ) asm volatile("lfd "reg",%0" : : "m" (var) )
+//#define SET_FP_REG( var, reg, name ) asm volatile("lfd "reg",%0" : : "m" (var) : name )
+//#define SET_F0( var ) SET_FP_REG( var, "0", "v0" )
+//#define SET_F1( var ) SET_FP_REG( var, "1", "v1" )
+//#define SET_F2( var ) SET_FP_REG( var, "2", "v2" )
+//#define SET_F3( var ) SET_FP_REG( var, "3", "v3" )
+//#define SET_F4( var ) SET_FP_REG( var, "4", "v4" )
+//#define SET_F5( var ) SET_FP_REG( var, "5", "v5" )
+//#define SET_F6( var ) SET_FP_REG( var, "6", "v6" )
+//#define SET_F7( var ) SET_FP_REG( var, "7", "v7" )
+//#define SET_F8( var ) SET_FP_REG( var, "8", "v8" )
+//#define SET_F9( var ) SET_FP_REG( var, "9", "v9" )
+//#define SET_F10( var ) SET_FP_REG( var, "10", "v10" )
+//#define SET_F11( var ) SET_FP_REG( var, "11", "v11" )
+//#define SET_F12( var ) SET_FP_REG( var, "12", "v12" )
+//#define SET_F13( var ) SET_FP_REG( var, "13", "v13" )
+//#define SET_F14( var ) SET_FP_REG( var, "14", "v14" )
+//#define SET_F15( var ) SET_FP_REG( var, "15", "v15" )
+//#define SET_F16( var ) SET_FP_REG( var, "16", "v16" )
+//#define SET_F17( var ) SET_FP_REG( var, "17", "v17" )
+//#define SET_F18( var ) SET_FP_REG( var, "18", "v18" )
+//#define SET_F19( var ) SET_FP_REG( var, "19", "v19" )
+//#define SET_F20( var ) SET_FP_REG( var, "20", "v20" )
+//#define SET_F21( var ) SET_FP_REG( var, "21", "v21" )
+//#define SET_F22( var ) SET_FP_REG( var, "22", "v22" )
+//#define SET_F23( var ) SET_FP_REG( var, "23", "v23" )
+//#define SET_F24( var ) SET_FP_REG( var, "24", "v24" )
+//#define SET_F25( var ) SET_FP_REG( var, "25", "v25" )
+//#define SET_F26( var ) SET_FP_REG( var, "26", "v26" )
+//#define SET_F27( var ) SET_FP_REG( var, "27", "v27" )
+//#define SET_F28( var ) SET_FP_REG( var, "28", "v28" )
+//#define SET_F29( var ) SET_FP_REG( var, "29", "v29" )
+//#define SET_F30( var ) SET_FP_REG( var, "30", "v30" )
+//#define SET_F31( var ) SET_FP_REG( var, "31", "v31" )
+#define SET_FP_REG( var, reg ) asm volatile("lfd "reg",%0" : : "m" (var) :)
 #define SET_F0( var ) SET_FP_REG( var, "0" )
 #define SET_F1( var ) SET_FP_REG( var, "1" )
 #define SET_F2( var ) SET_FP_REG( var, "2" )
@@ -558,7 +592,10 @@ struct regset_powerpc64
   SET_F31((regset_powerpc64).f[31]); \
 }
 
-/* Set floating-point/SIMD registers from a register set. */
+/*
+ * Set floating-point/SIMD registers from a register set. Don't mark the
+ * registers as clobbered, so the compiler won't save/restore them.
+ */
 #define SET_FP_REGS_NOCLOBBER_POWERPC64( regset_powerpc64 ) \
 { \
   SET_F0_NOCLOBBER((regset_powerpc64).f[0]); \
@@ -627,7 +664,7 @@ struct regset_powerpc64
   printf("r28:%ld\n",(regset_powerpc64).r[28]); \
   printf("r29:%ld\n",(regset_powerpc64).r[29]); \
   printf("r30:%ld\n",(regset_powerpc64).r[30]); \
-  printf("r31:%ld\n",(regset_powerpc64).r[31]); \
+  printf("r31:%lx\n",(regset_powerpc64).r[31]); \
   printf("sp:%p\n",(regset_powerpc64).sp); \
   printf("lr:%p\n",(regset_powerpc64).lr); \
   printf("pc:%p\n",(regset_powerpc64).pc); \
@@ -638,6 +675,7 @@ struct regset_powerpc64
   printf("sp:%p\n",(regset_powerpc64).sp); \
   printf("lr:%p\n",(regset_powerpc64).lr); \
   printf("pc:%p\n",(regset_powerpc64).pc); \
+  printf("fbp:%lx\n",(regset_powerpc64).r[31]); \
 }
 
 #define read_stack_regs() \
@@ -657,7 +695,7 @@ struct regset_powerpc64
 //  SET_R0((regset_powerpc64).r[0]); \
 //  SET_R1((regset_powerpc64).r[1]); \
 //  SET_R2((regset_powerpc64).r[2]); \
-//  SET_R13((regset_powerpc64).r[13]); \
+//  SET_R13((regset_powerpc64).r[13]); 
 
 /* Set all registers from a register set. */
 // Note: do not set PC, SP(r1) and FBP(r31) as they require special handling
@@ -689,6 +727,7 @@ struct regset_powerpc64
   SET_R27((regset_powerpc64).r[27]); \
   SET_R28((regset_powerpc64).r[28]); \
   SET_R30((regset_powerpc64).r[30]); \
+  SET_LR((regset_powerpc64).lr); \
   SET_FP_REGS_POWERPC64(regset_powerpc64); \
 }
 
@@ -704,8 +743,8 @@ struct regset_powerpc64
   asm volatile("ld 3,0(1) ; subf %0,1,3;" : "=r" (size) :: "r3" )
 
 /* Set frame after stack transformation.  Simulates function entry. */
-#define SET_FRAME_POWERPC64( bp, sp ) \
-  asm volatile("ld 1,%0; ld 31,%1;" : : "m" (sp), "m" (bp) )
+#define SET_FRAME_POWERPC64( bp, sp) \
+  asm volatile("ld 1,%0; ld 31,%1" : : "m" (sp), "m" (bp) )
 
 #endif /* __powerpc64__ */
 

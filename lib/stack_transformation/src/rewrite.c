@@ -357,19 +357,6 @@ static void free_data_pools(rewrite_context ctx)
   free(ctx->regset_pool);
 }
 
-/////////////////// harubyy ////////////////////
-static void traverse_activations(rewrite_context src){
-  do
-   {
-     pop_frame(src, false);
-     /*printf("return address: %p\n", REGOPS(src)->pc(ACT(src).regs));
-     printf("pc: %p ra_reg:%p\n", REGOPS(src)->pc(ACT(src).regs), REGOPS(src)->ra_reg(ACT(src).regs));
-     src->act++;*/
-     src->num_acts++;
-   } while(!first_frame(ACT(src).site.id));
-}
-/////////////////// harubyy ////////////////////
-
 /*
  * Unwind source stack to find live frames & size destination stack.
  * Simultaneously caches function & call-site information.
@@ -380,12 +367,6 @@ static void unwind_and_size(rewrite_context src,
   size_t stack_size = 0;
 
   TIMER_START(unwind_and_size);
-
-/////////////////// harubyy ////////////////////
-//  list_sites_by_addr(src->handle);
-//  traverse_activations(src);
-//  return;
-/////////////////// harubyy ////////////////////
 
   do
   {
