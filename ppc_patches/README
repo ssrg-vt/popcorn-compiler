@@ -1,0 +1,6 @@
+# Patch for PPCSubTarget.h is rejected so it's not present in the curent patch batch. 
+  -- It has to be applied manually
+  -- A working patch should be made
+# Patch for lib/Target/PowerPC/CMakeLists.txt is applied by hand (probably forgotten)
+  -- It has to be applied manually
+# The patches for StackMaps.cpp & StackTransformMetadata.cpp are only experimental. They should NOT be applied originally. They're here only due to me laziness.
