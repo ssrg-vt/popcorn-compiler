@@ -8,7 +8,7 @@ LLVM_PATCH=$(readlink -f $CUR_DIR/../../patches/llvm)
 function print_help {
   echo "Generate a clang/LLVM patch for the Popcorn compiler toolchain"
   echo
-  echo "Usage: gen-llvm-diff.sh [ OPTIONS ]"
+  echo "Usage: gen-llvm-patch.sh [ OPTIONS ]"
   echo "Options"
   echo "  -h | --help : print help & exit"
   echo "  -s source   : LLVM source directory (required)"
