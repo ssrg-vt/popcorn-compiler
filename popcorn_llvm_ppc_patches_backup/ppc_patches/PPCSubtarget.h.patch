@@ -1,0 +1,32 @@
+Index: lib/Target/PowerPC/PPCSubtarget.h
+===================================================================
+--- lib/Target/PowerPC/PPCSubtarget.h        (revision 277823)
++++ lib/Target/PowerPC/PPCSubtarget.h        (working copy)
+@@ -22,6 +22,7 @@
+ #include "llvm/MC/MCInstrItineraries.h"
+ #include "llvm/Target/TargetSelectionDAGInfo.h"
+ #include "llvm/Target/TargetSubtargetInfo.h"
++#include "PowerPC64Values.h"
+ #include <string>
+ 
+ #define GET_SUBTARGETINFO_HEADER
+@@ -67,6 +68,7 @@
+ protected:
+   /// TargetTriple - What processor and OS we're targeting.
+   Triple TargetTriple;
++  PowerPC64Values VGen;
+ 
+   /// stackAlignment - The minimum alignment known to hold of the stack frame on
+   /// entry to the function and which must be maintained by every function.
+@@ -172,6 +174,11 @@
+   }
+   const PPCTargetMachine &getTargetMachine() const { return TM; }
+ 
++  const PowerPC64Values *getValues() const override {
++    return &VGen;
++  }
++
++
+   /// initializeSubtargetDependencies - Initializes using a CPU and feature string
+   /// so that we can use initializer lists for subtarget initialization.
+   PPCSubtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
