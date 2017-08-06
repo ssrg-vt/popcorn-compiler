@@ -128,7 +128,12 @@ static inline void setup_frame_bounds(rewrite_context ctx, int act)
   new_sp = ctx->acts[act - 1].cfa;
   REGOPS(ctx)->set_sp(ctx->acts[act].regs, new_sp);
   ctx->acts[act].cfa = calculate_cfa(ctx, act);
-  REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, ctx->acts[act].cfa);
+
+  #if defined(__powerpc64__)
+    REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, REGOPS(ctx)->sp(ctx->acts[act].regs));
+  #else
+    REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, ctx->acts[act].cfa);
+  #endif
 
   ASSERT(REGOPS(ctx)->fbp(ctx->acts[act].regs), "Invalid frame pointer\n");
 

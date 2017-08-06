@@ -39,7 +39,7 @@ static void set_sp_powerpc64(regset_t regset, void* sp);
 static void set_fbp_powerpc64(regset_t regset, void* fp);
 static void set_ra_reg_powerpc64(regset_t regset, void* ra);
 static void set_ctr_reg_powerpc64(regset_t regset, void* ctr);
-static void setup_fbp_powerpc64(regset_t regset, void* cfa);
+static void setup_fbp_powerpc64(regset_t regset, void* sp);
 
 static uint16_t reg_size_powerpc64(uint16_t reg);
 static void* reg_powerpc64(regset_t regset, uint16_t reg);
@@ -189,15 +189,16 @@ static void set_ra_reg_powerpc64(regset_t regset, void* ra)
   cur->regs.POWERPC64_LINK_REG = ra;
 }
 
-static void setup_fbp_powerpc64(regset_t regset, void* cfa)
+static void setup_fbp_powerpc64(regset_t regset, void* sp)
 {
-  ASSERT(cfa, "Null canonical frame address\n");
+  ASSERT(sp, "Null stack pointer\n");
   regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
  // cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cur->regs.sp;
 
  // For some reason stack-dump info sets FBP = CFA-16 ~ old(SP)-16 and offsets from there
  // TODO: This need to be calclulated dynamically since sometimes FBP is not even set
-  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cfa-16;
+  //cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cfa-16;
+  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)sp;
 }
 
 static void set_ctr_reg_powerpc64(regset_t regset, void* ctr)
