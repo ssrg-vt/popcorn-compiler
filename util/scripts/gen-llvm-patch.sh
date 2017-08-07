@@ -22,7 +22,7 @@ function sanity_check {
   local llvm_src=$1
   local clang_src=$2
 
-  if [ "$llvm_src" == "n/a" ] || [ "$clang_src" == "n/a" ; then
+  if [ "$llvm_src" == "n/a" ] || [ "$clang_src" == "n/a" ]; then
     echo "Please supply the LLVM source root directory!"
     print_help
     exit 1
