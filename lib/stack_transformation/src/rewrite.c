@@ -179,6 +179,11 @@ int st_rewrite_stack(st_handle handle_src,
 
   /* Copy out register state for destination & clean up. */
   REGOPS(dest)->regset_copyout(dest->acts[0].regs, dest->regs);
+
+/*  #if defined(__powerpc64__)
+    REGOPS(dest)->set_fbp(ACT(dest).regs, ACT(dest).cfa);
+  #endif
+*/
   free_context(dest);
   free_context(src);
 

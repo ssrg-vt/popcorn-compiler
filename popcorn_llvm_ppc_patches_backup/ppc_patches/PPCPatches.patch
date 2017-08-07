@@ -216,8 +216,8 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 -      return AsmPrinter::runOnMachineFunction(MF);
 +      bool retval = AsmPrinter::runOnMachineFunction(MF);
 +      UI.recordUnwindInfo(MF);
-+      UI.addRegisterUnwindInfo(MF, PPC::LR8, 32);
-+      UI.addRegisterUnwindInfo(MF, PPC::X31, 8);
++      int frameSize = MF.getFrameInfo()->getStackSize();
++      UI.addRegisterUnwindInfo(MF, PPC::LR8, frameSize+16);
 +      return retval;
      }
    };

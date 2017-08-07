@@ -98,6 +98,9 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
       ST_INFO("updated pc: %p [restore_callee_saved_regs]\n", pc);
   
       REGOPS(ctx)->set_pc(ctx->acts[act].regs, pc);
+
+      // Also update ra_reg accordingly
+      REGOPS(ctx)->set_ra_reg(ctx->acts[act].regs, pc);
     #else
       REGOPS(ctx)->set_pc(ctx->acts[act].regs,
                         REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
@@ -204,11 +207,6 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  #if defined (__powerpc64__)
-    /* Fix fbp to point to cfa-16 for ppc */
-    REGOPS(ctx)->set_fbp(ACT(ctx).regs,ACT(ctx).cfa-16);
-  #endif
-
   ST_INFO("pc: %lx[pop_frame]\n", (long)(REGOPS(ctx)->pc(ACT(ctx).regs)));
   ST_INFO("fbp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->fbp(ACT(ctx).regs)));
   ST_INFO("sp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
@@ -223,7 +221,15 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
    * FBP/CFA, we still need to set up SP.
    */
   if(setup_bounds) setup_frame_bounds(ctx, next_frame);
-  else REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
+  else 
+  {
+    REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
+
+    #if defined (__powerpc64__)
+      /* For setting up the next frame, Set fbp to point to sp for PPC (i.e. cfa of current frame) */
+      REGOPS(ctx)->set_fbp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
+    #endif
+  }
 
   ST_INFO("set next(act)(sp)\n");
 
@@ -279,6 +285,9 @@ void pop_frame_funcentry(rewrite_context ctx)
       ST_INFO("updated pc: %p [pop_frame_funcentry]\n", pc);
   
       REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, pc);
+
+      // Also update ra_reg accordingly
+      REGOPS(ctx)->set_ra_reg(NEXT_ACT(ctx).regs, pc);
    #else
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));
    #endif
