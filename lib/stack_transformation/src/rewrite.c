@@ -159,7 +159,10 @@ int st_rewrite_stack(st_handle handle_src,
     ST_INFO("current frame:%p [st_rewrite_stack]\n", ACT(dest).cfa);
     ST_INFO("fbp: %p [st_rewrite_stack]\n",  REGOPS(dest)->fbp(ACT(dest).regs));
     ST_INFO("sp: %p [st_rewrite_stack]\n",  REGOPS(dest)->sp(ACT(dest).regs));
-    ST_INFO("ra_reg: %p [st_rewrite_stack]\n", REGOPS(dest)->ra_reg(ACT(dest).regs));
+
+    #if !defined(__x86_64__)
+      ST_INFO("ra_reg: %p [st_rewrite_stack]\n", REGOPS(dest)->ra_reg(ACT(dest).regs));
+    #endif
     ST_INFO("pc: %p [st_rewrite_stack]\n", REGOPS(dest)->pc(ACT(dest).regs));
     if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
       ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",

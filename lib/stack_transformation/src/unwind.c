@@ -210,7 +210,10 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
   ST_INFO("pc: %lx[pop_frame]\n", (long)(REGOPS(ctx)->pc(ACT(ctx).regs)));
   ST_INFO("fbp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->fbp(ACT(ctx).regs)));
   ST_INFO("sp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
-  ST_INFO("ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+
+  #if !defined(__x86_64__)
+    ST_INFO("ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+  #endif
 
   setup_regset(ctx, next_frame);
   setup_callee_saved_bits(ctx, next_frame);
@@ -241,7 +244,11 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
   TIMER_FG_STOP(pop_frame);
   ST_INFO("after advancing to next act fbp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->fbp(ACT(ctx).regs)));
   ST_INFO("after advancing to next act sp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
-  ST_INFO("after advancing to next act ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+
+  #if !defined(__x86_64__)
+    ST_INFO("after advancing to next act ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+  #endif 
+
   ST_INFO("after advancing to next act pc: %lx[pop_frame]\n\n", (long)(REGOPS(ctx)->pc(ACT(ctx).regs)));
 }
 
@@ -308,14 +315,20 @@ void pop_frame_funcentry(rewrite_context ctx)
   ST_INFO("current frame:%p [pop_frame_funcentry]\n", ACT(ctx).cfa);
   ST_INFO("fbp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->fbp(ACT(ctx).regs));
   ST_INFO("sp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->sp(ACT(ctx).regs));
-  ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(ACT(ctx).regs));
+
+  #if !defined(__x86_64__)
+    ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(ACT(ctx).regs));
+  #endif
   ST_INFO("pc: %p [pop_frame_funcentry]\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   ST_INFO("frame size:%d [pop_frame_funcentry]\n", ACT(ctx).site.frame_size);
 
   ST_INFO("next frame:%p [pop_frame_funcentry]\n", NEXT_ACT(ctx).cfa);
   ST_INFO("fbp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
   ST_INFO("sp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->sp(NEXT_ACT(ctx).regs));
-  ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(NEXT_ACT(ctx).regs));
+
+  #if !defined(__x86_64__)
+    ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(NEXT_ACT(ctx).regs));
+  #endif
   ST_INFO("pc: %p [pop_frame_funcentry]\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
   ST_INFO("frame size:%d [pop_frame_funcentry]\n", NEXT_ACT(ctx).site.frame_size);
 

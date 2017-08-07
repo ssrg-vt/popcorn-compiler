@@ -268,7 +268,6 @@ void set_return_address(rewrite_context ctx, void* retaddr)
 
   long addr = *((long*)(ACT(ctx).cfa));
   ST_INFO("%ld\n", addr);
-  //ST_INFO("cfa null: %d [set_return_address]\n", *addr == NULL);
 
   *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
   ST_INFO("leaving [set_return_address]\n");
@@ -287,7 +286,10 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
     REGOPS(ctx)->set_ra_reg(ACT(ctx).regs, retaddr);
   else
     *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
-  ST_INFO("ra_reg set: %lx [set_return_address_funcentry]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+
+  #if !defined(__x86_64__)
+    ST_INFO("ra_reg set: %lx [set_return_address_funcentry]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+  #endif
 }
 
 /*
