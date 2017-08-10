@@ -2,12 +2,13 @@ from Arch import Arch
 
 class Linker:
 
-	_sectionmarker = {	".text" 	: "__TEXT__",
-						".data" 	: "__DATA__",
-						".bss"  	: "__BSS__",
-						".rodata" 	: "__RODATA__",
-						".tdata" 	: "__TDATA__",
-						".tbss" 	: "__TBSS__" }
+	_sectionmarker = {	".text" 		: "__TEXT__",
+						".data" 		: "__DATA__",
+						".bss"  		: "__BSS__",
+						".rodata" 		: "__RODATA__",
+						".tdata" 		: "__TDATA__",
+						".tbss" 		: "__TBSS__", 
+						".init_array" 	: "__INIT_ARRAY__" }
 
 	@classmethod
 	def getSectionMarker(cls, sectionName):
@@ -36,11 +37,23 @@ class Linker:
 				if line.startswith(cls.getSectionMarker(section)):
 					foundMarker = True
 					# Section "openning" part
-					output_buffer.append(section + "\t: ALIGN(0x10000)\n")
+					# FIXME: We rely on this super coarse-grain alignment
+					# to have the sections start at the same offset on each
+					# architecture -> there is probably a more intelligent way
+					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
 					output_buffer.append("{\n")
 					
-					# TODO, is this necessary:
-					# output_buffer.append("\t. = ALIGN(0x1000);\n")
+					# FIXME: sometimes the linker fills the start of some
+					# sections (at least .data) with something named **common,
+					# only for a subset of the considered archs. I'm not sure
+					# how to force this **common to be somewhere else like in
+					# the end of the section with the other symbols that are
+					# referenced only by one architecture. With this trick
+					# I can still align what is below the **common, but if
+					# **common size is larger than 0x1000 this number will
+					# have to be increase...
+					output_buffer.append("\t. = . + 1;\n")
+					output_buffer.append("\t. = ALIGN(0x1000);\n")
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:

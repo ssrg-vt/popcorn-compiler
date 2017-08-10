@@ -44,7 +44,7 @@ install: bin
 	mkdir $(POPCORN_INSTALL)/share/align-script-templates &> /dev/null
 	cp -r $(TEMPLATES) $(POPCORN_INSTALL)/share/align-script-templates
 
-check:
+check: test
 	make -C utils
 
 clean:

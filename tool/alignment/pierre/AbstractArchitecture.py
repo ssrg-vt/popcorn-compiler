@@ -210,7 +210,8 @@ class AbstractArchitecture():
 	# symbol is a Symbol instance, sectionInfo is a list of Section object, the
 	# list that is returned by ReadElfParser.getSectionInfo()
 	def getSection(self, symbol, sectionInfo):
-		addr = symbol.getAddress(self.getArch())
+		arch = self.getArch()
+		addr = symbol.getAddress(arch)
 		res = None
 
 		for section in sectionInfo:
@@ -222,16 +223,23 @@ class AbstractArchitecture():
 				if not symbol.getName().startswith(sectionName):
 				# Sanity check if the names fit. is it possible to have a symbol
 				# name _not_ starting with the containing section name?
-					er("WARNING: symbol does not have the same name as the " +
+					warn("WARNING: symbol does not have the same name as the " +
 							"containing section\n")
+					warn(" Symbol: " + symbol.getName() + " @" + 
+						str(hex(symbol.getAddress(arch))) + ", size: " +
+						str(hex(symbol.getSize(arch))) + "\n")
+					warn(" Section: " + sectionName + " @" + 
+						str(hex(sectionAddr)) + ", size: " + 
+						str(hex(sectionSize)))
+						
 				break
 
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):
-				res = sectionName
-				#er("WARNING: symbol at section_end + 1:\n" + str(symbol) + 
-				#	"\n")
+			#	res = sectionName
+				warn("WARNING: symbol at section_end + 1:\n" + str(symbol) + 
+					"\n")
 				break
 
 		if not res:
@@ -370,6 +378,9 @@ class AbstractArchitecture():
 			sectionName = self.getSection(symbol, sectionsInfo)
 			if not sectionName:  #Symbol not in one of the considered sections
 				continue
+
+			print (symbol.getName() + ": " + sectionName + " (" +
+				str(hex(symbol.getAddress(0))) + ")")
 
 			# TODO remove this check if the symbol parser does not return only
 			# the symbols from the considered sections

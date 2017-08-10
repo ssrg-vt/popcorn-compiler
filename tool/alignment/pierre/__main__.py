@@ -6,6 +6,7 @@ import Linker
 import Globals
 import glob
 from Globals import er
+from SymbolBlacklist import SymbolBlacklist
 
 # Instantiate one object representing each architecture and put them
 # in a dictionary indexed by the Arch "enum" (see Arch.py)
@@ -21,7 +22,7 @@ archs = { 	Arch.X86 : x86_obj,
 #TODO add power later
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata", 
-		".tbss"]
+		".tbss", ".init_array"]
 
 ###############################################################################
 # buildArgparser
@@ -130,12 +131,21 @@ def setObjectFiles(args):
 # referencing the symbols in questions
 # sl is a list of Symbol instances (should correspond to one section)
 # return as a result an ordered symbol list
+
+# TODO remove this later
+
 def orderSymbolList(sl):
 	res = []
+	end = [] # TODO remove lated
 
 	# TODO Explain the trick
 	for order in list(reversed(range(1, len(considered_archs)+1))):
 		for symbol in sl:
+			# TODO remove later
+			if symbol.getName() in SymbolBlacklist:
+				end.append(symbol)
+				continue
+
 			referencingArchs = len(considered_archs)
 			for arch_instance in considered_archs:
 				arch = arch_instance.getArch()
@@ -145,6 +155,8 @@ def orderSymbolList(sl):
 			if referencingArchs == order:
 				res.append(symbol)
 
+	res = res + end
+	
 	return res
 
 ###############################################################################

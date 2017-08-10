@@ -3,9 +3,7 @@ import MapParser
 import Symbol
 from Arch import Arch
 from Globals import er
-
-# These are the symols with multiple occurence, TODO for later
-blacklist = [".text", ".text.byte_copy", ".text.cleanup", ".text.dummy"]
+from SymbolBlacklist import SymbolBlacklist
 
 def printHelp(argv):
 	print "Usage: %s <x86_map> <arm_map>" % (argv[0])
@@ -25,9 +23,7 @@ if __name__ == "__main__":
 
 	for symbolX86 in x86Symbols:
 		name = symbolX86.getName()
-		if name == ".text.gelf_msize":
-			print "coucou"
-		if name in blacklist:
+		if name in SymbolBlacklist:
 			continue
 		for symbolArm in armSymbols:
 			if name == symbolArm.getName():
