@@ -128,16 +128,26 @@ void put_val_arch(rewrite_context ctx, const arch_live_value* val)
   ASSERT(val->type == SM_REGISTER || val->type == SM_INDIRECT,
          "Invalid architecture-specific value type (%u)\n", val->type);
 
-  ST_INFO("Putting architecture-specific destination value\n");
+//  ST_INFO("Putting architecture-specific destination value\n");
+  ST_INFO("Putting architecture-specific destination value [put_val_arch]\n");
   dest_addr = get_val_loc(ctx, val->type, val->regnum, val->offset, ctx->act);
+
+  ST_INFO(" val->regnum:%d, val->offset:%d [put_val_arch]\n", val->regnum, val->offset);
   if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
     callee_addr = callee_saved_loc(ctx, val->regnum, ctx->act);
 
   ASSERT(dest_addr, "invalid destination location\n");
 
-  ST_INFO("Getting operand: ");
+//  ST_INFO("Getting operand: ");
+  ST_INFO("Getting operand: [put_val_arch]\n");
+
+  if (callee_addr != NULL) 
+    ST_INFO("callee_addr:%p [put_val_arch]\n", callee_addr);
+  ST_INFO("callee_addr: NULL [put_val_arch]\n");
+
   operand = get_arch_operand_loc(ctx, val, ctx->act);
-  ST_INFO("Operand: %ld / %lu / %lx", operand, operand, operand);
+//  ST_INFO("Operand: %ld / %lu / %lx\n", operand, operand, operand);
+  ST_INFO("Operand: %ld / %lu / %lx [put_val_arch]\n", operand, operand, operand);
   apply_arch_operation(dest_addr, callee_addr, operand, val->inst_type);
 
   TIMER_FG_STOP(put_val);
@@ -322,6 +332,7 @@ static inline void* get_val_loc(rewrite_context ctx,
   case SM_REGISTER: // Value is in register
     val_loc = REGOPS(ctx)->reg(ctx->acts[act].regs, regnum);
     ST_RAW_INFO("Live value in register %u\n", regnum);
+    ST_INFO("Live value in register %u\n", regnum);
     break;
   // Note: these value types are fundamentally different, but their locations
   // are generated in an identical manner
@@ -329,7 +340,9 @@ static inline void* get_val_loc(rewrite_context ctx,
   case SM_INDIRECT: // Value is in register, but spilled to the stack
     val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
               offset_or_constant;
+    ST_INFO("sp: %lx[unwind_and_size]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
     ST_RAW_INFO("Live value at %p\n", val_loc);
+    ST_INFO("Live value at %p\n", val_loc);
     break;
   case SM_CONSTANT: // Value is constant
   case SM_CONST_IDX: // Value is in constant pool
@@ -417,7 +430,8 @@ static void* callee_saved_loc(rewrite_context ctx,
   }
 
   /* Register is still live in outermost frame. */
-  ST_INFO("Callee-saved register %u live in outer-most frame\n", regnum);
+//  ST_INFO("Callee-saved register %u live in outer-most frame\n", regnum);
+  ST_INFO("Callee-saved register %u live in outer-most frame [callee_saved_loc]\n", regnum);
   return REGOPS(ctx)->reg(ctx->acts[0].regs, regnum);
 }
 
@@ -462,7 +476,10 @@ static void apply_arch_operation(uint64_t* dest,
                                  int64_t operand,
                                  enum inst_type inst)
 {
+  ST_INFO("dest:%p [apply_arch_operation]\n", dest);
+  ST_INFO("operand:%lx [apply_arch_operation]\n", operand);
   uint64_t orig_val = *(uint64_t*)dest;
+  ST_INFO("orig_val:%lx, dest:%p [apply_arch_operation]\n", orig_val, dest);
 
   switch(inst)
   {

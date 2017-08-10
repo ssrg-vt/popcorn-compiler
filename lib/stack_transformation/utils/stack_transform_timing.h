@@ -160,20 +160,9 @@ get_call_site() { return __builtin_return_address(0); }
               (end.tv_sec * 1000000000 + end.tv_nsec) - \
               (start.tv_sec * 1000000000 + start.tv_nsec)); \
         post_transform = 1; \
-        read_stack_regs_from_memory(regset_dest);/* read from regset_dest */ \
-        read_stack_regs(); \
         SET_REGS_POWERPC64(regset_dest); \
-        printf("set_regs done\n"); \
-        read_stack_regs_from_memory(regset_dest);/* read from regset_dest */ \
-        read_stack_regs(); \
-        SET_FRAME_POWERPC64(regset_dest.r[31], regset_dest.sp); \
-        printf("set_frame done\n"); \
-        read_stack_regs_from_memory(regset_dest);/* read from regset_dest */ \
-        read_stack_regs(); \
-        void* func_addr = func; \
-        printf("func: %p\n", func_addr); \
+        SET_FRAME_POWERPC64(regset_dest.r[31], regset_dest.r[1]); \
         SET_PC_IMM(func); \
-        printf("pc immediate done\n"); \
       } \
     } \
     else \

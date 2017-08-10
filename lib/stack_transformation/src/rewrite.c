@@ -178,6 +178,8 @@ int st_rewrite_stack(st_handle handle_src,
     ST_INFO("Old FP saved to %p\n", saved_fbp);
   }
 
+  rewrite_frame(src, dest);
+
   TIMER_STOP(rewrite_stack);
 
   /* Copy out register state for destination & clean up. */
@@ -503,6 +505,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
     return false;
   }
 
+  ST_INFO("val source:%p, val dest:%p\n", val_src, val_dest);
   ASSERT(VAL_SIZE(val_src) == VAL_SIZE(val_dest),
          "value has different size (%u vs. %u)\n",
          VAL_SIZE(val_src), VAL_SIZE(val_dest));
@@ -681,7 +684,9 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     ST_INFO("before handling duplicates [rewrite_frame]\n");
 
     /* Apply to all duplicate location records */
-    while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
+//    while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
+    while(j+1 + dest_offset < dest->handle->live_vals_count && 
+          dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
     {
       j++;
       val_dest = &dest->handle->live_vals[j + dest_offset];
@@ -691,7 +696,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     }
 
     /* Advance source value past duplicates location records */
-    while(src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
+    while(i+1 + src_offset < src->handle->live_vals_count && 
+          src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
   }
 
   ST_INFO("after handling all live values [rewrite_frame]\n");
@@ -700,13 +706,13 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
         "did not handle all live values\n");
 
   // TODO: We need to handle this for PowerPC either
-  #if !defined(__powerpc64__)
     /* Set architecture-specific live values */
     dest_offset = ACT(dest).site.arch_live_offset;
+    ST_INFO("dest_offset:%lx [rewrite_frame]\n", dest_offset);
+    ST_INFO(" ACT(dest).site.num_arch_live:%d [rewrite_frame]\n", ACT(dest).site.num_arch_live);
     for(i = 0; i < ACT(dest).site.num_arch_live; i++)
       put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
     ST_INFO("after handling architecture live values [rewrite_frame]\n");
-  #endif
 
   /* Fix up pointers to arguments or local values */
   if(needs_local_fixup) fixup_local_pointers(src, dest);

@@ -84,7 +84,7 @@
       : "i"(pid), "i"(cpu_set_size), "g"(cpu_set), "g"(new_pc), \
         "g"(regs_powerpc64.lr), \
         "g"(&regs_powerpc64), \
-        "r"(regs_powerpc64.sp), \
+        "r"(regs_powerpc64.r[1]), \
         "r"(regs_powerpc64.r[31]) /* Inputs */ \
       : "rdi", "rsi", "rdx", "r10", "r8", "r9" /* Clobbered */ \
     )

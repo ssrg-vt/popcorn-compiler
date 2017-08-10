@@ -30,7 +30,7 @@ struct regset_powerpc64
   /* r31:   FBP  */
   /* Link Register, Count Register */ 
   void* pc;
-  void* sp;
+//  void* sp;
   void* lr;
   void* ctr;
 
@@ -196,11 +196,6 @@ struct regset_powerpc64
 // DS and X are instruction formats
 // DS: opcode RT,DS(RA)  EA=(RA|0)+D
 // X : opcode RT,RA,RB   EA=(RA|0)+(RB)
-
-//#define SET_REG64( var, reg ) asm volatile("ld "reg",%0" : : "m" (var) : reg )
-//#define GET_REG64( var, reg ) asm volatile("std "reg",%0" : "=m" (var) )
-
-
 #define GET_REG_X( var1, var2, reg, size) asm volatile("st"size"zx "reg",%0,%1" : "=m" (var1), "=m" (var2) )
 #define GET_REG_DS( var, reg, size ) asm volatile("st"size"z "reg",%0" : "=m" (var) )
 
@@ -481,6 +476,7 @@ struct regset_powerpc64
 #define SET_F30_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "30" )
 #define SET_F31_NOCLOBBER( var ) SET_FP_REG_NOCLOBBER( var, "31" )
 
+//  GET_SP((regset_powerpc64).sp);
 
 /* Read all registers into a register set. */
 #define READ_REGS_POWERPC64( regset_powerpc64 ) \
@@ -518,7 +514,6 @@ struct regset_powerpc64
   GET_R30((regset_powerpc64).r[30]); \
   GET_R31((regset_powerpc64).r[31]); \
   GET_PC((regset_powerpc64).pc); \
-  GET_SP((regset_powerpc64).sp); \
   GET_LR((regset_powerpc64).lr); \
   GET_CTR((regset_powerpc64).ctr); \
   GET_F0((regset_powerpc64).f[0]); \
@@ -634,6 +629,7 @@ struct regset_powerpc64
 
 #define read_memory( regset_powerpc64 ) \
 { \
+  printf("r0:%ld\n",(regset_powerpc64).r[0]); \
   printf("r1:%ld\n",(regset_powerpc64).r[1]); \
   printf("r2:%ld\n",(regset_powerpc64).r[2]); \
   printf("r3:%ld\n",(regset_powerpc64).r[3]); \
@@ -665,14 +661,14 @@ struct regset_powerpc64
   printf("r29:%ld\n",(regset_powerpc64).r[29]); \
   printf("r30:%ld\n",(regset_powerpc64).r[30]); \
   printf("r31:%lx\n",(regset_powerpc64).r[31]); \
-  printf("sp:%p\n",(regset_powerpc64).sp); \
+  printf("sp:%p\n",(regset_powerpc64).r[1]); \
   printf("lr:%p\n",(regset_powerpc64).lr); \
   printf("pc:%p\n",(regset_powerpc64).pc); \
 }
 
 #define read_stack_regs_from_memory( regset_powerpc64 ) \
 {\
-  printf("sp:%p\n",(regset_powerpc64).sp); \
+  printf("sp:%p\n",(regset_powerpc64).r[1]); \
   printf("lr:%p\n",(regset_powerpc64).lr); \
   printf("pc:%p\n",(regset_powerpc64).pc); \
   printf("fbp:%lx\n",(regset_powerpc64).r[31]); \
@@ -697,6 +693,10 @@ struct regset_powerpc64
 //  SET_R2((regset_powerpc64).r[2]); \
 //  SET_R13((regset_powerpc64).r[13]); 
 
+// TODO: R12 might be used in global entry point.
+// Is it a good idea to skip this too?
+
+// TODO: CTR might be needed to be set as well.
 /* Set all registers from a register set. */
 // Note: do not set PC, SP(r1) and FBP(r31) as they require special handling
 #define SET_REGS_POWERPC64( regset_powerpc64 ) \

@@ -131,7 +131,6 @@ def check_for_prerequisites():
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['aarch64-linux-gnu-gcc',
-                         'sparc64-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++',
                          'powerpc64le-linux-gnu-gcc']
@@ -163,14 +162,15 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
 
     llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
     clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
+#    ppc_patch_path = os.path.join(base_path, 'patches/llvm/PPCPatches.patch')
 
     cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
                    '-DLLVM_ENABLE_RTTI=ON',
                    '-DCMAKE_BUILD_TYPE=Debug',
-                   '-DBUILD_SHARED_LIB=ON']
+                   '-DBUILD_SHARED_LIBS=ON']
 
     if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86;Sparc;PowerPC']
+        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86;PowerPC']
 
     with open(os.devnull, 'wb') as FNULL:
 
@@ -245,6 +245,24 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                     print('clang patch failed.')
                     sys.exit(1)
 
+#        # PATCH PPC
+#        with open(ppc_patch_path, 'r') as patch_file:
+#
+#            try:
+#                print("Patching PPC...")
+#                rv = subprocess.check_call(['patch', '-p0', '-d',
+#                                            llvm_download_path],
+#                                            stdin=patch_file,
+#                                            #stdout=FNULL,
+#                                            stderr=subprocess.STDOUT)
+#            except Exception as e:
+#                print('Could not patch ppc({})!'.format(e))
+#                sys.exit(1)
+#            else:
+#                if rv != 0:
+#                    print('ppc patch failed.')
+#                    sys.exit(1)
+
         # BUILD AND INSTALL LLVM
         cur_dir = os.getcwd()
         os.chdir(llvm_download_path)
@@ -264,7 +282,6 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
                 print('CMake failed.')
                 sys.exit(1)
 
-        sys.exit(0)
         try:
             print('Running Make...')
             rv = subprocess.check_call(['make', 'REQUIRES_RTTI=1',
@@ -372,24 +389,24 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
     with open(os.devnull, 'wb') as FNULL:
 
-#        #=====================================================
-#        # CONFIGURE & INSTALL MUSL
-#        #=====================================================
+        #=====================================================
+        # CONFIGURE & INSTALL MUSL
+        #=====================================================
 #       os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
-#        os.chdir(os.path.join(base_path, 'lib/musl-1.1.16'))
-#
-#        if os.path.isfile('Makefile'):
-#            try:
-#                rv = subprocess.check_call(['make', 'distclean'])
-#            except Exception as e:
-#                print('ERROR running distclean!')
-#                sys.exit(1)
-#            else:
-#                if rv != 0:
-#                    print('Make distclean failed.')
-#                    sys.exit(1)
-#
-#
+        os.chdir(os.path.join(base_path, 'lib/musl-1.1.16'))
+
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
+
+
 #        print("Configuring musl (aarch64)...")
 #        try:
 #            rv = subprocess.check_call(" ".join(['./configure',
@@ -400,7 +417,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 #                                '--enable-optimize',
 #                                '--disable-shared',
 #                                'CC=aarch64-linux-gnu-gcc',
-#                                'CFLAGS="-ffunction-sections -fdata-sections"']),
+#                                'CFLAGS="-popcorn-libc"']),
 #                                        #stdout=FNULL, 
 #                                        stderr=subprocess.STDOUT,
 #                                        shell=True)
@@ -434,17 +451,17 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 #        else:
 #            if rv != 0:
 #                print('Make distclean failed.')
-##harubyy:
-##This does not work.
-##I built aarch64 and x86_64 with musl 1.10 and
-##        powerpc64 with musl 1.16 directly in the musl folder in compiler/lib.
-##        I had to comment out lines:700-712 in configure for check:
-##        "checking whether compiler's long double definition matches float.h..."
-##        http://wiki.musl-libc.org/wiki/Supported_Platforms says
-##        powerpc (needs gcc built with --enable-secureplt --with-long-double-64, and -Wl,--secure-plt to link dynamic binaries.)
-##        This is an unrecognized flag as far as I can see
-##        also bad news for clang:
-##        http://www.openwall.com/lists/musl/2016/03/11/18
+#harubyy:
+#This does not work.
+#I built aarch64 and x86_64 with musl 1.10 and
+#        powerpc64 with musl 1.16 directly in the musl folder in compiler/lib.
+#        I had to comment out lines:700-712 in configure for check:
+#        "checking whether compiler's long double definition matches float.h..."
+#        http://wiki.musl-libc.org/wiki/Supported_Platforms says
+#        powerpc (needs gcc built with --enable-secureplt --with-long-double-64, and -Wl,--secure-plt to link dynamic binaries.)
+#        This is an unrecognized flag as far as I can see
+#        also bad news for clang:
+#        http://www.openwall.com/lists/musl/2016/03/11/18
 #
 #        print("Configuring musl (powerpc64)...")
 #        try:
@@ -455,8 +472,8 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 #                                '--enable-gcc-wrapper',
 #                                '--enable-optimize',
 #                                '--disable-shared',
-#                                'CC=powerpc64le-linux-gnu-gcc',
-#                                'CFLAGS="-ffunction-sections -fdata-sections"']),
+#                                'CC=/usr/local/popcorn/src/llvm/build/bin/clang',
+#                                'CFLAGS="-target powerpc64le-linux-gnu -popcorn-libc"']),
 #                                        #stdout=FNULL, 
 #                                        stderr=subprocess.STDOUT,
 #                                        shell=True)

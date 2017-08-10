@@ -12,7 +12,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_POWERPC64(regs_powerpc64); \
-    if(st_userspace_rewrite_powerpc64(regs_powerpc64.sp, &regs_powerpc64, &regs_powerpc64)) \
+    if(st_userspace_rewrite_powerpc64(regs_powerpc64.r[1], &regs_powerpc64, &regs_powerpc64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \
       ret = 0; \
@@ -37,7 +37,7 @@
   ({ \
     int ret = 1; \
     READ_REGS_POWERPC64(regs_powerpc64); \
-    if(st_userspace_rewrite(regs_powerpc64.sp, &regs_powerpc64, &regs_x86_64)) \
+    if(st_userspace_rewrite((void*)regs_powerpc64.r[1], &regs_powerpc64, &regs_x86_64)) \
     { \
       fprintf(stderr, "Could not rewrite stack!\n"); \
       ret = 0; \

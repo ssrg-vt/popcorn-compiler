@@ -4,7 +4,7 @@
 static inline double get_fpscr_f(void)
 {
 	double d;
-	__asm__ __volatile__("mffs %0" : "=d"(d));
+//	__asm__ __volatile__("mffs %0" : "=d"(d));
 	return d;
 }
 
@@ -15,7 +15,7 @@ static inline long get_fpscr(void)
 
 static inline void set_fpscr_f(double fpscr)
 {
-	__asm__ __volatile__("mtfsf 255, %0" : : "d"(fpscr));
+//	__asm__ __volatile__("mtfsf 255, %0" : : "d"(fpscr));
 }
 
 static void set_fpscr(long fpscr)

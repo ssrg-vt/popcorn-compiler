@@ -144,7 +144,8 @@ static void* pc_powerpc64(const_regset_t regset)
 static void* sp_powerpc64(const_regset_t regset)
 {
   const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return cur->regs.sp;
+//  return cur->regs.sp;
+  return (void*)cur->regs.r[1];
 }
 
 static void* fbp_powerpc64(const_regset_t regset)
@@ -174,7 +175,8 @@ static void set_pc_powerpc64(regset_t regset, void* pc)
 static void set_sp_powerpc64(regset_t regset, void* sp)
 {
   regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.sp = sp;
+//  cur->regs.sp = sp;
+  cur->regs.r[1] = (uint64_t)sp;
 }
 
 static void set_fbp_powerpc64(regset_t regset, void* fp)
@@ -242,6 +244,7 @@ static void* reg_powerpc64(regset_t regset, uint16_t reg)
   {
   case R0: return &cur->regs.r[0];
   case R1: return &cur->regs.r[1];
+//  case R1: return &cur->regs.sp;
   case R2: return &cur->regs.r[2];
   case R3: return &cur->regs.r[3];
   case R4: return &cur->regs.r[4];

@@ -111,6 +111,7 @@ $(POWERPC64_BUILD)/%.bc: %.c
 
 $(POWERPC64_BIN): $(POWERPC64_BUILD)/.dir $(POWERPC64_BC)
 	@echo " [CC (powerpc64)] $@"
+#	@$(CC) -target $(POWERPC64_TARGET) $(CFLAGS) -o $@ $(POWERPC64_BC) $(POWERPC64_LIB) -mllvm -debug-only=stackmaps 2> out
 	@$(CC) -target $(POWERPC64_TARGET) $(CFLAGS) -o $@ $(POWERPC64_BC) $(POWERPC64_LIB)
 	@$(POST_PROCESS) -f $@
 
