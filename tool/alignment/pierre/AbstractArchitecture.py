@@ -223,7 +223,7 @@ class AbstractArchitecture():
 				if not symbol.getName().startswith(sectionName):
 				# Sanity check if the names fit. is it possible to have a symbol
 				# name _not_ starting with the containing section name?
-					warn("WARNING: symbol does not have the same name as the " +
+					warn("symbol does not have the same name as the " +
 							"containing section\n")
 					warn(" Symbol: " + symbol.getName() + " @" + 
 						str(hex(symbol.getAddress(arch))) + ", size: " +
@@ -237,10 +237,11 @@ class AbstractArchitecture():
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):
-			#	res = sectionName
-				warn("WARNING: symbol at section_end + 1:\n" + str(symbol) + 
-					"\n")
-				break
+				if symbol.getName().startswith(sectionName):
+					res = sectionName
+					#warn("symbol at section_end + 1:\n " + str(symbol) + 
+					#	"\n Section: " + str(section) + "\n")
+					break
 
 		if not res:
 			#print (self.getArchString() + ": " + symbol.getName() + 
@@ -275,7 +276,7 @@ class AbstractArchitecture():
 		# First search for the symbol in the list
 		for symbol in (symbolsList[sectionName]):
 			if symbol.getName() == symbolToUpdate.getName():
-				# is it the first time we touch taht symbol for this arch?
+				# is it the first time we touch that symbol for this arch?
 				# Just add the symbol to the list
 				if symbol.getAddress(arch) == -1: #TODO replace with reference
 					symbol.setAddress(symbolToUpdate.getAddress(arch), arch)
@@ -378,9 +379,6 @@ class AbstractArchitecture():
 			sectionName = self.getSection(symbol, sectionsInfo)
 			if not sectionName:  #Symbol not in one of the considered sections
 				continue
-
-			print (symbol.getName() + ": " + sectionName + " (" +
-				str(hex(symbol.getAddress(0))) + ")")
 
 			# TODO remove this check if the symbol parser does not return only
 			# the symbols from the considered sections
