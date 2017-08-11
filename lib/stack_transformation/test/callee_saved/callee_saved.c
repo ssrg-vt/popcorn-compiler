@@ -7,16 +7,21 @@
 extern uint64_t get_magic(void);
 extern uint64_t get_magic_a(void);
 extern uint64_t get_magic_b(void);
-static int max_depth = 10;
+static int max_depth = 2;
 static int post_transform = 0;
 
 int outer_frame()
 {
   if(!post_transform)
   {
-#ifdef __aarch64__
+#if defined(__powerpc64__)
+    printf("callee_saved: power\n");
+    TIME_AND_TEST_REWRITE("./callee_saved_powerpc64", outer_frame);
+#elif defined(__aarch64__)
+    printf("callee_saved: arm\n");
     TIME_AND_TEST_REWRITE("./callee_saved_aarch64", outer_frame);
 #elif defined(__x86_64__)
+    printf("callee_saved: x86\n");
     TIME_AND_TEST_REWRITE("./callee_saved_x86-64", outer_frame);
 #endif
   }
@@ -33,7 +38,9 @@ int main(int argc, char** argv)
 {
   // Note: clang/LLVM ignores the register specification, but by default will
   // allocate live values to callee-saved registers first anyway
-#ifdef __aarch64__
+#if defined(__powerpc64__)
+  register uint64_t magic __asm__("r3");
+#elif defined(__aarch64__)
   register uint64_t magic __asm__("x19");
 #elif defined(__x86_64__)
   register uint64_t magic __asm__("rbx");

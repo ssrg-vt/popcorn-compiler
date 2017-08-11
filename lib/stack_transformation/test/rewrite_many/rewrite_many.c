@@ -5,16 +5,21 @@
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
 
-static int max_depth = 10;
+static int max_depth = 2;
 static int post_transform = 0;
 
 long outer_frame()
 {
   if(!post_transform)
   {
-#ifdef __aarch64__
+#if defined(__powerpc64__)
+    printf("rewrite_many: power\n");
+    TIME_AND_TEST_REWRITE("./rewrite_many_powerpc64", outer_frame);
+#elif defined(__aarch64__)
+    printf("rewrite_many: arm\n");
     TIME_AND_TEST_REWRITE("./rewrite_many_aarch64", outer_frame);
 #elif defined(__x86_64__)
+    printf("rewrite_many: x86\n");
     TIME_AND_TEST_REWRITE("./rewrite_many_x86-64", outer_frame);
 #endif
   }
