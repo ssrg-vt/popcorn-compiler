@@ -675,7 +675,7 @@ def install_tools(base_path, install_path, num_threads):
         #=====================================================
         # INSTALL ALIGNMENT TOOL
         #=====================================================
-        os.chdir(os.path.join(base_path, 'tool/alignment'))
+        os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
 
         print('Making alignment tool...')
         try:
