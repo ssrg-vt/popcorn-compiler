@@ -49,7 +49,7 @@ LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 ALIGN          := $(POPCORN)/bin/pyalign
-ALIGN_TOOL_SRC := /root/popcorn-compiler/tool/alignment/pierre #Remove me later
+ALIGN_TOOL_SRC := /root/popcorn-compiler/tool/alignment/pyalign #Remove me later
 ALIGN_WORKDIR  := align
 
 # Post-processing & checking
