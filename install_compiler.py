@@ -677,7 +677,7 @@ def install_tools(base_path, install_path, num_threads):
         #=====================================================
         
 		# 1. Old java tool, TODO remove it later
-		os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
+        os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
 
         print('Making java alignment tool...')
         try:
@@ -702,22 +702,22 @@ def install_tools(base_path, install_path, num_threads):
         os.chdir(cur_dir)
 
 		# 2. Pyalign
-		os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
+        os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
 
-		print('Making pyalign...')
-		try:
-			print('Running Make...')
-			rv = subprocess.check_call(['make', '-j', str(num_threads),
-				'POPCORN={}'.format(install_path), 'install'])
-		except Exception as e:
-			print('Could not run Make ({})!'.format(e))
-			sys.exit(1)
-		else:
-			if rv != 0:
-				print('Make failed')
-				sys.exit(1)
+        print('Making pyalign...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads),
+               'POPCORN={}'.format(install_path), 'install'])
+        except Exception as e:
+             print('Could not run Make ({})!'.format(e))
+             sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed')
+                sys.exit(1)
 
-		os.chdir(cur_dir)
+        os.chdir(cur_dir)
 
         #=====================================================
         # INSTALL STACK METADATA TOOL
