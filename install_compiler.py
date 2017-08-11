@@ -383,7 +383,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
-    sparc64_install_path = os.path.join(install_path, 'sparc64')
     x86_64_install_path = os.path.join(install_path, 'x86_64')
     powerpc64le_install_path = os.path.join(install_path, 'powerpc64')
 
@@ -407,50 +406,51 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                     sys.exit(1)
 
 
-#        print("Configuring musl (aarch64)...")
-#        try:
-#            rv = subprocess.check_call(" ".join(['./configure',
-#                                '--prefix=' + aarch64_install_path,
-#                                '--target=aarch64-linux-gnu',
-#                                '--enable-debug',
-#                                '--enable-gcc-wrapper',
-#                                '--enable-optimize',
-#                                '--disable-shared',
+        print("Configuring musl (aarch64)...")
+        try:
+            rv = subprocess.check_call(" ".join(['./configure',
+                                '--prefix=' + aarch64_install_path,
+                                '--target=aarch64-linux-gnu',
+                                '--enable-debug',
+                                '--enable-gcc-wrapper',
+                                '--enable-optimize',
+                                '--disable-shared',
 #                                'CC=aarch64-linux-gnu-gcc',
-#                                'CFLAGS="-popcorn-libc"']),
-#                                        #stdout=FNULL, 
-#                                        stderr=subprocess.STDOUT,
-#                                        shell=True)
-#
-#        except Exception as e:
-#            print('Could not configure musl({})!'.format(e))
-#            sys.exit(1)
-#        else:
-#            if rv != 0:
-#                print('musl configure failed.')
-#                sys.exit(1)
-#
-#        print('Making musl...')
-#        try:
-#            print('Running Make...')
-#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-#            rv = subprocess.check_call(['make', 'install'])
-#        except Exception as e:
-#            print('Could not run Make ({})!'.format(e))
-#            sys.exit(1)
-#        else:
-#            if rv != 0:
-#                print('Make failed.')
-#                sys.exit(1) 
-#
-#        try:
-#            rv = subprocess.check_call(['make', 'distclean'])
-#        except Exception as e:
-#            print('ERROR running distclean!')
-#            sys.exit(1)
-#        else:
-#            if rv != 0:
-#                print('Make distclean failed.')
+                                'CC=/usr/local/popcorn/src/llvm/build/bin/clang',
+                                'CFLAGS="-target aarch64-linux-gnu -popcorn-libc"']),
+                                        #stdout=FNULL, 
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+
+        except Exception as e:
+            print('Could not configure musl({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('musl configure failed.')
+                sys.exit(1)
+
+        print('Making musl...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1) 
+
+        try:
+            rv = subprocess.check_call(['make', 'distclean'])
+        except Exception as e:
+            print('ERROR running distclean!')
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make distclean failed.')
 #harubyy:
 #This does not work.
 #I built aarch64 and x86_64 with musl 1.10 and
@@ -510,39 +510,41 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 #                print('Make distclean failed.')
 #                sys.exit(1)
 #
-#        print("Configuring musl (x86-64)...")
-#        try:
-#            rv = subprocess.check_call(" ".join(['./configure',
-#                                '--prefix=' + x86_64_install_path,
-#                                '--target=x86_64-linux-gnu',
-#                                '--enable-debug',
-#                                '--enable-gcc-wrapper',
-#                                '--enable-optimize',
-#                                '--disable-shared',
+        print("Configuring musl (x86-64)...")
+        try:
+            rv = subprocess.check_call(" ".join(['./configure',
+                                '--prefix=' + x86_64_install_path,
+                                '--target=x86_64-linux-gnu',
+                                '--enable-debug',
+                                '--enable-gcc-wrapper',
+                                '--enable-optimize',
+                                '--disable-shared',
+                                'CC=/usr/local/popcorn/src/llvm/build/bin/clang',
+                                'CFLAGS="-target x86_64-linux-gnu -popcorn-libc"']),
 #                                'CFLAGS="-ffunction-sections -fdata-sections -fasynchronous-unwind-tables"']),
-#                                        #stdout=FNULL, 
-#                                        stderr=subprocess.STDOUT,
-#                                        shell=True)
-#        except Exception as e:
-#            print('Could not configure musl({})!'.format(e))
-#            sys.exit(1)
-#        else:
-#            if rv != 0:
-#                print('musl configure failed.')
-#                sys.exit(1)
-#
-#        print('Making musl...')
-#        try:
-#            print('Running Make...')
-#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-#            rv = subprocess.check_call(['make', 'install'])
-#        except Exception as e:
-#            print('Could not run Make ({})!'.format(e))
-#            sys.exit(1)
-#        else:
-#            if rv != 0:
-#                print('Make failed.')
-#                sys.exit(1)   
+                                        #stdout=FNULL, 
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+            print('Could not configure musl({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('musl configure failed.')
+                sys.exit(1)
+
+        print('Making musl...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)   
 #
 #        #=====================================================
 #        # CONFIGURE & INSTALL LIBELF

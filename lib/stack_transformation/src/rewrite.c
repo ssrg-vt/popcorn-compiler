@@ -419,26 +419,28 @@ static void unwind_and_size(rewrite_context src,
   }
   while(!first_frame(ACT(src).site.id));
 
+    src->num_acts++;
+    dest->num_acts++;
 
   /* Do one more iteration for starting function */
-  pop_frame(src, false);
-  src->num_acts++;
-  dest->num_acts++;
-  dest->act++;
-
-  if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
-    ST_ERR(1, "could not get source call site information (address=%p)\n",
-           REGOPS(src)->pc(ACT(src).regs));
-  if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
-    ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
-           REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
-
-  stack_size += ACT(dest).site.frame_size;
-
-  ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
-
-  ST_INFO("Number of live activations: %d\n", src->num_acts);
-  ST_INFO("Destination stack size: %lu\n", stack_size);
+//  pop_frame(src, false);
+//  src->num_acts++;
+//  dest->num_acts++;
+//  dest->act++;
+//
+//  if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
+//    ST_ERR(1, "could not get source call site information (address=%p)\n",
+//           REGOPS(src)->pc(ACT(src).regs));
+//  if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
+//    ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
+//           REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
+//
+//  stack_size += ACT(dest).site.frame_size;
+//
+//  ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
+//
+//  ST_INFO("Number of live activations: %d\n", src->num_acts);
+//  ST_INFO("Destination stack size: %lu\n", stack_size);
 
   /* Reset to outer-most frame. */
   src->act = 0;
