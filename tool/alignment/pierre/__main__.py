@@ -26,6 +26,7 @@ considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata",
 
 ###############################################################################
 # buildArgparser
+# TODO add power later
 ###############################################################################
 def buildArgParser():
 	""" Construct the command line argument parser object """
@@ -50,9 +51,13 @@ def buildArgParser():
 	res.add_argument("--power-object-files", nargs="+", help="List of input " +
 	"object files (power)", required=False) #TODO set to true later
 	res.add_argument("--work-dir", help="Temporary work directory",
-		default="/tmp/align")
+		default="align")
 	res.add_argument("--clean-work-dir", type=bool, 
 		help="Delete work directory when done",	default=True)
+	res.add_argument("--output-x86-ls", help="Path to the output x86 linker " +
+	"script", default="linker_script_x86.x")
+	res.add_argument("--output-arm-ls", help="Path to the output ARM linker " +
+	"script", default="linker_script_arm.x")
 
 	return res
 
@@ -132,19 +137,12 @@ def setObjectFiles(args):
 # sl is a list of Symbol instances (should correspond to one section)
 # return as a result an ordered symbol list
 
-# TODO remove this later
-
 def orderSymbolList(sl):
 	res = []
-	end = [] # TODO remove lated
 
 	# TODO Explain the trick
 	for order in list(reversed(range(1, len(considered_archs)+1))):
 		for symbol in sl:
-			# TODO remove later
-			if symbol.getName() in SymbolBlacklist:
-				end.append(symbol)
-				continue
 
 			referencingArchs = len(considered_archs)
 			for arch_instance in considered_archs:
@@ -155,8 +153,6 @@ def orderSymbolList(sl):
 			if referencingArchs == order:
 				res.append(symbol)
 
-	res = res + end
-	
 	return res
 
 ###############################################################################
@@ -189,7 +185,6 @@ def orderSymbolList(sl):
 # "pad after" is added by us so that the next symbol to be processed starts at 
 # the same address on each architecture
 # 
-# TODO ths for now assumes there is no duplicate symbols which is not the case
 def align(sl):
 	address = 0
 	
@@ -226,6 +221,10 @@ def align(sl):
 	return sl
 
 
+def setOutputFilesPath(args):
+	x86_obj.setLinkerScript(os.path.abspath(args.output_x86_ls))
+	arm_obj.setLinkerScript(os.path.abspath(args.output_arm_ls))
+
 ###############################################################################
 # main
 ###############################################################################
@@ -233,6 +232,12 @@ if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
+
+	# The path to the output linker scripts is relative to the CWD so before we
+	# change the CWD we must note somewhere the absolute path for the output 
+	# files
+	setOutputFilesPath(args)
+		
 
 	# Prepare work directory and switch to it as cwd
 	prepareWorkDir(args)
@@ -257,7 +262,7 @@ if __name__ == "__main__":
 	for section in considered_sections:
 		work[section] = align(work[section])
 
-	# write linker script then link
+	# write linker script
 	for arch in considered_archs:
 		Linker.Linker.produceLinkerScript(work, arch)
-		arch.goldLink(arch.getObjectFiles())	
+	#	arch.goldLink(arch.getObjectFiles())	

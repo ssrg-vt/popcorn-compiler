@@ -33,6 +33,13 @@ class AbstractArchitecture():
 	def setObjectFiles(self, objectFileList):
 		self._objectFiles = objectFileList
 
+	
+	def getLinkerScript(self):
+		return self._linkerScript
+
+	def setLinkerScript(self, ls):
+		self._linkerScript = ls
+
 #	def createArchSpecificSymbol(self, name, address, size, alignment):
 #		raise NotImplementedError
 
@@ -71,9 +78,6 @@ class AbstractArchitecture():
 		# still need to only keep symbols related to text/data/rodata/bss so 
 		# an additional check is performed on the extracted symbosl before 
 		# adding it to the result set
-		# FIXME: make this more generic, grab all the symbols, and perform
-		# filtering later (get only test/bss/etc. ? if we do so there is a check
-		# to remove in updateSymbolsList()
 		twoLinesRe1 = "^[\s]+(\.[texrodalcbs\.]+[\S]*)$"
 		twoLinesRe2 = ("^[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+" + 
 			"(0x[0-9a-f]+)[\s]+(.*)$")
@@ -113,20 +117,7 @@ class AbstractArchitecture():
 							objectFile, self.getArch())
 
 				if s:
-	#				for section_name in ["text", "data", "rodata", "bss", 
-	#					"tdata", "tbss"]:
-	#					if s.getName().startswith("." + section_name + "."):
-						# We are only interested in text/data/rodata/bss
 					res.append(s)
-		#			print "Symbol found: "
-		#			print " " + str(s)
-		#			print "Line: "
-		#			print " " + line.replace("\n", "")
-		#			print "--------------------------------------"
-		#		else:
-		#			pass
-					#print "Unmatched line: " + line.replace("\n", "")
-					#print "--------------------------------------"
 
 		return res
 
@@ -237,7 +228,7 @@ class AbstractArchitecture():
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):
-				if symbol.getName().startswith(sectionName):
+				if symbol.getName().startswith(sectionName): #check name
 					res = sectionName
 					#warn("symbol at section_end + 1:\n " + str(symbol) + 
 					#	"\n Section: " + str(section) + "\n")
@@ -250,97 +241,6 @@ class AbstractArchitecture():
 			pass
 
 		return res
-###############################################################################
-# recomputeSizeOnNewAlignment
-###############################################################################
-
-	def recomputeSizeOnNewAlignment(self, symbol, newAlignment):
-		arch = self.getArch()
-		size = 0
-
-		# Align each existing internal symbol
-		for internalSymbol in symbol.getInternalSymbols(arch):
-			size += internalSymbol
-			while (size % newAlignment) != 0:
-				size += 1
-
-###############################################################################
-# updateSymbolInSymbolsList
-###############################################################################
-
-	def updateSymbolInSymbolsList(self, symbolToUpdate, sectionName, 
-		symbolsList):
-		
-		arch = self.getArch()
-
-		# First search for the symbol in the list
-		for symbol in (symbolsList[sectionName]):
-			if symbol.getName() == symbolToUpdate.getName():
-				# is it the first time we touch that symbol for this arch?
-				# Just add the symbol to the list
-				if symbol.getAddress(arch) == -1: #TODO replace with reference
-					symbol.setAddress(symbolToUpdate.getAddress(arch), arch)
-					symbol.setSize(symbolToUpdate.getSize(arch), arch)
-					symbol.setAlignment(symbolToUpdate.getAlignment(arch), arch)
-					symbol.setReference(arch)
-					symbol.setObjectFile(symbolToUpdate.getObjectFile(arch), 
-						arch)
-					symbol.addInternalSymbol(symbolToUpdate.getSize(arch), arch)
-				else:
-				# We found a duplicate symbol for this architecture. We are
-				# going to pack all the symbols with the same name one after
-				# the other in the address space, and that set is represented
-				# by a single instance of Symbol in our representation.
-				# we need to compute the size of this set, and the difficulty is
-				# that each symbol inside the set might have different alignment
-				# constraint. So when we find a dulpicate symbol 'sd' we must 
-				# update the Symbol 'se' representing the set as follows:
-				# 1. If sd alignment constraint is greater than se, set se 
-				#    constraint equal to the one of sd. 
-				# 2. If se alignment constraint is greater than the constraint 
-				#    of sd, then set sd constraint to the one of se.
-				# 3. TODO multiple shit
-				# That way, we assure that each symbol inside the set will have 
-				# the same alignment constraint so we can make assumption about 
-				# the padding that the linker will add before the symbol we are 
-				# currently inserting: the size of the set after insertion will 
-				# then be: old_set_size + some_padding + inserted_symbol_size.
-				# some_padding can be easily computed as we ensured than the 
-				# first symbol of the set and the inserted one have the same
-				# alignment constraints
-
-					# Compute the new alignment
-					existingAl = symbol.getAlignment(arch)
-					insertedAl = symbolToUpdate.getAlignment(arch)
-					newAl = max(existingAl, insertedAl)
-					if ((existingAl % insertedAl != 0) or
-						(insertedAl % existingAl != 0)):
-						newAl = Globals.lcm(existingAl , insertedAl)
-					#	print "Fancy alignment: " + str(hex(newAl))
-					#	print " existing was:" + str(hex(existingAl))
-					#	print " inserted is :" + str(hex(insertedAl))
-
-					if newAl != existingAl:
-					# we need to recompute the size of the current set as 
-					# padding will be applied to every symbol in the set
-						self.recomputeSizeOnNewAlignment(symbol, newAl)
-
-					# Compute the padding
-					existingSize = symbol.getSize(arch)
-					insertedSize = symbolToUpdate.getSize(arch)
-					padding = 0
-					while ((existingSize + insertedSize + 
-						padding) % newAl) != 0:
-						padding += 1
-
-					# Set the new size and alignment, increment the ref. num
-					symbol.setSize(existingSize + insertedSize + padding, arch)
-					symbol.setAlignment(newAl, arch)
-					symbol.addInternalSymbol(insertedSize, arch)
-
-					#print ("New size for " + symbol.getName() + ": " +
-					#	str(hex(symbol.getSize(arch))) + ", alignment=" +
-					#	str(hex(symbol.getAlignment(arch))))
 
 ###############################################################################
 # updateSymbolsList
@@ -357,6 +257,8 @@ class AbstractArchitecture():
 	# Arch3.updateSymbolsList(list)
 	# etc.
 	def updateSymbolsList(self, symbolsList):
+		arch = self.getArch()
+
 		# Grab info about sections from the executable
 		consideredSections = symbolsList.keys()
 		sectionsInfo = ReadElfParser.getSectionInfo(self.getExecutable(),
@@ -366,37 +268,38 @@ class AbstractArchitecture():
 		symbolsToAdd = self.parseMapFile()
 
 		for symbol in symbolsToAdd:
-			# TODO: here in Chris's script they merge multiple symbols like 
-			# that:
-			# [section.subsection.symbol1, section.subsection.symbol2]
-			#   --> section.subsection.*
-			# This is based on a super arbitrary rule:
-			# if (name.IndexOf(".", 8) > 7)
-			# should I do the same .....s
-			# TODO:
-			
+
 			# First find the section
 			sectionName = self.getSection(symbol, sectionsInfo)
 			if not sectionName:  #Symbol not in one of the considered sections
 				continue
+			
+			# is the symbol blacklisted?
+			if symbol.getName() in Globals.SYMBOLS_BLACKLIST[sectionName]:
+				continue
 
-			# TODO remove this check if the symbol parser does not return only
-			# the symbols from the considered sections
-			if sectionName not in symbolsList.keys():
-				er("found a symbol from a non-considered section:\n")
-				er("Section name: " + str(sectionName) + "\n")
-				erStack(str(symbol) + "\n")
-				sys.exit(-1)
+			updated = False
+			for existingSymbol in symbolsList[sectionName]:
+				if symbol.compare(existingSymbol):
+					# Found similar symbol in another arch ...
+					if existingSymbol.getReference(arch): #... or not
+						er("Already referenced updated symbol: " + 
+						existingSymbol.getName() + "|" + 
+						existingSymbol.getObjectFile(arch) +
+						"|" + str(hex(existingSymbol.getAlignment(arch))) + 
+						"|" +str(hex(symbol.getAlignment(arch))) +
+						" (" +
+						self.getArchString() + ")\n")
+						sys.exit(-1)
 
-			# is there already a symbol with that name in symbolsLists?
-			currentSymbolsNames = [s.getName() for s in 
-				symbolsList[sectionName]]
-			if symbol.getName() not in currentSymbolsNames:
-				# TODO here Chris is checking if there is no other symbol
-				# with the same address and setting a flag in that symbol
-				# if it is the case, it this really needed?
+					existingSymbol.setAddress(symbol.getAddress(arch), arch)
+					existingSymbol.setSize(symbol.getSize(arch), arch)
+					existingSymbol.setAlignment(symbol.getAlignment(arch),
+						arch)
+					existingSymbol.setReference(arch)
+					existingSymbol.setObjectFile(symbol.getObjectFile(arch), arch)
+					updated = True
+					break
+
+			if not updated:
 				symbolsList[sectionName].append(symbol)
-			else:
-				# Duplicate symbol for an arch, or the symbol was previously
-				# added by another arch, or both
-				self.updateSymbolInSymbolsList(symbol, sectionName, symbolsList)

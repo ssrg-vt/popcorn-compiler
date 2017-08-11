@@ -40,9 +40,6 @@ class Arm(AbstractArchitecture):
 	def getMapFile(self):
 		return self._mapFile
 
-	def getLinkerScript(self):
-		return self._linkerScript
-
 	def getGoldSearchGroup(self):
 		return self._goldSearchGroup
 

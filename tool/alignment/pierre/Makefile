@@ -1,5 +1,5 @@
 POPCORN_INSTALL=/usr/local/popcorn
-BINARY=align-python
+BINARY=pyalign
 TMP_ZIPFILE=align.zip
 BOOTSTRAP=align.script
 TEMPLATES=templates/*
@@ -16,7 +16,8 @@ test:
 		--x86-object-files test_dir/pierre_x86_64.o test_dir/test_x86_64.o \
 		--arm-object-files test_dir/pierre_arm.o test_dir/test_arm.o
 
-tags: *.py
+.PHONY: tags
+tags:
 	ctags -R
 
 # TODO remove this later
@@ -41,8 +42,8 @@ bin:
 
 install: bin
 	cp $(BINARY) $(POPCORN_INSTALL)/bin
-	mkdir $(POPCORN_INSTALL)/share/align-script-templates &> /dev/null
-	cp -r $(TEMPLATES) $(POPCORN_INSTALL)/share/align-script-templates
+	mkdir -p $(POPCORN_INSTALL)/share/align-script-templates &> /dev/null
+	cp -rf $(TEMPLATES) $(POPCORN_INSTALL)/share/align-script-templates
 
 check: test
 	make -C utils

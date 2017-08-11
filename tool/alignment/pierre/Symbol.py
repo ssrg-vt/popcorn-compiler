@@ -1,4 +1,13 @@
 from Arch import Arch
+from Globals import er
+import re
+
+def symbolObjectFileSanityCheck(obj):
+	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
+	reObj = "^(.+\.o)"				# or an object file
+	if (not re.match(reLib, obj)) and (not re.match(reObj, obj)):
+		return False
+	return True
 
 class Symbol:
 
@@ -10,20 +19,21 @@ class Symbol:
 		self._sizes[arch] = size
 		self._alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._alignments[arch] = alignment
-		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 
+		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 	
 			Arch.POWER : False }
 		self._isReferenced[arch] = True
 		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
-		self._objectFiles =  { Arch.X86 : "", Arch.ARM : "", Arch.POWER : "" }
+		self._objectFiles =  { Arch.X86 : "NULL", Arch.ARM : "NULL", 
+			Arch.POWER : "NULL" }
+
+		if not symbolObjectFileSanityCheck(objectFile):
+			er("Failed sanity check on object file during symbol instance " + 
+				"creation\n")
+			sys.exit(-1);
+
 		self._objectFiles[arch] = objectFile
 		
-		# In some cases, multiple symbols can have the same name. We store
-		# them as a single Symbol instance and keep track of the actual size of 
-		# each symbol related to that name in per-arch lists
-		self._internalSymbols = { Arch.X86 : [], Arch.ARM : [], Arch.POWER : []}
-		self._internalSymbols[arch].append(size)
-
 	def __str__(self):
 		return ("Symbol: name=" + self.getName() + 
 				", addressX86=" + str(hex(self.getAddress(Arch.X86))) +
@@ -48,19 +58,64 @@ class Symbol:
 			", objARM=" + self.getObjectFile(Arch.ARM) +
 			", objPOWER=" + self.getObjectFile(Arch.POWER))
 
+	# Compare two symbols to check if they correspond to the same. The are the
+	# same if the name is the same AND if they correspond to the same original 
+	# object file
+	def compare(self, anotherSymbol):
+
+		# Quick path: first check the name
+		if self.getName() != anotherSymbol.getName():
+			return False
+
+		# Then check the object paths
+		res = None
+		otherObjs = [	anotherSymbol.getObjectFile(Arch.X86),
+						anotherSymbol.getObjectFile(Arch.ARM),
+						anotherSymbol.getObjectFile(Arch.POWER)]
+		for objf1 in self._objectFiles.values():
+			for objf2 in otherObjs:
+				if objf1 != "NULL" and objf2 != "NULL":
+					cmpstr1 = objf1.split("/")[-1]
+					cmpstr2 = objf2.split("/")[-1]
+				
+					# First handle the special case of user object files that
+					# differs by name because they are for different archs 
+					# but result of the compilation of the same user source file
+					# FIXME this is hardcoded for x86-ARM for now, we need a 
+					# convention for the user object files created by the
+					# popcorn compiler
+					if cmpstr1.endswith("_x86_64.o"):
+						if (cmpstr1.replace("_x86_64.o", "") == 
+							cmpstr2.replace(".o", "")):
+								res = True
+								continue
+					elif cmpstr2.endswith("_x86_64.o"):
+						if (cmpstr2.replace("_x86_64.o", "") == 
+							cmpstr1.replace(".o", "")):
+								res = True
+								continue
+
+					if cmpstr1 != cmpstr2:
+						return False
+					else:
+						res = True
+
+		if res == None:
+			er("Could not find object files to compare...\n")
+			sys.exit(-1)
+		
+		return res
+
 	def setName(self, name):
 		self._name = name
-
-	def getInternalSymbols(self, arch):
-		return self._internalSymbols[arch]
-
-	def addInternalSymbol(self, size, arch):
-		self._internalSymbols[arch].append(size)
 
 	def getObjectFile(self, arch):
 		return self._objectFiles[arch]
 
 	def setObjectFile(self, obj, arch):
+		if not symbolObjectFileSanityCheck(obj):
+			er("Failed sanity check on object file during symbol update\n")
+			sys.exit(-1);
 		self._objectFiles[arch] = obj
 	
 	# arch should be one of the enum Arch.XX values

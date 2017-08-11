@@ -33,16 +33,20 @@ def erStack(string):
 	for line in traceback.format_stack():
 		print(line.strip())
 
-# Math stuff
-
-# Greatet common divider
-def gcd(x, y):
-	while y:
-		tmp = y
-		y = x % y
-		x = tmp
-	return x
-
-# least common multiple
-def lcm(x, y):
-	return x * y // gcd(x, y)
+###############################################################################
+# Symbol blacklist
+# In the input map file, we can multiple symbols having the same name. In 
+# particular, "symbols" (are these really symbols) having the same name as
+# sections: .text, .data, etc.
+# These are not reported as symbols by nm, so I'm going to ignore them for now.
+# It is actually possible to align 99% of them if we want, but there are a few
+# corner cases for which I don't think there is a simple solution. These cases
+# are related to object files contained in libstack-transform.a (properties.o
+# and regs.o). They contain multiple occurences of these .text, .bss, and .data
+# "symbols". It is not possible to refer to each one of these uniquely in the
+# linker script I'm building, so it's not possible to align them properly under 
+# certain circumstences
+SYMBOLS_BLACKLIST={	".text" : [".text"], 
+					".data" : [".data"], 
+					".bss" : [".bss"], 
+					".rodata" :[".rodata"] }

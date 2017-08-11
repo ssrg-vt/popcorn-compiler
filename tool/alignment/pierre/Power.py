@@ -45,9 +45,6 @@ class Power(AbstractArchitecture):
 	def getMapFile(self):
 		return self._mapFile
 
-	def getLinkerScript(self):
-		return self._linkerScript
-
 	def getGoldSearchGroup(self):
 		raise exception.NotImplementedError
 		#return self._gold_search_group

@@ -1,4 +1,5 @@
 from Arch import Arch
+import Globals
 
 class Linker:
 
@@ -51,12 +52,13 @@ class Linker:
 					# referenced only by one architecture. With this trick
 					# I can still align what is below the **common, but if
 					# **common size is larger than 0x1000 this number will
-					# have to be increase...
+					# have to be increased...
 					output_buffer.append("\t. = . + 1;\n")
 					output_buffer.append("\t. = ALIGN(0x1000);\n")
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
+						
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
@@ -72,9 +74,10 @@ class Linker:
 								str(hex(symbol.getAlignment(archEnum))) + 
 								"); /* align for " + symbol.getName() + " */\n")
 
-							output_buffer.append("\t*(" + symbol.getName() +
-								"); /* size " + hex(symbol.getSize(archEnum)) +
-								" */\n")
+							output_buffer.append("\t\"" + 
+							symbol.getObjectFile(archEnum) + "\"(" + 
+							symbol.getName() + "); /* size " + 
+							hex(symbol.getSize(archEnum)) +	" */\n")
 
 						# Then add padding after if needed
 						padding_after = symbol.getPaddingAfter(archEnum)
@@ -83,12 +86,17 @@ class Linker:
 								hex(padding_after) + "; /* padding after " + 
 								symbol.getName() + " */\n")
 
+					# Put the set of blacklisted symbols in the end
+					if section in Globals.SYMBOLS_BLACKLIST.keys():
+						for symbolName in Globals.SYMBOLS_BLACKLIST[section]:
+							output_buffer.append("\t*(" + symbolName + ");\n")
+
 					# Section "closing" part
 					output_buffer.append("}\n")
 
 			if not foundMarker:
 				output_buffer.append(line)
 
-			with open(arch.getLinkerScript(), "w+") as f:
+			with open(arch.getLinkerScript(), "w") as f:
 				for line in output_buffer:
 					f.write(line)
