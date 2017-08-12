@@ -3,13 +3,14 @@ import Globals
 
 class Linker:
 
-	_sectionmarker = {	".text" 		: "__TEXT__",
-						".data" 		: "__DATA__",
-						".bss"  		: "__BSS__",
-						".rodata" 		: "__RODATA__",
-						".tdata" 		: "__TDATA__",
-						".tbss" 		: "__TBSS__", 
-						".init_array" 	: "__INIT_ARRAY__" }
+	_sectionmarker = {	".text" 			: "__TEXT__",
+						".data" 			: "__DATA__",
+						".bss"  			: "__BSS__",
+						".rodata" 			: "__RODATA__",
+						".tdata" 			: "__TDATA__",
+						".tbss" 			: "__TBSS__", 
+						".init_array" 		: "__INIT_ARRAY__",
+						".llvm_stackmaps"	: "__LLVM_STACKMAPS__" }
 
 	@classmethod
 	def getSectionMarker(cls, sectionName):

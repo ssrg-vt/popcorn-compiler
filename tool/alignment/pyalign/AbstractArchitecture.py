@@ -275,8 +275,9 @@ class AbstractArchitecture():
 				continue
 			
 			# is the symbol blacklisted?
-			if symbol.getName() in Globals.SYMBOLS_BLACKLIST[sectionName]:
-				continue
+			if sectionName in Globals.SYMBOLS_BLACKLIST.keys():
+				if symbol.getName() in Globals.SYMBOLS_BLACKLIST[sectionName]:
+					continue
 
 			updated = False
 			for existingSymbol in symbolsList[sectionName]:
