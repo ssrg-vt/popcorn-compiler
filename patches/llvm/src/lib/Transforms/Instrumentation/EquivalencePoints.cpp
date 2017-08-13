@@ -208,46 +208,21 @@ private:
     Worker.CreateCall(HTMBeginDecl);
   }
 
-  /// Add transactional execution check & end intrinsics for PowerPC before an
-  /// instruction.
-  void addPowerPCHTMCheckAndEnd(Instruction *I) {
+  /// Add transactional execution end intrinsic for PowerPC before an
+  /// instruction.  Note that PowerPC's HTM facility *will not* throw a
+  /// segfault if a tend. instruction is called outside of a transaction.
+  void addPowerPCHTMEnd(Instruction *I) {
     LLVMContext &C = I->getContext();
-    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
-    Function *CurF = CurBB->getParent();
-
-    // Create a new successor which contains all instructions after the HTM
-    // check & end
-    NewSuccBB =
-      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
-
-    // Create an HTM end block, which ends the transaction and jumps to the
-    // new successor
-    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
-                                  CurF, NewSuccBB);
+    IRBuilder<> EndWorker(I);
     ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C),
                                          0, false);
-    IRBuilder<> EndWorker(HTMEndBB);
     EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(Zero));
-    EndWorker.CreateBr(NewSuccBB);
-
-    // Finally, add the HTM test & replace the unconditional branch created by
-    // splitBasicBlock() with a conditional branch to end the transaction or
-    // continue on to the new successor
-    IRBuilder<> PredWorker(CurBB->getTerminator());
-    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
-    ConstantInt *HTMStateMask = ConstantInt::get(IntegerType::getInt64Ty(C),
-                                                 4, false);
-    Value *Mask = PredWorker.CreateAnd(HTMTestVal, HTMStateMask);
-    ConstantInt *IsTransactional = ConstantInt::get(IntegerType::getInt64Ty(C),
-                                                    4, false);
-    Value *Cmp = PredWorker.CreateICmpEQ(Mask, IsTransactional,
-                                         "htmcmp" + std::to_string(NumInstr));
-    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
-    CurBB->getTerminator()->eraseFromParent();
   }
 
-  /// Add transactional execution check & end intrinsics for x86  before an
-  /// instruction.
+  /// Add transactional execution check & end intrinsics for x86 before an
+  /// instruction.  Note that x86's HTM facility *will* throw a segfault if an
+  /// xend instruction is called outside of a transaction, hence we need to
+  /// check if we're in a transaction before actually trying to end it.
   void addX86HTMCheckAndEnd(Instruction *I) {
     LLVMContext &C = I->getContext();
     BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
@@ -288,7 +263,7 @@ private:
         addX86HTMBegin(I);
         break;
       case Triple::ppc64le:
-        addPowerPCHTMCheckAndEnd(I);
+        addPowerPCHTMEnd(I);
         addPowerPCHTMBegin(I);
         break;
       default:
@@ -336,7 +311,7 @@ private:
         addX86HTMBegin(Inst->getNextNode());
         break;
       case Triple::ppc64le:
-        addPowerPCHTMCheckAndEnd(Inst);
+        addPowerPCHTMEnd(Inst);
         addPowerPCHTMBegin(Inst->getNextNode());
         break;
       default:

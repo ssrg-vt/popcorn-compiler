@@ -485,7 +485,21 @@ Index: include/llvm/CodeGen/AsmPrinter.h
    }
  
    //===------------------------------------------------------------------===//
-@@ -393,6 +394,14 @@
+@@ -329,6 +330,13 @@
+   /// instructions in verbose mode.
+   virtual void emitImplicitDef(const MachineInstr *MI) const;
+ 
++  /// Some machine instructions encapsulate a call with follow-on boilerplate
++  /// instructions, meaning labels emitted after the "instruction" do not
++  /// capture the call's true return address.  Return an offset for correcting
++  /// these labels to refer to the call's actual return address.
++  virtual int getCanonicalReturnAddr(const MachineInstr *Call) const
++  { return 0; }
++
+   //===------------------------------------------------------------------===//
+   // Symbol Lowering Routines.
+   //===------------------------------------------------------------------===//
+@@ -393,6 +401,14 @@
      EmitLabelPlusOffset(Label, 0, Size, IsSectionRelative);
    }
  
@@ -836,7 +850,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,499 @@
+@@ -0,0 +1,547 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1067,9 +1081,10 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +public:
 +  MachineSymbolRef(const MachineOperand &Symbol,
 +                   const MachineInstr *DefMI,
-+                   bool Ptr);
++                   bool Ptr)
++    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
 +  MachineSymbolRef(const MachineSymbolRef &C)
-+    : MachineReference(C), Symbol(C.Symbol), Type(C.Type), Name(C.Name) {}
++    : MachineReference(C), Symbol(C.Symbol) {}
 +  virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 +
 +  virtual enum Type getType() const { return SymbolRef; }
@@ -1080,14 +1095,11 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual MCSymbol *getReference(AsmPrinter &AP) const;
 +
 +private:
-+  // MCSymbols may not exist yet, so instead store the operand type and name
-+  // to look up the MCSymbol at metadata emission time
-+  const MachineOperand &Symbol;
-+
-+  // Note: optimizations may convert the symbol into another machine operand
-+  // type, e.g., register.  Store the name and type as a backup.
-+  enum MachineOperand::MachineOperandType Type;
-+  std::string Name;
++  // MCSymbols may not exist yet, so instead store the operand to look up the
++  // MCSymbol at metadata emission time.
++  // Note: store hard-copy (not reference) because optimizations may convert
++  // symbol reference to a different type, e.g., register
++  const MachineOperand Symbol;
 +};
 +
 +/// MachineConstPoolRef - a reference to a constant pool entry
@@ -1251,6 +1263,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +
 +  /// Determine the live value location type
 +  virtual bool isReg() const { return false; }
++  virtual bool isStackAddr() const { return false; }
 +  virtual bool isStackSlot() const { return false; }
 +
 +  virtual std::string toString() const = 0;
@@ -1278,11 +1291,58 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  unsigned Reg;
 +};
 +
-+/// MachineLiveStackSlot - a live value stored in a stack slot
-+class MachineLiveStackSlot : public MachineLiveLoc {
++/// MachineLiveStackAddr - a live value stored at a known stack address.  Can
++/// be used for stack objects at hard-coded offsets, e.g., the TOC pointer save
++/// location for PowerPC/ELFv2 ABI.
++class MachineLiveStackAddr : public MachineLiveLoc {
++public:
++  MachineLiveStackAddr() : Offset(INT32_MAX), Reg(UINT32_MAX), Size(0) {}
++  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size)
++    : Offset(Offset), Reg(Reg), Size(Size) {}
++  MachineLiveStackAddr(const MachineLiveStackAddr &C)
++    : Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
++  virtual MachineLiveLoc *copy() const
++  { return new MachineLiveStackAddr(*this); }
++
++  virtual bool isStackAddr() const { return true; }
++
++  virtual bool operator==(const MachineLiveLoc &RHS) const;
++
++  int getOffset() const { return Offset; }
++  void setOffset(int Offset) { this->Offset = Offset; }
++  unsigned getReg() const { return Reg; }
++  void setReg(unsigned Reg) { this->Reg = Reg; }
++  void setSize(unsigned Size) { this->Size = Size; }
++
++  // Calculate the final position of the stack object.  Return the object's
++  // location as an offset from a base pointer register.
++  virtual int calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP)
++  { BP = Reg; return Offset; }
++
++  // The size of a stack object may need to be determined by code emission
++  // metadata in child classes, hence the AsmPrinter argument
++  virtual unsigned getSize(const AsmPrinter &AP) { return Size; }
++
++  virtual std::string toString() const
++  {
++    return "live value at register " + std::to_string(Reg) +
++           " + " + std::to_string(Offset);
++  }
++
++protected:
++  // The object is referenced by an offset from a (physical) register's value.
++  int Offset;
++  unsigned Reg, Size;
++};
++
++/// MachineLiveStackSlot - a live value stored in a stack slot.  A more
++/// abstract version of MachineLiveStackAddr, where the value is in a virtual
++/// stack slot whose address won't be determined until instruction emission.
++class MachineLiveStackSlot : public MachineLiveStackAddr {
 +public:
 +  MachineLiveStackSlot(int Index) : Index(Index) {}
-+  MachineLiveStackSlot(const MachineLiveStackSlot &C) : Index(C.Index) {}
++  MachineLiveStackSlot(const MachineLiveStackSlot &C)
++    : MachineLiveStackAddr(C), Index(C.Index) {}
 +  virtual MachineLiveLoc *copy() const
 +  { return new MachineLiveStackSlot(*this); }
 +
@@ -1292,6 +1352,8 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +
 +  unsigned getStackSlot() const { return Index; }
 +  void setStackSlot(int Index) { this->Index = Index; }
++  virtual int calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP);
++  virtual unsigned getSize(const AsmPrinter &AP);
 +
 +  virtual std::string toString() const
 +  { return "live value in stack slot " + std::to_string(StackSlot); }
@@ -1689,7 +1751,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,53 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1710,6 +1772,8 @@ Index: include/llvm/Target/TargetValues.h
 +#define LLVM_TARGET_TARGETVAL_H
 +
 +#include "llvm/CodeGen/StackTransformTypes.h"
++#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/IR/Instructions.h"
 +
 +namespace llvm {
 +
@@ -1725,6 +1789,13 @@ Index: include/llvm/Target/TargetValues.h
 +
 +  /// Return a machine-specific value generated by a machine instruction.
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const = 0;
++
++  /// Add any required architecture-specific live values, e.g., the TOC pointer
++  /// on PowerPC.
++  virtual void addRequiredArchLiveValues(MachineFunction *MF,
++                                         const MachineInstr *MIStackMap,
++                                         const CallInst *IRStackMap) const
++  { return; }
 +
 +protected:
 +  TargetValues() {}
@@ -2830,7 +2901,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,111 @@
+@@ -84,32 +98,109 @@
    return (unsigned)RegNum;
  }
  
@@ -2889,17 +2960,15 @@ Index: lib/CodeGen/StackMaps.cpp
 +        Locs.emplace_back(Location::Register, Size, DwarfRegNum, Offset,
 +                          Ptr, Alloca, true, AllocaSize);
 +      }
-+      else if(LL->isStackSlot()) {
-+        const MachineLiveStackSlot &MSS = (const MachineLiveStackSlot &)*LL;
-+        const TargetFrameLowering *TFL =
-+          AP.MF->getSubtarget().getFrameLowering();
-+        FrameOff =
-+          TFL->getFrameIndexReference(*AP.MF, MSS.getStackSlot(), DwarfRegNum);
++      else if(LL->isStackAddr()) {
++        MachineLiveStackAddr &MLSA = (MachineLiveStackAddr &)*LL;
++        FrameOff = MLSA.calcAndGetRegOffset(AP, DwarfRegNum);
 +
 +        Locs.emplace_back(Location::Indirect, Size,
 +          getDwarfRegNum(DwarfRegNum, TRI),
 +          FrameOff, Ptr, Alloca, true, AllocaSize);
 +      }
++      else llvm_unreachable("Unknown machine live location type");
 +    }
 +  }
 +}
@@ -2948,7 +3017,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +209,24 @@
+@@ -116,17 +207,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -2976,7 +3045,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +234,16 @@
+@@ -134,17 +232,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -3001,7 +3070,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +260,7 @@
+@@ -161,6 +258,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3009,7 +3078,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +294,7 @@
+@@ -194,7 +292,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -3018,7 +3087,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +303,15 @@
+@@ -203,8 +301,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -3036,7 +3105,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +328,78 @@
+@@ -221,6 +326,78 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -3115,7 +3184,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +456,139 @@
+@@ -277,6 +454,135 @@
    return LiveOuts;
  }
  
@@ -3169,10 +3238,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +void StackMaps::addArchLiveVals(const CallInst *SM, ArchValues &AV) {
 +  unsigned Offset, DwarfReg;
 +  unsigned PtrSize = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
-+  int StackSlot;
 +  const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
 +  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
-+  const TargetFrameLowering *TFL = AP.MF->getSubtarget().getFrameLowering();
 +
 +  if(AP.MF->hasSMArchSpecificLocations(SM)) {
 +    const ArchLiveValues &Vals = AP.MF->getSMArchSpecificLocations(SM);
@@ -3198,14 +3265,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +        Loc.Reg = DwarfReg;
 +        Loc.Offset = Offset;
 +      }
-+      else if(Val.first->isStackSlot()) {
-+        const MachineLiveStackSlot &MSS =
-+          (const MachineLiveStackSlot &)*Val.first;
-+        StackSlot = MSS.getStackSlot();
++      else if(Val.first->isStackAddr()) {
++        MachineLiveStackAddr &MLSA = (MachineLiveStackAddr &)*Val.first;
 +
 +        Loc.Type = Location::Indirect;
-+        Loc.Size = MFI->getObjectSize(StackSlot);
-+        Loc.Offset = TFL->getFrameIndexReference(*AP.MF, StackSlot, DwarfReg);
++        Loc.Size = MLSA.getSize(AP);
++        Loc.Offset = MLSA.calcAndGetRegOffset(AP, DwarfReg);
 +        Loc.Reg = getDwarfRegNum(DwarfReg, TRI);
 +      }
 +      else llvm_unreachable("Invalid architecture-specific live value");
@@ -3255,7 +3320,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +597,46 @@
+@@ -285,21 +591,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -3304,8 +3369,21 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -327,8 +664,9 @@
+@@ -323,12 +654,21 @@
+ 
+   // Create an expression to calculate the offset of the callsite from function
+   // entry.
+-  const MCExpr *CSOffsetExpr = MCBinaryExpr::createSub(
++  // TODO for Popcorn, we actually want the return address of the call
++  // instruction to which this stackmap is attached.  However some backend
++  // writers, in their infinite wisdom, decided to abstract multiple assembly
++  // instructions into a single machine IR instruction (*ahem* PowerPC *ahem*).
++  // Generate an expression to correct for this "feature".
++  int RAOffset = AP.getCanonicalReturnAddr(MI.getPrevNode());
++  const MCExpr *RAFixup = MCBinaryExpr::createSub(
        MCSymbolRefExpr::create(MILabel, OutContext),
++      MCConstantExpr::create(RAOffset, OutContext), OutContext);
++  const MCExpr *CSOffsetExpr = MCBinaryExpr::createSub(RAFixup,
        MCSymbolRefExpr::create(AP.CurrentFnSymForSize, OutContext), OutContext);
  
 -  CSInfos.emplace_back(CSOffsetExpr, ID, std::move(Locations),
@@ -3316,7 +3394,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +749,11 @@
+@@ -411,8 +751,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -3329,7 +3407,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +761,15 @@
+@@ -420,6 +763,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -3345,7 +3423,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +789,20 @@
+@@ -439,14 +791,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -3370,7 +3448,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +811,25 @@
+@@ -455,6 +813,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -3396,7 +3474,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +845,29 @@
+@@ -470,23 +847,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -3427,7 +3505,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +875,13 @@
+@@ -494,10 +877,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -3442,7 +3520,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +893,31 @@
+@@ -509,6 +895,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -3474,7 +3552,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +924,7 @@
+@@ -515,7 +926,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -3483,7 +3561,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +948,7 @@
+@@ -539,7 +950,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -3518,7 +3596,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,971 @@
+@@ -0,0 +1,974 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4363,6 +4441,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +             << MFI->getObjectIndexEnd() << "\n";
 +    );
 +
++    // Include any mandatory architecture-specific live values
++    TVG->addRequiredArchLiveValues(MF, MISM, IRSM);
++
 +    // Search for virtual registers not handled by the stackmap.  Registers
 +    // spilled to the stack should have been converted to frame index
 +    // references by now.
@@ -4494,7 +4575,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformTypes.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformTypes.cpp	(working copy)
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,256 @@
 +//===-- llvm/Target/TargetValueGenerator.cpp - Value Generator --*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4505,6 +4586,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +//===----------------------------------------------------------------------===//
 +
 +#include "llvm/CodeGen/AsmPrinter.h"
++#include "llvm/CodeGen/MachineFrameInfo.h"
 +#include "llvm/CodeGen/MachineFunction.h"
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/IR/Mangler.h"
@@ -4550,29 +4632,6 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +// MachineSymbolRef implementation
 +//
 +
-+MachineSymbolRef::MachineSymbolRef(const MachineOperand &Symbol,
-+                                   const MachineInstr *DefMI,
-+                                   bool Ptr = false)
-+  : MachineReference(DefMI, Ptr), Symbol(Symbol), Type(Symbol.getType()) {
-+  switch(Symbol.getType()) {
-+  case MachineOperand::MO_GlobalAddress:
-+    Name = Symbol.getGlobal()->getName();
-+    break;
-+  case MachineOperand::MO_ExternalSymbol:
-+    Name = Symbol.getSymbolName();
-+    break;
-+  case MachineOperand::MO_MCSymbol:
-+    Name = Symbol.getMCSymbol()->getName();
-+    break;
-+  default:
-+    DEBUG(dbgs() << "Unhandled reference type: ";
-+          Symbol.print(dbgs());
-+          dbgs() << "\n";);
-+    Name = "(unknown)";
-+    break;
-+  }
-+}
-+
 +bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
 +  if(RHS.isSymbolRef()) {
 +    const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
@@ -4582,16 +4641,24 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +}
 +
 +std::string MachineSymbolRef::toString() const {
-+  std::string buf = "reference to symbol '" + Name + "' (";
-+  switch(Type) {
-+  case MachineOperand::MO_GlobalAddress: buf += "global)"; break;
-+  case MachineOperand::MO_ExternalSymbol: buf += "external)"; break;
-+  case MachineOperand::MO_MCSymbol: buf += "MC symbol)"; break;
++  std::string buf = "reference to symbol '";
++  switch(Symbol.getType()) {
++  case MachineOperand::MO_GlobalAddress:
++    buf += Symbol.getGlobal()->getName();
++    buf += "' (global)";
++    break;
++  case MachineOperand::MO_ExternalSymbol:
++    buf += Symbol.getSymbolName();
++    buf += "' (external)";
++    break;
++  case MachineOperand::MO_MCSymbol:
++    buf += Symbol.getMCSymbol()->getName();
++    buf += "' (MC symbol)"; break;
 +  default:
 +    DEBUG(dbgs() << "Unhandled reference type: ";
 +          Symbol.print(dbgs());
 +          dbgs() << "\n";);
-+    buf += "unknown type)";
++    buf += "n/a' (unhandled type)";
 +    break;
 +  }
 +  return buf;
@@ -4613,21 +4680,9 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +  case MachineOperand::MO_MCSymbol:
 +    return Symbol.getMCSymbol();
 +  default:
-+    DEBUG(dbgs() << "Reference to '" << Name << "' converted to: ";
++    DEBUG(dbgs() << "Unhandled reference type: ";
 +          Symbol.print(dbgs());
 +          dbgs() << "\n";);
-+    break;
-+  }
-+
-+  // Optimizations may have converted the reference to another operand type,
-+  // e.g., register.  Look up the symbol using the name & type
-+  switch(Type) {
-+  case MachineOperand::MO_ExternalSymbol:
-+    return GetExternalSymbol(AP, Name);
-+  case MachineOperand::MO_GlobalAddress:
-+    return AP.OutContext.lookupSymbol(Name);
-+  default:
-+    llvm_unreachable("Unhandled symbol reference");
 +    return nullptr;
 +  }
 +}
@@ -4709,7 +4764,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +}
 +
 +//===----------------------------------------------------------------------===//
-+// MachineImmediate implementation
++// MachineGeneratedVal implementation
 +//
 +
 +bool MachineGeneratedVal::operator==(const MachineLiveVal &RHS) const {
@@ -4735,7 +4790,21 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +}
 +
 +//===----------------------------------------------------------------------===//
-+// MachineLiveReg implementation
++// MachineLiveStackAddr implementation
++//
++
++bool MachineLiveStackAddr::operator==(const MachineLiveLoc &RHS) const {
++  if(RHS.isStackAddr() && !RHS.isStackSlot()) {
++    const MachineLiveStackAddr &MLSA = (const MachineLiveStackAddr &)RHS;
++    if(Offset != INT32_MAX && MLSA.Offset != INT32_MAX &&
++       Offset == MLSA.Offset && Reg == MLSA.Reg && Size == MLSA.Size)
++      return true;
++  }
++  return false;
++}
++
++//===----------------------------------------------------------------------===//
++// MachineLiveStackSlot implementation
 +//
 +
 +bool MachineLiveStackSlot::operator==(const MachineLiveLoc &RHS) const {
@@ -4744,6 +4813,23 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +    if(MLSS.Index == Index) return true;
 +  }
 +  return false;
++}
++
++int MachineLiveStackSlot::calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP) {
++  if(Offset == INT32_MAX) {
++    const TargetFrameLowering *TFL = AP.MF->getSubtarget().getFrameLowering();
++    Offset = TFL->getFrameIndexReference(*AP.MF, StackSlot, Reg);
++  }
++  BP = Reg;
++  return Offset;
++}
++
++unsigned MachineLiveStackSlot::getSize(const AsmPrinter &AP) {
++  if(Size == 0) {
++    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
++    Size = MFI->getObjectSize(Index);
++  }
++  return Size;
 +}
 +
 Index: lib/CodeGen/UnwindInfo.cpp
@@ -5152,7 +5238,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,132 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5165,7 +5251,6 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +#include "AArch64Values.h"
 +#include "AArch64.h"
 +#include "MCTargetDesc/AArch64AddressingModes.h"
-+#include "llvm/CodeGen/MachineFunction.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -5328,6 +5413,18 @@ Index: lib/Target/AArch64/CMakeLists.txt
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
+Index: lib/Target/PowerPC/CMakeLists.txt
+===================================================================
+--- lib/Target/PowerPC/CMakeLists.txt	(revision 277823)
++++ lib/Target/PowerPC/CMakeLists.txt	(working copy)
+@@ -34,6 +34,7 @@
+   PPCTargetTransformInfo.cpp
+   PPCTOCRegDeps.cpp
+   PPCTLSDynamicCall.cpp
++  PPCValues.cpp
+   PPCVSXCopy.cpp
+   PPCVSXFMAMutate.cpp
+   PPCVSXSwapRemoval.cpp
 Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 ===================================================================
 --- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 277823)
@@ -5353,18 +5450,26 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  
      const char *getPassName() const override {
        return "PowerPC Assembly Printer";
-@@ -101,7 +103,9 @@
+@@ -99,9 +101,17 @@
+     void LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
+                          const MachineInstr &MI);
      void EmitTlsCall(const MachineInstr *MI, MCSymbolRefExpr::VariantKind VK);
++
++    virtual int getCanonicalReturnAddr(const MachineInstr *Call) const override;
++
      bool runOnMachineFunction(MachineFunction &MF) override {
        Subtarget = &MF.getSubtarget<PPCSubtarget>();
 -      return AsmPrinter::runOnMachineFunction(MF);
 +      bool retval = AsmPrinter::runOnMachineFunction(MF);
 +      UI.recordUnwindInfo(MF);
++      // TODO is this correct/is this everything?
++      int frameSize = MF.getFrameInfo()->getStackSize();
++      UI.addRegisterUnwindInfo(MF, PPC::LR8, frameSize + 16);
 +      return retval;
      }
    };
  
-@@ -327,7 +331,9 @@
+@@ -327,7 +337,9 @@
  }
  
  void PPCAsmPrinter::EmitEndOfAsmFile(Module &M) {
@@ -5375,6 +5480,134 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  }
  
  void PPCAsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
+@@ -490,6 +502,19 @@
+                  .addExpr(SymVar));
+ }
+ 
++/// getCanonicalReturnAddr -- for machine instructions which actually codegen
++/// a call + other instructions, return an offset which would correct a label
++/// to point to the call's actual return address.
++int PPCAsmPrinter::getCanonicalReturnAddr(const MachineInstr *Call) const {
++  switch(Call->getOpcode()) {
++  case PPC::BL8_NOP:
++  case PPC::BLA8_NOP:
++  case PPC::BL8_NOP_TLS:
++  case PPC::BCTRL8_LDinto_toc: return 4;
++  default: return 0;
++  }
++}
++
+ /// EmitInstruction -- Print out a single PowerPC MI in Darwin syntax to
+ /// the current output stream.
+ ///
+Index: lib/Target/PowerPC/PPCSubtarget.h
+===================================================================
+--- lib/Target/PowerPC/PPCSubtarget.h	(revision 277823)
++++ lib/Target/PowerPC/PPCSubtarget.h	(working copy)
+@@ -17,6 +17,7 @@
+ #include "PPCFrameLowering.h"
+ #include "PPCISelLowering.h"
+ #include "PPCInstrInfo.h"
++#include "PPCValues.h"
+ #include "llvm/ADT/Triple.h"
+ #include "llvm/IR/DataLayout.h"
+ #include "llvm/MC/MCInstrItineraries.h"
+@@ -129,6 +130,7 @@
+   PPCFrameLowering FrameLowering;
+   PPCInstrInfo InstrInfo;
+   PPCTargetLowering TLInfo;
++  PPCValues VGen;
+   TargetSelectionDAGInfo TSInfo;
+ 
+ public:
+@@ -171,6 +173,7 @@
+     return &getInstrInfo()->getRegisterInfo();
+   }
+   const PPCTargetMachine &getTargetMachine() const { return TM; }
++  const PPCValues *getValues() const override { return &VGen; }
+ 
+   /// initializeSubtargetDependencies - Initializes using a CPU and feature string
+   /// so that we can use initializer lists for subtarget initialization.
+Index: lib/Target/PowerPC/PPCValues.cpp
+===================================================================
+--- lib/Target/PowerPC/PPCValues.cpp	(nonexistent)
++++ lib/Target/PowerPC/PPCValues.cpp	(working copy)
+@@ -0,0 +1,46 @@
++//===--------- PPCTargetValues.cpp - PPC specific value generator ---------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#include "PPCFrameLowering.h"
++#include "PPCValues.h"
++#include "PPC.h"
++#include "llvm/CodeGen/MachineRegisterInfo.h"
++#include "llvm/CodeGen/MachineOperand.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++#define DEBUG_TYPE "stacktransform"
++
++using namespace llvm;
++
++MachineLiveValPtr PPCValues::getMachineValue(const MachineInstr *MI) const {
++  // TODO
++  return nullptr;
++}
++
++void PPCValues::addRequiredArchLiveValues(MachineFunction *MF,
++                                          const MachineInstr *MIStackMap,
++                                          const CallInst *IRStackMap) const {
++  if(!MF->getRegInfo().use_empty(PPC::X2)) {
++    MachineOperand TOCRef = MachineOperand::CreateES(".TOC.");
++    MachineSymbolRef TOCSym(TOCRef, MIStackMap, true);
++
++    DEBUG(dbgs() << "   + Setting R2 to be TOC pointer\n");
++    MachineLiveReg TOCPtr(PPC::X2);
++    MF->addSMArchSpecificLocation(IRStackMap, TOCPtr, TOCSym);
++
++    // Per the ELFv2 ABI, the TOC Pointer Doubleword save area is at SP + 24
++    DEBUG(dbgs() << "   + Setting TOC pointer save slot to be TOC pointer\n");
++    const PPCFrameLowering *PFL =
++      (const PPCFrameLowering *)MF->getSubtarget().getFrameLowering();
++    MachineLiveStackAddr TOCSS(PFL->getTOCSaveOffset(), PPC::X1, 8);
++    MF->addSMArchSpecificLocation(IRStackMap, TOCSS, TOCSym);
++  }
++}
++
+Index: lib/Target/PowerPC/PPCValues.h
+===================================================================
+--- lib/Target/PowerPC/PPCValues.h	(nonexistent)
++++ lib/Target/PowerPC/PPCValues.h	(working copy)
+@@ -0,0 +1,24 @@
++//===--------- PPCTargetValues.cpp - PPC specific value generator ---------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#include "llvm/Target/TargetValues.h"
++
++namespace llvm {
++
++class PPCValues final : public TargetValues {
++public:
++  PPCValues() {}
++  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
++  virtual void addRequiredArchLiveValues(MachineFunction *MF,
++                                         const MachineInstr *MIStackMap,
++                                         const CallInst *IRStackMap) const;
++};
++
++}
++
 Index: lib/Target/TargetMachine.cpp
 ===================================================================
 --- lib/Target/TargetMachine.cpp	(revision 277823)
@@ -5573,7 +5806,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,90 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5585,8 +5818,6 @@ Index: lib/Target/X86/X86Values.cpp
 +
 +#include "X86Values.h"
 +#include "X86InstrInfo.h"
-+#include "llvm/CodeGen/MachineFunction.h"
-+#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Target/TargetInstrInfo.h"
@@ -5717,7 +5948,7 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/EquivalencePoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/EquivalencePoints.cpp	(working copy)
-@@ -0,0 +1,393 @@
+@@ -0,0 +1,368 @@
 +//===- EquivalencePoints.cpp ----------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5928,46 +6159,21 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +    Worker.CreateCall(HTMBeginDecl);
 +  }
 +
-+  /// Add transactional execution check & end intrinsics for PowerPC before an
-+  /// instruction.
-+  void addPowerPCHTMCheckAndEnd(Instruction *I) {
++  /// Add transactional execution end intrinsic for PowerPC before an
++  /// instruction.  Note that PowerPC's HTM facility *will not* throw a
++  /// segfault if a tend. instruction is called outside of a transaction.
++  void addPowerPCHTMEnd(Instruction *I) {
 +    LLVMContext &C = I->getContext();
-+    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
-+    Function *CurF = CurBB->getParent();
-+
-+    // Create a new successor which contains all instructions after the HTM
-+    // check & end
-+    NewSuccBB =
-+      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
-+
-+    // Create an HTM end block, which ends the transaction and jumps to the
-+    // new successor
-+    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
-+                                  CurF, NewSuccBB);
++    IRBuilder<> EndWorker(I);
 +    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C),
 +                                         0, false);
-+    IRBuilder<> EndWorker(HTMEndBB);
 +    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(Zero));
-+    EndWorker.CreateBr(NewSuccBB);
-+
-+    // Finally, add the HTM test & replace the unconditional branch created by
-+    // splitBasicBlock() with a conditional branch to end the transaction or
-+    // continue on to the new successor
-+    IRBuilder<> PredWorker(CurBB->getTerminator());
-+    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
-+    ConstantInt *HTMStateMask = ConstantInt::get(IntegerType::getInt64Ty(C),
-+                                                 4, false);
-+    Value *Mask = PredWorker.CreateAnd(HTMTestVal, HTMStateMask);
-+    ConstantInt *IsTransactional = ConstantInt::get(IntegerType::getInt64Ty(C),
-+                                                    4, false);
-+    Value *Cmp = PredWorker.CreateICmpEQ(Mask, IsTransactional,
-+                                         "htmcmp" + std::to_string(NumInstr));
-+    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
-+    CurBB->getTerminator()->eraseFromParent();
 +  }
 +
-+  /// Add transactional execution check & end intrinsics for x86  before an
-+  /// instruction.
++  /// Add transactional execution check & end intrinsics for x86 before an
++  /// instruction.  Note that x86's HTM facility *will* throw a segfault if an
++  /// xend instruction is called outside of a transaction, hence we need to
++  /// check if we're in a transaction before actually trying to end it.
 +  void addX86HTMCheckAndEnd(Instruction *I) {
 +    LLVMContext &C = I->getContext();
 +    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
@@ -6008,7 +6214,7 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +        addX86HTMBegin(I);
 +        break;
 +      case Triple::ppc64le:
-+        addPowerPCHTMCheckAndEnd(I);
++        addPowerPCHTMEnd(I);
 +        addPowerPCHTMBegin(I);
 +        break;
 +      default:
@@ -6056,7 +6262,7 @@ Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
 +        addX86HTMBegin(Inst->getNextNode());
 +        break;
 +      case Triple::ppc64le:
-+        addPowerPCHTMCheckAndEnd(Inst);
++        addPowerPCHTMEnd(Inst);
 +        addPowerPCHTMBegin(Inst->getNextNode());
 +        break;
 +      default:

@@ -228,9 +228,10 @@ class MachineSymbolRef : public MachineReference {
 public:
   MachineSymbolRef(const MachineOperand &Symbol,
                    const MachineInstr *DefMI,
-                   bool Ptr);
+                   bool Ptr)
+    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
   MachineSymbolRef(const MachineSymbolRef &C)
-    : MachineReference(C), Symbol(C.Symbol), Type(C.Type), Name(C.Name) {}
+    : MachineReference(C), Symbol(C.Symbol) {}
   virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 
   virtual enum Type getType() const { return SymbolRef; }
@@ -241,14 +242,11 @@ public:
   virtual MCSymbol *getReference(AsmPrinter &AP) const;
 
 private:
-  // MCSymbols may not exist yet, so instead store the operand type and name
-  // to look up the MCSymbol at metadata emission time
-  const MachineOperand &Symbol;
-
-  // Note: optimizations may convert the symbol into another machine operand
-  // type, e.g., register.  Store the name and type as a backup.
-  enum MachineOperand::MachineOperandType Type;
-  std::string Name;
+  // MCSymbols may not exist yet, so instead store the operand to look up the
+  // MCSymbol at metadata emission time.
+  // Note: store hard-copy (not reference) because optimizations may convert
+  // symbol reference to a different type, e.g., register
+  const MachineOperand Symbol;
 };
 
 /// MachineConstPoolRef - a reference to a constant pool entry
@@ -412,6 +410,7 @@ public:
 
   /// Determine the live value location type
   virtual bool isReg() const { return false; }
+  virtual bool isStackAddr() const { return false; }
   virtual bool isStackSlot() const { return false; }
 
   virtual std::string toString() const = 0;
@@ -439,11 +438,58 @@ private:
   unsigned Reg;
 };
 
-/// MachineLiveStackSlot - a live value stored in a stack slot
-class MachineLiveStackSlot : public MachineLiveLoc {
+/// MachineLiveStackAddr - a live value stored at a known stack address.  Can
+/// be used for stack objects at hard-coded offsets, e.g., the TOC pointer save
+/// location for PowerPC/ELFv2 ABI.
+class MachineLiveStackAddr : public MachineLiveLoc {
+public:
+  MachineLiveStackAddr() : Offset(INT32_MAX), Reg(UINT32_MAX), Size(0) {}
+  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size)
+    : Offset(Offset), Reg(Reg), Size(Size) {}
+  MachineLiveStackAddr(const MachineLiveStackAddr &C)
+    : Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
+  virtual MachineLiveLoc *copy() const
+  { return new MachineLiveStackAddr(*this); }
+
+  virtual bool isStackAddr() const { return true; }
+
+  virtual bool operator==(const MachineLiveLoc &RHS) const;
+
+  int getOffset() const { return Offset; }
+  void setOffset(int Offset) { this->Offset = Offset; }
+  unsigned getReg() const { return Reg; }
+  void setReg(unsigned Reg) { this->Reg = Reg; }
+  void setSize(unsigned Size) { this->Size = Size; }
+
+  // Calculate the final position of the stack object.  Return the object's
+  // location as an offset from a base pointer register.
+  virtual int calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP)
+  { BP = Reg; return Offset; }
+
+  // The size of a stack object may need to be determined by code emission
+  // metadata in child classes, hence the AsmPrinter argument
+  virtual unsigned getSize(const AsmPrinter &AP) { return Size; }
+
+  virtual std::string toString() const
+  {
+    return "live value at register " + std::to_string(Reg) +
+           " + " + std::to_string(Offset);
+  }
+
+protected:
+  // The object is referenced by an offset from a (physical) register's value.
+  int Offset;
+  unsigned Reg, Size;
+};
+
+/// MachineLiveStackSlot - a live value stored in a stack slot.  A more
+/// abstract version of MachineLiveStackAddr, where the value is in a virtual
+/// stack slot whose address won't be determined until instruction emission.
+class MachineLiveStackSlot : public MachineLiveStackAddr {
 public:
   MachineLiveStackSlot(int Index) : Index(Index) {}
-  MachineLiveStackSlot(const MachineLiveStackSlot &C) : Index(C.Index) {}
+  MachineLiveStackSlot(const MachineLiveStackSlot &C)
+    : MachineLiveStackAddr(C), Index(C.Index) {}
   virtual MachineLiveLoc *copy() const
   { return new MachineLiveStackSlot(*this); }
 
@@ -453,6 +499,8 @@ public:
 
   unsigned getStackSlot() const { return Index; }
   void setStackSlot(int Index) { this->Index = Index; }
+  virtual int calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP);
+  virtual unsigned getSize(const AsmPrinter &AP);
 
   virtual std::string toString() const
   { return "live value in stack slot " + std::to_string(StackSlot); }

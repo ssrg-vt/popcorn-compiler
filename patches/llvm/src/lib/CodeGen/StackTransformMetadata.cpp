@@ -842,6 +842,9 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
              << MFI->getObjectIndexEnd() << "\n";
     );
 
+    // Include any mandatory architecture-specific live values
+    TVG->addRequiredArchLiveValues(MF, MISM, IRSM);
+
     // Search for virtual registers not handled by the stackmap.  Registers
     // spilled to the stack should have been converted to frame index
     // references by now.

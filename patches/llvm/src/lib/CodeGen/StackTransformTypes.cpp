@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/AsmPrinter.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/IR/Mangler.h"
@@ -53,29 +54,6 @@ std::string ValueGenInst::getInstNameStr(enum InstType Type) {
 // MachineSymbolRef implementation
 //
 
-MachineSymbolRef::MachineSymbolRef(const MachineOperand &Symbol,
-                                   const MachineInstr *DefMI,
-                                   bool Ptr = false)
-  : MachineReference(DefMI, Ptr), Symbol(Symbol), Type(Symbol.getType()) {
-  switch(Symbol.getType()) {
-  case MachineOperand::MO_GlobalAddress:
-    Name = Symbol.getGlobal()->getName();
-    break;
-  case MachineOperand::MO_ExternalSymbol:
-    Name = Symbol.getSymbolName();
-    break;
-  case MachineOperand::MO_MCSymbol:
-    Name = Symbol.getMCSymbol()->getName();
-    break;
-  default:
-    DEBUG(dbgs() << "Unhandled reference type: ";
-          Symbol.print(dbgs());
-          dbgs() << "\n";);
-    Name = "(unknown)";
-    break;
-  }
-}
-
 bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
   if(RHS.isSymbolRef()) {
     const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
@@ -85,16 +63,24 @@ bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
 }
 
 std::string MachineSymbolRef::toString() const {
-  std::string buf = "reference to symbol '" + Name + "' (";
-  switch(Type) {
-  case MachineOperand::MO_GlobalAddress: buf += "global)"; break;
-  case MachineOperand::MO_ExternalSymbol: buf += "external)"; break;
-  case MachineOperand::MO_MCSymbol: buf += "MC symbol)"; break;
+  std::string buf = "reference to symbol '";
+  switch(Symbol.getType()) {
+  case MachineOperand::MO_GlobalAddress:
+    buf += Symbol.getGlobal()->getName();
+    buf += "' (global)";
+    break;
+  case MachineOperand::MO_ExternalSymbol:
+    buf += Symbol.getSymbolName();
+    buf += "' (external)";
+    break;
+  case MachineOperand::MO_MCSymbol:
+    buf += Symbol.getMCSymbol()->getName();
+    buf += "' (MC symbol)"; break;
   default:
     DEBUG(dbgs() << "Unhandled reference type: ";
           Symbol.print(dbgs());
           dbgs() << "\n";);
-    buf += "unknown type)";
+    buf += "n/a' (unhandled type)";
     break;
   }
   return buf;
@@ -116,21 +102,9 @@ MCSymbol *MachineSymbolRef::getReference(AsmPrinter &AP) const {
   case MachineOperand::MO_MCSymbol:
     return Symbol.getMCSymbol();
   default:
-    DEBUG(dbgs() << "Reference to '" << Name << "' converted to: ";
+    DEBUG(dbgs() << "Unhandled reference type: ";
           Symbol.print(dbgs());
           dbgs() << "\n";);
-    break;
-  }
-
-  // Optimizations may have converted the reference to another operand type,
-  // e.g., register.  Look up the symbol using the name & type
-  switch(Type) {
-  case MachineOperand::MO_ExternalSymbol:
-    return GetExternalSymbol(AP, Name);
-  case MachineOperand::MO_GlobalAddress:
-    return AP.OutContext.lookupSymbol(Name);
-  default:
-    llvm_unreachable("Unhandled symbol reference");
     return nullptr;
   }
 }
@@ -212,7 +186,7 @@ bool MachineImmediate::operator==(const MachineLiveVal &RHS) const {
 }
 
 //===----------------------------------------------------------------------===//
-// MachineImmediate implementation
+// MachineGeneratedVal implementation
 //
 
 bool MachineGeneratedVal::operator==(const MachineLiveVal &RHS) const {
@@ -238,7 +212,21 @@ bool MachineLiveReg::operator==(const MachineLiveLoc &RHS) const {
 }
 
 //===----------------------------------------------------------------------===//
-// MachineLiveReg implementation
+// MachineLiveStackAddr implementation
+//
+
+bool MachineLiveStackAddr::operator==(const MachineLiveLoc &RHS) const {
+  if(RHS.isStackAddr() && !RHS.isStackSlot()) {
+    const MachineLiveStackAddr &MLSA = (const MachineLiveStackAddr &)RHS;
+    if(Offset != INT32_MAX && MLSA.Offset != INT32_MAX &&
+       Offset == MLSA.Offset && Reg == MLSA.Reg && Size == MLSA.Size)
+      return true;
+  }
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// MachineLiveStackSlot implementation
 //
 
 bool MachineLiveStackSlot::operator==(const MachineLiveLoc &RHS) const {
@@ -247,5 +235,22 @@ bool MachineLiveStackSlot::operator==(const MachineLiveLoc &RHS) const {
     if(MLSS.Index == Index) return true;
   }
   return false;
+}
+
+int MachineLiveStackSlot::calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP) {
+  if(Offset == INT32_MAX) {
+    const TargetFrameLowering *TFL = AP.MF->getSubtarget().getFrameLowering();
+    Offset = TFL->getFrameIndexReference(*AP.MF, StackSlot, Reg);
+  }
+  BP = Reg;
+  return Offset;
+}
+
+unsigned MachineLiveStackSlot::getSize(const AsmPrinter &AP) {
+  if(Size == 0) {
+    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
+    Size = MFI->getObjectSize(Index);
+  }
+  return Size;
 }
 

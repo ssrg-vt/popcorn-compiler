@@ -10,7 +10,6 @@
 #include "AArch64Values.h"
 #include "AArch64.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
-#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"

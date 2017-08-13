@@ -9,8 +9,6 @@
 
 #include "X86Values.h"
 #include "X86InstrInfo.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetInstrInfo.h"
