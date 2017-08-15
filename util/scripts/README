@@ -6,15 +6,32 @@ This folder contains several useful scripts.  These are copied to the
 installation folder by the installation script.  You can find more information
 about using the scripts by running them with "-h".
 
-1. Generating an LLVM patch
+1. Generating an LLVM/clang patch
 
-The "gen-compare-llvm-diff.sh" script will generate a patch from the modified
-LLVM source.  It checks the patch against the release, and then checks to see
-if the generated patch is different from the patch currently in the Popcorn
-compiler repository.  If so, it swaps out the old patch with the new (and
-retains the old patch).
+The "gen-llvm-diff.sh" script will generate patches from the modified LLVM &
+clang sources.  It creates a patch against the original checkout of the source,
+and then checks to see if the generated patch is different from the patch
+currently in the Popcorn compiler repository.  If so, it swaps out the old
+patch with the new (and retains the old patch).
 
-2. Checking alignment
+- To use the tool:
+
+  $ gen-llvm-diff.sh -s <LLVM source>
+
+2. Re-applying the Popcorn compiler patches to LLVM/clang
+
+The "reapply-llvm-patch.sh" script will revert LLVM/clang source to the
+original checkout, re-apply the patch in the Popcorn compiler repository and
+re-install the compiler (if at any point it fails, it restores the source using
+a backup).  This is useful in the case where new updates to the compiler patch
+(e.g., new code pulled from the remote repository) need to be applied to
+an existing installation.
+
+- To use the tool:
+
+  $ reapply-llvm-path.sh -s <LLVM source>
+
+3. Checking alignment
 
 The "check-align.py" script is useful for sanity checking symbol alignment in
 multi-ISA binaries.  This can be useful for detecting when, for instance,
@@ -27,7 +44,7 @@ status when it finds a misalignment.
 
   $ check-align.py bin_aarch64 bin_x86-64
 
-3. Parsing call chain information
+4. Parsing call chain information
 
 If applications are built against the call information library (see
 "lib/stack_depth/README" for more information), the library will dump call
@@ -48,7 +65,7 @@ script can be used to parse this file and print human-readable information.
 
 - To print detailed call information, use the "-v" switch
 
-4. Testing various points
+5. Testing various points
 
 There are several ways to migrate applications between architectures, depending
 on how the migration library was built.  If the library was built with
