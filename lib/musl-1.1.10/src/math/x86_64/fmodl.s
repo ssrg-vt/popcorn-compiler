@@ -1,3 +1,11 @@
+/* Pierre: -ffunction-section obviously does not work with as so let's mimic
+ * its effect by hand. This one is tricky as the aarch64 equivalent is defined 
+ * in a C file so -ffunction-sections works for arm but not for this assembly 
+ * file! Thus, we need to take care of giving the same name as arm here. 
+ * For power, it should be fine too but need to check once compiler support is
+ * here */
+
+.section .text.fmodl, "ax"
 .global fmodl
 .type fmodl,@function
 fmodl:
