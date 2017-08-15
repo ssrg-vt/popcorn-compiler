@@ -141,7 +141,6 @@ int st_rewrite_stack(st_handle handle_src,
   pop_frame_funcentry(dest);
 
   /* Rewrite rest of frames. */
-  // Note: no need to rewrite libc start function, no state to maintain there
   for(src->act = 1; src->act < src->num_acts - 1; src->act++)
   {
     ST_INFO("--> Rewriting frame %d <--\n", src->act);
@@ -154,8 +153,11 @@ int st_rewrite_stack(st_handle handle_src,
     *saved_fbp = (uint64_t)REGOPS(dest)->fbp(ACT(dest).regs);
     ST_INFO("Old FP saved to %p\n", saved_fbp);
   }
-  ST_INFO("--> Skipping frame %d (no state in libc start function) <--\n",
-          src->act);
+
+  // Note: there may be a few things to fix up in the innermost function, e.g.,
+  // the TOC pointer on PowerPC
+  ST_INFO("--> Rewriting frame %d (starting function) <--\n", src->act);
+  rewrite_frame(src, dest);
 
   TIMER_STOP(rewrite_stack);
 
@@ -384,9 +386,7 @@ static void unwind_and_size(rewrite_context src,
    * Set destination stack pointer (align if necessary) and finish setting up
    * outermost frame.
    */
-  dest->stack = dest->stack_base - stack_size;
-  if(PROPS(dest)->sp_needs_align)
-    dest->stack = PROPS(dest)->align_sp(dest->stack);
+  dest->stack = PROPS(dest)->align_sp(dest->stack_base - stack_size);
   bootstrap_first_frame_funcentry(dest, dest->stack);
   fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
   ASSERT(fn, "Could not find function address of outermost frame\n");
@@ -601,7 +601,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     needs_local_fixup |= rewrite_val(src, val_src, dest, val_dest);
 
     /* Apply to all duplicate location records */
-    while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
+    while((j + 1 + dest_offset) < dest->handle->live_vals_count &&
+          dest->handle->live_vals[j + 1 + dest_offset].is_duplicate)
     {
       j++;
       val_dest = &dest->handle->live_vals[j + dest_offset];
@@ -611,7 +612,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     }
 
     /* Advance source value past duplicates location records */
-    while(src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
+    while((i + 1 + src_offset) < src->handle->live_vals_count &&
+          src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
   }
   ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
         "did not handle all live values\n");

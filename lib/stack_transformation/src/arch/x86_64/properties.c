@@ -31,7 +31,6 @@ static uint16_t callee_reg_size_x86_64(uint16_t reg);
 
 /* x86-64 properties. */
 const struct properties_t properties_x86_64 = {
-  .sp_needs_align = true,
   .num_callee_saved = sizeof(callee_saved_x86_64) / sizeof(uint16_t),
   .callee_saved = callee_saved_x86_64,
   .callee_saved_size = callee_saved_size_x86_64,
@@ -56,10 +55,8 @@ static void* align_sp_x86_64(void* sp)
    *    transferred to the function entry point."
    */
   // TODO alignment should be 32 when value of type __m256 is passed on stack
-  uint64_t stack_ptr = (uint64_t)sp;
-  if((stack_ptr + 8) % X86_64_STACK_ALIGNMENT)
-    stack_ptr -= 8;
-  return (void*)stack_ptr;
+  return sp - 0x8 -
+    (X86_64_STACK_ALIGNMENT - ((uint64_t)sp % X86_64_STACK_ALIGNMENT));
 }
 
 static bool is_callee_saved_x86_64(uint16_t reg)

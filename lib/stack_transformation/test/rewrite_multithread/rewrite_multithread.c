@@ -43,7 +43,6 @@ int main(int argc, char** argv)
 {
   int i;
   pthread_t* children;
-  int* child_num;
 
   if(!(handle = st_init(argv[0]))) {
     printf("Couldn't initialize stack transformation handle\n");
@@ -53,11 +52,9 @@ int main(int argc, char** argv)
   if(argc > 1) max_depth = atoi(argv[1]);
   if(argc > 2) num_threads = atoi(argv[2]);
   children = (pthread_t*)malloc(sizeof(pthread_t) * num_threads);
-  child_num = (int*)malloc(sizeof(int) * num_threads);
 
   for(i = 1; i < num_threads; i++) {
-    child_num[i] = i;
-    if(pthread_create(&children[i], NULL, thread_main, &child_num[i])) {
+    if(pthread_create(&children[i], NULL, thread_main, NULL)) {
       printf("Couldn't spawn child thread\n");
       exit(1);
     }
@@ -71,7 +68,6 @@ int main(int argc, char** argv)
   }
 
   free(children);
-  free(child_num);
   return 0;
 }
 

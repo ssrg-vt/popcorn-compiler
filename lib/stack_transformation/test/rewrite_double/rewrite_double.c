@@ -30,7 +30,6 @@ int main(int argc, char** argv)
 {
   if(argc > 1)
     max_depth = atoi(argv[1]);
-  srand(10);
 
   double ret = recurse(1, 1.0);
   printf("Calculated %f\n", ret);

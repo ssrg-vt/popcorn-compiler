@@ -12,6 +12,7 @@
 // File-local APIs & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
+#define AARCH64_STACK_ALIGNMENT 0x10
 #define AARCH64_RA_OFFSET -0x8
 #define AARCH64_SAVED_FBP_OFFSET -0x10
 #define AARCH64_CFA_OFFSET_FUNCENTRY 0x0
@@ -35,7 +36,6 @@ static uint16_t callee_reg_size_aarch64(uint16_t reg);
 
 /* aarch64 properties */
 const struct properties_t properties_aarch64 = {
-  .sp_needs_align = false,
   .num_callee_saved = sizeof(callee_saved_aarch64) / sizeof(uint16_t),
   .callee_saved = callee_saved_aarch64,
   .callee_saved_size = callee_saved_size_aarch64,
@@ -54,10 +54,14 @@ const struct properties_t properties_aarch64 = {
 
 static void* align_sp_aarch64(void* sp)
 {
-  // Nothing to do for aarch64, stack pointer is at correct alignment on
-  // function entry
-  ST_ERR(0, "stack-pointer alignment not needed for aarch64\n");
-  return NULL;
+  /*
+   * Per the AArch64 ABI:
+   *   "Additionally, at any point at which memory is accessed via SP, the
+   *    hardware requires that
+   *      - SP mod 16 = 0. The stack must be quad-word aligned."
+   */
+  return sp -
+    (AARCH64_STACK_ALIGNMENT - ((uint64_t)sp % AARCH64_STACK_ALIGNMENT));
 }
 
 static bool is_callee_saved_aarch64(uint16_t reg)

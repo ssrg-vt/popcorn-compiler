@@ -14,9 +14,6 @@ struct properties_t
   // Fields
   /////////////////////////////////////////////////////////////////////////////
 
-  /* Does the stack pointer need a specific alignment upon function entry? */
-  const bool sp_needs_align;
-
   /* Callee-saved registers */
   const size_t num_callee_saved;
   const uint16_t* callee_saved;
