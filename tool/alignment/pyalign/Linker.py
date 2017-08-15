@@ -8,9 +8,7 @@ class Linker:
 						".bss"  			: "__BSS__",
 						".rodata" 			: "__RODATA__",
 						".tdata" 			: "__TDATA__",
-						".tbss" 			: "__TBSS__", 
-						".init_array" 		: "__INIT_ARRAY__",
-						".llvm_stackmaps"	: "__LLVM_STACKMAPS__" }
+						".tbss" 			: "__TBSS__" }
 
 	@classmethod
 	def getSectionMarker(cls, sectionName):

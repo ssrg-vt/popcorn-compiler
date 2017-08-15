@@ -6,7 +6,6 @@ import Linker
 import Globals
 import glob
 from Globals import er
-from SymbolBlacklist import SymbolBlacklist
 
 # Instantiate one object representing each architecture and put them
 # in a dictionary indexed by the Arch "enum" (see Arch.py)
@@ -22,7 +21,7 @@ archs = { 	Arch.X86 : x86_obj,
 #TODO add power later
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata", 
-		".tbss", ".init_array", ".llvm_stackmaps"]
+		".tbss"]
 
 ###############################################################################
 # buildArgparser

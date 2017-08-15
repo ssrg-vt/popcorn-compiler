@@ -74,8 +74,8 @@ __BSS__		/* marker for the BSS section insertion */
   _end = .; PROVIDE (end = .);
   . = DATA_SEGMENT_END (.);
   .eh_frame_hdr : { *(.eh_frame_hdr) }
-  
-__LLVM_STACKMAPS__	/* marker for the LLVM_STACKMAPS section insertion */
+ 
+ .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
   
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table
   .gcc_except_table.*) }
