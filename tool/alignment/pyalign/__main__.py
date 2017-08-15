@@ -157,6 +157,7 @@ def orderSymbolList(sl):
 ###############################################################################
 # align
 ##############################################################################
+# This is the core of the alignment logic
 # sl is a list of symbols (same as for orderSymbolsList that should correspond
 # to one section
 # here is what we do:
@@ -237,7 +238,6 @@ if __name__ == "__main__":
 	# files
 	setOutputFilesPath(args)
 		
-
 	# Prepare work directory and switch to it as cwd
 	prepareWorkDir(args)
 	os.chdir(args.work_dir)
@@ -261,7 +261,6 @@ if __name__ == "__main__":
 	for section in considered_sections:
 		work[section] = align(work[section])
 
-	# write linker script
+	# write linker scripts
 	for arch in considered_archs:
 		Linker.Linker.produceLinkerScript(work, arch)
-	#	arch.goldLink(arch.getObjectFiles())	

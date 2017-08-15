@@ -14,25 +14,11 @@ class AbstractArchitecture():
 # Getters/Setters
 ###############################################################################
 
-	def getGccName(self):
-		return self._gccPrefix + "-gcc"
-
-	def getArch(self):
-		# should be implemented by the concrete class
-		raise NotImplementedError
-
-	def getArchString(self):
-		raise NotImplementedError
-
-	def getLibGccGoldInclusion(self):
-		raise NotImplementedError
-
 	def getObjectFiles(self):
 		return self._objectFiles
 
 	def setObjectFiles(self, objectFileList):
 		self._objectFiles = objectFileList
-
 	
 	def getLinkerScript(self):
 		return self._linkerScript
@@ -40,23 +26,14 @@ class AbstractArchitecture():
 	def setLinkerScript(self, ls):
 		self._linkerScript = ls
 
-#	def createArchSpecificSymbol(self, name, address, size, alignment):
-#		raise NotImplementedError
+	def getLsTemplate(self):
+		return self._linkerScriptTemplate
 
-	# Returns the path the the folder containing libgcc.a for the calling 
-	# architecture.
-	def getLibGccLocation(self):
-		gcc_exec_name = self.getGccName()
+	def getExecutable(self):
+		return self._executable
 
-		try:
-			libGccALocation = subprocess.check_output([gcc_exec_name, 
-				'-print-libgcc-file-name'], stderr=subprocess.STDOUT)
-		except subprocess.CalledProcessError as e:
-			er("cannot execute %s -print-libgcc-file-name to find libgcc.a" 
-				% gcc_exec_name)
-			sys.exit()
-
-		return os.path.dirname(libGccALocation)
+	def getMapFile(self):
+		return self._mapFile
 
 ###############################################################################
 # parseMapFile
@@ -120,79 +97,6 @@ class AbstractArchitecture():
 					res.append(s)
 
 		return res
-
-###############################################################################
-# goldLink
-###############################################################################
-
-	# Call gold to link object files with the proper linking options. These
-	# options are hardcoded here for now. Some stuff is architecture specific
-	# so there are some calls to the concrete class.
-	# inputs is a list of object files to link, for ex: ["test.o", "utils.o"]
-	def goldLink(self, inputs):
-		cmd = []
-
-		gold = Globals.POPCORN_LOCATION + "/bin/ld.gold"
-		cmd.append(gold)
-
-		cmd.append("-static")
-		cmd.append("--output") 
-		cmd.append(self.getExecutable())
-		
-		for object_file in inputs:
-			cmd.append(object_file)
-
-		cmd.append(self.getLibGccGoldInclusion())
-		
-		cmd.append("-z")
-		cmd.append("relro")
-		cmd.append("--hash-style=gnu")
-		cmd.append("--build-id")
-		cmd.append("-m")
-		cmd.append(self.getGoldEmulation())		
-
-		isa_folder = self.getPopcornIsaFolder()
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/crt1.o")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
-			"/lib/libmigrate.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
-			"/lib/libstack-transform.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
-			"/lib/libelf.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + 
-			"/lib/libpthread.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libc.a")
-		cmd.append(Globals.POPCORN_LOCATION + "/" + isa_folder + "/lib/libm.a")
-
-		cmd.append("--start-group")
-		search_group = self.getGoldSearchGroup()
-		if search_group:
-			for lib in search_group.split(" "):
-				cmd.append(lib)
-		cmd.append("--end-group")
-
-		cmd.append("-Map")
-		cmd.append(self.getMapFile())
-		cmd.append("--script")
-		cmd.append(self.getLinkerScript())
-
-		logfile = Globals.GOLD_LOG_NAME + "_" + self.getArchString() + ".log"
-		try:
-			gold_output = subprocess.check_output(cmd, 
-				stderr=subprocess.STDOUT)
-		except subprocess.CalledProcessError as e:
-			er("during gold link step:\n" + e.output)
-			er("Command: " + ' '.join(cmd) + "\n")
-			er("Output:\n" + e.output)
-			with open(logfile, "w+") as f:
-				f.write(e.output)
-				sys.exit()
-
-		with open(logfile, "w+") as f:
-			f.write(gold_output)
-
-		return
 
 ###############################################################################
 # getSection

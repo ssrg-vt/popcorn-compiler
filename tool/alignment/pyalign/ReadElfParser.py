@@ -66,40 +66,6 @@ class Section:
 	def getAlignment(self):
 		return self._alignment
 
-# FIXME: do we need setters here?
-#	def setIndex(self, index):
-#		self._index = index
-#
-#	def setName(self, name):
-#		self._name = name
-#
-#	def setSecType(self, secType):
-#		self._secType = secType
-#
-#	def setAddress(self, address):
-#		self._address = address
-#
-#	def setOffset(self, offset):
-#		self._offset = offset
-#
-#	def setSize(self, size):
-#		self._size = size
-#
-#	def setEs(self, es):
-#		self._es = es
-#
-#	def setFlags(self, flags):
-#		self._flags = flags
-#
-#	def setLk(self, lk):
-#		self._lk = lk
-#
-#	def setInf(self, inf):
-#		self._inf = inf
-#
-#	def setAlignment(self, alignment):
-#		self._alignment = alignment
-
 	# Returns true if a given address is located inside the address range 
 	# corresponding to this section
 	def checkAddressInSection(self, address):

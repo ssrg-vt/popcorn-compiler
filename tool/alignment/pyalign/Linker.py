@@ -21,7 +21,6 @@ class Linker:
 	# symbolsList should be a dictionary of per-section Symbol lists, ex:
 	# { ".text" : [S1, S2, etc.], ".data" : [S1, S2, etc.], etc. }
 	# arch is an Arch instance
-	# Warning: this overwrites the file returned by arch.getLinkerScript()
 	@classmethod
 	def produceLinkerScript(cls, symbolsList, arch):
 		template = arch.getLsTemplate()
