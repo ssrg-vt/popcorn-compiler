@@ -20,7 +20,20 @@
 # include <arch/x86_64/migrate.h>
 #endif
 
-static int cpus_x86 = 0;
+/* Pierre: due to the-fdata-sections flags, in combination with the way the 
+ * library is compiled for each architecture, global variables here end up 
+ * placed into sections with different names, making them difficult to link 
+ * back together from the alignment tool  perspective without ugly hacks. 
+ * So, the solution here is to force these global variables to be in a custom 
+ * section. By construction it will have the same name on both architecture. 
+ * However for soem reason this doesn't work if the global variable is static so 
+ * I had to remove the static keyword for the concerned variables. They are:
+ * - cpus_x86
+ * - migrate_callback
+ * - migrate_callback_data
+ * - popcorn_vdso
+ */
+int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
   char s[512];
@@ -151,7 +164,7 @@ static inline int do_migrate(void *addr)
 
 /* Popcorn vDSO prctl code & page pointer. */
 # define POPCORN_VDSO_CODE 41
-static volatile long *popcorn_vdso = NULL;
+volatile long *popcorn_vdso __attribute__ ((section(".bss.popcorn_vdso"))) = NULL;
 
 /* Initialize Popcorn vDSO page */
 static void __attribute__((constructor))
@@ -269,8 +282,8 @@ void migrate(void (*callback)(void *), void *callback_data)
 }
 
 /* Callback function & data for migration points inserted via compiler. */
-static void (*migrate_callback)(void *) = NULL;
-static void *migrate_callback_data = NULL;
+void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
+void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data")))= NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)
