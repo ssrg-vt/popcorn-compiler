@@ -406,7 +406,8 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-optimize',
                                 '--disable-shared',
                                 'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target aarch64-linux-gnu -popcorn-libc"']),
+                                'CFLAGS="-target aarch64-linux-gnu ' + 
+									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
@@ -431,7 +432,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                 print('Make failed.')
                 sys.exit(1)
 
-
         try:
             rv = subprocess.check_call(['make', 'distclean'])
         except Exception as e:
@@ -452,7 +452,8 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-optimize',
                                 '--disable-shared',
                                 'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target x86_64-linux-gnu -popcorn-libc"']),
+                                'CFLAGS="-target x86_64-linux-gnu ' + 
+									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
