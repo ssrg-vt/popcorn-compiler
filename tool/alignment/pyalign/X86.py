@@ -5,8 +5,6 @@ from Arch import Arch
 class X86(AbstractArchitecture):
 
 	def __init__(self):
-		# Prefix for the gcc compiler name
-		self._gccPrefix = "x86_64-linux-gnu"
 		# Executable name
 		self._executable = "bin_x86"
 		# Name of the map file used in multiple steps of the alignment process

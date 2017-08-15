@@ -1,21 +1,13 @@
-import Globals
-from Globals import er, erStack, warn
-import subprocess
-import sys
-import os
-import ReadElfParser
-import re
-import Symbol
+import subprocess, sys, os, re
+import Globals, ReadElfParser, Symbol
+from Globals import er, warn
 
-# We put everything common to each arch here
+# We put everything common to each in this class which act as an abstract class
 class AbstractArchitecture():
-	
+
 ###############################################################################
 # Getters/Setters
 ###############################################################################
-
-	def getObjectFiles(self):
-		return self._objectFiles
 
 	def setObjectFiles(self, objectFileList):
 		self._objectFiles = objectFileList

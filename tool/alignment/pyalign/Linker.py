@@ -14,10 +14,6 @@ class Linker:
 	def getSectionMarker(cls, sectionName):
 		return cls._sectionmarker[sectionName]
 
-	@classmethod
-	def setSectionMarker(cls, sectionName, sectionMarker):
-		cls._sectionmarker[sectioName] = sectionMarker
-
 	# symbolsList should be a dictionary of per-section Symbol lists, ex:
 	# { ".text" : [S1, S2, etc.], ".data" : [S1, S2, etc.], etc. }
 	# arch is an Arch instance

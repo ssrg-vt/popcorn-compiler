@@ -21,6 +21,9 @@ install: bin
 	mkdir -p $(POPCORN)/share/align-script-templates &> /dev/null
 	cp -rf $(TEMPLATES) $(POPCORN)/share/align-script-templates
 
+check_dead_code:
+	vulture .
+
 clean:
 	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)
 

@@ -66,12 +66,6 @@ class Section:
 	def getAlignment(self):
 		return self._alignment
 
-	# Returns true if a given address is located inside the address range 
-	# corresponding to this section
-	def checkAddressInSection(self, address):
-		return (address >= self.getAddress() and 
-			address < (self.getAddress() + self.getSize()))
-
 # This function takes a path to an ELF binary as parameter, executes readelf
 # on it, parsing the output, building then returning a list of sections 
 # object

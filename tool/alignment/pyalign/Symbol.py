@@ -106,9 +106,6 @@ class Symbol:
 		
 		return res
 
-	def setName(self, name):
-		self._name = name
-
 	def getObjectFile(self, arch):
 		return self._objectFiles[arch]
 
