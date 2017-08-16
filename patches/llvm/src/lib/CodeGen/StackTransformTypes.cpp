@@ -240,7 +240,7 @@ bool MachineLiveStackSlot::operator==(const MachineLiveLoc &RHS) const {
 int MachineLiveStackSlot::calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP) {
   if(Offset == INT32_MAX) {
     const TargetFrameLowering *TFL = AP.MF->getSubtarget().getFrameLowering();
-    Offset = TFL->getFrameIndexReference(*AP.MF, StackSlot, Reg);
+    Offset = TFL->getFrameIndexReference(*AP.MF, Index, Reg);
   }
   BP = Reg;
   return Offset;

@@ -850,7 +850,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,547 @@
+@@ -0,0 +1,544 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1258,9 +1258,6 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual MachineLiveLoc *copy() const = 0;
 +  virtual bool operator==(const MachineLiveLoc &R) const = 0;
 +
-+  /// Possible types of live value's storage location
-+  enum Type { Register, StackSlot };
-+
 +  /// Determine the live value location type
 +  virtual bool isReg() const { return false; }
 +  virtual bool isStackAddr() const { return false; }
@@ -1356,7 +1353,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual unsigned getSize(const AsmPrinter &AP);
 +
 +  virtual std::string toString() const
-+  { return "live value in stack slot " + std::to_string(StackSlot); }
++  { return "live value in stack slot " + std::to_string(Index); }
 +
 +private:
 +  int Index;
@@ -1681,6 +1678,25 @@ Index: include/llvm/MC/MCObjectFileInfo.h
    MCSection *getStackMapSection() const { return StackMapSection; }
    MCSection *getFaultMapSection() const { return FaultMapSection; }
  
+Index: include/llvm/Target/TargetFrameLowering.h
+===================================================================
+--- include/llvm/Target/TargetFrameLowering.h	(revision 277823)
++++ include/llvm/Target/TargetFrameLowering.h	(working copy)
+@@ -227,6 +227,14 @@
+     return 0;
+   }
+ 
++  /// Same as above, except that the 'frame register' will always be the ISA's
++  /// frame pointer (which can be different from the variable 'frame register'
++  /// which may be the stack pointer, frame pointer, etc.)
++  virtual int getFrameIndexReferenceFromFP(const MachineFunction &MF, int FI,
++                                           unsigned &FrameReg) const {
++    return getFrameIndexReference(MF, FI, FrameReg);
++  }
++
+   /// This method determines which of the registers reported by
+   /// TargetRegisterInfo::getCalleeSavedRegs() should actually get saved.
+   /// The default implementation checks populates the \p SavedRegs bitset with
 Index: include/llvm/Target/TargetMachine.h
 ===================================================================
 --- include/llvm/Target/TargetMachine.h	(revision 277823)
@@ -4818,7 +4834,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +int MachineLiveStackSlot::calcAndGetRegOffset(const AsmPrinter &AP, unsigned &BP) {
 +  if(Offset == INT32_MAX) {
 +    const TargetFrameLowering *TFL = AP.MF->getSubtarget().getFrameLowering();
-+    Offset = TFL->getFrameIndexReference(*AP.MF, StackSlot, Reg);
++    Offset = TFL->getFrameIndexReference(*AP.MF, Index, Reg);
 +  }
 +  BP = Reg;
 +  return Offset;
@@ -4836,7 +4852,7 @@ Index: lib/CodeGen/UnwindInfo.cpp
 ===================================================================
 --- lib/CodeGen/UnwindInfo.cpp	(nonexistent)
 +++ lib/CodeGen/UnwindInfo.cpp	(working copy)
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,181 @@
 +//===--------------------------- UnwindInfo.cpp ---------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4882,8 +4898,10 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +  for(unsigned i = 0; i < CSI.size(); i++) {
 +    SavedRegs[i].DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
 +    SavedRegs[i].Offset =
-+      TFL->getFrameIndexReference(MF, CSI[i].getFrameIdx(), FrameReg);
++      TFL->getFrameIndexReferenceFromFP(MF, CSI[i].getFrameIdx(), FrameReg);
 +
++    assert(FrameReg == TRI->getFrameRegister(MF) &&
++           "Invalid register used as offset for unwinding information");
 +    DEBUG(dbgs() << "Register " << SavedRegs[i].DwarfReg << " at register "
 +                 << FrameReg << " + " << SavedRegs[i].Offset << "\n");
 +  }
@@ -5095,6 +5113,39 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  }
  
  MachineLocation
+Index: lib/Target/AArch64/AArch64FrameLowering.cpp
+===================================================================
+--- lib/Target/AArch64/AArch64FrameLowering.cpp	(revision 277823)
++++ lib/Target/AArch64/AArch64FrameLowering.cpp	(working copy)
+@@ -655,6 +655,15 @@
+   return resolveFrameIndexReference(MF, FI, FrameReg);
+ }
+ 
++/// getFrameIndexReferenceFromFP - Provide a base+offset reference to an FI
++/// slot for debug info, but force base to be the frame pointer (x29).
++int
++AArch64FrameLowering::getFrameIndexReferenceFromFP(const MachineFunction &MF,
++                                                   int FI,
++                                                   unsigned &FrameReg) const {
++  return resolveFrameIndexReference(MF, FI, FrameReg, true);
++}
++
+ int AArch64FrameLowering::resolveFrameIndexReference(const MachineFunction &MF,
+                                                      int FI, unsigned &FrameReg,
+                                                      bool PreferFP) const {
+Index: lib/Target/AArch64/AArch64FrameLowering.h
+===================================================================
+--- lib/Target/AArch64/AArch64FrameLowering.h	(revision 277823)
++++ lib/Target/AArch64/AArch64FrameLowering.h	(working copy)
+@@ -40,6 +40,8 @@
+   int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
+   int getFrameIndexReference(const MachineFunction &MF, int FI,
+                              unsigned &FrameReg) const override;
++  int getFrameIndexReferenceFromFP(const MachineFunction &MF, int FI,
++                                   unsigned &FrameReg) const override;
+   int resolveFrameIndexReference(const MachineFunction &MF, int FI,
+                                  unsigned &FrameReg,
+                                  bool PreferFP = false) const;
 Index: lib/Target/AArch64/AArch64ISelLowering.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 277823)

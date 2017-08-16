@@ -43,8 +43,10 @@ void UnwindInfo::recordUnwindInfo(const MachineFunction &MF) {
   for(unsigned i = 0; i < CSI.size(); i++) {
     SavedRegs[i].DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
     SavedRegs[i].Offset =
-      TFL->getFrameIndexReference(MF, CSI[i].getFrameIdx(), FrameReg);
+      TFL->getFrameIndexReferenceFromFP(MF, CSI[i].getFrameIdx(), FrameReg);
 
+    assert(FrameReg == TRI->getFrameRegister(MF) &&
+           "Invalid register used as offset for unwinding information");
     DEBUG(dbgs() << "Register " << SavedRegs[i].DwarfReg << " at register "
                  << FrameReg << " + " << SavedRegs[i].Offset << "\n");
   }

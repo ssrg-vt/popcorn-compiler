@@ -405,9 +405,6 @@ public:
   virtual MachineLiveLoc *copy() const = 0;
   virtual bool operator==(const MachineLiveLoc &R) const = 0;
 
-  /// Possible types of live value's storage location
-  enum Type { Register, StackSlot };
-
   /// Determine the live value location type
   virtual bool isReg() const { return false; }
   virtual bool isStackAddr() const { return false; }
@@ -503,7 +500,7 @@ public:
   virtual unsigned getSize(const AsmPrinter &AP);
 
   virtual std::string toString() const
-  { return "live value in stack slot " + std::to_string(StackSlot); }
+  { return "live value in stack slot " + std::to_string(Index); }
 
 private:
   int Index;
