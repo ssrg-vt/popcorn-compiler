@@ -1,3 +1,6 @@
+"""
+Class representing the aarch64 architecture specific attributes
+"""
 from AbstractArchitecture import AbstractArchitecture
 from Arch import Arch
 import Symbol
@@ -13,6 +16,8 @@ class Arm(AbstractArchitecture):
 		self._linkerScript = "linker_script_arm.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_arm.template"
+		# Subdirectory of the working directory we put the object files into
+		self._objDir = "objs_arm"
 		# list of object files, to be set at runtime
 		self._objectFiles = []
 

@@ -1,15 +1,11 @@
-import sys, traceback
+"""
+Global variables and utility functions
+"""
 
-## Global variables and utility functions
+import sys, traceback
 
 # Popcorn toolchain install dir:
 POPCORN_LOCATION="/usr/local/popcorn"
-
-###############################################################################
-# Subdirs of the working directory we put the object files into
-X86_OBJS_SUBDIR="objs_x86"
-ARM_OBJS_SUBDIR="objs_arm"
-# TODO POWER_OBJS_SUBDIR="objs_power"
 
 ###############################################################################
 # Error printing stuff
@@ -25,16 +21,19 @@ def warn(string):
 def er(string):
 	sys.stderr.write(ercolors.FAIL + "ERROR: " + string + ercolors.ENDC)
 
-#def erStack(string):
-#	er(string)
-#	for line in traceback.format_stack():
-#		print(line.strip())
+def erStack(string):
+	er(string)
+	for line in traceback.format_stack():
+		print(line.strip())
 
 ###############################################################################
 # Symbol blacklist
 # In the input map file, we can multiple symbols having the same name. In 
 # particular, "symbols" (are these really symbols) having the same name as
-# sections: .text, .data, etc.
+# sections: .text, .data, etc. My guess is: these are just "residues" of the
+# -ffunction-sections and -fdata-sections operations: you end up with all
+# functions / data in their own section but there are still empty .text, .data,
+# .bss sections.
 # These are not reported as symbols by nm, so I'm going to ignore them for now.
 # It is actually possible to align 99% of them if we want, but there are a few
 # corner cases for which I don't think there is a simple solution. These cases

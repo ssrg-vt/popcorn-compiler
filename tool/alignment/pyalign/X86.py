@@ -1,3 +1,6 @@
+"""
+Class representing the x86_64 architecture specific attributes
+"""
 import Symbol, Globals
 from AbstractArchitecture import AbstractArchitecture 
 from Arch import Arch
@@ -13,6 +16,8 @@ class X86(AbstractArchitecture):
 		self._linkerScript = "linker_script_x86.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_x86.template"
+		# Subdirectory of the working directory we put the object files into
+		self._objDir = "objs_x86"
 		# list of object files, to be set at runtime
 		self._objectFiles = []
 

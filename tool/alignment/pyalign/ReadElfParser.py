@@ -1,12 +1,14 @@
-import sys
-import subprocess
-import re
-import os
+"""
+Extracts elf sections info from a binary, calls readelf -S under the hood
+"""
+
+import sys, subprocess, re, os
 from Globals import er
 
-# Represents a section. Each attribute is one of the fields reported by 
-# readelf -S
 class Section:
+	"""Represents a section. Each attribute is one of the fields reported by 
+	readelf -S
+	"""
 
 	def __init__(self, index, name, secType, address, offset, size, es, flags,
 			lk, inf, alignment):
@@ -66,12 +68,13 @@ class Section:
 	def getAlignment(self):
 		return self._alignment
 
-# This function takes a path to an ELF binary as parameter, executes readelf
-# on it, parsing the output, building then returning a list of sections 
-# object
-# filterSections is a list of sections to consider (i.e. the result returned
-# will only contain info about these), ex: [".data", ".text", etc.]
 def getSectionInfo(binaryPath, filterSections=None):
+	"""This function takes a path to an ELF binary as parameter, executes 
+	readelf on it, parsing the output, building then returning a list of 
+	sections objects
+	filterSections is a list of sections to consider (i.e. the result returned
+	will only contain info about these), ex: [".data", ".text", etc.]
+	"""
 	absolutePath = os.path.abspath(binaryPath)
 	cmd = ["readelf", "-SW", absolutePath]
 	res = []

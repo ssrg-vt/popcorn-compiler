@@ -1,13 +1,14 @@
+"""
+We put everything common to each in this class which act as an abstract class.
+Basically, this contains evething that is done per-architecture, but is done
+relatively the same way for each architecture.
+"""
+
 import subprocess, sys, os, re
 import Globals, ReadElfParser, Symbol
 from Globals import er, warn
 
-# We put everything common to each in this class which act as an abstract class
 class AbstractArchitecture():
-
-###############################################################################
-# Getters/Setters
-###############################################################################
 
 	def setObjectFiles(self, objectFileList):
 		self._objectFiles = objectFileList
@@ -27,13 +28,13 @@ class AbstractArchitecture():
 	def getMapFile(self):
 		return self._mapFile
 
-###############################################################################
-# parseMapFile
-##############################################################################
+	def getObjDir(self):
+		return self._objDir
 
-	# Returns a list of Symbols instances extracted from the map file which 
-	# path is filePath (should have been generalted by gold.ld -Map <file>
 	def parseMapFile(self):
+		"""Returns a list of Symbols instances extracted from the map file which 
+		path is filePath (should have been generalted by gold.ld -Map <file>
+		"""
 		filePath = self.getMapFile()
 		res = []
 
@@ -90,13 +91,11 @@ class AbstractArchitecture():
 
 		return res
 
-###############################################################################
-# getSection
-###############################################################################
-	# Return the section associated with a symbol as a string (ex: ".text")
-	# symbol is a Symbol instance, sectionInfo is a list of Section object, the
-	# list that is returned by ReadElfParser.getSectionInfo()
 	def getSection(self, symbol, sectionInfo):
+		"""Return the section associated with a symbol as a string (ex: ".text")
+		symbol is a Symbol instance, sectionInfo is a list of Section object, 
+		the	list that is returned by ReadElfParser.getSectionInfo()
+		"""
 		arch = self.getArch()
 		addr = symbol.getAddress(arch)
 		res = None
@@ -126,33 +125,24 @@ class AbstractArchitecture():
 			if (addr == (sectionAddr + sectionSize)):
 				if symbol.getName().startswith(sectionName): #check name
 					res = sectionName
-					#warn("symbol at section_end + 1:\n " + str(symbol) + 
-					#	"\n Section: " + str(section) + "\n")
 					break
 
 		if not res:
-			#print (self.getArchString() + ": " + symbol.getName() + 
-			#	" not in considered sections")
-			# The symbol is not in the considered sections, pass
 			pass
 
 		return res
 
-###############################################################################
-# updateSymbolsList
-###############################################################################
-
-	# symbolsList is a dictionary of lists, one per section, for example:
-	# symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [], 
-	# ".tdata" : [], ".tbss" : [] }
-	# This function TODO update description and maybe change the name
-	# accordinglyn
-	# way to call it:
-	# Arch1.updateSymbolsList(list)
-	# Arch2.updateSymbolsList(list)
-	# Arch3.updateSymbolsList(list)
-	# etc.
 	def updateSymbolsList(self, symbolsList):
+		"""symbolsList is a dictionary of lists, one per section, for example:
+		symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [], 
+		".tdata" : [], ".tbss" : [] }
+		This function TODO update description and maybe change the name
+		accordinglyn. The way to call it is:
+		Arch1.updateSymbolsList(list)
+		Arch2.updateSymbolsList(list)
+		Arch3.updateSymbolsList(list)
+		etc.
+		"""
 		arch = self.getArch()
 
 		# Grab info about sections from the executable

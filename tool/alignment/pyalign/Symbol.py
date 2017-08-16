@@ -1,6 +1,12 @@
+"""
+Represent a symbol. One instance per architecture. However, some of the 
+attributes are per-architecture (ex: size, etc.) so they are arrays indexed
+by the Arch enum (see Arch.py)
+"""
+
+import re
 from Arch import Arch
 from Globals import er
-import re
 
 def symbolObjectFileSanityCheck(obj):
 	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
@@ -12,18 +18,26 @@ def symbolObjectFileSanityCheck(obj):
 class Symbol:
 
 	def __init__(self, name, address, size, alignment, objectFile, arch):
+		# Symbol name
 		self._name = name
+		# Symbol address for each arch
 		self._addresses = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._addresses[arch] = address
+		# Symbol size for each arch
 		self._sizes = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._sizes[arch] = size
+		# Alignemt rule for each arch
 		self._alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._alignments[arch] = alignment
+		# Which architecture are referencing this symbol?
 		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 	
 			Arch.POWER : False }
 		self._isReferenced[arch] = True
+		# padding to add before and after the symbol in the produced linker
+		# script, for each architecture
 		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
+		# Object file the symbol initially comes from
 		self._objectFiles =  { Arch.X86 : "NULL", Arch.ARM : "NULL", 
 			Arch.POWER : "NULL" }
 
@@ -58,54 +72,7 @@ class Symbol:
 			", objARM=" + self.getObjectFile(Arch.ARM) +
 			", objPOWER=" + self.getObjectFile(Arch.POWER))
 
-	# Compare two symbols to check if they correspond to the same. The are the
-	# same if the name is the same AND if they correspond to the same original 
-	# object file
-	def compare(self, anotherSymbol):
-
-		# Quick path: first check the name
-		if self.getName() != anotherSymbol.getName():
-			return False
-
-		# Then check the object paths
-		res = None
-		otherObjs = [	anotherSymbol.getObjectFile(Arch.X86),
-						anotherSymbol.getObjectFile(Arch.ARM),
-						anotherSymbol.getObjectFile(Arch.POWER)]
-		for objf1 in self._objectFiles.values():
-			for objf2 in otherObjs:
-				if objf1 != "NULL" and objf2 != "NULL":
-					cmpstr1 = objf1.split("/")[-1]
-					cmpstr2 = objf2.split("/")[-1]
-				
-					# First handle the special case of user object files that
-					# differs by name because they are for different archs 
-					# but result of the compilation of the same user source file
-					# FIXME this is hardcoded for x86-ARM for now, we need a 
-					# convention for the user object files created by the
-					# popcorn compiler
-					if cmpstr1.endswith("_x86_64.o"):
-						if (cmpstr1.replace("_x86_64.o", "") == 
-							cmpstr2.replace(".o", "")):
-								res = True
-								continue
-					elif cmpstr2.endswith("_x86_64.o"):
-						if (cmpstr2.replace("_x86_64.o", "") == 
-							cmpstr1.replace(".o", "")):
-								res = True
-								continue
-
-					if cmpstr1 != cmpstr2:
-						return False
-					else:
-						res = True
-
-		if res == None:
-			er("Could not find object files to compare...\n")
-			sys.exit(-1)
-		
-		return res
-
+	
 	def getObjectFile(self, arch):
 		return self._objectFiles[arch]
 
@@ -147,6 +114,9 @@ class Symbol:
 		self._paddingAfter[arch] += paddingToAdd
 
 	def getLargetSizeArch(self):
+		""" Return the architecture presenting the larget size for this symbol,
+		 Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch instance
+		"""
 		res = None
 		largestSize = -1
 		for arch in self._sizes.keys():
@@ -159,8 +129,10 @@ class Symbol:
 	def getLargetSizeVal(self):
 		return self.getSize(self.getLargetSizeArch())
 
-	# Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch instance
 	def getArchitecturesReferencing(self):
+		""" Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch 
+		instance
+		"""
 		res = []
 		for arch in self._isReferenced.keys():
 			if self._isReferenced[arch]:
@@ -187,10 +159,10 @@ class Symbol:
 		Arch.sanityCheck(arch)
 		return self._alignments[arch]
 
-	# set the alignement for all referenced arch to the largest alignement of 
-	# the referencing archs
-	# also return the alignement
 	def setLargestAlignment(self):
+		"""set the alignement for all referenced arch to the largest alignement 
+		of 	the referencing archs, also returns the alignement
+		"""
 		largestAlignment = -1
 		for arch in self._alignments.keys():
 			alignment = self.getAlignment(arch)
@@ -201,3 +173,53 @@ class Symbol:
 			self.setAlignment(largestAlignment, arch)
 
 		return largestAlignment
+
+	def compare(self, anotherSymbol):
+		""" Compare two symbols to check if they correspond to the same. They
+		are the same if the name is the same AND if they correspond to the 
+		same original object file
+		"""
+		# Quick path: first check the name
+		if self.getName() != anotherSymbol.getName():
+			return False
+
+		# Then check the object paths
+		res = None
+		otherObjs = [	anotherSymbol.getObjectFile(Arch.X86),
+						anotherSymbol.getObjectFile(Arch.ARM),
+						anotherSymbol.getObjectFile(Arch.POWER)]
+		for objf1 in self._objectFiles.values():
+			for objf2 in otherObjs:
+				if objf1 != "NULL" and objf2 != "NULL":
+					cmpstr1 = objf1.split("/")[-1]
+					cmpstr2 = objf2.split("/")[-1]
+				
+					# First handle the special case of user object files that
+					# differs by name because they are for different archs 
+					# but result of the compilation of the same user source file
+					# FIXME this is hardcoded for x86-ARM for now, we need a 
+					# convention for the user object files created by the
+					# popcorn compiler. Need a better way to handle that when
+					# we get to power8
+					if cmpstr1.endswith("_x86_64.o"):
+						if (cmpstr1.replace("_x86_64.o", "") == 
+							cmpstr2.replace(".o", "")):
+								res = True
+								continue
+					elif cmpstr2.endswith("_x86_64.o"):
+						if (cmpstr2.replace("_x86_64.o", "") == 
+							cmpstr1.replace(".o", "")):
+								res = True
+								continue
+
+					if cmpstr1 != cmpstr2:
+						return False
+					else:
+						res = True
+
+		if res == None:
+			er("Could not find object files to compare...\n")
+			sys.exit(-1)
+		
+		return res
+

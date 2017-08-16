@@ -1,10 +1,9 @@
-import X86, Arm, Power
-import argparse
-import os, sys, shutil
+"""
+Program entry point
+"""
+import argparse, os, sys, shutil, glob
+import X86, Arm, Power, Linker, Globals
 from Arch import Arch
-import Linker
-import Globals
-import glob
 from Globals import er
 
 # Instantiate one object representing each architecture and put them
@@ -13,20 +12,16 @@ x86_obj = X86.X86()
 arm_obj = Arm.Arm()
 power_obj = Power.Power()
 
-archs = { 	Arch.X86 : x86_obj,
+archs = {	Arch.X86 : x86_obj,
 			Arch.ARM : arm_obj,
-			Arch.POWER : power_obj,
-		}
+			Arch.POWER : power_obj}
 
-#TODO add power later
+#TODO add power later here
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata", 
 		".tbss"]
 
-###############################################################################
-# buildArgparser
-# TODO add power later
-###############################################################################
+# TODO add power later here
 def buildArgParser():
 	""" Construct the command line argument parser object """
 
@@ -60,18 +55,13 @@ def buildArgParser():
 
 	return res
 
-###############################################################################
-# parseAndCheckArgs
-###############################################################################
 def parseAndCheckArgs(parser):
+	""" Parse command line arguments and perform some sanity checks """
 	args = parser.parse_args()
 	# TODO checks here
 
 	return args
 
-###############################################################################
-# prepareWorkDir
-###############################################################################
 def prepareWorkDir(args):
 	""" Clean the working directory and copy input files in it """
 	workdir = args.work_dir
@@ -103,8 +93,8 @@ def prepareWorkDir(args):
 
 	# Copy object files
 	# TODO power
-	x86ObjsSubdir = Globals.X86_OBJS_SUBDIR
-	armObjsSubdir = Globals.ARM_OBJS_SUBDIR
+	x86ObjsSubdir = archs[Arch.X86].getObjDir()
+	armObjsSubdir = archs[Arch.ARM].getObjDir()
 	os.makedirs(workdir + "/" + x86ObjsSubdir)
 	os.makedirs(workdir + "/" + armObjsSubdir)
 	for f in args.x86_object_files:
@@ -116,27 +106,25 @@ def prepareWorkDir(args):
 
 	return
 
-###############################################################################
-# setObjectFiles
-###############################################################################
 def setObjectFiles(args):
+	""" Each arch object contains a list of object files, set this after we
+	get the info from the command line arguments
+	"""
 	workdir = args.work_dir
 	
 	archs[Arch.X86].setObjectFiles(glob.glob(workdir + "/" + 
-		Globals.X86_OBJS_SUBDIR + "/*.o"))
+		archs[Arch.X86].getObjDir() + "/*.o"))
 	archs[Arch.ARM].setObjectFiles(glob.glob(workdir + "/" + 
-		Globals.ARM_OBJS_SUBDIR + "/*.o"))
+		archs[Arch.ARM].getObjDir() + "/*.o"))
 	# TODO power
 
-###############################################################################
-# Order symbols
-###############################################################################
-# in each section, the symbols will be ordered by number of architectures 
-# referencing the symbols in questions
-# sl is a list of Symbol instances (should correspond to one section)
-# return as a result an ordered symbol list
 
 def orderSymbolList(sl):
+	"""In each section, the symbols will be ordered by number of architectures 
+	referencing the symbols in questions
+	sl is a list of Symbol instances (should correspond to one section)
+	return as a result an ordered symbol list
+	"""
 	res = []
 
 	# TODO Explain the trick
@@ -154,38 +142,36 @@ def orderSymbolList(sl):
 
 	return res
 
-###############################################################################
-# align
-##############################################################################
-# This is the core of the alignment logic
-# sl is a list of symbols (same as for orderSymbolsList that should correspond
-# to one section
-# here is what we do:
-#
-#     Arch A            Arch B              Arch C               Arch D
-#                                                         (symbol not present)
-# +--------------+  +---------------+  +----------------+  +---------------+
-# |  Pad before  |  | Pad before    |  | Pad before     |  |  Pad before   |
-# +--------------+  +---------------+  +----------------+  +---------------+
-# +--------------+  +---------------+  +----------------+  +---------------+
-# |   Symbol     |  |               |  |     Symbol     |  |               |
-# |              |  |               |  |                |  |               |
-# |              |  |   Symbol      |  +----------------+  |               |
-# +--------------+  |               |  +----------------+  | pad after     |
-# +--------------+  |               |  |                |  |               |
-# | Pad after    |  |               |  |  pad after     |  |               |
-# |              |  |               |  |                |  |               |
-# |              |  |               |  |                |  |               |
-# +--------------+  +---------------+  +----------------+  +---------------+
-#
-# "pad before" automatically added by the linker to satisfy the alignment 
-# constraint we put on the symobl (we choose the largest alignment constaint of 
-# all referencing architectures. We need to add it by hand on each architecture
-# that is not referencing the symbol, though. 
-# "pad after" is added by us so that the next symbol to be processed starts at 
-# the same address on each architecture
-# 
 def align(sl):
+	""" This is the core of the alignment logic
+	sl is a list of symbols (same as for orderSymbolsList that should correspond
+	to one section
+	here is what we do:
+
+	   Arch A           Arch B            Arch C          Arch D
+	                                                    (symbol not 
+	                                                         present)
+	+------------+  +-------------+  +--------------+  +-------------+
+	| Pad before |  | Pad before  |  | Pad before   |  |  Pad before |
+	+------------+  +-------------+  +--------------+  +-------------+
+	+------------+  +-------------+  +--------------+  +-------------+
+	| Symbol     |  |             |  |     Symbol   |  |             |
+	|            |  |             |  |              |  |             |
+	|            |  |   Symbol    |  +--------------+  |             |
+	+------------+  |             |  +--------------+  | pad after   |
+	+------------+  |             |  |              |  |             |
+	|Pad after   |  |             |  |  pad after   |  |             |
+	|            |  |             |  |              |  |             |
+	|            |  |             |  |              |  |             |
+	+------------+  +-------------+  +--------------+  +-------------+
+
+	"pad before" automatically added by the linker to satisfy the alignment 
+	constraint we put on the symobl (we choose the largest alignment constaint 
+	of 	all referencing architectures. We need to add it by hand on each
+	architecture that is not referencing the symbol, though. 
+	"pad after" is added by us so that the next symbol to be processed starts at 
+	the same address on each architecture
+	"""
 	address = 0
 	
 	for symbol in sl:
@@ -222,12 +208,12 @@ def align(sl):
 
 
 def setOutputFilesPath(args):
+	""" Output files (linker scripts) are defined in the architecture object,
+	once we get that info from the command lien arguments we can put it there
+	"""
 	x86_obj.setLinkerScript(os.path.abspath(args.output_x86_ls))
 	arm_obj.setLinkerScript(os.path.abspath(args.output_arm_ls))
 
-###############################################################################
-# main
-###############################################################################
 if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()

@@ -1,8 +1,9 @@
-# This is just emulating a C-style enum
+"""
+C-style enum for architectures: x86, arm, and power
+"""
 
 import sys
-import traceback
-from Globals import er
+from Globals import erStack
 
 class Arch():
 	X86 = 0
@@ -11,8 +12,7 @@ class Arch():
 
 	@classmethod
 	def sanityCheck(cls, val):
+		""" Checik if val has a correct value """
 		if val != cls.X86 and val != cls.ARM and val != cls.POWER:
-			er("bad value for Arch enum: " + str(val) + "\n")
-			for line in traceback.format_stack():
-				print line.strip()
+			erStack("bad value for Arch enum: " + str(val) + "\n")
 			sys.exit(-1)

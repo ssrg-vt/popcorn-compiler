@@ -1,3 +1,6 @@
+"""
+Part of the code responsible for the generation of the linker scripts
+"""
 from Arch import Arch
 import Globals
 
@@ -19,6 +22,8 @@ class Linker:
 	# arch is an Arch instance
 	@classmethod
 	def produceLinkerScript(cls, symbolsList, arch):
+		""" linker script generation method
+		"""
 		template = arch.getLsTemplate()
 		archEnum = arch.getArch()
 	
@@ -31,7 +36,7 @@ class Linker:
 			for section in symbolsList.keys():
 				if line.startswith(cls.getSectionMarker(section)):
 					foundMarker = True
-					# Section "openning" part
+					# Section "opening" part
 					# FIXME: We rely on this super coarse-grain alignment
 					# to have the sections start at the same offset on each
 					# architecture -> there is probably a more intelligent way

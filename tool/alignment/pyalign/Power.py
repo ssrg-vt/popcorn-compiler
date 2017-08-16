@@ -1,3 +1,7 @@
+"""
+Class representing the power8 architecture specific attributes
+"""
+
 # TODO This file needs to be completed when the power compiler is working
 
 from AbstractArchitecture import AbstractArchitecture
@@ -15,6 +19,8 @@ class Power(AbstractArchitecture):
 		self._linkerScript = "linker_script_power.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_power.template"
+		# Subdirectory of the working directory we put the object files into
+		self._objDir = "obj_power"
 		# list of object files, to be set at runtime
 		self._objectFiles = []
 
