@@ -19,10 +19,6 @@ class Power(AbstractArchitecture):
 		self._linkerScript = "linker_script_power.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_power.template"
-		# Subdirectory of the working directory we put the object files into
-		self._objDir = "obj_power"
-		# list of object files, to be set at runtime
-		self._objectFiles = []
 
 	def getArch(self):
 		return Arch.POWER

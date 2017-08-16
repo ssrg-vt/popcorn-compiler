@@ -1,7 +1,7 @@
 """
 Program entry point
 """
-import argparse, os, sys, shutil, glob
+import argparse, os, sys, shutil
 import X86, Arm, Power, Linker, Globals
 from Arch import Arch
 from Globals import er
@@ -38,12 +38,6 @@ def buildArgParser():
 	res.add_argument("--arm-map", help="Path to the ARM memory map file " +
 		"corresponding to the x86 binary (generated through ld -MAP)",
 		required=True)
-	res.add_argument("--x86-object-files", nargs="+", help="List of input " +
-		"object files (x86)", required=True)
-	res.add_argument("--arm-object-files", nargs="+", help="List of input " +
-		"object files (arm)", required=True)
-	res.add_argument("--power-object-files", nargs="+", help="List of input " +
-	"object files (power)", required=False) #TODO set to true later
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")
 	res.add_argument("--clean-work-dir", type=bool, 
@@ -85,39 +79,14 @@ def prepareWorkDir(args):
 		archs[Arch.ARM].getMapFile())
 
 	# Copy linker script templates
+	# FIXME work directly on /share without the need for copying
 	# TODO power
 	templates_loc = Globals.POPCORN_LOCATION + "/share/align-script-templates"
 	linkerScriptTemplates=os.listdir(templates_loc)
 	for f in linkerScriptTemplates:
 		shutil.copy(templates_loc + "/" + f, workdir + "/" + f)
 
-	# Copy object files
-	# TODO power
-	x86ObjsSubdir = archs[Arch.X86].getObjDir()
-	armObjsSubdir = archs[Arch.ARM].getObjDir()
-	os.makedirs(workdir + "/" + x86ObjsSubdir)
-	os.makedirs(workdir + "/" + armObjsSubdir)
-	for f in args.x86_object_files:
-		shutil.copy(f, workdir + "/" + x86ObjsSubdir + "/" + 
-			os.path.basename(f))
-	for f in args.arm_object_files:
-		shutil.copy(f, workdir + "/" + armObjsSubdir + "/" + 
-			os.path.basename(f))
-
 	return
-
-def setObjectFiles(args):
-	""" Each arch object contains a list of object files, set this after we
-	get the info from the command line arguments
-	"""
-	workdir = args.work_dir
-	
-	archs[Arch.X86].setObjectFiles(glob.glob(workdir + "/" + 
-		archs[Arch.X86].getObjDir() + "/*.o"))
-	archs[Arch.ARM].setObjectFiles(glob.glob(workdir + "/" + 
-		archs[Arch.ARM].getObjDir() + "/*.o"))
-	# TODO power
-
 
 def orderSymbolList(sl):
 	"""In each section, the symbols will be ordered by number of architectures 
@@ -227,7 +196,6 @@ if __name__ == "__main__":
 	# Prepare work directory and switch to it as cwd
 	prepareWorkDir(args)
 	os.chdir(args.work_dir)
-	setObjectFiles(args)
 
 	# List of per-section symbols that we are going to fill and manipulate
 	work = {}

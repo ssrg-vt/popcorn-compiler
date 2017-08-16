@@ -10,9 +10,6 @@ from Globals import er, warn
 
 class AbstractArchitecture():
 
-	def setObjectFiles(self, objectFileList):
-		self._objectFiles = objectFileList
-	
 	def getLinkerScript(self):
 		return self._linkerScript
 
@@ -27,9 +24,6 @@ class AbstractArchitecture():
 
 	def getMapFile(self):
 		return self._mapFile
-
-	def getObjDir(self):
-		return self._objDir
 
 	def parseMapFile(self):
 		"""Returns a list of Symbols instances extracted from the map file which 

@@ -49,7 +49,6 @@ LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 ALIGN          := $(POPCORN)/bin/pyalign
-ALIGN_TOOL_SRC := /root/popcorn-compiler/tool/alignment/pyalign #Remove me later
 ALIGN_WORKDIR  := align
 
 # Post-processing & checking
@@ -171,7 +170,6 @@ $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA)
 	@echo " [ALIGN] $@"
 	@$(ALIGN) --x86-bin $(X86_64_VANILLA) --arm-bin $(ARM64_VANILLA) \
 		--x86-map $(X86_64_MAP) --arm-map $(ARM64_MAP) \
-		--x86-object-files $(X86_64_OBJ) --arm-object-files $(ARM64_OBJ) \
 		--output-x86-ls $(X86_64_LD_SCRIPT)	--output-arm-ls $(ARM64_LD_SCRIPT)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
