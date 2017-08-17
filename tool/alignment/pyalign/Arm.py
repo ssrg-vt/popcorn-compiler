@@ -9,9 +9,9 @@ class Arm(AbstractArchitecture):
 
 	def __init__(self):
 		# Executable name
-		self._executable = "bin_arm"
+		self._executable = ""
 		# Name of the map file used in multiple steps of the alignment process
-		self._mapFile = "map_arm"
+		self._mapFile = ""
 		# Linker linker script file used in multiple steps
 		self._linkerScript = "linker_script_arm.x"
 		# Linker script template

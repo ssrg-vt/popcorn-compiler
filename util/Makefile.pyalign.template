@@ -49,7 +49,6 @@ LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 ALIGN          := $(POPCORN)/bin/pyalign
-ALIGN_WORKDIR  := align
 
 # Post-processing & checking
 POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
@@ -138,8 +137,7 @@ clean:
 		$(X86_64_BUILD) $(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) \
 		$(ARM64_LD_SCRIPT) $(ALIGN_WORKDIR) *.ll *.o"
 	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) \
-		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) \
-		$(ALIGN_WORKDIR) *.ll *.o
+		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) *.ll *.o
 
 %.dir:
 	@echo " [MKDIR] $*"

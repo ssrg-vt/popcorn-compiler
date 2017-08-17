@@ -12,9 +12,9 @@ class Power(AbstractArchitecture):
 
 	def __init__(self):
 		# Executable name
-		self._executable = "bin_power"
+		self._executable = ""
 		# Name of the map file output by gold
-		self._mapFile = "map_power"
+		self._mapFile = ""
 		# Linker script used for the last linking step
 		self._linkerScript = "linker_script_power.x"
 		# Linker script template

@@ -52,41 +52,20 @@ def buildArgParser():
 def parseAndCheckArgs(parser):
 	""" Parse command line arguments and perform some sanity checks """
 	args = parser.parse_args()
-	# TODO checks here
+	# TODO checks here (ex wit power we can have 2 or 3 architectures to take
+	# care of
 
 	return args
 
-def prepareWorkDir(args):
-	""" Clean the working directory and copy input files in it """
-	workdir = args.work_dir
-	if os.path.exists(workdir):
-		if not os.path.isdir(workdir):
-			er(workdir + " exists and is not a directory, remove it first")
-			sys.exit(-1)
-		shutil.rmtree(workdir)
+def setInputOutputs(args):
+	""" Fill internal data structures with info about input and ouput files """
 
-	os.makedirs(workdir)
-
-	# Copy binaries and map files
-	# TODO power
-	shutil.copy(args.x86_bin, workdir + "/" +
-		archs[Arch.X86].getExecutable())
-	shutil.copy(args.arm_bin, workdir + "/" +
-		archs[Arch.ARM].getExecutable())
-	shutil.copy(args.x86_map, workdir + "/" +
-		archs[Arch.X86].getMapFile())
-	shutil.copy(args.arm_map, workdir + "/" +
-		archs[Arch.ARM].getMapFile())
-
-	# Copy linker script templates
-	# FIXME work directly on /share without the need for copying
-	# TODO power
-	templates_loc = Globals.POPCORN_LOCATION + "/share/align-script-templates"
-	linkerScriptTemplates=os.listdir(templates_loc)
-	for f in linkerScriptTemplates:
-		shutil.copy(templates_loc + "/" + f, workdir + "/" + f)
-
-	return
+	archs[Arch.X86].setExecutable(os.path.abspath(args.x86_bin))
+	archs[Arch.ARM].setExecutable(os.path.abspath(args.arm_bin))
+	archs[Arch.X86].setMapFile(os.path.abspath(args.x86_map))
+	archs[Arch.ARM].setMapFile(os.path.abspath(args.arm_map))
+	archs[Arch.X86].setLinkerScript(os.path.abspath(args.output_x86_ls))
+	archs[Arch.ARM].setLinkerScript(os.path.abspath(args.output_arm_ls))
 
 def orderSymbolList(sl):
 	"""In each section, the symbols will be ordered by number of architectures
@@ -176,27 +155,13 @@ def align(sl):
 
 	return sl
 
-
-def setOutputFilesPath(args):
-	""" Output files (linker scripts) are defined in the architecture object,
-	once we get that info from the command lien arguments we can put it there
-	"""
-	x86_obj.setLinkerScript(os.path.abspath(args.output_x86_ls))
-	arm_obj.setLinkerScript(os.path.abspath(args.output_arm_ls))
-
 if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
 
-	# The path to the output linker scripts is relative to the CWD so before we
-	# change the CWD we must note somewhere the absolute path for the output
-	# files
-	setOutputFilesPath(args)
-
-	# Prepare work directory and switch to it as cwd
-	prepareWorkDir(args)
-	os.chdir(args.work_dir)
+	# Grab input/output files from the command line arguments
+	setInputOutputs(args)
 
 	# List of per-section symbols that we are going to fill and manipulate
 	work = {}
