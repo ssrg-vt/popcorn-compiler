@@ -98,7 +98,6 @@ public class LinkerIO {
     static List < String > COPY_linkerScript_ByLine_x86_64;
     static List < String > COPY_linkerScript_ByLine_aarch64;
 
-	/* Pierre: omg */
     static int x86_textLineOffset = 54;
     static int x86_rodataLineOffset = 72 + 1;
     static int x86_dataLineOffset = 78 + 2;

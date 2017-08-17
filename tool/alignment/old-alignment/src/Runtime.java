@@ -53,9 +53,6 @@ public class Runtime {
     public static void main(String[]args) throws IOException,
 	InterruptedException {
 
-	Plog.plogInit();	
-
-	
 	LinkerIO.resetLinkerNewLines();
 
 	TARGET_DIR = args[0] + "/align";
@@ -69,9 +66,6 @@ public class Runtime {
 		("-1---------- Gather & Sort Symbols Begin! -------------------------");
 	//find unique for each architecture
 
-	/**************************************************************************/
-	/** Pierre: there is a lot of stuff hapenning in the function below: */
-	/**************************************************************************/
 	gatherANDsort();
 
 	if (globalVars.DEBUG)
@@ -79,7 +73,6 @@ public class Runtime {
 		("-1--------------------- Gather & Sort Symbols Complete ------------");
 	LinkerIO.readInLinkerScripts();
 
-	// Pierre: is this executed?
 	PrintWriter writer =
 	    new PrintWriter(TARGET_DIR + "/v1113sizetext.txt", "UTF-8");
 	for (int w = 0; w < globalVars.A_rodata.size(); w++) {
@@ -332,9 +325,6 @@ public class Runtime {
 	//save section ranges ARM
 	AlignmentLogic.recordRanges(1);
 
-	/* Pierre */
-	//AlignmentLogic.plogRangesInfo();
-
 	if (globalVars.DEBUG)
 	    System.out.println
 		("-1--------------------- recordRanges Complete! ------------------------");
@@ -461,7 +451,6 @@ public class Runtime {
 	    System.out.println
 		("-1--------------------- ^^ Reseting Select Storages");
 	//reset ALMOST everything
-	// Pierre: what is not reset .......
 	globalVars.resetSectionsInfo();
 	LinkerIO.resetLinkerScript();
 	AlignmentLogic.resetRangesInfo();

@@ -35,21 +35,6 @@ public class AlignmentLogic {
     static int dataCount = 0;
     static int bssCount = 0;
 
-	/* Pierre: print the content of RangesInfo */
-//	public static void plogRangesInfo() {
-//		Iterator it = RangesInfo.iterator();
-//		
-//		Plog.log("name\taddress\tsize\n");
-//		Plog.log("-------------------\n");
-//
-//		while(it.hasNext()) {
-//			Section < String, Long, Long> element = 
-//					(Section< String, Long, Long>)it.next();
-//			Plog.log(element.getName() + "\t" + element.getAddr() + "\t" +
-//				element.getSize() + "\n");
-//		}	
-//	}
-
 	/** recordRanges
 	 * @param option:
 	 *		0: x86
@@ -900,7 +885,6 @@ public class AlignmentLogic {
 	 * 			exe: first run
 	 * 			gold 2nd run
 	 * @throws IOException: Assume nm_files have been generated | 
-							Pierre: really? 
 	 * @throws InterruptedException
 	 */
     static void grabSymbolsInRange(int option,
@@ -1033,7 +1017,6 @@ public class AlignmentLogic {
 	    System.out.println("\n");
 	}
 
-	// Pierre: I want to cry
 	BufferedReader br1 = new BufferedReader(fr1);
 	int count = 0;
 	long size = 0, addr = 0;
@@ -1044,7 +1027,6 @@ public class AlignmentLogic {
 	//   ADDR            SIZE            TYPE              NAME
 	//Pattern p = Pattern.compile("([0-9a-f]*)[ \t]+([0-9a-f]*)[ \t]+[wWtTdDrRbB]+[ \t]+([\\._\\-\\@A-Za-z0-9]*)");
 	//NEW PATTERN FOR MAP FILE!!!!!         .section(2)  .             NAME(1)      ADDR(3)                         SIZE(4)                 ALIGNMENT(5)    SOURCE OBJECT FILE
-	// Pierre: this match text|rodata|bss entries
 	Pattern p =
 	    Pattern.compile
 	    ("^[ \\s](\\.([texrodalcbs]*)\\.[\\S]*)\\s*([x0-9a-f]*)[ \\s]*([x0-9a-f]*)[ \\s]*([0x0-9a-f]*).*");
@@ -1143,7 +1125,7 @@ public class AlignmentLogic {
 			}
 			flag_foundsymbol = 1;
 		    }
-		}		//end if evil format // Pierre: match pattern1 type 2
+		}		//end if evil format
 		else if (!m.group(1).isEmpty() && !m.group(3).isEmpty()
 			 && Long.parseLong(m.group(4).
 					   replaceFirst("0x", ""),
@@ -1174,9 +1156,6 @@ public class AlignmentLogic {
 	    }			//end while m.find()
 
 	    if (flag_foundsymbol == 1) {
-
-		//Plog.log("symbol found: name=" + name + ", addr=" + addr + ", size=" +
-		//	size + ", alignment=" + alignment + "\n");
 
 		flag_foundsymbol = 0;
 		//if(type.compareTo("text")==0 && option==0){
@@ -1230,7 +1209,6 @@ public class AlignmentLogic {
 		if (currList.get(t).getName().compareTo(name) == 0) {
 		    if (option == 0) {
 			//add to size x86
-			Plog.log("found duplicate symbol: " + name + "\n");
 			currList.get(t).updateBy1_MultAddressFlag();
 			if (currList.get(t).getMultAddressFlag() > 1) {
 
@@ -1882,11 +1860,6 @@ public class AlignmentLogic {
 	//if nm size doesnt match vanilla size use vanilla binary size to readjust
     }
 }
-	/**************************************************************************/
-	/**************************************************************************/
-	/* Pierre: everything below is commented */
-	/**************************************************************************/
-	/**************************************************************************/
 
 /**
  * @param option
