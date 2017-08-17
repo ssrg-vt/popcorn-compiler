@@ -258,14 +258,14 @@ static rewrite_context init_src_context(st_handle handle,
 
   // We need to fix PC by skipping NOPs inserted after function
   // calls by the linker
-  #if defined(__powerpc64__)
+/*  #if defined(__powerpc64__)
     void* pc = REGOPS(ctx)->pc(ACT(ctx).regs);
 
     ST_INFO("pc: %p [init_src_context]\n", pc);
     pc = fix_pc(pc);
     ST_INFO("updated pc: %p [init_src_context]\n", pc);
     REGOPS(ctx)->set_pc(ACT(ctx).regs, pc);
-  #endif
+  #endif*/
 
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
     ST_ERR(1, "could not get source call site information for outermost frame "

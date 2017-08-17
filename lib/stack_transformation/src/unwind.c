@@ -75,7 +75,7 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
    * the new PC.
    */
   if(REGOPS(ctx)->has_ra_reg){
-    #if defined(__powerpc64__)
+//    #if defined(__powerpc64__)
 /*      ST_INFO("fbp: %p [restore_callee_saved_regs]\n",  REGOPS(ctx)->fbp(ctx->acts[act].regs));
       ST_INFO("sp: %p [restore_callee_saved_regs]\n",  REGOPS(ctx)->sp(ctx->acts[act].regs));
       ST_INFO("ra_reg: %p [restore_callee_saved_regs]\n", REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
@@ -89,7 +89,7 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
       // a NOP slot after a bl instruction to an external symbol.
       // Due to these NOPs, return address should be calculated as: original return
       // address + NOP*4. and PC should be updated accordingly.
-      REGOPS(ctx)->set_pc(ctx->acts[act].regs,
+/*      REGOPS(ctx)->set_pc(ctx->acts[act].regs,
                           REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
       void *pc = REGOPS(ctx)->pc(ctx->acts[act].regs);
       //ST_INFO("pc: %p [restore_callee_saved_regs]\n", pc);
@@ -101,10 +101,10 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
 
       // Also update ra_reg accordingly
       REGOPS(ctx)->set_ra_reg(ctx->acts[act].regs, pc);
-    #else
+    #else*/
       REGOPS(ctx)->set_pc(ctx->acts[act].regs,
                         REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
-    #endif
+  //  #endif
   }
 
   ST_INFO("(next(pc)) Return address: %p\n", REGOPS(ctx)->pc(ctx->acts[act].regs));
@@ -273,7 +273,7 @@ void pop_frame_funcentry(rewrite_context ctx)
    */
 
   if(REGOPS(ctx)->has_ra_reg){
-    #if defined(__powerpc64__)
+/*    #if defined(__powerpc64__)
   
       // PowerPC Linker puts NOPs after function calls if it's necessary. This is how
       // TOC(s) are managed:  TOC of an application only has 64KB worth of space for
@@ -296,9 +296,11 @@ void pop_frame_funcentry(rewrite_context ctx)
       // Also update ra_reg accordingly
       REGOPS(ctx)->set_ra_reg(NEXT_ACT(ctx).regs, pc);
    #else
+    REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));*/
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));
-   #endif
   }
+/*   #endif
+  }*/
   else
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs,
                         *(void**)REGOPS(ctx)->sp(ACT(ctx).regs));
