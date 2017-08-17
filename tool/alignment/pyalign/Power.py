@@ -15,8 +15,6 @@ class Power(AbstractArchitecture):
 		self._executable = ""
 		# Name of the map file output by gold
 		self._mapFile = ""
-		# Linker script used for the last linking step
-		self._linkerScript = "linker_script_power.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_power.template"
 

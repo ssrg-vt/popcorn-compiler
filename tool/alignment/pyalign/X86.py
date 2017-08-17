@@ -12,8 +12,6 @@ class X86(AbstractArchitecture):
 		self._executable = ""
 		# Name of the map file used in multiple steps of the alignment process
 		self._mapFile= ""
-		# Linker script used in multiple steps
-		self._linkerScript = "linker_script_x86.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_x86.template"
 

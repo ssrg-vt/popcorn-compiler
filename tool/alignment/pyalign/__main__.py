@@ -1,7 +1,7 @@
 """
 Program entry point
 """
-import argparse, os, sys, shutil
+import argparse, os, sys
 import X86, Arm, Power, Linker, Globals
 from Arch import Arch
 from Globals import er

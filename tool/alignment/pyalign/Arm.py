@@ -12,8 +12,6 @@ class Arm(AbstractArchitecture):
 		self._executable = ""
 		# Name of the map file used in multiple steps of the alignment process
 		self._mapFile = ""
-		# Linker linker script file used in multiple steps
-		self._linkerScript = "linker_script_arm.x"
 		# Linker script template
 		self._linkerScriptTemplate = "ls_arm.template"
 
