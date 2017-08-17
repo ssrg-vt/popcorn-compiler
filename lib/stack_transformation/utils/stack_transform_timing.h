@@ -66,59 +66,6 @@ get_call_site() { return __builtin_return_address(0); }
   })
 
 /*
- * Times rewriting the stack on-demand (powerpc64).  Returns elapsed time in
- * nanoseconds.
- */
-#define TIME_REWRITE_ONDEMAND( powerpc64_bin, x86_64_bin ) \
-  ({ \
-    int ret; \
-    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct regset_powerpc64 regset; \
-    struct regset_x86_64 regset_dest; \
-    stack_bounds bounds = get_stack_bounds(); \
-    READ_REGS_POWERPC64(regset); \
-    regset.pc = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
-    st_handle src = st_init(powerpc64_bin); \
-    st_handle dest = st_init(x86_64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
-    if(src && dest) \
-    { \
-      ret = st_rewrite_ondemand(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
-      st_destroy(src); \
-      st_destroy(dest); \
-      if(ret) \
-        fprintf(stderr, "Couldn't re-write the stack (on-demand)\n"); \
-      else \
-      { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
-        printf("[ST] Setup time: %lu\n", \
-              (init.tv_sec * 1000000000 + init.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
-        printf("[ST] Transform time: %lu\n", \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
-              (init.tv_sec * 1000000000 + init.tv_nsec)); \
-        printf("[ST] Cleanup time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
-        printf("[ST] Total elapsed time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
-      } \
-    } \
-    else \
-    { \
-      fprintf(stderr, "Couldn't open ELF information\n"); \
-      if(src) st_destroy(src); \
-      if(dest) st_destroy(dest); \
-    } \
-  })
-
-/*
  * Times rewriting the entire stack (powerpc64).  Returns elapsed time in
  * nanoseconds.  After rewriting, switches to the re-written stack to check
  * for correctness.
@@ -395,58 +342,6 @@ get_call_site() { return __builtin_return_address(0); }
   })
 
 /*
- * Times rewriting the stack on-demand (x86-64).  Returns elapsed time in
- * nanoseconds.
- */
-#define TIME_REWRITE_ONDEMAND( powerpc64_bin, x86_64_bin ) \
-  ({ \
-    int ret; \
-    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct regset_x86_64 regset; \
-    struct regset_powerpc64 regset_dest; \
-    stack_bounds bounds = get_stack_bounds(); \
-    READ_REGS_X86_64(regset); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
-    st_handle src = st_init(x86_64_bin); \
-    st_handle dest = st_init(powerpc64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
-    if(src && dest) \
-    { \
-      ret = st_rewrite_ondemand(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
-      st_destroy(src); \
-      st_destroy(dest); \
-      if(ret) \
-        fprintf(stderr, "Couldn't re-write the stack (on-demand)\n"); \
-      else \
-      { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
-        printf("[ST] Setup time: %lu\n", \
-              (init.tv_sec * 1000000000 + init.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
-        printf("[ST] Transform time: %lu\n", \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
-              (init.tv_sec * 1000000000 + init.tv_nsec)); \
-        printf("[ST] Cleanup time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
-        printf("[ST] Total elapsed time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
-      } \
-    } \
-    else \
-    { \
-      fprintf(stderr, "Couldn't open ELF information\n"); \
-      if(src) st_destroy(src); \
-      if(dest) st_destroy(dest); \
-    } \
-  })
-
-/*
  * Times rewriting the entire stack (x86-64).  Returns elapsed time in
  * nanoseconds.  After rewriting, switches to the re-written stack to check
  * for correctness.
@@ -525,6 +420,10 @@ get_call_site() { return __builtin_return_address(0); }
         SET_FRAME_X86_64(regset_dest.rbp, regset_dest.rsp); \
         SET_RIP_IMM(func); \
       } \
+    } \
+    else \
+      fprintf(stderr, "Invalid stack transformation handle\n"); \
+  })
 ///*
 // * Times rewriting the entire stack (x86-64).  Returns elapsed time in
 // * nanoseconds.

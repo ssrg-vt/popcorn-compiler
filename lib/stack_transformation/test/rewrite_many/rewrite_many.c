@@ -5,7 +5,7 @@
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
 
-static int max_depth = 2;
+static int max_depth = 10;
 static int post_transform = 0;
 
 long outer_frame()

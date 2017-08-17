@@ -7,7 +7,7 @@
 extern uint64_t get_magic(void);
 extern uint64_t get_magic_a(void);
 extern uint64_t get_magic_b(void);
-static int max_depth = 2;
+static int max_depth = 10;
 static int post_transform = 0;
 
 int outer_frame()

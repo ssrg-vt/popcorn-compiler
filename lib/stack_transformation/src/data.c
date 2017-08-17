@@ -276,8 +276,8 @@ void set_return_address(rewrite_context ctx, void* retaddr)
   ASSERT(retaddr, "invalid return address\n");
   ST_INFO("cfa: %p, ra_offset: %d retaddr: %p [set_return_address]\n", ACT(ctx).cfa, PROPS(ctx)->ra_offset, retaddr);
 
-  long addr = *((long*)(ACT(ctx).cfa));
-  ST_INFO("%ld\n", addr);
+  void* cfa = ACT(ctx).cfa;
+  ST_INFO("var cfa:%p\n", cfa);
 
   *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
   ST_INFO("leaving [set_return_address]\n");
@@ -292,23 +292,53 @@ void set_return_address(rewrite_context ctx, void* retaddr)
 void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
 {
   ASSERT(retaddr, "invalid return address\n");
+
+  ST_INFO("cfa: %p [set_return_address_funcentry]\n", ACT(ctx).cfa);
+  #if !defined(__x86_64__)
+    ST_INFO("ra_reg set: %lx [set_return_address_funcentry]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
+  #endif
+
   if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_ra_reg(ACT(ctx).regs, retaddr);
   else
     *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
-
-  #if !defined(__x86_64__)
-    ST_INFO("ra_reg set: %lx [set_return_address_funcentry]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
-  #endif
 }
 
 /*
  * Return where in the current frame the caller's frame pointer is saved.
  */
-uint64_t* get_savedfbp_loc(rewrite_context ctx)
+uint64_t* get_savedfbp_loc(rewrite_context ctx, rewrite_context src, int act)
 {
-  return (uint64_t*)(ACT(ctx).cfa + PROPS(ctx)->savedfbp_offset);
-  ST_INFO("cfa: %p savedfbp_offset: %d [get_savedfbp_loc] \n", ACT(ctx).cfa, PROPS(ctx)->savedfbp_offset);
+  #if defined(__powerpc64__)
+   const unwind_loc* locs;
+   uint32_t unwind_start, unwind_end, index;
+   void* saved_loc;
+
+   locs = src->handle->unwind_locs;
+   unwind_start = src->acts[act - 1].site.unwind_offset;
+   unwind_end = unwind_start + src->acts[act - 1].site.num_unwind;
+
+   ST_INFO("unwind_start: %d unwind_end: %d[get_savedfbp_loc]\n", unwind_start, unwind_end);
+   // FP (r31) is mostly placed at the very end
+   for(index = unwind_end-1; index>= unwind_start; index--)
+   {
+     if(locs[index].reg == 31) {
+       break;
+     }
+   }
+    
+   ST_INFO("index: %d [get_savedfbp_loc]\n", index);
+   saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[index].offset;
+   ST_INFO("Frame Pointer: %u at FBP + %d (%p) [get_savedfbp_loc]\n",
+            locs[index].reg, locs[index].offset, saved_loc);
+   ST_INFO("sanity check: cfa: %p savedfbp_offset: %d [get_savedfbp_loc]\n", ACT(ctx).cfa, PROPS(ctx)->savedfbp_offset);
+
+   return (uint64_t*)saved_loc; 
+  #else
+    return (uint64_t*)(ACT(ctx).cfa + PROPS(ctx)->savedfbp_offset);
+  #endif
+
+  ST_INFO("cfa: %p savedfbp_offset: %d [get_savedfbp_loc]\n", ACT(ctx).cfa, PROPS(ctx)->savedfbp_offset);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -170,7 +170,7 @@ int st_rewrite_stack(st_handle handle_src,
 
     ST_INFO("before set_return_address. src->act: %d, dest->act: %d [st_rewrite_stack]\n", src->act, dest->act);
     set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
-    saved_fbp = get_savedfbp_loc(dest);
+    saved_fbp = get_savedfbp_loc(dest, src, dest->act);
     ST_INFO("saved_fbp: %p\n", saved_fbp);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dest, true);

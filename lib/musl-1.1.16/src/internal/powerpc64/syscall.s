@@ -13,5 +13,5 @@ __syscall:
 	bnslr+       # return if not summary overflow
 	neg     3, 3 # otherwise error: return negated value.
 	blr
-	.end    __syscall
+	.end    #__syscall
 	.size   __syscall, .-__syscall

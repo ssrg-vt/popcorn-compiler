@@ -4,7 +4,7 @@
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
 
-static int max_depth = 2;
+static int max_depth = 10;
 static int post_transform = 0;
 
 double outer_frame()
@@ -27,6 +27,7 @@ double outer_frame()
 
 double recurse(int depth, double val)
 {
+  printf("Calculated %f\n", val);
   if(depth < max_depth) return recurse(depth + 1, val * 1.2) + val;
   else return outer_frame();
 }

@@ -7,7 +7,7 @@
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
 
-static int num_threads = 10;
+static int num_threads = 2;
 static int max_depth = 10;
 static st_handle handle = NULL;
 static __thread int post_transform = 0;
@@ -57,10 +57,12 @@ int main(int argc, char** argv)
 
   for(i = 1; i < num_threads; i++) {
     child_num[i] = i;
+//    printf("spawning child:%d\n", i);
     if(pthread_create(&children[i], NULL, thread_main, &child_num[i])) {
       printf("Couldn't spawn child thread\n");
       exit(1);
     }
+//    printf("spawned!\n");
   }
 
   for(i = 1; i < num_threads; i++) {
@@ -68,6 +70,7 @@ int main(int argc, char** argv)
       printf("Couldn't join child thread\n");
       exit(1);
     }
+//    printf("joined child:%d\n", i);
   }
 
   free(children);
