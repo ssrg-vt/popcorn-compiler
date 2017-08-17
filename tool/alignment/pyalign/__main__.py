@@ -18,7 +18,7 @@ archs = {	Arch.X86 : x86_obj,
 
 #TODO add power later here
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
-considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata", 
+considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata",
 		".tbss"]
 
 # TODO add power later here
@@ -27,7 +27,7 @@ def buildArgParser():
 
 	res = argparse.ArgumentParser(description="Align symbols in binaries from" +
 		" multiple ISAs")
-	
+
 	res.add_argument("--x86-bin", help="Path to the input x86 executable",
 		required=True)
 	res.add_argument("--arm-bin", help="Path to the input ARM executable",
@@ -40,7 +40,7 @@ def buildArgParser():
 		required=True)
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")
-	res.add_argument("--clean-work-dir", type=bool, 
+	res.add_argument("--clean-work-dir", type=bool,
 		help="Delete work directory when done",	default=True)
 	res.add_argument("--output-x86-ls", help="Path to the output x86 linker " +
 	"script", default="linker_script_x86.x")
@@ -66,16 +66,16 @@ def prepareWorkDir(args):
 		shutil.rmtree(workdir)
 
 	os.makedirs(workdir)
-	
+
 	# Copy binaries and map files
 	# TODO power
-	shutil.copy(args.x86_bin, workdir + "/" + 
+	shutil.copy(args.x86_bin, workdir + "/" +
 		archs[Arch.X86].getExecutable())
-	shutil.copy(args.arm_bin, workdir + "/" + 
+	shutil.copy(args.arm_bin, workdir + "/" +
 		archs[Arch.ARM].getExecutable())
-	shutil.copy(args.x86_map, workdir + "/" + 
+	shutil.copy(args.x86_map, workdir + "/" +
 		archs[Arch.X86].getMapFile())
-	shutil.copy(args.arm_map, workdir + "/" + 
+	shutil.copy(args.arm_map, workdir + "/" +
 		archs[Arch.ARM].getMapFile())
 
 	# Copy linker script templates
@@ -89,14 +89,15 @@ def prepareWorkDir(args):
 	return
 
 def orderSymbolList(sl):
-	"""In each section, the symbols will be ordered by number of architectures 
+	"""In each section, the symbols will be ordered by number of architectures
 	referencing the symbols in questions
 	sl is a list of Symbol instances (should correspond to one section)
 	return as a result an ordered symbol list
 	"""
 	res = []
 
-	# TODO Explain the trick
+	# Order the list of symbols based on the number of referencing architectures
+	# (for each symbol). 
 	for order in list(reversed(range(1, len(considered_archs)+1))):
 		for symbol in sl:
 
@@ -118,7 +119,7 @@ def align(sl):
 	here is what we do:
 
 	   Arch A           Arch B            Arch C          Arch D
-	                                                    (symbol not 
+	                                                    (symbol not
 	                                                         present)
 	+------------+  +-------------+  +--------------+  +-------------+
 	| Pad before |  | Pad before  |  | Pad before   |  |  Pad before |
@@ -134,15 +135,15 @@ def align(sl):
 	|            |  |             |  |              |  |             |
 	+------------+  +-------------+  +--------------+  +-------------+
 
-	"pad before" automatically added by the linker to satisfy the alignment 
-	constraint we put on the symobl (we choose the largest alignment constaint 
+	"pad before" automatically added by the linker to satisfy the alignment
+	constraint we put on the symobl (we choose the largest alignment constaint
 	of 	all referencing architectures. We need to add it by hand on each
-	architecture that is not referencing the symbol, though. 
-	"pad after" is added by us so that the next symbol to be processed starts at 
+	architecture that is not referencing the symbol, though.
+	"pad after" is added by us so that the next symbol to be processed starts at
 	the same address on each architecture
 	"""
 	address = 0
-	
+
 	for symbol in sl:
 		padBefore = 0  # padding we'll need to add before that symbol
 		# set the alignment for all referencing arch to the largest one
@@ -164,7 +165,7 @@ def align(sl):
 			padAfter = largestSize - symbol.getSize(arch)
 			symbol.incrPaddingAfter(padAfter, arch)
 
-		# For the architecture not referencing the symbol, we should add padding 
+		# For the architecture not referencing the symbol, we should add padding
 		# equals to the largest size
 		for arch in symbol.getArchitecturesNotReferencing():
 			symbol.incrPaddingAfter(largestSize, arch)
@@ -189,10 +190,10 @@ if __name__ == "__main__":
 	args = parseAndCheckArgs(parser)
 
 	# The path to the output linker scripts is relative to the CWD so before we
-	# change the CWD we must note somewhere the absolute path for the output 
+	# change the CWD we must note somewhere the absolute path for the output
 	# files
 	setOutputFilesPath(args)
-		
+
 	# Prepare work directory and switch to it as cwd
 	prepareWorkDir(args)
 	os.chdir(args.work_dir)
@@ -206,8 +207,8 @@ if __name__ == "__main__":
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
 
-	# Order symbols in each section based on the number of arch referencing 
-	# each symbol 
+	# Order symbols in each section based on the number of arch referencing
+	# each symbol
 	for section in considered_sections:
 		work[section] = orderSymbolList(work[section])
 

@@ -6,7 +6,7 @@ from Arch import Arch
 import Symbol
 
 class Arm(AbstractArchitecture):
-	
+
 	def __init__(self):
 		# Executable name
 		self._executable = "bin_arm"

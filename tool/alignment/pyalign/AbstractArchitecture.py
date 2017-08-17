@@ -26,26 +26,26 @@ class AbstractArchitecture():
 		return self._mapFile
 
 	def parseMapFile(self):
-		"""Returns a list of Symbols instances extracted from the map file which 
+		"""Returns a list of Symbols instances extracted from the map file which
 		path is filePath (should have been generalted by gold.ld -Map <file>
 		"""
 		filePath = self.getMapFile()
 		res = []
 
-		# The symbols described in the parsed file can mostly have 2 forms: 
+		# The symbols described in the parsed file can mostly have 2 forms:
 		# - 1 line description: "<name> <addr> <size> <alignment> <object file>"
 		# - 2 lines description:
 		#   "<name>
 		#                 <addr> <size> <alignment> <object file>"
-		# So here I have 1 regexp for the single line scenario and 2 for the 
-		# double lines one. This filters out a lot of uneeded stuff, but we 
-		# still need to only keep symbols related to text/data/rodata/bss so 
-		# an additional check is performed on the extracted symbosl before 
+		# So here I have 1 regexp for the single line scenario and 2 for the
+		# double lines one. This filters out a lot of uneeded stuff, but we
+		# still need to only keep symbols related to text/data/rodata/bss so
+		# an additional check is performed on the extracted symbosl before
 		# adding it to the result set
 		twoLinesRe1 = "^[\s]+(\.[texrodalcbs\.]+[\S]*)$"
-		twoLinesRe2 = ("^[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+" + 
+		twoLinesRe2 = ("^[\s]+(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+" +
 			"(0x[0-9a-f]+)[\s]+(.*)$")
-		oneLineRe = ("^[\s]+(\.[texrodalcbs\.]+[\S]+)[\s]+(0x[0-9a-f]+)[\s]+" + 
+		oneLineRe = ("^[\s]+(\.[texrodalcbs\.]+[\S]+)[\s]+(0x[0-9a-f]+)[\s]+" +
 			"(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(.*)$")
 
 		with open(filePath, "r") as mapfile:
@@ -62,7 +62,7 @@ class AbstractArchitecture():
 						size = int(matchResult2.group(2), 0)
 						alignment = int(matchResult2.group(3), 0)
 						objectFile = matchResult2.group(4)
-						s = Symbol.Symbol(name, address, size, alignment, 
+						s = Symbol.Symbol(name, address, size, alignment,
 						objectFile, self.getArch())
 					else:
 						er("missed a two lines symbol while parsing	mapfile:\n")
@@ -87,7 +87,7 @@ class AbstractArchitecture():
 
 	def getSection(self, symbol, sectionInfo):
 		"""Return the section associated with a symbol as a string (ex: ".text")
-		symbol is a Symbol instance, sectionInfo is a list of Section object, 
+		symbol is a Symbol instance, sectionInfo is a list of Section object,
 		the	list that is returned by ReadElfParser.getSectionInfo()
 		"""
 		arch = self.getArch()
@@ -105,13 +105,13 @@ class AbstractArchitecture():
 				# name _not_ starting with the containing section name?
 					warn("symbol does not have the same name as the " +
 							"containing section\n")
-					warn(" Symbol: " + symbol.getName() + " @" + 
+					warn(" Symbol: " + symbol.getName() + " @" +
 						str(hex(symbol.getAddress(arch))) + ", size: " +
 						str(hex(symbol.getSize(arch))) + "\n")
-					warn(" Section: " + sectionName + " @" + 
-						str(hex(sectionAddr)) + ", size: " + 
+					warn(" Section: " + sectionName + " @" +
+						str(hex(sectionAddr)) + ", size: " +
 						str(hex(sectionSize)))
-						
+
 				break
 
 			# Super special case, I have seen this in some map files, don't
@@ -128,7 +128,7 @@ class AbstractArchitecture():
 
 	def updateSymbolsList(self, symbolsList):
 		"""symbolsList is a dictionary of lists, one per section, for example:
-		symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [], 
+		symbolsList = { ".text" : [], ".rodata" : [], ".bss" : [], ".data" : [],
 		".tdata" : [], ".tbss" : [] }
 		This function TODO update description and maybe change the name
 		accordinglyn. The way to call it is:
@@ -153,7 +153,7 @@ class AbstractArchitecture():
 			sectionName = self.getSection(symbol, sectionsInfo)
 			if not sectionName:  #Symbol not in one of the considered sections
 				continue
-			
+
 			# is the symbol blacklisted?
 			if sectionName in Globals.SYMBOLS_BLACKLIST.keys():
 				if symbol.getName() in Globals.SYMBOLS_BLACKLIST[sectionName]:
@@ -164,10 +164,10 @@ class AbstractArchitecture():
 				if symbol.compare(existingSymbol):
 					# Found similar symbol in another arch ...
 					if existingSymbol.getReference(arch): #... or not
-						er("Already referenced updated symbol: " + 
-						existingSymbol.getName() + "|" + 
+						er("Already referenced updated symbol: " +
+						existingSymbol.getName() + "|" +
 						existingSymbol.getObjectFile(arch) +
-						"|" + str(hex(existingSymbol.getAlignment(arch))) + 
+						"|" + str(hex(existingSymbol.getAlignment(arch))) +
 						"|" +str(hex(symbol.getAlignment(arch))) +
 						" (" +
 						self.getArchString() + ")\n")

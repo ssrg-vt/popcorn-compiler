@@ -26,7 +26,7 @@ class Linker:
 		"""
 		template = arch.getLsTemplate()
 		archEnum = arch.getArch()
-	
+
 		with open(template, "r") as f:
 			lines = f.readlines()
 
@@ -42,7 +42,7 @@ class Linker:
 					# architecture -> there is probably a more intelligent way
 					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
 					output_buffer.append("{\n")
-					
+
 					# FIXME: sometimes the linker fills the start of some
 					# sections (at least .data) with something named **common,
 					# only for a subset of the considered archs. I'm not sure
@@ -57,32 +57,32 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-						
+
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
 							if padding_before:
-								output_buffer.append("\t. = . + " +	
-									hex(padding_before) + 
-									"; /* padding before "+ 
+								output_buffer.append("\t. = . + " +
+									hex(padding_before) +
+									"; /* padding before "+
 									symbol.getName() + " */\n")
 
 						# check if the symbol is actually enabled for this arch
 						if symbol.getSize(arch.getArch()) >= 0:
-							output_buffer.append("\t. = ALIGN(" + 
-								str(hex(symbol.getAlignment(archEnum))) + 
+							output_buffer.append("\t. = ALIGN(" +
+								str(hex(symbol.getAlignment(archEnum))) +
 								"); /* align for " + symbol.getName() + " */\n")
 
-							output_buffer.append("\t\"" + 
-							symbol.getObjectFile(archEnum) + "\"(" + 
-							symbol.getName() + "); /* size " + 
+							output_buffer.append("\t\"" +
+							symbol.getObjectFile(archEnum) + "\"(" +
+							symbol.getName() + "); /* size " +
 							hex(symbol.getSize(archEnum)) +	" */\n")
 
 						# Then add padding after if needed
 						padding_after = symbol.getPaddingAfter(archEnum)
 						if padding_after:
-							output_buffer.append("\t. = . + " + 
-								hex(padding_after) + "; /* padding after " + 
+							output_buffer.append("\t. = . + " +
+								hex(padding_after) + "; /* padding after " +
 								symbol.getName() + " */\n")
 
 					# Put the set of blacklisted symbols in the end

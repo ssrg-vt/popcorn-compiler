@@ -28,7 +28,7 @@ def erStack(string):
 
 ###############################################################################
 # Symbol blacklist
-# In the input map file, we can multiple symbols having the same name. In 
+# In the input map file, we can multiple symbols having the same name. In
 # particular, "symbols" (are these really symbols) having the same name as
 # sections: .text, .data, etc. My guess is: these are just "residues" of the
 # -ffunction-sections and -fdata-sections operations: you end up with all
@@ -40,9 +40,9 @@ def erStack(string):
 # are related to object files contained in libstack-transform.a (properties.o
 # and regs.o). They contain multiple occurences of these .text, .bss, and .data
 # "symbols". It is not possible to refer to each one of these uniquely in the
-# linker script I'm building, so it's not possible to align them properly under 
+# linker script I'm building, so it's not possible to align them properly under
 # certain circumstences
-SYMBOLS_BLACKLIST={	".text" : [".text"], 
-					".data" : [".data"], 
-					".bss" : [".bss"], 
+SYMBOLS_BLACKLIST={	".text" : [".text"],
+					".data" : [".data"],
+					".bss" : [".bss"],
 					".rodata" :[".rodata"] }

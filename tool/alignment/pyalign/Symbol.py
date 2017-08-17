@@ -1,5 +1,5 @@
 """
-Represent a symbol. One instance per architecture. However, some of the 
+Represent a symbol. One instance per architecture. However, some of the
 attributes are per-architecture (ex: size, etc.) so they are arrays indexed
 by the Arch enum (see Arch.py)
 """
@@ -30,7 +30,7 @@ class Symbol:
 		self._alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
 		self._alignments[arch] = alignment
 		# Which architecture are referencing this symbol?
-		self._isReferenced = { Arch.X86 : False, Arch.ARM : False, 	
+		self._isReferenced = { Arch.X86 : False, Arch.ARM : False,
 			Arch.POWER : False }
 		self._isReferenced[arch] = True
 		# padding to add before and after the symbol in the produced linker
@@ -38,18 +38,18 @@ class Symbol:
 		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
 		# Object file the symbol initially comes from
-		self._objectFiles =  { Arch.X86 : "NULL", Arch.ARM : "NULL", 
+		self._objectFiles =  { Arch.X86 : "NULL", Arch.ARM : "NULL",
 			Arch.POWER : "NULL" }
 
 		if not symbolObjectFileSanityCheck(objectFile):
-			er("Failed sanity check on object file during symbol instance " + 
+			er("Failed sanity check on object file during symbol instance " +
 				"creation\n")
 			sys.exit(-1);
 
 		self._objectFiles[arch] = objectFile
-		
+
 	def __str__(self):
-		return ("Symbol: name=" + self.getName() + 
+		return ("Symbol: name=" + self.getName() +
 				", addressX86=" + str(hex(self.getAddress(Arch.X86))) +
 				", addressArm=" + str(hex(self.getAddress(Arch.ARM))) +
 				", addressPower=" + str(hex(self.getAddress(Arch.POWER))) +
@@ -72,7 +72,7 @@ class Symbol:
 			", objARM=" + self.getObjectFile(Arch.ARM) +
 			", objPOWER=" + self.getObjectFile(Arch.POWER))
 
-	
+
 	def getObjectFile(self, arch):
 		return self._objectFiles[arch]
 
@@ -81,7 +81,7 @@ class Symbol:
 			er("Failed sanity check on object file during symbol update\n")
 			sys.exit(-1);
 		self._objectFiles[arch] = obj
-	
+
 	# arch should be one of the enum Arch.XX values
 	def setAddress(self, address, arch):
 		Arch.sanityCheck(arch)
@@ -130,7 +130,7 @@ class Symbol:
 		return self.getSize(self.getLargetSizeArch())
 
 	def getArchitecturesReferencing(self):
-		""" Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch 
+		""" Returns a value from the enum Arch.Arch.XXXX, not an Arch.Arch
 		instance
 		"""
 		res = []
@@ -160,7 +160,7 @@ class Symbol:
 		return self._alignments[arch]
 
 	def setLargestAlignment(self):
-		"""set the alignement for all referenced arch to the largest alignement 
+		"""set the alignement for all referenced arch to the largest alignement
 		of 	the referencing archs, also returns the alignement
 		"""
 		largestAlignment = -1
@@ -176,7 +176,7 @@ class Symbol:
 
 	def compare(self, anotherSymbol):
 		""" Compare two symbols to check if they correspond to the same. They
-		are the same if the name is the same AND if they correspond to the 
+		are the same if the name is the same AND if they correspond to the
 		same original object file
 		"""
 		# Quick path: first check the name
@@ -193,21 +193,21 @@ class Symbol:
 				if objf1 != "NULL" and objf2 != "NULL":
 					cmpstr1 = objf1.split("/")[-1]
 					cmpstr2 = objf2.split("/")[-1]
-				
+
 					# First handle the special case of user object files that
-					# differs by name because they are for different archs 
+					# differs by name because they are for different archs
 					# but result of the compilation of the same user source file
-					# FIXME this is hardcoded for x86-ARM for now, we need a 
+					# FIXME this is hardcoded for x86-ARM for now, we need a
 					# convention for the user object files created by the
 					# popcorn compiler. Need a better way to handle that when
 					# we get to power8
 					if cmpstr1.endswith("_x86_64.o"):
-						if (cmpstr1.replace("_x86_64.o", "") == 
+						if (cmpstr1.replace("_x86_64.o", "") ==
 							cmpstr2.replace(".o", "")):
 								res = True
 								continue
 					elif cmpstr2.endswith("_x86_64.o"):
-						if (cmpstr2.replace("_x86_64.o", "") == 
+						if (cmpstr2.replace("_x86_64.o", "") ==
 							cmpstr1.replace(".o", "")):
 								res = True
 								continue
@@ -220,6 +220,6 @@ class Symbol:
 		if res == None:
 			er("Could not find object files to compare...\n")
 			sys.exit(-1)
-		
+
 		return res
 
