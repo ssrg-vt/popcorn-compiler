@@ -310,7 +310,7 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
 
     DEBUG(
       dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
-             << "********** Function: " << MF->getName() << '\n';
+             << "********** Function: " << MF->getName() << "\n";
       VRM->dump();
     );
 
