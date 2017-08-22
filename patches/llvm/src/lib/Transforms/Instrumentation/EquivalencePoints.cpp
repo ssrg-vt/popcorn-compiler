@@ -92,6 +92,9 @@ HTMWriteBufSizeArg("htm-buf-write", cl::Hidden, cl::init(8),
 #define HTMWriteBufSize (HTMWriteBufSizeArg * KB)
 
 STATISTIC(NumEqPoints, "Number of equivalence points added");
+STATISTIC(NumHTMBegins, "Number of HTM begin intrinsics added");
+STATISTIC(NumHTMEnds, "Number of HTM end intrinsics added");
+STATISTIC(LoopsTransformed, "Number of loops transformed");
 
 namespace {
 
@@ -237,7 +240,7 @@ class EquivalencePoints : public FunctionPass
 public:
   static char ID;
 
-  EquivalencePoints() : FunctionPass(ID), NumInstr(0) {}
+  EquivalencePoints() : FunctionPass(ID) {}
   ~EquivalencePoints() {}
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const
@@ -278,7 +281,9 @@ public:
   /// Insert equivalence points into functions
   virtual bool runOnFunction(Function &F)
   {
-    NumInstr = 0;
+    NumEqPointAdded = 0;
+    NumHTMBeginAdded = 0;
+    NumHTMEndAdded = 0;
 
     DEBUG(dbgs() << "\n********** ADD EQUIVALENCE POINTS **********\n"
                  << "********** Function: " << F.getName() << "\n\n");
@@ -305,8 +310,10 @@ public:
     // Finally, apply code transformations to marked functions
     addEquivalencePoints(F);
 
-    NumEqPoints += NumInstr;
-    return NumInstr > 0;
+    NumEqPoints += NumEqPointAdded;
+    NumHTMBegins += NumHTMBeginAdded;
+    NumHTMEnds += NumHTMEndAdded;
+    return NumEqPointAdded > 0 || NumHTMBeginAdded > 0 || NumHTMEndAdded > 0;
   }
 
 private:
@@ -314,8 +321,10 @@ private:
   // Types & fields
   //===--------------------------------------------------------------------===//
 
-  /// Number of equivalence points added to the function
-  size_t NumInstr;
+  /// Number of various types of instrumentation added to the function
+  size_t NumEqPointAdded;
+  size_t NumHTMBeginAdded;
+  size_t NumHTMEndAdded;
 
   /// Should we instrument code with HTM execution?  Set if HTM is enabled on
   /// the command line and if the target is supported
@@ -403,7 +412,8 @@ private:
   BlockWeightMap BBWeight;
   LoopWeightMap LoopWeight;
 
-  /// Instructions marked for instrumentation
+  /// Code locations marked for instrumentation.
+  SmallPtrSet<Loop *, 16> LoopEqPoints;
   SmallPtrSet<Instruction *, 32> EqPointInsts;
   SmallPtrSet<Instruction *, 32> HTMBeginInsts;
   SmallPtrSet<Instruction *, 32> HTMEndInsts;
@@ -462,6 +472,11 @@ private:
     EqPointInsts.insert(I);
     if(AddHTMBegin) markAsHTMBegin(I);
     if(AddHTMEnd) markAsHTMEnd(I);
+  }
+
+  /// Mark a loop header as having
+  void markLoopHeader(const Loop *L, bool AddHTMBegin, bool AddHTMEnd) {
+
   }
 
   /// Search for & bookend libc functions which are likely to cause an HTM
@@ -610,11 +625,10 @@ private:
       // Mark start of loop as equivalence point, set loop starting weight to
       // zero & analyze header
       // TODO what if its an irreducible loop, i.e., > 1 header?
-      // Note: mark *after* traversal to avoid falsely setting bodyHasEqPoint
       CurBB = *Block;
       WeightPtr TmpWeight(getZeroWeight());
+      LoopEqPoints.insert(CurLoop);
       bodyHasEqPoint = traverseBlock(CurBB, TmpWeight);
-      markAsEqPoint(CurBB->getFirstInsertionPt(), true, true);
 
       // Traverse the loop's blocks
       for(++Block; Block != E; ++Block) {
@@ -688,6 +702,61 @@ private:
     return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
   }
 
+  /// Transform a loop header so that equivalence points (and any concomitant 
+  /// costs) are only experienced every nth iteration, based on weight metrics
+  void transformLoopHeader(Loop *L) {
+    assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
+    const size_t LNum = LoopsTransformed++;
+    size_t ItersPerEqPoint = LoopWeight.find(L)->second.ItersPerEqPoint;
+    BasicBlock *Header = L->getHeader(), *NewSuccBB, *EqPointBB;
+    PHINode *IV = L->getCanonicalInductionVariable();
+    // TODO add our own IV?
+
+    if(IV && ItersPerEqPoint > 1) {
+      // Only encounter equivalence point every nth iteration
+      DEBUG(
+        dbgs() << "Instrumenting loop ";
+        if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
+        dbgs() << "to hit equivalence point every "
+               << std::to_string(ItersPerEqPoint) << " iterations\n"
+      );
+
+      Type *IVType = IV->getType();
+      Function *CurF = Header->getParent();
+      LLVMContext &C = Header->getContext();
+
+      // Create new successor for all instructions after equivalence point
+      NewSuccBB =
+        Header->splitBasicBlock(Header->getFirstInsertionPt(),
+                                "l.posteqpoint" + std::to_string(LNum));
+
+      // Create new block for equivalence point
+      EqPointBB = BasicBlock::Create(C, "l.eqpoint" + std::to_string(LNum),
+                                     CurF, NewSuccBB);
+      IRBuilder<> EqPointWorker(EqPointBB);
+      Instruction *Br = cast<Instruction>(EqPointWorker.CreateBr(NewSuccBB));
+      markAsEqPoint(Br, true, true);
+
+      // Add check and branch to equivalence point only every nth iteration
+      IRBuilder<> Worker(Header->getTerminator());
+      Constant *N = ConstantInt::get(IVType, ItersPerEqPoint, false),
+               *Zero = ConstantInt::get(IVType, 0, false);
+      Value *Rem = Worker.CreateURem(IV, N, "");
+      Value *Cmp = Worker.CreateICmpEQ(Rem, Zero, "");
+      Worker.CreateCondBr(Cmp, EqPointBB, NewSuccBB);
+      Header->getTerminator()->eraseFromParent();
+    }
+    else {
+      // Encounter equivalence point every iteration
+      DEBUG(
+        dbgs() << "Instrumenting loop ";
+        if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
+        dbgs() << "to hit equivalence point every iteration"
+      );
+      markAsEqPoint(Header->getFirstInsertionPt(), true, true);
+    }
+  }
+
   /// Add an equivalence point directly before an instruction.
   void addEquivalencePoint(Instruction *I) {
     // TODO insert flag check & migration call if flag is set
@@ -732,13 +801,13 @@ private:
 
     // Create a new successor which contains all instructions after the HTM
     // check & end
-    NewSuccBB =
-      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
+    NewSuccBB = CurBB->splitBasicBlock(I,
+      ".htmendsucc" + std::to_string(NumEqPointAdded));
 
     // Create an HTM end block, which ends the transaction and jumps to the
     // new successor
-    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
-                                  CurF, NewSuccBB);
+    HTMEndBB = BasicBlock::Create(C,
+      ".htmend" + std::to_string(NumEqPointAdded), CurF, NewSuccBB);
     IRBuilder<> EndWorker(HTMEndBB);
     EndWorker.CreateCall(HTMEndDecl);
     EndWorker.CreateBr(NewSuccBB);
@@ -749,8 +818,9 @@ private:
     IRBuilder<> PredWorker(CurBB->getTerminator());
     CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
     ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
-    Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
-                                         "htmcmp" + std::to_string(NumInstr));
+    Value *Cmp =
+      PredWorker.CreateICmpNE(HTMTestVal, Zero,
+                              "htmcmp" + std::to_string(NumEqPointAdded));
     PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
     CurBB->getTerminator()->eraseFromParent();
   }
@@ -759,9 +829,11 @@ private:
   void addEquivalencePoints(Function &F) {
     DEBUG(dbgs() << "\n-> Instrumenting with equivalence points & HTM <-\n");
 
+    for(auto Loop : LoopEqPoints) transformLoopHeader(Loop);
+
     for(auto I = EqPointInsts.begin(), E = EqPointInsts.end(); I != E; ++I) {
       addEquivalencePoint(*I);
-      NumInstr++;
+      NumEqPointAdded++;
     }
 
     if(DoHTMInstrumentation) {
@@ -772,6 +844,7 @@ private:
         case Triple::x86_64: addX86HTMCheckAndEnd(*I); break;
         default: llvm_unreachable("HTM -- unsupported architecture");
         }
+        NumHTMEndAdded++;
       }
 
       for(auto I = HTMBeginInsts.begin(), E = HTMBeginInsts.end();
@@ -781,6 +854,7 @@ private:
         case Triple::x86_64: addX86HTMBegin(*I); break;
         default: llvm_unreachable("HTM -- unsupported architecture");
         }
+        NumHTMBeginAdded++;
       }
     }
   }
