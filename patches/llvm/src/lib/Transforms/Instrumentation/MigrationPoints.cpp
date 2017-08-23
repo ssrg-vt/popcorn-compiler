@@ -1,4 +1,4 @@
-//===- EquivalencePoints.cpp ----------------------------------------------===//
+//===- MigrationPoints.cpp ------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,16 +7,24 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Instrument the code with equivalence points, defined as a location in the
+// Instrument the code with migration points, which are locations where threads
+// make calls to invoke the migration process in addition to any other
+// instrumentation (e.g., hardware transactional memory, HTM, stops & starts).
+// Migration points only occur at equivalence points, or locations in the
 // program code where there is a direct mapping between architecture-specific
-// execution state, i.e., registers and stack, across different ISAs.  More
-// details can be found in the paper "A Unified Model of Pointwise Equivalence
-// of Procedural Computations" by von Bank et. al
-// (http://dl.acm.org/citation.cfm?id=197402).
+// execution state like the registers and stack across different ISAs.  In our
+// implementation, every function call site is an equivalence point; hence,
+// calls inserted to invoke the migration by definition create equivalence
+// points at the migration point.  Thus, all migration points are equivalence
+// points, but not all equivalence points are migration points.
 //
-// By default, the pass only inserts equivalence points at the beginning and
-// end of a function.  More advanced analyses can be used to instrument function
-// bodies (in particular, loops) with more equivalence points.
+// By default, the pass only inserts migration points at the beginning and end
+// of a function.  More advanced analyses can be used to instrument function
+// bodies (in particular, loops) with more migration points.
+//
+// More details about equivalence points can be found in the paper "A Unified
+// Model of Pointwise Migration of Procedural Computations" by von Bank et. al
+// (http://dl.acm.org/citation.cfm?id=197402).
 //
 //===----------------------------------------------------------------------===//
 
@@ -44,22 +52,22 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "equivalence-points"
+#define DEBUG_TYPE "migration-points"
 
-/// Insert more equivalence points into the body of a function.  Analyze memory
+/// Insert more migration points into the body of a function.  Analyze memory
 /// usage & attempt to instrument the code to reduce the time until the thread
-/// reaches an equivalence point.  If HTM instrumentation is enabled, analysis
-/// is tailored to avoid hardware transactional memory (HTM) capacity aborts.
+/// reaches an migration point.  If HTM instrumentation is enabled, analysis is
+/// tailored to avoid hardware transactional memory (HTM) capacity aborts.
 const static cl::opt<bool>
-MoreEqPoints("more-eq-points", cl::Hidden, cl::init(false),
-  cl::desc("Add additional equivalence points into the body of functions"));
+MoreMigPoints("more-mig-points", cl::Hidden, cl::init(false),
+  cl::desc("Add additional migration points into the body of functions"));
 
 /// Cover the application in transactional execution by inserting HTM
-/// stop/start instructions at equivalence points.
+/// stop/start instructions at migration points.
 const static cl::opt<bool>
 HTMExec("htm-execution", cl::NotHidden, cl::init(false),
-  cl::desc("Instrument equivalence points with HTM execution "
-           "(only supported on PowerPC (64-bit) & x86-64)"));
+  cl::desc("Instrument migration points with HTM execution "
+           "(only supported on PowerPC 64-bit & x86-64)"));
 
 /// Disable wrapping libc functions which are likely to cause HTM aborts with
 /// HTM stop/start intrinsics.  Wrapping happens by default with HTM execution.
@@ -74,14 +82,14 @@ NoROTPPC("htm-ppc-no-rot", cl::Hidden, cl::init(false),
            "(PowerPC only)"));
 
 /// HTM memory read buffer size for tuning analysis when inserting additional
-/// equivalence points.
+/// migration points.
 const static cl::opt<unsigned>
 HTMReadBufSizeArg("htm-buf-read", cl::Hidden, cl::init(8),
   cl::desc("HTM analysis tuning - HTM read buffer size, in kilobytes"),
   cl::value_desc("size"));
 
 /// HTM memory write buffer size for tuning analysis when inserting additional
-/// equivalence points.
+/// migration points.
 const static cl::opt<unsigned>
 HTMWriteBufSizeArg("htm-buf-write", cl::Hidden, cl::init(8),
   cl::desc("HTM analysis tuning - HTM write buffer size, in kilobytes"),
@@ -91,7 +99,7 @@ HTMWriteBufSizeArg("htm-buf-write", cl::Hidden, cl::init(8),
 #define HTMReadBufSize (HTMReadBufSizeArg * KB)
 #define HTMWriteBufSize (HTMWriteBufSizeArg * KB)
 
-STATISTIC(NumEqPoints, "Number of equivalence points added");
+STATISTIC(NumMigPoints, "Number of migration points added");
 STATISTIC(NumHTMBegins, "Number of HTM begin intrinsics added");
 STATISTIC(NumHTMEnds, "Number of HTM end intrinsics added");
 STATISTIC(LoopsTransformed, "Number of loops transformed");
@@ -110,10 +118,10 @@ public:
   /// Analyze an instruction & update accounting.
   virtual void analyze(const Instruction *I) = 0;
 
-  /// Return whether or not we should add an equivalence point.
-  virtual bool shouldAddEqPoint() const = 0;
+  /// Return whether or not we should add an migration point.
+  virtual bool shouldAddMigPoint() const = 0;
 
-  /// Reset internal weights after finding or placing an equivalence point.
+  /// Reset internal weights after finding or placing an migration point.
   virtual void reset() = 0;
 
   /// Merge weights of predecessors to get the maximum starting weight of a
@@ -125,13 +133,13 @@ public:
   virtual void scale(size_t factor) = 0;
 
   /// Number of times this weight "fits" into a given resource before we need
-  /// to place an equivalence point.  This is used for calculating how many
-  /// iterations of a loop can be executed between equivalence points.
+  /// to place an migration point.  This is used for calculating how many
+  /// iterations of a loop can be executed between migration points.
   virtual size_t numIters() const = 0;
 
   /// Return whether or not the weight is within some percent (0-100) of the
   /// threshold.
-  virtual bool withinPercent(unsigned percent) = 0;
+  virtual bool withinPercent(unsigned percent) const = 0;
 
   /// Return a human-readable string describing weight information.
   virtual std::string toString() const = 0;
@@ -185,7 +193,7 @@ public:
 
   /// Return true if we think we're going to overflow the load or store
   /// buffer, false otherwise.
-  virtual bool shouldAddEqPoint() const {
+  virtual bool shouldAddMigPoint() const {
     // TODO some tolerance threshold, i.e., load buf size +- 10%?
     if(LoadBytes > HTMReadBufSize || StoreBytes > HTMWriteBufSize) return true;
     else return false;
@@ -213,15 +221,18 @@ public:
   /// The number of times this weight's load & stores could be executed without
   /// overflowing the HTM buffers.
   virtual size_t numIters() const {
-    size_t NumLoadIters = HTMReadBufSize / LoadBytes,
-           NumStoreIters = HTMWriteBufSize / StoreBytes;
+    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX;
+    if(LoadBytes) NumLoadIters = HTMReadBufSize / LoadBytes;
+    if(StoreBytes) NumStoreIters = HTMWriteBufSize / StoreBytes;
     return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
   }
 
-  virtual bool withinPercent(unsigned percent) {
+  virtual bool withinPercent(unsigned percent) const {
     float fppercent = (float)percent / 100.0f;
-    if((float)LoadBytes > ((float)HTMReadBufSize * fppercent)) return true;
-    else if((float)StoreBytes > ((float)HTMWriteBufSize * fppercent)) return true;
+    if((float)LoadBytes > ((float)HTMReadBufSize * fppercent))
+      return true;
+    else if((float)StoreBytes > ((float)HTMWriteBufSize * fppercent))
+      return true;
     else return false;
   }
 
@@ -231,35 +242,37 @@ public:
   }
 };
 
+// TODO non-HTM weight implementation
+
 typedef std::unique_ptr<Weight> WeightPtr;
 
-/// EquivalencePoints - insert equivalence points into functions, optionally
-/// adding HTM execution.
-class EquivalencePoints : public FunctionPass
+/// MigrationPoints - insert migration points into functions, optionally adding
+/// HTM execution.
+class MigrationPoints : public FunctionPass
 {
 public:
   static char ID;
 
-  EquivalencePoints() : FunctionPass(ID) {}
-  ~EquivalencePoints() {}
+  MigrationPoints() : FunctionPass(ID) {}
+  ~MigrationPoints() {}
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const
   { AU.addRequired<LoopInfoWrapperPass>(); }
 
   virtual const char *getPassName() const
-  { return "Insert equivalence points"; }
+  { return "Insert migration points"; }
 
   virtual bool doInitialization(Module &M) {
     bool modified = false;
 
     // Ensure HTM is supported on this architecture if attempting to instrument
     // with transactional execution, otherwise disable it and warn the user
-    DoHTMInstrumentation = HTMExec;
-    if(DoHTMInstrumentation) {
+    if(HTMExec) {
       Triple TheTriple(M.getTargetTriple());
       Arch = TheTriple.getArch();
 
       if(HTMBegin.find(Arch) != HTMBegin.end()) {
+        // Add HTM intrinsic declarations which are called inside functions
         HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
         HTMEndDecl = addIntrinsicDecl(M, HTMEnd);
         HTMTestDecl = addIntrinsicDecl(M, HTMTest);
@@ -271,49 +284,81 @@ public:
         Msg += "'";
         DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
         M.getContext().diagnose(DI);
-        DoHTMInstrumentation = false;
       }
     }
 
     return modified;
   }
 
-  /// Insert equivalence points into functions
+  /// Insert migration points into functions
   virtual bool runOnFunction(Function &F)
   {
-    NumEqPointAdded = 0;
-    NumHTMBeginAdded = 0;
-    NumHTMEndAdded = 0;
-
-    DEBUG(dbgs() << "\n********** ADD EQUIVALENCE POINTS **********\n"
+    initializeAnalysis(F);
+    DEBUG(dbgs() << "\n********** ADD MIGRATION POINTS **********\n"
                  << "********** Function: " << F.getName() << "\n\n");
 
-    // TODO if doing HTM instrumentation, need to check for HTM attributes,
-    // e.g., "+rtm" on Intel and "+htm" on POWER8
-
-    // Mark function entry point.  Regardless if we're placing more equivalence
-    // points in the function, we assume that function calls are equivalence
+    // Mark function entry point.  Regardless if we're placing more migration
+    // points in the function, we assume that function calls are migration
     // points in caller, so we might as well add one in the callee body.
-    DEBUG(dbgs() << "-> Marking entry as equivalence point <-\n");
-    markAsEqPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
+    DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
+    markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 
     // Some libc functions (e.g., I/O) will cause aborts from system calls.
     // Instrument libc calls to stop & resume transactions afterwards.
     if(DoHTMInstrumentation && !NoWrapLibc) wrapLibcWithHTM(F);
 
-    if(MoreEqPoints) analyzeFunctionBody(F);
+    if(MoreMigPoints) analyzeFunctionBody(F);
     else // Instrument function exit point(s)
       for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
         if(isa<ReturnInst>(BB->getTerminator()))
-          markAsEqPoint(BB->getTerminator(), true, true);
+          markAsMigPoint(BB->getTerminator(), true, true);
 
     // Finally, apply code transformations to marked functions
-    addEquivalencePoints(F);
+    addMigrationPoints(F);
 
-    NumEqPoints += NumEqPointAdded;
+    NumMigPoints += NumMigPointAdded;
     NumHTMBegins += NumHTMBeginAdded;
     NumHTMEnds += NumHTMEndAdded;
-    return NumEqPointAdded > 0 || NumHTMBeginAdded > 0 || NumHTMEndAdded > 0;
+    return NumMigPointAdded > 0 || NumHTMBeginAdded > 0 || NumHTMEndAdded > 0;
+  }
+
+  /// Reset all analysis.
+  virtual void initializeAnalysis(const Function &F) {
+    NumMigPointAdded = 0;
+    NumHTMBeginAdded = 0;
+    NumHTMEndAdded = 0;
+    BBWeight.clear();
+    LoopWeight.clear();
+    LoopMigPoints.clear();
+    MigPointInsts.clear();
+    HTMBeginInsts.clear();
+    HTMEndInsts.clear();
+
+    // We've checked at a global scope whether the architecture supports HTM,
+    // but we need to check whether the target-specific feature for HTM is
+    // enabled for the current function
+    if(!F.hasFnAttribute("target-features")) {
+      DoHTMInstrumentation = false;
+      return;
+    }
+
+    Attribute TargetAttr = F.getFnAttribute("target-features");
+    assert(TargetAttr.isStringAttribute() && "Invalid target features");
+    StringRef AttrVal = TargetAttr.getValueAsString();
+    size_t pos = StringRef::npos;
+
+    switch(Arch) {
+    case Triple::ppc64le: pos = AttrVal.find("+htm"); break;
+    case Triple::x86_64: pos = AttrVal.find("+rtm"); break;
+    default: break;
+    }
+    DoHTMInstrumentation = HTMExec && (pos != StringRef::npos);
+
+    DEBUG(
+      if(DoHTMInstrumentation) dbgs() << "Enabling HTM instrumentation\n";
+      else if(HTMExec) dbgs() << "Disabled HTM instrumentation, "
+                                 "no target-features support\n";
+    );
   }
 
 private:
@@ -322,7 +367,7 @@ private:
   //===--------------------------------------------------------------------===//
 
   /// Number of various types of instrumentation added to the function
-  size_t NumEqPointAdded;
+  size_t NumMigPointAdded;
   size_t NumHTMBeginAdded;
   size_t NumHTMEndAdded;
 
@@ -353,9 +398,9 @@ private:
   struct BasicBlockWeightInfo {
   public:
     /// Weight of the basic block at the end of its execution.  Note that if
-    /// the block is instrumented with an equivalence point, the weight
-    /// information *only* captures the instructions following the equivalence
-    /// point (equivalence points "reset" the weight).
+    /// the block is instrumented with an migration point, the weight
+    /// information *only* captures the instructions following the migration
+    /// point (migration points "reset" the weight).
     WeightPtr BlockWeight;
 
     BasicBlockWeightInfo(const Weight *BlockWeight)
@@ -373,29 +418,29 @@ private:
     /// through the loop.
     WeightPtr IterWeight;
 
-    /// The number of iterations between consecutive equivalence points, e.g.,
-    /// a value of 5 means there's an equivalence point every 5 iterations.
-    size_t ItersPerEqPoint;
+    /// The number of iterations between consecutive migration points, e.g.,
+    /// a value of 5 means there's an migration point every 5 iterations.
+    size_t ItersPerMigPoint;
 
-    /// True if we placed or found an equivalence point inside the loop's body
-    bool EqPointInBody;
+    /// True if we placed or found an migration point inside the loop's body
+    bool MigPointInBody;
 
     LoopWeightInfo(const Weight *IterWeight,
-                   size_t ItersPerEqPoint,
-                   bool EqPointInBody)
+                   size_t ItersPerMigPoint,
+                   bool MigPointInBody)
       : IterWeight(IterWeight->copy()),
-        ItersPerEqPoint(EqPointInBody ? 1 : ItersPerEqPoint),
-        EqPointInBody(EqPointInBody) {}
+        ItersPerMigPoint(MigPointInBody ? 1 : ItersPerMigPoint),
+        MigPointInBody(MigPointInBody) {}
     LoopWeightInfo(const WeightPtr &IterWeight,
-                   size_t ItersPerEqPoint,
-                   bool EqPointInBody)
+                   size_t ItersPerMigPoint,
+                   bool MigPointInBody)
       : IterWeight(IterWeight->copy()),
-        ItersPerEqPoint(EqPointInBody ? 1 : ItersPerEqPoint),
-        EqPointInBody(EqPointInBody) {}
+        ItersPerMigPoint(MigPointInBody ? 1 : ItersPerMigPoint),
+        MigPointInBody(MigPointInBody) {}
 
     std::string toString() const {
-      return IterWeight->toString() + ", " + std::to_string(ItersPerEqPoint) +
-             " iteration(s) per equivalence point";
+      return IterWeight->toString() + ", " + std::to_string(ItersPerMigPoint) +
+             " iteration(s) per migration point";
     }
   };
 
@@ -413,8 +458,8 @@ private:
   LoopWeightMap LoopWeight;
 
   /// Code locations marked for instrumentation.
-  SmallPtrSet<Loop *, 16> LoopEqPoints;
-  SmallPtrSet<Instruction *, 32> EqPointInsts;
+  SmallPtrSet<Loop *, 16> LoopMigPoints;
+  SmallPtrSet<Instruction *, 32> MigPointInsts;
   SmallPtrSet<Instruction *, 32> HTMBeginInsts;
   SmallPtrSet<Instruction *, 32> HTMEndInsts;
 
@@ -425,12 +470,9 @@ private:
   /// Return whether the call instruction is a libc I/O call
   static inline bool isLibcIO(const Instruction *I) {
     if(!I || !isa<CallInst>(I)) return false;
-    const CallInst *CI = cast<CallInst>(I);
-    const Function *CalledFunc = CI->getCalledFunction();
-    if(CalledFunc && CalledFunc->hasName()) {
-      const StringRef Name = CalledFunc->getName();
-      return LibcIO.find(Name) != LibcIO.end();
-    }
+    const Function *CalledFunc = cast<CallInst>(I)->getCalledFunction();
+    if(CalledFunc && CalledFunc->hasName())
+      return LibcIO.find(CalledFunc->getName()) != LibcIO.end();
     return false;
   }
 
@@ -440,12 +482,8 @@ private:
   /// Return whether the instruction requires HTM end instrumentation.
   bool shouldAddHTMEnd(Instruction *I) { return HTMEndInsts.count(I); }
 
-  /// Return whether the instruction is an equivalence point, either by being
-  /// marked through analysis or is by default (i.e., call instructions).
-  bool isEqPoint(Instruction *I) {
-    if(isa<CallInst>(I) || isa<InvokeInst>(I)) return true;
-    else return EqPointInsts.count(I);
-  }
+  /// Return whether the instruction is a migration point.
+  bool isMigrationPoint(Instruction *I) { return MigPointInsts.count(I); }
 
   /// Mark an instruction to be instrumented with an HTM begin, directly before
   /// the instruction
@@ -463,25 +501,21 @@ private:
     HTMEndInsts.insert(I);
   }
 
-  /// Mark an instruction as an equivalence point, directly before the
+  /// Mark an instruction as a migration point, directly before the
   /// instruction.  Optionally mark instruction as needing HTM start/stop
   /// intrinsics.
-  void markAsEqPoint(Instruction *I, bool AddHTMBegin, bool AddHTMEnd) {
+  void markAsMigPoint(Instruction *I, bool AddHTMBegin, bool AddHTMEnd) {
     DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
-          dbgs() << " as an equivalence point\n");
-    EqPointInsts.insert(I);
+          dbgs() << " as a migration point\n");
+    MigPointInsts.insert(I);
     if(AddHTMBegin) markAsHTMBegin(I);
     if(AddHTMEnd) markAsHTMEnd(I);
-  }
-
-  /// Mark a loop header as having
-  void markLoopHeader(const Loop *L, bool AddHTMBegin, bool AddHTMEnd) {
-
   }
 
   /// Search for & bookend libc functions which are likely to cause an HTM
   /// abort with HTM stop/start intrinsics.
   void wrapLibcWithHTM(Function &F) {
+    DEBUG(dbgs() << "\n-> Wrapping I/O functions with HTM stop/start <-\n");
     for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
       for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
         if(isLibcIO(I)) {
@@ -497,7 +531,7 @@ private:
               rem = searchSpan;
             }
           }
-          markAsEqPoint(I->getNextNode(), true, false);
+          markAsMigPoint(I->getNextNode(), true, false);
         }
       }
     }
@@ -513,15 +547,15 @@ private:
     for(auto Pred : predecessors(BB)) {
       const Loop *PredLoop = LI[Pred];
       if(PredLoop && PredLoop != L) {
-        // TODO rather than trying to determine if there's an equivalence point
+        // TODO rather than trying to determine if there's a migration point
         // between the loop's header and the exit block (and hence whether we
-        // should only analyze the weight from the equivalence point to the
+        // should only analyze the weight from the migration point to the
         // exit), just assume we're doing one extra full iteration
         assert(LoopWeight.find(PredLoop) != LoopWeight.end() &&
                "Invalid reverse post-order traversal");
         const LoopWeightInfo &LWI = LoopWeight.find(PredLoop)->second;
         WeightPtr Tmp(LWI.IterWeight->copy());
-        Tmp->scale(LWI.ItersPerEqPoint + 1);
+        Tmp->scale(LWI.ItersPerMigPoint + 1);
         PredWeight->mergeMax(Tmp);
       }
       else {
@@ -535,33 +569,40 @@ private:
   }
 
   /// Analyze a single basic block with an initial starting weight.  Return
-  /// true if we placed (or there is an existing) equivalence point inside
+  /// true if we placed (or there is an existing) migration point inside
   /// the block.
   bool traverseBlock(BasicBlock *BB, const Weight *Initial) {
-    bool hasEqPoint = false;
+    bool hasMigPoint = false;
     BBWeight.emplace(BB, BasicBlockWeightInfo(Initial));
     WeightPtr &CurWeight = BBWeight.at(BB).BlockWeight;
 
-    for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
-      CurWeight->analyze(I);
-      if(isEqPoint(I)) {
-        CurWeight->reset();
-        hasEqPoint = true;
-      }
-      else if(CurWeight->shouldAddEqPoint()) {
-        markAsEqPoint(I, true, true);
-        CurWeight->reset();
-        hasEqPoint = true;
-      }
-    }
-
     DEBUG(
-      dbgs() << "\nBasic block ";
-      if(BB->hasName()) dbgs() << "'" << BB->getName() << "' ";
-      dbgs() << "weight: " << CurWeight->toString() << "\n";
+      dbgs() << "\nAnalyzing basic block";
+      if(BB->hasName()) dbgs() << " '" << BB->getName() << "'";
+      dbgs() << "\n";
     );
 
-    return hasEqPoint;
+    for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
+      // Check if there is or there should be a migration point before the
+      // instruction, and if so, reset the weight.  This looks a little funky
+      // because we don't want to tamper with existing instrumentation, only
+      // add a new equivalence point w/ HTM if it's not already there.
+      if(isMigrationPoint(I)) goto reset_weight;
+      else if(CurWeight->shouldAddMigPoint()) goto mark_mig_point;
+      else goto end;
+
+mark_mig_point:
+      markAsMigPoint(I, true, true);
+reset_weight:
+      CurWeight->reset();
+      hasMigPoint = true;
+end:
+      CurWeight->analyze(I);
+    }
+
+    DEBUG(dbgs() << "  Weight: " << CurWeight->toString() << "\n");
+
+    return hasMigPoint;
   }
 
   bool traverseBlock(BasicBlock *BB, const WeightPtr &Initial)
@@ -598,13 +639,13 @@ private:
     }
   }
 
-  /// Analyze loop nests & mark locations for equivalence points.
+  /// Analyze loop nests & mark locations for migration points.
   void traverseLoopNest(const std::vector<BasicBlock *> &SCC,
                         LoopInfo &LI) {
     std::set<Loop *, LoopNestCmp> Nest;
     sortLoopsByDepth(SCC, LI, Nest);
 
-    // Walk loops & mark instructions at which we want equivalence points
+    // Walk loops & mark instructions at which we want migration points
     // TODO what about loops for which we have known numbers of iterations?
     // TODO what about loops which can be contained in a single transaction?
     for(auto CurLoop : Nest) {
@@ -616,26 +657,26 @@ private:
                << ")\n";
       );
 
-      bool bodyHasEqPoint;
+      bool bodyHasMigPoint;
       BasicBlock *CurBB;
       LoopBlocksDFS DFS(CurLoop); DFS.perform(&LI);
       LoopBlocksDFS::RPOIterator Block = DFS.beginRPO(), E = DFS.endRPO();
       assert(Block != E && "Loop with no basic blocks");
 
-      // Mark start of loop as equivalence point, set loop starting weight to
+      // Mark start of loop as migration point, set loop starting weight to
       // zero & analyze header
       // TODO what if its an irreducible loop, i.e., > 1 header?
       CurBB = *Block;
       WeightPtr TmpWeight(getZeroWeight());
-      LoopEqPoints.insert(CurLoop);
-      bodyHasEqPoint = traverseBlock(CurBB, TmpWeight);
+      LoopMigPoints.insert(CurLoop);
+      bodyHasMigPoint = traverseBlock(CurBB, TmpWeight);
 
       // Traverse the loop's blocks
       for(++Block; Block != E; ++Block) {
         CurBB = *Block;
         if(LI[CurBB] != CurLoop) continue; // Skip blocks in nested loops
         WeightPtr PredWeight(getInitialWeight(CurBB, LI));
-        bodyHasEqPoint |= traverseBlock(CurBB, PredWeight);
+        bodyHasMigPoint |= traverseBlock(CurBB, PredWeight);
       }
 
       // Calculate maximum iteration weight & add loop weight information
@@ -649,19 +690,19 @@ private:
       }
 
       LoopWeight.emplace(CurLoop,
-        LoopWeightInfo(TmpWeight, TmpWeight->numIters(), bodyHasEqPoint));
+        LoopWeightInfo(TmpWeight, TmpWeight->numIters(), bodyHasMigPoint));
 
       DEBUG(dbgs() << "\nLoop analysis: "
                    << LoopWeight.at(CurLoop).toString() << "\n");
     }
   }
 
-  /// Analyze the function's body to add equivalence points.
+  /// Analyze the function's body to add migration points.
   void analyzeFunctionBody(Function &F) {
     LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 
     // Start with loop nests, where the bulk of the instrumentation needs to
-    // occur.  This will also affect where equivalence points are placed in
+    // occur.  This will also affect where migration points are placed in
     // other parts of the function.
     DEBUG(dbgs() << "\n-> Analyzing loop nests <-\n");
     for(scc_iterator<Function *> SCC = scc_begin(&F), E = scc_end(&F);
@@ -677,14 +718,14 @@ private:
       traverseBlock(*BB, PredWeight);
     }
 
-    // Finally, determine if we should add an equivalence point at exit block(s)
+    // Finally, determine if we should add an migration point at exit block(s)
     // TODO tune threshold
     for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
       if(isa<ReturnInst>(BB->getTerminator())) {
         assert(BBWeight.find(BB) != BBWeight.end() && "Missing block weight");
         const BasicBlockWeightInfo &BBWI = BBWeight.at(BB).BlockWeight;
         if(BBWI.BlockWeight->withinPercent(20))
-          markAsEqPoint(BB->getTerminator(), true, true);
+          markAsMigPoint(BB->getTerminator(), true, true);
       }
     }
   }
@@ -702,63 +743,64 @@ private:
     return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
   }
 
-  /// Transform a loop header so that equivalence points (and any concomitant 
+  /// Transform a loop header so that migration points (and any concomitant
   /// costs) are only experienced every nth iteration, based on weight metrics
   void transformLoopHeader(Loop *L) {
     assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
     const size_t LNum = LoopsTransformed++;
-    size_t ItersPerEqPoint = LoopWeight.find(L)->second.ItersPerEqPoint;
-    BasicBlock *Header = L->getHeader(), *NewSuccBB, *EqPointBB;
+    size_t ItersPerMigPoint = LoopWeight.find(L)->second.ItersPerMigPoint;
+    BasicBlock *Header = L->getHeader(), *NewSuccBB, *MigPointBB;
     PHINode *IV = L->getCanonicalInductionVariable();
-    // TODO add our own IV?
+    // TODO add our own induction variable?
 
-    if(IV && ItersPerEqPoint > 1) {
-      // Only encounter equivalence point every nth iteration
+    if(ItersPerMigPoint > 1 && IV) {
       DEBUG(
         dbgs() << "Instrumenting loop ";
         if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
-        dbgs() << "to hit equivalence point every "
-               << std::to_string(ItersPerEqPoint) << " iterations\n"
+        dbgs() << "to hit migration point every "
+               << std::to_string(ItersPerMigPoint) << " iterations\n"
       );
 
       Type *IVType = IV->getType();
       Function *CurF = Header->getParent();
       LLVMContext &C = Header->getContext();
 
-      // Create new successor for all instructions after equivalence point
+      // Create new successor for all instructions after migration point
       NewSuccBB =
         Header->splitBasicBlock(Header->getFirstInsertionPt(),
-                                "l.posteqpoint" + std::to_string(LNum));
+                                "l.postmigpoint" + std::to_string(LNum));
 
-      // Create new block for equivalence point
-      EqPointBB = BasicBlock::Create(C, "l.eqpoint" + std::to_string(LNum),
+      // Create new block for migration point
+      MigPointBB = BasicBlock::Create(C, "l.migpoint" + std::to_string(LNum),
                                      CurF, NewSuccBB);
-      IRBuilder<> EqPointWorker(EqPointBB);
-      Instruction *Br = cast<Instruction>(EqPointWorker.CreateBr(NewSuccBB));
-      markAsEqPoint(Br, true, true);
+      IRBuilder<> MigPointWorker(MigPointBB);
+      Instruction *Br = cast<Instruction>(MigPointWorker.CreateBr(NewSuccBB));
+      markAsMigPoint(Br, true, true);
 
-      // Add check and branch to equivalence point only every nth iteration
+      // Add check and branch to migration point only every nth iteration
       IRBuilder<> Worker(Header->getTerminator());
-      Constant *N = ConstantInt::get(IVType, ItersPerEqPoint, false),
+      Constant *N = ConstantInt::get(IVType, ItersPerMigPoint, false),
                *Zero = ConstantInt::get(IVType, 0, false);
-      Value *Rem = Worker.CreateURem(IV, N, "");
-      Value *Cmp = Worker.CreateICmpEQ(Rem, Zero, "");
-      Worker.CreateCondBr(Cmp, EqPointBB, NewSuccBB);
+      Value *Rem = Worker.CreateURem(IV, N);
+      Value *Cmp = Worker.CreateICmpEQ(Rem, Zero);
+      Worker.CreateCondBr(Cmp, MigPointBB, NewSuccBB);
       Header->getTerminator()->eraseFromParent();
     }
     else {
-      // Encounter equivalence point every iteration
       DEBUG(
         dbgs() << "Instrumenting loop ";
         if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
-        dbgs() << "to hit equivalence point every iteration"
+        dbgs() << "to hit migration point every iteration";
+        if(!IV) dbgs() << " (no loop induction variable)";
+        dbgs() << "\n";
       );
-      markAsEqPoint(Header->getFirstInsertionPt(), true, true);
+
+      markAsMigPoint(Header->getFirstInsertionPt(), true, true);
     }
   }
 
-  /// Add an equivalence point directly before an instruction.
-  void addEquivalencePoint(Instruction *I) {
+  /// Add an migration point directly before an instruction.
+  void addMigrationPoint(Instruction *I) {
     // TODO insert flag check & migration call if flag is set
   }
 
@@ -802,12 +844,12 @@ private:
     // Create a new successor which contains all instructions after the HTM
     // check & end
     NewSuccBB = CurBB->splitBasicBlock(I,
-      ".htmendsucc" + std::to_string(NumEqPointAdded));
+      ".htmendsucc" + std::to_string(NumMigPointAdded));
 
     // Create an HTM end block, which ends the transaction and jumps to the
     // new successor
     HTMEndBB = BasicBlock::Create(C,
-      ".htmend" + std::to_string(NumEqPointAdded), CurF, NewSuccBB);
+      ".htmend" + std::to_string(NumMigPointAdded), CurF, NewSuccBB);
     IRBuilder<> EndWorker(HTMEndBB);
     EndWorker.CreateCall(HTMEndDecl);
     EndWorker.CreateBr(NewSuccBB);
@@ -820,20 +862,20 @@ private:
     ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
     Value *Cmp =
       PredWorker.CreateICmpNE(HTMTestVal, Zero,
-                              "htmcmp" + std::to_string(NumEqPointAdded));
+                              "htmcmp" + std::to_string(NumMigPointAdded));
     PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
     CurBB->getTerminator()->eraseFromParent();
   }
 
-  /// Insert equivalence points & HTM instrumentation for instructions.
-  void addEquivalencePoints(Function &F) {
-    DEBUG(dbgs() << "\n-> Instrumenting with equivalence points & HTM <-\n");
+  /// Insert migration points & HTM instrumentation for instructions.
+  void addMigrationPoints(Function &F) {
+    DEBUG(dbgs() << "\n-> Instrumenting with migration points & HTM <-\n");
 
-    for(auto Loop : LoopEqPoints) transformLoopHeader(Loop);
+    for(auto Loop : LoopMigPoints) transformLoopHeader(Loop);
 
-    for(auto I = EqPointInsts.begin(), E = EqPointInsts.end(); I != E; ++I) {
-      addEquivalencePoint(*I);
-      NumEqPointAdded++;
+    for(auto I = MigPointInsts.begin(), E = MigPointInsts.end(); I != E; ++I) {
+      addMigrationPoint(*I);
+      NumMigPointAdded++;
     }
 
     if(DoHTMInstrumentation) {
@@ -862,32 +904,32 @@ private:
 
 } /* end anonymous namespace */
 
-char EquivalencePoints::ID = 0;
+char MigrationPoints::ID = 0;
 
-const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMBegin = {
+const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMBegin = {
   {Triple::x86_64, Intrinsic::x86_xbegin},
   {Triple::ppc64le, Intrinsic::ppc_tbegin}
 };
 
-const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMEnd = {
+const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMEnd = {
   {Triple::x86_64, Intrinsic::x86_xend},
   {Triple::ppc64le, Intrinsic::ppc_tend}
 };
 
-const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMTest = {
+const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMTest = {
   {Triple::x86_64, Intrinsic::x86_xtest},
   {Triple::ppc64le, Intrinsic::ppc_ttest}
 };
 
-INITIALIZE_PASS_BEGIN(EquivalencePoints, "equivalence-points",
-                      "Insert equivalence points into functions",
+INITIALIZE_PASS_BEGIN(MigrationPoints, "migration-points",
+                      "Insert migration points into functions",
                       true, false)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
-INITIALIZE_PASS_END(EquivalencePoints, "equivalence-points",
-                    "Insert equivalence points into functions",
+INITIALIZE_PASS_END(MigrationPoints, "migration-points",
+                    "Insert migration points into functions",
                     true, false)
 
-const StringSet<> EquivalencePoints::LibcIO = {
+const StringSet<> MigrationPoints::LibcIO = {
   "fopen", "freopen", "fclose", "fflush", "fwide",
   "setbuf", "setvbuf", "fread", "fwrite",
   "fgetc", "getc", "fgets", "fputc", "putc", "fputs",
@@ -904,7 +946,7 @@ const StringSet<> EquivalencePoints::LibcIO = {
 };
 
 namespace llvm {
-  FunctionPass *createEquivalencePointsPass()
-  { return new EquivalencePoints(); }
+  FunctionPass *createMigrationPointsPass()
+  { return new MigrationPoints(); }
 }
 
