@@ -293,9 +293,10 @@ public:
   /// Insert migration points into functions
   virtual bool runOnFunction(Function &F)
   {
-    initializeAnalysis(F);
     DEBUG(dbgs() << "\n********** ADD MIGRATION POINTS **********\n"
                  << "********** Function: " << F.getName() << "\n\n");
+
+    initializeAnalysis(F);
 
     // Mark function entry point.  Regardless if we're placing more migration
     // points in the function, we assume that function calls are migration
@@ -355,8 +356,8 @@ public:
     DoHTMInstrumentation = HTMExec && (pos != StringRef::npos);
 
     DEBUG(
-      if(DoHTMInstrumentation) dbgs() << "Enabling HTM instrumentation\n";
-      else if(HTMExec) dbgs() << "Disabled HTM instrumentation, "
+      if(DoHTMInstrumentation) dbgs() << "-> Enabling HTM instrumentation\n";
+      else if(HTMExec) dbgs() << "-> Disabled HTM instrumentation, "
                                  "no target-features support\n";
     );
   }
@@ -583,6 +584,8 @@ private:
     );
 
     for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
+      if(isa<PHINode>(I)) continue;
+
       // Check if there is or there should be a migration point before the
       // instruction, and if so, reset the weight.  This looks a little funky
       // because we don't want to tamper with existing instrumentation, only
@@ -591,12 +594,12 @@ private:
       else if(CurWeight->shouldAddMigPoint()) goto mark_mig_point;
       else goto end;
 
-mark_mig_point:
+    mark_mig_point:
       markAsMigPoint(I, true, true);
-reset_weight:
+    reset_weight:
       CurWeight->reset();
       hasMigPoint = true;
-end:
+    end:
       CurWeight->analyze(I);
     }
 
@@ -608,16 +611,25 @@ end:
   bool traverseBlock(BasicBlock *BB, const WeightPtr &Initial)
   { return traverseBlock(BB, Initial.get()); }
 
-  /// Sort loops based on nesting depth, i.e., deeper-nested loops come first
+  /// Sort loops based on nesting depth, with deeper-nested loops coming first.
+  /// If the depths are equal, sort based on pointer value so that distinct
+  /// loops with equal depths are not considered equivalent during insertion.
   struct LoopNestCmp {
     bool operator() (const Loop * const &A, const Loop * const &B)
-    { return A->getLoopDepth() > B->getLoopDepth(); }
+    {
+      unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
+      if(DepthA > DepthB) return true;
+      else if(DepthA < DepthB) return false;
+      else return (uint64_t)A < (uint64_t)B;
+    }
   };
+
+  typedef std::set<Loop *, LoopNestCmp> LoopNest;
 
   /// Sort loops in a loop nest by their nesting depth to traverse inside-out.
   static void sortLoopsByDepth(const std::vector<BasicBlock *> &SCC,
                                LoopInfo &LI,
-                               std::set<Loop *, LoopNestCmp> &Nest) {
+                               LoopNest &Nest) {
     Loop *L;
     std::queue<Loop *> ToVisit;
 
@@ -642,7 +654,7 @@ end:
   /// Analyze loop nests & mark locations for migration points.
   void traverseLoopNest(const std::vector<BasicBlock *> &SCC,
                         LoopInfo &LI) {
-    std::set<Loop *, LoopNestCmp> Nest;
+    LoopNest Nest;
     sortLoopsByDepth(SCC, LI, Nest);
 
     // Walk loops & mark instructions at which we want migration points
