@@ -20,71 +20,18 @@
 # include <arch/x86_64/migrate.h>
 #endif
 
-/* Pierre: due to the-fdata-sections flags, in combination with the way the 
- * library is compiled for each architecture, global variables here end up 
- * placed into sections with different names, making them difficult to link 
- * back together from the alignment tool  perspective without ugly hacks. 
- * So, the solution here is to force these global variables to be in a custom 
- * section. By construction it will have the same name on both architecture. 
- * However for soem reason this doesn't work if the global variable is static so 
+/* Pierre: due to the-fdata-sections flags, in combination with the way the
+ * library is compiled for each architecture, global variables here end up
+ * placed into sections with different names, making them difficult to link
+ * back together from the alignment tool  perspective without ugly hacks.
+ * So, the solution here is to force these global variables to be in a custom
+ * section. By construction it will have the same name on both architecture.
+ * However for some reason this doesn't work if the global variable is static so
  * I had to remove the static keyword for the concerned variables. They are:
- * - cpus_x86
  * - migrate_callback
  * - migrate_callback_data
- * - popcorn_vdso
+ * - archs
  */
-#if 0
-int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
-static void __attribute__((constructor)) __init_cpu_sets()
-{
-  char s[512];
-  FILE *fd;
-
-  fd = fopen("/proc/cpuinfo", "r");
-  if(fd)
-  {
-    cpus_x86 = 0;
-    while(fgets(s, 512, fd) != NULL)
-      if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
-        cpus_x86++;
-    fclose(fd);
-  }
-  else cpus_x86 = 8;
-}
-
-/* Returns a CPU set for architecture AR. */
-cpu_set_t arch_to_cpus(enum arch ar)
-{
-  cpu_set_t cpus;
-  CPU_ZERO(&cpus);
-  switch(ar) {
-  case AARCH64: CPU_SET(0, &cpus); break;
-  case X86_64: CPU_SET(cpus_x86, &cpus); break;
-  default: break;
-  }
-  return cpus;
-}
-
-/* Returns a CPU for the current architecture. */
-cpu_set_t current_arch()
-{
-#ifdef __aarch64__
-  return arch_to_cpus(AARCH64);
-#elif defined __x86_64__
-  return arch_to_cpus(X86_64);
-#endif
-}
-
-/* Returns a CPU set for an architecture that we want to migrate to. */
-cpu_set_t select_arch()
-{
-#ifdef __aarch64__
-  return arch_to_cpus(X86_64);
-#elif defined __x86_64__
-  return arch_to_cpus(AARCH64);
-#endif
-}
-#endif
 
 #ifdef _ENV_SELECT_MIGRATE
 
@@ -187,13 +134,12 @@ struct shim_data {
 static volatile int __hold = 1;
 #endif
 
-static int archs[] = {
+int archs[] __attribute__ ((section (".data.archs"))) = {
 	X86_64,
 	X86_64,
 	AARCH64,
 	AARCH64,
 };
-
 
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
@@ -287,7 +233,7 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
 
 /* Callback function & data for migration points inserted via compiler. */
 void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
-void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data")))= NULL;
+void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data"))) = NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)
