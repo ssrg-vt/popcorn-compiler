@@ -1,3 +1,4 @@
+.section .text.__unmapself, "ax"
 .global __unmapself
 .type   __unmapself,%function
 __unmapself:

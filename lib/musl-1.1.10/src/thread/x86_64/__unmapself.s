@@ -1,5 +1,6 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
-.text
+/* .text */
+.section .text.__unmapself, "ax"
 .global __unmapself
 .type   __unmapself,@function
 __unmapself:
