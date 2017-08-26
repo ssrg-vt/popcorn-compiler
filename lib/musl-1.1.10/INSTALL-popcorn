@@ -1,0 +1,25 @@
+--------------------
+Installing musl-libc
+--------------------
+
+The musl-libc library libc, libm and libpthread for applications, and therefore
+needs to be compiled for all architectures in the system.
+
+NOTE: must be built using the Popcorn compiler
+NOTE: do a "make distclean" in-between building for individual architectures
+
+1. Build & install musl-libc for aarch64:
+
+  $ ./configure --prefix=/usr/local/popcorn/aarch64 --target=aarch64-linux-gnu --enable-debug --enable-gcc-wrapper --enable-optimize --disable-shared CC=/usr/local/popcorn/bin/clang CFLAGS='-target aarch64-linux-gnu -popcorn-alignment'
+  $ make install
+
+2. Build & install musl-libc for x86_64:
+
+  $ make distclean
+  $ ./configure --prefix=/usr/local/popcorn/x86_64 --target=x86_64-linux-gnu --enable-debug --enable-gcc-wrapper --enable-optimize --disable-shared CC=/usr/local/popcorn/bin/clang CFLAGS='-target x86_64-linux-gnu -popcorn-alignment'
+  $ make install
+
+3. You can speed the build up by enabling parallel jobs:
+
+  $ make -j<# of parallel jobs>
+

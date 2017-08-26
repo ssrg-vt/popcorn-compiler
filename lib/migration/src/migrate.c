@@ -13,16 +13,20 @@
 #include <time.h>
 #endif
 
+// TODO Rob: we need to change to a node ID rather than CPU set for selecting a
+// destination architecture
+
 // TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Architecture-specific assembly for migrating between architectures. */
-#ifdef __powerpc64__
-# include <arch/powerpc64/migrate.h>
-#elif defined(__aarch64__)
+#ifdef __aarch64__
 # include <arch/aarch64/migrate.h>
+#elif defined(__powerpc64__)
+# include <arch/powerpc64/migrate.h>
 #else
 # include <arch/x86_64/migrate.h>
 #endif
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 static int cpus_x86 = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
@@ -39,8 +43,11 @@ static void __attribute__((constructor)) __init_cpu_sets()
     fclose(fd);
   }
   else cpus_x86 = 8;
+
+  *pthread_migrate_args() = NULL;
 }
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Returns a CPU set for architecture AR. */
 cpu_set_t arch_to_cpus(enum arch ar)
 {
@@ -59,21 +66,22 @@ cpu_set_t arch_to_cpus(enum arch ar)
 /* Returns a CPU for the current architecture. */
 cpu_set_t current_arch()
 {
-#ifdef __powerpc64__
-  return arch_to_cpus(POWERPC64);
-#elif defined(__aarch64__)
+#ifdef __aarch64__
   return arch_to_cpus(AARCH64);
+#elif defined(__powerpc64__)
+  return arch_to_cpus(POWERPC64);
 #elif defined(__x86_64__)
   return arch_to_cpus(X86_64);
 #endif
 }
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Returns a CPU set for an architecture that we want to migrate to. */
 cpu_set_t select_arch()
 {
-#ifdef __powerpc64__
+#ifdef __aarch64__
   return arch_to_cpus(X86_64);
-#elif defined(__aarch64__)
+#elif defined(__powerpc64__)
   return arch_to_cpus(X86_64);
 #elif defined(__x86_64__)
   return arch_to_cpus(AARCH64);
@@ -108,6 +116,7 @@ static pthread_key_t num_migrated_aarch64 = 0;
 static pthread_key_t num_migrated_powerpc64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Read environment variables to setup migration points. */
 static void __attribute__((constructor))
 __init_migrate_testing(void)
@@ -115,18 +124,7 @@ __init_migrate_testing(void)
   const char *start;
   const char *end;
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
-#ifdef __powerpc64__
-  start = getenv(env_start_powerpc64);
-  end = getenv(env_end_powerpc64);
-  if(start && end)
-  {
-    start_powerpc64 = (void *)strtoll(start, NULL, 16);
-    end_powerpc64 = (void *)strtoll(end, NULL, 16);
-    if(start_powerpc64 && end_powerpc64)
-      pthread_key_create(&num_migrated_powerpc64, NULL);
-  }
-# elif __aarch64__
+#ifdef __aarch64__
   start = getenv(env_start_aarch64);
   end = getenv(env_end_aarch64);
   if(start && end)
@@ -136,8 +134,17 @@ __init_migrate_testing(void)
     if(start_aarch64 && end_aarch64)
       pthread_key_create(&num_migrated_aarch64, NULL);
   }
-#endif
-
+#elif defined(__powerpc64__)
+  start = getenv(env_start_powerpc64);
+  end = getenv(env_end_powerpc64);
+  if(start && end)
+  {
+    start_powerpc64 = (void *)strtoll(start, NULL, 16);
+    end_powerpc64 = (void *)strtoll(end, NULL, 16);
+    if(start_powerpc64 && end_powerpc64)
+      pthread_key_create(&num_migrated_powerpc64, NULL);
+  }
+#else
   start = getenv(env_start_x86_64);
   end = getenv(env_end_x86_64);
   if(start && end)
@@ -147,43 +154,45 @@ __init_migrate_testing(void)
     if(start_x86_64 && end_x86_64)
       pthread_key_create(&num_migrated_x86_64, NULL);
   }
+#endif
 }
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /*
  * Check environment variables to see if this call site is the function at
  * which we should migrate.
  */
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 static inline int do_migrate(void *addr)
 {
   int retval = 0;
-# ifdef __powerpc64__
-  if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
-    if(start_powerpc64 <= addr && addr < end_powerpc64) {
-      pthread_setspecific(num_migrated_powerpc64, (void *)1);
-      retval = 1;
-    }
-  }
-# elif __aarch64__
+#ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
       pthread_setspecific(num_migrated_aarch64, (void *)1);
       retval = 1;
     }
   }
-# elif defined __x86_64__
+#elif defined(__powerpc64__)
+  if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
+    if(start_powerpc64 <= addr && addr < end_powerpc64) {
+      pthread_setspecific(num_migrated_powerpc64, (void *)1);
+      retval = 1;
+    }
+  }
+#else
   if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
     if(start_x86_64 <= addr && addr < end_x86_64) {
       pthread_setspecific(num_migrated_x86_64, (void *)1);
       retval = 1;
     }
   }
-# endif
+#endif
   return retval;
 }
 
 #else
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Popcorn vDSO prctl code & page pointer. */
 # define POPCORN_VDSO_CODE 41
 static volatile long *popcorn_vdso = NULL;
@@ -197,6 +206,7 @@ __init_migrate_vdso(void)
     popcorn_vdso = (long *)addr;
 }
 
+// TODO: This has to change when we are able to do a migration between all of the three architectures
 /*
  * Read Popcorn vDSO page to see if we should migrate.
  *
@@ -204,19 +214,16 @@ __init_migrate_vdso(void)
  * 1 -> process should be on aarch64 OR
  * 1 -> process should be on powerpc64
  */
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 static inline int do_migrate(void *addr)
 {
   int ret = 0;
   if(popcorn_vdso)
   {
-# ifdef __powerpc64__
+#if defined(__aarch64__) || defined(__powerpc64__)
     if(*popcorn_vdso == 0) ret = 1;
-# elif __aarch64__
-    if(*popcorn_vdso == 0) ret = 1;
-# else /* x86_64 */
+#else /* x86_64 */
     if(*popcorn_vdso == 1) ret = 1;
-# endif
+#endif
   }
   return ret;
 }
@@ -229,6 +236,13 @@ struct shim_data {
   void *callback_data;
   void *regset;
 };
+
+/*
+ * Create a program location for which the compiler will generate
+ * transformation metadata.
+ */
+static void *__attribute__((noinline))
+get_call_site() { return __builtin_return_address(0); }
 
 #ifdef _DEBUG
 /*
@@ -263,8 +277,8 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
   }
   else // Invoke migration
   { 
-    struct regset_powerpc64 regs_powerpc64;
     struct regset_aarch64 regs_aarch64;
+    struct regset_powerpc64 regs_powerpc64;
     struct regset_x86_64 regs_x86_64;
 #ifdef _TIME_REWRITE
     struct timespec start, end;

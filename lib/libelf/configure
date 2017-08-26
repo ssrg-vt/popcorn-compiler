@@ -3075,8 +3075,7 @@ else
   ac_save_c_werror_flag=$ac_c_werror_flag
    ac_c_werror_flag=yes
    ac_cv_prog_cc_g=no
-#   CFLAGS="-g"
-   CFLAGS="-g -v"
+   CFLAGS="-g"
    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -3091,8 +3090,7 @@ _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
   ac_cv_prog_cc_g=yes
 else
-#  CFLAGS=""
-  CFLAGS="-v"
+  CFLAGS=""
       cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -3108,8 +3106,7 @@ if ac_fn_c_try_compile "$LINENO"; then :
 
 else
   ac_c_werror_flag=$ac_save_c_werror_flag
-#	 CFLAGS="-g"
-	 CFLAGS="-g -v"
+	 CFLAGS="-g"
 	 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -3137,19 +3134,15 @@ if test "$ac_test_CFLAGS" = set; then
   CFLAGS=$ac_save_CFLAGS
 elif test $ac_cv_prog_cc_g = yes; then
   if test "$GCC" = yes; then
- #   CFLAGS="-g -O2"
-    CFLAGS="-g -O2 -v"
+    CFLAGS="-g -O2"
   else
-#    CFLAGS="-g"
-    CFLAGS="-g -v"
+    CFLAGS="-g"
   fi
 else
   if test "$GCC" = yes; then
-#    CFLAGS="-O2"
-    CFLAGS="-O2 -v"
+    CFLAGS="-O2"
   else
-#    CFLAGS=
-    CFLAGS="-v"
+    CFLAGS=
   fi
 fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $CC option to accept ISO C89" >&5

@@ -33,12 +33,12 @@ struct regops_t
 
   /* Is the return address mapped to a non-PC register? */
   const bool has_ra_reg;
-  
-  /* Loop Count Register (CTR) For POWERPC64 */
-  const bool has_ctr_reg;
 
   /* Size of registers in the register set */
   size_t regset_size;
+
+  /* Number of frame-base pointer register */
+  uint16_t fbp_regnum;
 
   /////////////////////////////////////////////////////////////////////////////
   // Constructors/destructors
@@ -81,9 +81,6 @@ struct regops_t
   /* Get the return address-mapped register's value */
   void* (*ra_reg)(const_regset_t regset);
 
-  /* Get Loop Count Register (CTR) value */
-  void* (*ctr_reg)(const_regset_t regset);
-
   /* Set the program counter */
   void (*set_pc)(regset_t regset, void* pc);
 
@@ -98,9 +95,6 @@ struct regops_t
 
   /* Architecture-specific frame base pointer setup */
   void (*setup_fbp)(regset_t regset, void* cfa);
-
-  /* Set the Loop Count Register (CTR) register */
-  void (*set_ctr_reg)(regset_t regset, void* ctr);
 
   /////////////////////////////////////////////////////////////////////////////
   // General-purpose register access

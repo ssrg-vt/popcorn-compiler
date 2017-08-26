@@ -111,7 +111,7 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr);
  * @return a pointer to the location of the saved frame base pointer for the
  *         current frame
  */
-uint64_t* get_savedfbp_loc(rewrite_context ctx, rewrite_context src, int act);
+uint64_t* get_savedfbp_loc(rewrite_context ctx);
 
 #endif /* _DATA_H */
 

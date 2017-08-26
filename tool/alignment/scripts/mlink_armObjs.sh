@@ -20,7 +20,7 @@ else
   exit 1
 fi
 
-GCC_LOC="-L/usr/lib/gcc-cross/aarch64-linux-gnu/5"
+GCC_LOC="-L$(dirname $(aarch64-linux-gnu-gcc -print-libgcc-file-name))"
 GCC_LIBS="-lgcc -lgcc_eh"
 
 POPCORN="/usr/local/popcorn"
@@ -33,7 +33,6 @@ $POPCORN/bin/ld.gold -static ${OUTPUT} ${INPUT} $GCC_LOC \
  $POPCORN/aarch64/lib/libstack-transform.a \
  $POPCORN/aarch64/lib/libelf.a \
  $POPCORN/aarch64/lib/libpthread.a \
- $POPCORN/aarch64/lib/libbomp.a \
  $POPCORN/aarch64/lib/libc.a \
  $POPCORN/aarch64/lib/libm.a \
  --start-group $GCC_LIBS --end-group $MAP $LINKER > out_aarch64.txt || exit 1

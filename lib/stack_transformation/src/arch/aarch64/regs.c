@@ -17,8 +17,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define AARCH64_NUM_REGS 128
-#define AARCH64_FBP_REG 29
-#define AARCH64_LINK_REG 30
+#define AARCH64_FBP_REG X29
+#define AARCH64_LINK_REG X30
 
 static regset_t regset_default_aarch64(void);
 static regset_t regset_init_aarch64(const void* regs);
@@ -59,6 +59,7 @@ const struct regops_t regs_aarch64 = {
   .num_regs = AARCH64_NUM_REGS,
   .has_ra_reg = true,
   .regset_size = sizeof(regset_obj_aarch64),
+  .fbp_regnum = AARCH64_FBP_REG,
 
   .regset_default = regset_default_aarch64,
   .regset_init = regset_init_aarch64,

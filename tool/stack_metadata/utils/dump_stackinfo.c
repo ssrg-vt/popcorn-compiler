@@ -228,7 +228,7 @@ bool print_arch_val_record(arch_live_value *record)
   }
 
   switch(record->inst_type) {
-#define X(name, pseudo) \
+#define X(name) \
   case name: printf(", " #name " "); break;
 VALUE_GEN_INST
 #undef X
@@ -242,8 +242,12 @@ VALUE_GEN_INST
     printf("register %u\n", record->operand_regnum);
     break;
   case SM_DIRECT:
-    printf("register %u + %ld\n", record->operand_regnum,
+    printf("value stored at register %u + %ld\n", record->operand_regnum,
           record->operand_offset_or_constant);
+    break;
+  case SM_INDIRECT:
+    printf("register %u + %ld\n", record->operand_regnum,
+           record->operand_offset_or_constant);
     break;
   case SM_CONSTANT:
     printf("value = %ld / 0x%lx\n", record->operand_offset_or_constant,

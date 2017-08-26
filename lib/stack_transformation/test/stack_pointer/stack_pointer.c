@@ -11,14 +11,11 @@ void outer_frame()
 {
   if(!post_transform)
   {
-#if defined(__powerpc64__)
-    printf("stack_pointer: power\n");
-    TIME_AND_TEST_REWRITE("./stack_pointer_powerpc64", outer_frame);
-#elif defined(__aarch64__)
-    printf("stack_pointer: arm\n");
+#ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./stack_pointer_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./stack_pointer_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    printf("stack_pointer: x86\n");
     TIME_AND_TEST_REWRITE("./stack_pointer_x86-64", outer_frame);
 #endif
   }

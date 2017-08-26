@@ -117,6 +117,10 @@ public:
                 sortedLive.insert(val);
             }
             delete live;
+
+            /* If the call's value is used, add it to the stackmap */
+            if(CI->use_begin() != CI->use_end())
+              sortedLive.insert(CI);
   
             DEBUG(
               const Function *calledFunc;
@@ -323,7 +327,7 @@ char InsertStackMaps::ID = 0;
 const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 
 INITIALIZE_PASS_BEGIN(InsertStackMaps, "insert-stackmaps",
-                      "Instrument equivalence points with stack maps ",
+                      "Instrument equivalence points with stack maps",
                       false, false)
 INITIALIZE_PASS_DEPENDENCY(LiveValues)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)

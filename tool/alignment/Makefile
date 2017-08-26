@@ -6,10 +6,12 @@ SCRIPT := align.script
 
 all: $(BIN)
 
-$(JAR):
+#$(JAR):
+.PHONY: jar
+jar:
 	@make -C src
 
-$(BIN): $(JAR)
+$(BIN): jar #$(JAR)
 	@echo " [MAKE] $@"
 	@cat $(SCRIPT) $(JAR) > $(BIN)
 	@chmod +x $(BIN)

@@ -30,7 +30,6 @@ struct regset_powerpc64
   /* r31:   FBP  */
   /* Link Register, Count Register */ 
   void* pc;
-//  void* sp;
   void* lr;
   void* ctr;
 

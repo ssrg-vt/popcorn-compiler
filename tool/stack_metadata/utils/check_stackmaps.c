@@ -20,7 +20,7 @@
 // Configuration
 ///////////////////////////////////////////////////////////////////////////////
 
-static const char *args = "ha:x:p";
+static const char *args = "ha:x:p:";
 static const char *help =
 "check-stackmaps - check LLVM stackmap sections for matching metadata across "
 "binaries\n\n\
@@ -272,39 +272,43 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
 int main(int argc, char **argv)
 {
   ret_t ret;
-  bin *bin_aarch64 = NULL, *bin_x86_64 = NULL, *bin_powerpc64 = NULL;
-  stack_map_section *sm_aarch64 = NULL, *sm_x86_64 = NULL, *sm_powerpc64 = NULL;
-  size_t num_sm_aarch64, num_sm_x86_64, num_sm_powerpc64;
+  bin *bin_aarch64 = NULL, *bin_powerpc64 = NULL, *bin_x86_64 = NULL;
+  stack_map_section *sm_aarch64 = NULL, *sm_powerpc64 = NULL, *sm_x86_64 = NULL;
+  size_t num_sm_aarch64, num_sm_powerpc64, num_sm_x86_64;
 
   parse_args(argc, argv);
 
   if(elf_version(EV_CURRENT) == EV_NONE)
     die("could not initialize libELF", INVALID_ELF_VERSION);
 
-/*  if((ret = init_elf_bin(bin_aarch64_fn, &bin_aarch64)) != SUCCESS)
-    die("could not initialize the binary (aarch64)", ret);*/
+  if((ret = init_elf_bin(bin_aarch64_fn, &bin_aarch64)) != SUCCESS)
+    die("could not initialize the binary (aarch64)", ret);
   if((ret = init_elf_bin(bin_powerpc64_fn, &bin_powerpc64)) != SUCCESS)
     die("could not initialize the binary (powerpc64)", ret);
   if((ret = init_elf_bin(bin_x86_64_fn, &bin_x86_64)) != SUCCESS)
     die("could not initialize the binary (x86-64)", ret);
 
-/*  if((ret = init_stackmap(bin_aarch64, &sm_aarch64, &num_sm_aarch64)) != SUCCESS)
-    die("could not read stackmaps (aarch64)", ret);*/
-  if((ret = init_stackmap(bin_powerpc64, &sm_powerpc64, &num_sm_powerpc64)) != SUCCESS)
+  if((ret = init_stackmap(bin_aarch64,
+                          &sm_aarch64,
+                          &num_sm_aarch64)) != SUCCESS)
+    die("could not read stackmaps (aarch64)", ret);
+  if((ret = init_stackmap(bin_powerpc64,
+                          &sm_powerpc64,
+                          &num_sm_powerpc64)) != SUCCESS)
     die("could not read stackmaps (powerpc64)", ret);
   if((ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64)) != SUCCESS)
     die("could not read stackmaps (x86-64)", ret);
 
+  if((ret = check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
+                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
   if((ret = check_stackmaps(bin_powerpc64, sm_powerpc64, num_sm_powerpc64,
                             bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
-/*  if((ret = check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
-                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)*/
     die("stackmap sections differ", ret);
 
-//  free_stackmaps(sm_aarch64, num_sm_aarch64);
+  free_stackmaps(sm_aarch64, num_sm_aarch64);
   free_stackmaps(sm_powerpc64, num_sm_powerpc64);
   free_stackmaps(sm_x86_64, num_sm_x86_64);
-//  free_elf_bin(bin_aarch64);
+  free_elf_bin(bin_aarch64);
   free_elf_bin(bin_powerpc64);
   free_elf_bin(bin_x86_64);
 

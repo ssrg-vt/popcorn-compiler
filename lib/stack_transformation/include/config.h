@@ -11,7 +11,7 @@
 #include "het_bin.h"
 
 /* Enable verbose debugging output, including information & warnings. */
-#define _DEBUG 1
+//#define _DEBUG 1
 
 /*
  * Log stack transformation output to file rather than stdout/stderr (requires
@@ -21,7 +21,7 @@
 #define LOG_FILE "stack-transform.log"
 
 /* Enable sanity checks, increases transformation overhead. */
-#define _CHECKS 1
+//#define _CHECKS 1
 
 /*
  * Enable timing of operations to determine hotspots.  Fine-grained timing
@@ -77,8 +77,8 @@
  * Environment variables specifying AArch64 & x86-64 binary names.
  */
 #define ENV_AARCH64_BIN "ST_AARCH64_BIN"
-#define ENV_X86_64_BIN "ST_X86_64_BIN"
 #define ENV_POWERPC64_BIN "ST_POWERPC64_BIN"
+#define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*
  * Stack limits -- Linux defaults to 8MB.

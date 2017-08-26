@@ -108,19 +108,6 @@ void __st_userspace_ctor(void)
    * 2. Check if application has overridden file name symbols (defined above)
    * 3. Add architecture suffixes to current binary name (defined by libc)
    */
-  if(getenv(ENV_POWERPC64_BIN)) powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
-  else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
-  else {
-    powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", __progname);
-    powerpc64_handle = st_init(powerpc64_fn);
-    alloc_powerpc64_fn = true;
-  }
-
-  if(!powerpc64_handle) {
-    ST_WARN("could not initialize powerpc64 handle\n");
-  }
-
   if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
   else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
   else {
@@ -132,6 +119,20 @@ void __st_userspace_ctor(void)
 
   if(!aarch64_handle) {
     ST_WARN("could not initialize aarch64 handle\n");
+  }
+
+  if(getenv(ENV_POWERPC64_BIN))
+    powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
+  else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
+  else {
+    powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", __progname);
+    powerpc64_handle = st_init(powerpc64_fn);
+    alloc_powerpc64_fn = true;
+  }
+
+  if(!powerpc64_handle) {
+    ST_WARN("could not initialize powerpc64 handle\n");
   }
 
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
@@ -203,10 +204,10 @@ stack_bounds get_stack_bounds()
 #endif
 
   /* Determine which half of stack we're currently using. */
-#ifdef __powerpc64__
-  asm volatile("mr %0,1" : "=r"(cur_stack) ::);
-#elif __aarch64__
+#ifdef __aarch64__
   asm volatile("mov %0, sp" : "=r"(cur_stack) ::);
+#elif defined __powerpc64__
+  asm volatile("mr %0, 1" : "=r"(cur_stack) ::);
 #elif defined __x86_64__
   asm volatile("movq %%rsp, %0" : "=g"(cur_stack) ::);
 #endif
@@ -224,24 +225,23 @@ int st_userspace_rewrite(void* sp,
                          void* src_regs,
                          void* dest_regs)
 {
-  if(!powerpc64_handle || !aarch64_handle || !x86_64_handle)
+  if(!aarch64_handle || !powerpc64_handle || !x86_64_handle)
   {
     ST_WARN("could not load user-space rewriting information\n");
     return 1;
   }
 
-// TODO: We need to change this once we move to 3-arch
-#ifdef __powerpc64__
-  return userspace_rewrite_internal(sp,
-                                    src_regs,
-                                    dest_regs,
-                                    powerpc64_handle,
-                                    x86_64_handle);
-#elif defined __aarch64__
+#ifdef __aarch64__
   return userspace_rewrite_internal(sp,
                                     src_regs,
                                     dest_regs,
                                     aarch64_handle,
+                                    x86_64_handle);
+#elif defined __powerpc64__
+  return userspace_rewrite_internal(sp,
+                                    src_regs,
+                                    dest_regs,
+                                    powerpc64_handle,
                                     x86_64_handle);
 #elif defined __x86_64__
   return userspace_rewrite_internal(sp,
@@ -250,26 +250,6 @@ int st_userspace_rewrite(void* sp,
                                     x86_64_handle,
                                     aarch64_handle);
 #endif
-}
-
-/*
- * Rewrite from powerpc64 -> powerpc64.
- */
-int st_userspace_rewrite_powerpc64(void* sp,
-                                 struct regset_powerpc64* regs,
-                                 struct regset_powerpc64* dest_regs)
-{
-  if(!powerpc64_handle)
-  {
-    ST_WARN("could not load user-space rewriting information\n");
-    return 1;
-  }
-
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    powerpc64_handle,
-                                    powerpc64_handle);
 }
 
 /*
@@ -290,6 +270,26 @@ int st_userspace_rewrite_aarch64(void* sp,
                                     dest_regs,
                                     aarch64_handle,
                                     aarch64_handle);
+}
+
+/*
+ * Rewrite from powerpc64 -> powerpc64.
+ */
+int st_userspace_rewrite_powerpc64(void* sp,
+                                 struct regset_powerpc64* regs,
+                                 struct regset_powerpc64* dest_regs)
+{
+  if(!powerpc64_handle)
+  {
+    ST_WARN("could not load user-space rewriting information\n");
+    return 1;
+  }
+
+  return userspace_rewrite_internal(sp,
+                                    regs,
+                                    dest_regs,
+                                    powerpc64_handle,
+                                    powerpc64_handle);
 }
 
 /*
@@ -345,20 +345,20 @@ static bool prep_stack(void)
     // check to ensure that the stack pointer is near the page being accessed.
     // To grow the stack:
     //   1. Save the current stack pointer
-    //   2. Move stack pointer to bottom of stack (according to rlimit)
+    //   2. Move stack pointer to lowest stack address (according to rlimit)
     //   3. Touch the page using the stack pointer
     //   4. Restore the original stack pointer
     bounds.low = bounds.high - rlim.rlim_cur;
-#ifdef __powerpc64__
-    asm volatile("mr 28,1;"
-                 "mr 1,%0;"
-                 "ld 29,0(1);"
-                 "mr 1,28" : : "r" (bounds.low) : "r28", "r29");
-#elif defined(__aarch64__)
+#ifdef __aarch64__
     asm volatile("mov x27, sp;"
                  "mov sp, %0;"
                  "ldr x28, [sp];"
                  "mov sp, x27" : : "r" (bounds.low) : "x27", "x28");
+#elif defined(__powerpc64__)
+    asm volatile("mr 28, 1;"
+                 "mr 1, %0;"
+                 "ld 29, 0(1);"
+                 "mr 1, 28" : : "r" (bounds.low) : "r28", "r29");
 #elif defined(__x86_64__)
     asm volatile("mov %%rsp, %%r14;"
                  "mov %0, %%rsp;"

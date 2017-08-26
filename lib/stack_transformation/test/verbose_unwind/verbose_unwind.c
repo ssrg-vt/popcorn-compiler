@@ -11,14 +11,11 @@ int outer_frame()
 {
   if(!post_transform)
   {
-#if defined(__powerpc64__)
-    printf("verbose_unwind: power\n");
-    TIME_AND_TEST_REWRITE("./verbose_unwind_powerpc64", outer_frame);
-#elif defined(__aarch64__)
-    printf("verbose_unwind: arm\n");
+#ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./verbose_unwind_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./verbose_unwind_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    printf("verbose_unwind: x86\n");
     TIME_AND_TEST_REWRITE("./verbose_unwind_x86-64", outer_frame);
 #endif
   }

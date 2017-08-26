@@ -11,14 +11,11 @@ int outer_frame()
 {
   if(!post_transform)
   {
-#if defined(__powerpc64__)
-    printf("rewrite_empty: power\n");
-    TIME_AND_TEST_REWRITE("./rewrite_empty_powerpc64", outer_frame);
-#elif defined(__aarch64__)
-    printf("rewrite_empty: arm\n");
+#ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./rewrite_empty_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./rewrite_empty_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    printf("rewrite_empty: x86\n");
     TIME_AND_TEST_REWRITE("./rewrite_empty_x86-64", outer_frame);
 #endif
   }

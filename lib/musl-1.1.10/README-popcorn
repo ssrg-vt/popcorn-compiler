@@ -1,0 +1,33 @@
+musl-libc, Copyright Rich Felker, et al., 2005-2016
+musl-libc is released under the standard MIT license
+Please see COPYRIGHT for more information
+
+--------
+Overview
+--------
+
+The musl-libc library is a clean but full-featured C library designed as an
+alternative to glibc.  Rather than using glibc (which is complex, contains a
+large amount of assembly, and is hard to modify), we used musl-libc as our
+multi-ISA libc implementation.  All applications built using the Popcorn
+compiler toolchain use musl as their libc implementation, which provides the
+standard C library (libc), libm and libpthread.  All standard libc/libm/pthread
+functionality is available for applications.
+
+We made several modifications to the library in order to support multi-ISA
+binaries and to help migration between architectures:
+
+- We modified musl's TLS implementation to handle the changes made to gold to
+  lay TLS out in an identical format between all architectures
+  
+- We removed futex system calls from the pthread implementation (used as the
+  synchronization primitive for many pthread constructs, e.g., condition
+  variables) as futex is not yet well-supported by the OS.  Note that calls to
+  futex are replaced by a spinlock, which may provide bad performance for some
+  applications.
+
+- We added several pthread APIs to save/restore information needed by threads
+  post-migration
+  
+- We changed the default thread stack size for cloned threads from 80kB to 8MB
+  to match Linux's default stack size for the main thread

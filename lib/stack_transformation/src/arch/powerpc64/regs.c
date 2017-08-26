@@ -17,9 +17,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define POWERPC64_NUM_REGS 116
-#define POWERPC64_FBP_REG 31
-#define POWERPC64_LINK_REG lr
-#define POWERPC64_CTR_REG ctr
+#define POWERPC64_SP_REG R1
+#define POWERPC64_FBP_REG R31
 
 static regset_t regset_default_powerpc64(void);
 static regset_t regset_init_powerpc64(const void* regs);
@@ -32,14 +31,12 @@ static void* pc_powerpc64(const_regset_t regset);
 static void* sp_powerpc64(const_regset_t regset);
 static void* fbp_powerpc64(const_regset_t regset);
 static void* ra_reg_powerpc64(const_regset_t regset);
-static void* ctr_reg_powerpc64(const_regset_t regset);
 
 static void set_pc_powerpc64(regset_t regset, void* pc);
 static void set_sp_powerpc64(regset_t regset, void* sp);
 static void set_fbp_powerpc64(regset_t regset, void* fp);
 static void set_ra_reg_powerpc64(regset_t regset, void* ra);
-static void set_ctr_reg_powerpc64(regset_t regset, void* ctr);
-static void setup_fbp_powerpc64(regset_t regset, void* sp);
+static void setup_fbp_powerpc64(regset_t regset, void* cfa);
 
 static uint16_t reg_size_powerpc64(uint16_t reg);
 static void* reg_powerpc64(regset_t regset, uint16_t reg);
@@ -54,7 +51,6 @@ typedef struct regset_obj_powerpc64
   struct regset_powerpc64 regs;
 } regset_obj_powerpc64;
 
-// TODO: Also do this with function pointers
 /*
  * powerpc64 register operations (externally visible), used to construct new
  * objects.
@@ -62,8 +58,8 @@ typedef struct regset_obj_powerpc64
 const struct regops_t regs_powerpc64 = {
   .num_regs = POWERPC64_NUM_REGS,
   .has_ra_reg = true,
-  .has_ctr_reg = true,
   .regset_size = sizeof(regset_obj_powerpc64),
+  .fbp_regnum = POWERPC64_FBP_REG,
 
   .regset_default = regset_default_powerpc64,
   .regset_init = regset_init_powerpc64,
@@ -76,13 +72,11 @@ const struct regops_t regs_powerpc64 = {
   .sp = sp_powerpc64,
   .fbp = fbp_powerpc64,
   .ra_reg = ra_reg_powerpc64,
-  .ctr_reg = ctr_reg_powerpc64,
 
   .set_pc = set_pc_powerpc64,
   .set_sp = set_sp_powerpc64,
   .set_fbp = set_fbp_powerpc64,
   .set_ra_reg = set_ra_reg_powerpc64,
-  .set_ctr_reg = set_ctr_reg_powerpc64,
   .setup_fbp = setup_fbp_powerpc64,
 
   .reg_size = reg_size_powerpc64,
@@ -144,8 +138,7 @@ static void* pc_powerpc64(const_regset_t regset)
 static void* sp_powerpc64(const_regset_t regset)
 {
   const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-//  return cur->regs.sp;
-  return (void*)cur->regs.r[1];
+  return (void*)cur->regs.r[POWERPC64_SP_REG];
 }
 
 static void* fbp_powerpc64(const_regset_t regset)
@@ -157,13 +150,7 @@ static void* fbp_powerpc64(const_regset_t regset)
 static void* ra_reg_powerpc64(const_regset_t regset)
 {
   const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return (void*)cur->regs.POWERPC64_LINK_REG;
-}
-
-static void* ctr_reg_powerpc64(const_regset_t regset)
-{
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return (void*)cur->regs.POWERPC64_CTR_REG;
+  return (void*)cur->regs.lr;
 }
 
 static void set_pc_powerpc64(regset_t regset, void* pc)
@@ -175,8 +162,7 @@ static void set_pc_powerpc64(regset_t regset, void* pc)
 static void set_sp_powerpc64(regset_t regset, void* sp)
 {
   regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-//  cur->regs.sp = sp;
-  cur->regs.r[1] = (uint64_t)sp;
+  cur->regs.r[POWERPC64_SP_REG] = (uint64_t)sp;
 }
 
 static void set_fbp_powerpc64(regset_t regset, void* fp)
@@ -188,25 +174,14 @@ static void set_fbp_powerpc64(regset_t regset, void* fp)
 static void set_ra_reg_powerpc64(regset_t regset, void* ra)
 {
   regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.POWERPC64_LINK_REG = ra;
+  cur->regs.lr = ra;
 }
 
-static void setup_fbp_powerpc64(regset_t regset, void* sp)
-{
-  ASSERT(sp, "Null stack pointer\n");
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
- // cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cur->regs.sp;
-
- // For some reason stack-dump info sets FBP = CFA-16 ~ old(SP)-16 and offsets from there
- // TODO: This need to be calclulated dynamically since sometimes FBP is not even set
-  //cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cfa-16;
-  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)sp;
-}
-
-static void set_ctr_reg_powerpc64(regset_t regset, void* ctr)
+static void setup_fbp_powerpc64(regset_t regset, void* cfa)
 {
   regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.POWERPC64_CTR_REG = ctr;
+  ASSERT(cur->regs.r[POWERPC64_SP_REG], "Null stack pointer\n");
+  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cur->regs.r[POWERPC64_SP_REG];
 }
 
 static uint16_t reg_size_powerpc64(uint16_t reg)
@@ -244,7 +219,6 @@ static void* reg_powerpc64(regset_t regset, uint16_t reg)
   {
   case R0: return &cur->regs.r[0];
   case R1: return &cur->regs.r[1];
-//  case R1: return &cur->regs.sp;
   case R2: return &cur->regs.r[2];
   case R3: return &cur->regs.r[3];
   case R4: return &cur->regs.r[4];
@@ -275,9 +249,8 @@ static void* reg_powerpc64(regset_t regset, uint16_t reg)
   case R29: return &cur->regs.r[29];
   case R30: return &cur->regs.r[30];
   case R31: return &cur->regs.r[31];
-  case CTR: return &cur->regs.POWERPC64_CTR_REG;
-  case LR: return &cur->regs.POWERPC64_LINK_REG;
-//  case SP: return &cur->regs.sp;    // This is R1
+  case CTR: return &cur->regs.ctr;
+  case LR: return &cur->regs.lr;
   case F0: return &cur->regs.f[0];
   case F1: return &cur->regs.f[1];
   case F2: return &cur->regs.f[2];

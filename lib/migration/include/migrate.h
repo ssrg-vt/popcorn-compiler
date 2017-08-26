@@ -1,7 +1,7 @@
 #ifndef _MIGRATE_H
 #define _MIGRATE_H
 
-#if !defined(__aarch64__) && !defined(__x86_64__) && !defined(__powerpc64__)
+#if !defined(__aarch64__) && !defined(__powerpc64__) && !defined(__x86_64__)
 # error Unknown/unsupported architecture!
 #endif
 

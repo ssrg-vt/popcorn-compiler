@@ -7,7 +7,7 @@
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
 
-static int num_threads = 2;
+static int num_threads = 10;
 static int max_depth = 10;
 static st_handle handle = NULL;
 static __thread int post_transform = 0;
@@ -43,7 +43,6 @@ int main(int argc, char** argv)
 {
   int i;
   pthread_t* children;
-  int* child_num;
 
   if(!(handle = st_init(argv[0]))) {
     printf("Couldn't initialize stack transformation handle\n");
@@ -53,16 +52,12 @@ int main(int argc, char** argv)
   if(argc > 1) max_depth = atoi(argv[1]);
   if(argc > 2) num_threads = atoi(argv[2]);
   children = (pthread_t*)malloc(sizeof(pthread_t) * num_threads);
-  child_num = (int*)malloc(sizeof(int) * num_threads);
 
   for(i = 1; i < num_threads; i++) {
-    child_num[i] = i;
-//    printf("spawning child:%d\n", i);
-    if(pthread_create(&children[i], NULL, thread_main, &child_num[i])) {
+    if(pthread_create(&children[i], NULL, thread_main, NULL)) {
       printf("Couldn't spawn child thread\n");
       exit(1);
     }
-//    printf("spawned!\n");
   }
 
   for(i = 1; i < num_threads; i++) {
@@ -70,11 +65,9 @@ int main(int argc, char** argv)
       printf("Couldn't join child thread\n");
       exit(1);
     }
-//    printf("joined child:%d\n", i);
   }
 
   free(children);
-  free(child_num);
   return 0;
 }
 

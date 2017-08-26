@@ -9,7 +9,7 @@
 #define _ARCH_REGS_H
 
 #include "arch/aarch64/internal.h"
-#include "arch/x86_64/internal.h"
 #include "arch/powerpc64/internal.h"
+#include "arch/x86_64/internal.h"
 
 #endif

@@ -13,7 +13,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define POWERPC64_RA_OFFSET 0x10
-#define POWERPC64_SAVED_FBP_OFFSET -0x8
 #define POWERPC64_CFA_OFFSET_FUNCENTRY 0x0
 
 #define POWERPC64_STACK_ALIGNMENT 0x8
@@ -41,12 +40,10 @@ static uint16_t callee_reg_size_powerpc64(uint16_t reg);
 
 /* powerpc64 properties */
 const struct properties_t properties_powerpc64 = {
-  .sp_needs_align = true,
   .num_callee_saved = sizeof(callee_saved_powerpc64) / sizeof(uint16_t),
   .callee_saved = callee_saved_powerpc64,
   .callee_saved_size = callee_saved_size_powerpc64,
   .ra_offset = POWERPC64_RA_OFFSET,
-  .savedfbp_offset = POWERPC64_SAVED_FBP_OFFSET,
   .cfa_offset_funcentry = POWERPC64_CFA_OFFSET_FUNCENTRY,
 
   .align_sp = align_sp_powerpc64,

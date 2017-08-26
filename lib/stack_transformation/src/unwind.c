@@ -6,7 +6,6 @@
  */
 
 #include "unwind.h"
-#include "arch/powerpc64/util.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API
@@ -51,63 +50,25 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
   unwind_start = ctx->acts[act - 1].site.unwind_offset;
   unwind_end = unwind_start + ctx->acts[act - 1].site.num_unwind;
 
-  ST_INFO("unwind and set next(act)(pc)\n");
-
   for(i = unwind_start; i < unwind_end; i++)
   {
     saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[i].offset;
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
-
-    ST_INFO("dest: REGOPS(ctx)->reg(ctx->acts[act].regs --> locs[i].reg): %p [restore_callee_saved_regs]\n", \
-             REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg));
-
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
     bitmap_set(ctx->acts[act - 1].callee_saved, locs[i].reg);
   }
 
-
   /*
    * Some ABIs map the return address to the PC register (e.g. x86-64) and some
-   * map it to another register (e.g. RA is mapped to x30 for AArch64 and Powerpc64
-   * maps it to Link Register (LR)).  Handle the latter case by explicitly setting 
-   * the new PC.
+   * map it to another register (e.g. RA is mapped to x30 for AArch64 and LR on
+   * PowerPC64).  Handle the latter case by explicitly setting the new PC.
    */
-  if(REGOPS(ctx)->has_ra_reg){
-//    #if defined(__powerpc64__)
-/*      ST_INFO("fbp: %p [restore_callee_saved_regs]\n",  REGOPS(ctx)->fbp(ctx->acts[act].regs));
-      ST_INFO("sp: %p [restore_callee_saved_regs]\n",  REGOPS(ctx)->sp(ctx->acts[act].regs));
-      ST_INFO("ra_reg: %p [restore_callee_saved_regs]\n", REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
-      ST_INFO("pc: %p [restore_callee_saved_regs]\n", REGOPS(ctx)->pc(ctx->acts[act].regs));   */
-  
-      // PowerPC Linker puts NOPs after function calls if it's necessary. This is how
-      // TOC(s) are managed:  TOC of an application only has 64KB worth of space for
-      // holding global data references. The static linker must modify a nop instruction 
-      // after a bl function call to restore the TOC pointer in r2 from 24(r1) when an 
-      // external symbol that may use the TOC may be called. Object files must contain 
-      // a NOP slot after a bl instruction to an external symbol.
-      // Due to these NOPs, return address should be calculated as: original return
-      // address + NOP*4. and PC should be updated accordingly.
-/*      REGOPS(ctx)->set_pc(ctx->acts[act].regs,
-                          REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
-      void *pc = REGOPS(ctx)->pc(ctx->acts[act].regs);
-      //ST_INFO("pc: %p [restore_callee_saved_regs]\n", pc);
-  
-      pc = fix_pc(pc);
-      ST_INFO("updated pc: %p [restore_callee_saved_regs]\n", pc);
-  
-      REGOPS(ctx)->set_pc(ctx->acts[act].regs, pc);
-
-      // Also update ra_reg accordingly
-      REGOPS(ctx)->set_ra_reg(ctx->acts[act].regs, pc);
-    #else*/
-      REGOPS(ctx)->set_pc(ctx->acts[act].regs,
+  if(REGOPS(ctx)->has_ra_reg)
+    REGOPS(ctx)->set_pc(ctx->acts[act].regs,
                         REGOPS(ctx)->ra_reg(ctx->acts[act].regs));
-  //  #endif
-  }
-
-  ST_INFO("(next(pc)) Return address: %p\n", REGOPS(ctx)->pc(ctx->acts[act].regs));
+  ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(ctx->acts[act].regs));
 }
 
 /*
@@ -131,12 +92,7 @@ static inline void setup_frame_bounds(rewrite_context ctx, int act)
   new_sp = ctx->acts[act - 1].cfa;
   REGOPS(ctx)->set_sp(ctx->acts[act].regs, new_sp);
   ctx->acts[act].cfa = calculate_cfa(ctx, act);
-
-  #if defined(__powerpc64__)
-    REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, REGOPS(ctx)->sp(ctx->acts[act].regs));
-  #else
-    REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, ctx->acts[act].cfa);
-  #endif
+  REGOPS(ctx)->setup_fbp(ctx->acts[act].regs, ctx->acts[act].cfa);
 
   ASSERT(REGOPS(ctx)->fbp(ctx->acts[act].regs), "Invalid frame pointer\n");
 
@@ -155,7 +111,10 @@ static inline void setup_frame_bounds(rewrite_context ctx, int act)
  */
 bool first_frame(uint64_t id)
 {
-  if(id == UINT64_MAX || id == UINT64_MAX - 1) return true;
+  if(id == UINT64_MAX || /* "__libc_start_main()" in __libc_start_main.c */
+     id == UINT64_MAX - 1 || /* "start()" in pthread_create.c */
+     id == UINT64_MAX - 2) /* "start_c11()" in pthread_create.c */
+    return true;
   else return false;
 }
 
@@ -166,6 +125,7 @@ bool first_frame(uint64_t id)
 inline void* calculate_cfa(rewrite_context ctx, int act)
 {
   ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
+  ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs), "Invalid stack pointer\n");
   return REGOPS(ctx)->sp(ctx->acts[act].regs) + ctx->acts[act].site.frame_size;
 }
 
@@ -174,11 +134,12 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
  * initialization as pop_frame performs the same functionality during
  * unwinding.
  */
-void bootstrap_first_frame(rewrite_context ctx)
+void bootstrap_first_frame(rewrite_context ctx, void* regset)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ctx->acts[ctx->act].cfa = calculate_cfa(ctx, ctx->act);
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->regset_copyin(ctx->acts[0].regs, regset);
 }
 
 /*
@@ -187,12 +148,13 @@ void bootstrap_first_frame(rewrite_context ctx)
  * directly upon function entry.  Only needed during initialization as
  * pop_frame_funcentry performs the same functionality during unwinding.
  */
-void bootstrap_first_frame_funcentry(rewrite_context ctx)
+void bootstrap_first_frame_funcentry(rewrite_context ctx, void* sp)
 {
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, ctx->act);
-  ACT(ctx).cfa = REGOPS(ctx)->sp(ACT(ctx).regs) +
-                 PROPS(ctx)->cfa_offset_funcentry;
+  setup_callee_saved_bits(ctx, 0);
+  ctx->acts[0].regs = ctx->regset_pool;
+  REGOPS(ctx)->set_sp(ctx->acts[0].regs, sp);
+  ctx->acts[0].cfa = sp + PROPS(ctx)->cfa_offset_funcentry;
 }
 
 /*
@@ -207,14 +169,6 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  ST_INFO("pc: %lx[pop_frame]\n", (long)(REGOPS(ctx)->pc(ACT(ctx).regs)));
-  ST_INFO("fbp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->fbp(ACT(ctx).regs)));
-  ST_INFO("sp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
-
-  #if !defined(__x86_64__)
-    ST_INFO("ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
-  #endif
-
   setup_regset(ctx, next_frame);
   setup_callee_saved_bits(ctx, next_frame);
   restore_callee_saved_regs(ctx, next_frame);
@@ -224,32 +178,13 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
    * FBP/CFA, we still need to set up SP.
    */
   if(setup_bounds) setup_frame_bounds(ctx, next_frame);
-  else 
-  {
-    REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
-
-    #if defined (__powerpc64__)
-      /* For setting up the next frame, Set fbp to point to sp for PPC (i.e. cfa of current frame) */
-      REGOPS(ctx)->set_fbp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
-    #endif
-  }
-
-  ST_INFO("set next(act)(sp)\n");
+  else REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
 
   /* Advance to next frame. */
   ctx->act++;
-
   ASSERT(ctx->act < MAX_FRAMES, "too many frames on stack\n");
 
   TIMER_FG_STOP(pop_frame);
-  ST_INFO("after advancing to next act fbp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->fbp(ACT(ctx).regs)));
-  ST_INFO("after advancing to next act sp: %lx[pop_frame]\n", (long)(REGOPS(ctx)->sp(ACT(ctx).regs)));
-
-  #if !defined(__x86_64__)
-    ST_INFO("after advancing to next act ra_reg: %lx[pop_frame]\n", (long)(REGOPS(ctx)->ra_reg(ACT(ctx).regs)));
-  #endif 
-
-  ST_INFO("after advancing to next act pc: %lx[pop_frame]\n\n", (long)(REGOPS(ctx)->pc(ACT(ctx).regs)));
 }
 
 /*
@@ -271,40 +206,12 @@ void pop_frame_funcentry(rewrite_context ctx)
    * We only have to worry about restoring the PC, since the function hasn't
    * set anything else up yet.
    */
-
-  if(REGOPS(ctx)->has_ra_reg){
-/*    #if defined(__powerpc64__)
-  
-      // PowerPC Linker puts NOPs after function calls if it's necessary. This is how
-      // TOC(s) are managed:  TOC of an application only has 64KB worth of space for
-      // holding global data references. The static linker must modify a nop instruction 
-      // after a bl function call to restore the TOC pointer in r2 from 24(r1) when an 
-      // external symbol that may use the TOC may be called. Object files must contain 
-      // a NOP slot after a bl instruction to an external symbol.
-      // Due to these NOPs, return address should be calculated as: original return
-      // address + NOP*4. and PC should be updated accordingly.
-      REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs,
-                          REGOPS(ctx)->ra_reg(ACT(ctx).regs));
-      void *pc = REGOPS(ctx)->pc(NEXT_ACT(ctx).regs);
-      ST_INFO("pc: %p [pop_frame_funcentry]\n", pc);
-  
-      pc = fix_pc(pc);
-      ST_INFO("updated pc: %p [pop_frame_funcentry]\n", pc);
-  
-      REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, pc);
-
-      // Also update ra_reg accordingly
-      REGOPS(ctx)->set_ra_reg(NEXT_ACT(ctx).regs, pc);
-   #else
-    REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));*/
+  if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));
-  }
-/*   #endif
-  }*/
   else
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs,
                         *(void**)REGOPS(ctx)->sp(ACT(ctx).regs));
-  ST_INFO("(next(pc)) Return address: %p\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
+  ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
 
   setup_frame_bounds(ctx, next_frame);
 
@@ -313,26 +220,6 @@ void pop_frame_funcentry(rewrite_context ctx)
    * hasn't been stored on the stack yet.
    */
   REGOPS(ctx)->set_fbp(ACT(ctx).regs, REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
-
-  ST_INFO("current frame:%p [pop_frame_funcentry]\n", ACT(ctx).cfa);
-  ST_INFO("fbp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->fbp(ACT(ctx).regs));
-  ST_INFO("sp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->sp(ACT(ctx).regs));
-
-  #if !defined(__x86_64__)
-    ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(ACT(ctx).regs));
-  #endif
-  ST_INFO("pc: %p [pop_frame_funcentry]\n", REGOPS(ctx)->pc(ACT(ctx).regs));
-  ST_INFO("frame size:%d [pop_frame_funcentry]\n", ACT(ctx).site.frame_size);
-
-  ST_INFO("next frame:%p [pop_frame_funcentry]\n", NEXT_ACT(ctx).cfa);
-  ST_INFO("fbp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
-  ST_INFO("sp: %p [pop_frame_funcentry]\n",  REGOPS(ctx)->sp(NEXT_ACT(ctx).regs));
-
-  #if !defined(__x86_64__)
-    ST_INFO("ra_reg: %p [pop_frame_funcentry]\n", REGOPS(ctx)->ra_reg(NEXT_ACT(ctx).regs));
-  #endif
-  ST_INFO("pc: %p [pop_frame_funcentry]\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
-  ST_INFO("frame size:%d [pop_frame_funcentry]\n", NEXT_ACT(ctx).site.frame_size);
 
   /* Advance to next frame. */
   ctx->act++;
@@ -372,16 +259,14 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
 /*
  * Free a stack activation's information.
  */
-void free_activation(st_handle handle, activation* act)
+void clear_activation(st_handle handle, activation* act)
 {
   ASSERT(act, "invalid arguments to free_activation()\n");
 
-#ifdef _CHECKS
   memset(&act->site, 0, sizeof(call_site));
   act->cfa = NULL;
   memset(act->regs, 0, handle->regops->regset_size);
   act->regs = NULL;
   memset(&act->callee_saved, 0, sizeof(bitmap));
-#endif
 }
 

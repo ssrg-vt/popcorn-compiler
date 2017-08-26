@@ -23,9 +23,9 @@ const char* arch_name(uint16_t arch)
 {
   switch(arch)
   {
-  case EM_X86_64: return "x86-64";
   case EM_AARCH64: return "aarch64";
   case EM_PPC64: return "powerpc64";
+  case EM_X86_64: return "x86-64";
   default: return "unknown/unsupported architecture";
   }
 }
@@ -38,8 +38,8 @@ regops_t get_regops(uint16_t arch)
   switch(arch)
   {
   case EM_AARCH64: return &regs_aarch64;
-  case EM_X86_64: return &regs_x86_64;
   case EM_PPC64: return &regs_powerpc64;
+  case EM_X86_64: return &regs_x86_64;
   default:
     ST_WARN("unsupported architecture\n");
     return NULL;
@@ -54,8 +54,8 @@ properties_t get_properties(uint16_t arch)
   switch(arch)
   {
   case EM_AARCH64: return &properties_aarch64;
-  case EM_X86_64: return &properties_x86_64;
   case EM_PPC64: return &properties_powerpc64;
+  case EM_X86_64: return &properties_x86_64;
   default:
     ST_WARN("unsupported architecture\n");
     return NULL;
@@ -110,18 +110,6 @@ const void* get_section_data(Elf* e, const char* sec)
   return data->d_buf;
 }
 
-
-/////////////////// harubyy ////////////////////
-void list_sites_by_addr(st_handle handle){
-  long min = 0;
-  long max = (handle->sites_count - 1);
-
-  while(max >= min) {
-    printf("addr: %p\n", (void*)(handle->sites_addr[min++].addr));
-  }
-}
-/////////////////// harubyy ////////////////////
-
 /*
  * Search through call site entries for the specified return address.
  */
@@ -135,8 +123,6 @@ bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
 
   TIMER_FG_START(get_site_by_addr);
   ASSERT(cs, "invalid arguments to get_site_by_addr()\n");
-
-  ST_INFO("max:%ld, return addr:%lx [get_site_by_addr]\n", max, retaddr);
 
   while(max >= min)
   {
@@ -152,7 +138,6 @@ bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
       max = mid - 1;
   }
 
-  ST_INFO("found: %d [get_site_by_addr]\n", found);
   TIMER_FG_STOP(get_site_by_addr);
   return found;
 }
@@ -170,7 +155,6 @@ bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
   TIMER_FG_START(get_site_by_id);
   ASSERT(cs, "invalid arguments to get_site_by_id()\n");
 
-  ST_INFO("max:%ld, id:%ld [get_site_by_id]\n", max, csid);
   while(max >= min)
   {
     mid = (max + min) / 2;
@@ -185,7 +169,6 @@ bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
       max = mid - 1;
   }
 
-  ST_INFO("found: %d [get_site_by_id]\n", found);
   TIMER_FG_STOP(get_site_by_id);
   return found;
 }
