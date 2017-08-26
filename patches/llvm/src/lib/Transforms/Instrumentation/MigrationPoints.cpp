@@ -42,7 +42,9 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
@@ -106,6 +108,13 @@ STATISTIC(LoopsTransformed, "Number of loops transformed");
 
 namespace {
 
+/// Get the integer size of a value, if statically known.
+static int64_t getValueSize(const Value *V) {
+  if(isa<ConstantInt>(V)) return cast<ConstantInt>(V)->getSExtValue();
+  DEBUG(dbgs() << "Couldn't get size for"; V->dump() );
+  return -1;
+}
+
 /// Weight metrics.  Child classes implement for different analyses.
 class Weight {
 public:
@@ -116,7 +125,7 @@ public:
   virtual bool isHTMWeight() const { return false; }
 
   /// Analyze an instruction & update accounting.
-  virtual void analyze(const Instruction *I) = 0;
+  virtual void analyze(const Instruction *I, const DataLayout *DL) = 0;
 
   /// Return whether or not we should add an migration point.
   virtual bool shouldAddMigPoint() const = 0;
@@ -138,8 +147,8 @@ public:
   virtual size_t numIters() const = 0;
 
   /// Return whether or not the weight is within some percent (0-100) of the
-  /// threshold.
-  virtual bool withinPercent(unsigned percent) const = 0;
+  /// threshold metric for a type of weight.
+  virtual bool underPercentOfThreshold(unsigned percent) const = 0;
 
   /// Return a human-readable string describing weight information.
   virtual std::string toString() const = 0;
@@ -152,9 +161,13 @@ private:
   // The number of bytes loaded & stored, respectively
   size_t LoadBytes, StoreBytes;
 
+  // Statistics about when the weight was reset (i.e., at HTM stop/starts)
+  size_t Resets, ResetLoad, ResetStore;
+
 public:
   HTMWeight(size_t LoadBytes = 0, size_t StoreBytes = 0)
-    : LoadBytes(LoadBytes), StoreBytes(StoreBytes) {}
+    : LoadBytes(LoadBytes), StoreBytes(StoreBytes), Resets(0), ResetLoad(0),
+      ResetStore(0) {}
   HTMWeight(const HTMWeight &C)
     : LoadBytes(C.LoadBytes), StoreBytes(C.StoreBytes) {}
   virtual Weight *copy() const { return new HTMWeight(*this); }
@@ -162,7 +175,9 @@ public:
   virtual bool isHTMWeight() const { return true; }
 
   /// Update the number of bytes loaded & stored from memory operations.
-  virtual void analyze(const Instruction *I) {
+  virtual void analyze(const Instruction *I, const DataLayout *DL) {
+    Type *Ty;
+
     // TODO more advanced analysis, e.g., register pressure heuristics?
     // TODO do extractelement, insertelement, shufflevector, extractvalue, or
     // insertvalue read/write memory?
@@ -170,24 +185,57 @@ public:
     // Instruction::mayLoad() / Instruction::mayStore()):
     //   cmpxchg
     //   atomicrmw
-    //   llvm.memcpy
-    //   llvm.memmove
-    //   llvm.memset
     //   llvm.masked.load
     //   llvm.masked.store
     //   llvm.masked.gather
     //   llvm.masked.store
-    if(isa<LoadInst>(I)) {
+    switch(I->getOpcode()) {
+    default: break;
+    case Instruction::Load: {
       const LoadInst *LI = cast<LoadInst>(I);
-      const DataLayout &DL = I->getModule()->getDataLayout();
-      Type *Ty = LI->getPointerOperand()->getType()->getPointerElementType();
-      LoadBytes += DL.getTypeStoreSize(Ty);
+      Ty = LI->getPointerOperand()->getType()->getPointerElementType();
+      LoadBytes += DL->getTypeStoreSize(Ty);
+      break;
     }
-    else if(isa<StoreInst>(I)) {
+
+    case Instruction::Store: {
       const StoreInst *SI = cast<StoreInst>(I);
-      const DataLayout &DL = I->getModule()->getDataLayout();
-      Type *Ty = SI->getPointerOperand()->getType()->getPointerElementType();
-      StoreBytes += DL.getTypeStoreSize(Ty);
+      Ty = SI->getValueOperand()->getType();
+      StoreBytes += DL->getTypeStoreSize(Ty);
+      break;
+    }
+
+    case Instruction::Call: {
+      const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
+      bool Loads = false, Stores = false;
+      int64_t Size = 0;
+
+      if(!II) break;
+
+      switch(II->getIntrinsicID()) {
+      default: break;
+      case Intrinsic::memcpy:
+      case Intrinsic::memmove:
+        // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
+        Loads = Stores = true;
+        Size = getValueSize(II->getArgOperand(2));
+        break;
+      case Intrinsic::memset:
+        // Arguments: i8* dest, i8 val, i<x> len, i32 align, i1 isvolatile
+        Stores = true;
+        Size = getValueSize(II->getArgOperand(2));
+        break;
+      }
+
+      // Negative size means we can't statically determine copy size
+      // TODO how do we account for unknown sizes?
+      if(Size > 0) {
+        if(Loads) LoadBytes += Size;
+        if(Stores) StoreBytes += Size;
+      }
+
+      break;
+    }
     }
   }
 
@@ -199,7 +247,12 @@ public:
     else return false;
   }
 
-  virtual void reset() { LoadBytes = StoreBytes = 0; }
+  virtual void reset() {
+    Resets++;
+    ResetLoad += LoadBytes;
+    ResetStore += StoreBytes;
+    LoadBytes = StoreBytes = 0;
+  }
 
   /// The max value for HTM weights of predecessors is the max of potential
   /// load and store bytes over all predecessors.
@@ -227,11 +280,11 @@ public:
     return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
   }
 
-  virtual bool withinPercent(unsigned percent) const {
+  virtual bool underPercentOfThreshold(unsigned percent) const {
+    assert(percent <= 100 && "Invalid percentage");
     float fppercent = (float)percent / 100.0f;
-    if((float)LoadBytes > ((float)HTMReadBufSize * fppercent))
-      return true;
-    else if((float)StoreBytes > ((float)HTMWriteBufSize * fppercent))
+    if((float)LoadBytes < ((float)HTMReadBufSize * fppercent) &&
+       (float)StoreBytes < ((float)HTMWriteBufSize * fppercent))
       return true;
     else return false;
   }
@@ -256,14 +309,17 @@ public:
   MigrationPoints() : FunctionPass(ID) {}
   ~MigrationPoints() {}
 
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const
-  { AU.addRequired<LoopInfoWrapperPass>(); }
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    AU.addRequired<LoopInfoWrapperPass>();
+    AU.addRequired<ScalarEvolution>();
+  }
 
   virtual const char *getPassName() const
   { return "Insert migration points"; }
 
   virtual bool doInitialization(Module &M) {
     bool modified = false;
+    DL = &M.getDataLayout();
 
     // Ensure HTM is supported on this architecture if attempting to instrument
     // with transactional execution, otherwise disable it and warn the user
@@ -271,20 +327,19 @@ public:
       Triple TheTriple(M.getTargetTriple());
       Arch = TheTriple.getArch();
 
-      if(HTMBegin.find(Arch) != HTMBegin.end()) {
-        // Add HTM intrinsic declarations which are called inside functions
-        HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
-        HTMEndDecl = addIntrinsicDecl(M, HTMEnd);
-        HTMTestDecl = addIntrinsicDecl(M, HTMTest);
-        modified = true;
-      }
-      else {
+      if(HTMBegin.find(Arch) == HTMBegin.end()) {
         std::string Msg("HTM instrumentation not supported for '");
         Msg += TheTriple.getArchName();
         Msg += "'";
         DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
         M.getContext().diagnose(DI);
+        return modified;
       }
+
+      HTMBeginDecl = Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
+      HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
+      HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
+      modified = true;
     }
 
     return modified;
@@ -378,6 +433,7 @@ private:
 
   /// The current architecture - used to access architecture-specific HTM calls
   Triple::ArchType Arch;
+  const DataLayout *DL;
 
   /// Function declarations for HTM intrinsics
   Value *HTMBeginDecl;
@@ -483,8 +539,13 @@ private:
   /// Return whether the instruction requires HTM end instrumentation.
   bool shouldAddHTMEnd(Instruction *I) { return HTMEndInsts.count(I); }
 
-  /// Return whether the instruction is a migration point.
-  bool isMigrationPoint(Instruction *I) { return MigPointInsts.count(I); }
+  /// Return whether the instruction is a migration point.  We assume that all
+  /// called functions have migration points internally.
+  bool isMigrationPoint(Instruction *I) {
+    if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
+      return true;
+    else return MigPointInsts.count(I);
+  }
 
   /// Mark an instruction to be instrumented with an HTM begin, directly before
   /// the instruction
@@ -528,10 +589,14 @@ private:
           BasicBlock::iterator NextI(I->getNextNode());
           for(size_t rem = searchSpan; rem > 0 && NextI != E; rem--, NextI++) {
             if(isLibcIO(NextI)) {
+              DEBUG(dbgs() << "  - Found another libc call"; NextI->dump());
               I = NextI;
               rem = searchSpan;
             }
           }
+
+          // TODO analyze successor blocks as well
+
           markAsMigPoint(I->getNextNode(), true, false);
         }
       }
@@ -600,7 +665,7 @@ private:
       CurWeight->reset();
       hasMigPoint = true;
     end:
-      CurWeight->analyze(I);
+      CurWeight->analyze(I, DL);
     }
 
     DEBUG(dbgs() << "  Weight: " << CurWeight->toString() << "\n");
@@ -731,12 +796,12 @@ private:
     }
 
     // Finally, determine if we should add an migration point at exit block(s)
-    // TODO tune threshold
+    // TODO tune percent of threshold
     for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
       if(isa<ReturnInst>(BB->getTerminator())) {
         assert(BBWeight.find(BB) != BBWeight.end() && "Missing block weight");
         const BasicBlockWeightInfo &BBWI = BBWeight.at(BB).BlockWeight;
-        if(BBWI.BlockWeight->withinPercent(20))
+        if(!BBWI.BlockWeight->underPercentOfThreshold(10))
           markAsMigPoint(BB->getTerminator(), true, true);
       }
     }
@@ -746,23 +811,22 @@ private:
   // Instrumentation implementation
   //===--------------------------------------------------------------------===//
 
-  /// Add a declaration for an architecture-specific intrinsic (contained in
-  /// the map).
-  Constant *addIntrinsicDecl(Module &M, const IntrinsicMap &Map) {
-    IntrinsicMap::const_iterator It = Map.find(Arch);
-    assert(It != Map.end() && "Unsupported architecture");
-    FunctionType *FuncTy = Intrinsic::getType(M.getContext(), It->second);
-    return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
-  }
-
   /// Transform a loop header so that migration points (and any concomitant
   /// costs) are only experienced every nth iteration, based on weight metrics
   void transformLoopHeader(Loop *L) {
-    assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
-    const size_t LNum = LoopsTransformed++;
-    size_t ItersPerMigPoint = LoopWeight.find(L)->second.ItersPerMigPoint;
     BasicBlock *Header = L->getHeader(), *NewSuccBB, *MigPointBB;
+    size_t ItersPerMigPoint, LNum;
+
+    // If the first instruction has already been marked, nothing to do
+    Instruction *First = Header->getFirstInsertionPt();
+    if(isMigrationPoint(First) ||
+       shouldAddHTMEnd(First) ||
+       shouldAddHTMBegin(First)) return;
+
+    assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
+    ItersPerMigPoint = LoopWeight.find(L)->second.ItersPerMigPoint;
     PHINode *IV = L->getCanonicalInductionVariable();
+    LNum = LoopsTransformed++;
     // TODO add our own induction variable?
 
     if(ItersPerMigPoint > 1 && IV) {
@@ -937,6 +1001,7 @@ INITIALIZE_PASS_BEGIN(MigrationPoints, "migration-points",
                       "Insert migration points into functions",
                       true, false)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 INITIALIZE_PASS_END(MigrationPoints, "migration-points",
                     "Insert migration points into functions",
                     true, false)
@@ -954,7 +1019,8 @@ const StringSet<> MigrationPoints::LibcIO = {
   "wprintf", "fwprintf", "vwprintf", "vfwprintf",
   "ftell", "fgetpos", "fseek", "fsetpos", "rewind",
   "clearerr", "feof", "ferror", "perror",
-  "remove", "rename", "tmpfile", "tmpnam"
+  "remove", "rename", "tmpfile", "tmpnam",
+  "__isoc99_fscanf"
 };
 
 namespace llvm {

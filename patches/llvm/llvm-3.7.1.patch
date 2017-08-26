@@ -451,11 +451,143 @@ Index: include/llvm/Analysis/LoopNestingTree.h
 +
 +#endif /* _LOOP_NESTING_TREE_H */
 +
+Index: include/llvm/Analysis/LoopPaths.h
+===================================================================
+--- include/llvm/Analysis/LoopPaths.h	(nonexistent)
++++ include/llvm/Analysis/LoopPaths.h	(working copy)
+@@ -0,0 +1,127 @@
++//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements analysis which enumerates paths in loops.  In
++// particular, this pass calculates all paths in loops which are of the
++// following form:
++//
++//  - Header to backedge, with no equivalence points on the path
++//  - Header to with equivalence point
++//  - Equivalence point to equivalence point
++//  - Equivalence point to backedge
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_ANALYSIS_LOOPPATHS_H
++#define LLVM_ANALYSIS_LOOPPATHS_H
++
++#include <set>
++#include <vector>
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/Analysis/LoopPass.h"
++#include "llvm/IR/BasicBlock.h"
++
++namespace llvm {
++
++/// A path through the loop, which begins/ends either on the loop's header, the
++/// loop's backedge(s) or equivalence points.
++class LoopPath {
++private:
++  /// Basic blocks that comprise the path, ordered so that iterating through
++  /// the vector is equivalent to traversing the path.
++  std::vector<BasicBlock *> Blocks;
++
++  /// The path begins & ends on specific instructions.  Note that start *must*
++  /// be inside Blocks.front() and End *must* be inside Blocks.back().
++  Instruction *Start, *End;
++
++  /// Does the path start at the loop header?  If not, it by definition starts
++  /// at an equivalence point.
++  bool StartsAtHeader;
++
++  /// Does the path end at a backedge?  If not, it by definition ends at an
++  /// equivalence point.
++  bool EndsAtBackedge;
++
++public:
++  LoopPath() = delete;
++  LoopPath(const std::vector<BasicBlock *> &Blocks,
++           Instruction *Start, Instruction *End,
++           bool StartsAtHeader, bool EndsAtBackedge);
++
++  /// Get the starting point of the path, guaranteed to be either the loop
++  /// header or an equivalence point.
++  BasicBlock *startBlock() const { return Blocks.front(); }
++  Instruction *startInst() const { return Start; }
++
++  /// Get the the ending point of the path, guaranteed to be either an
++  /// equivalence point or a backedge.
++  BasicBlock *endBlock() const { return Blocks.back(); }
++  Instruction *endInst() const { return End; }
++
++  /// Iterators over the path's blocks.
++  std::vector<BasicBlock *>::iterator begin() { return Blocks.begin(); }
++  std::vector<BasicBlock *>::iterator end() { return Blocks.end(); }
++  std::vector<BasicBlock *>::const_iterator cbegin() { return Blocks.cbegin(); }
++  std::vector<BasicBlock *>::const_iterator cend() { return Blocks.cend(); }
++
++  /// Return whether the path starts at the loop header or equivalence point.
++  bool startsAtHeader() const { return StartsAtHeader; }
++
++  /// Return whether the path ends at a backedge block or equivalence point.
++  bool endsAtBackedge() const { return EndsAtBackedge; }
++
++  void print(raw_ostream &O) const;
++};
++
++/// Analyze all paths within a loop nest
++class EnumerateLoopPaths : public LoopPass {
++private:
++  /// All calculated paths for each analyzed loops.
++  DenseMap<const Loop *, std::vector<LoopPath> > Paths;
++
++  /// Information about the loop currently being analyzed
++  BasicBlock *Header;
++  SmallPtrSet<BasicBlock *, 4> Latches;
++
++  /// Depth-first search traversal information for generating path objects.
++  struct LoopDFSInfo {
++  public:
++    Instruction *Start;
++    std::vector<BasicBlock *> PathBlocks;
++    bool StartsAtHeader;
++  };
++
++  /// Run a depth-first search for paths in the loop starting at an instruction.
++  /// Any paths found are added to the vector of paths, and new paths to explore
++  /// are added to the search queue.
++  void loopDFS(Instruction *,
++               LoopDFSInfo &,
++               std::vector<LoopPath> &,
++               std::queue<Instruction *> &);
++
++public:
++  static char ID;
++
++  EnumerateLoopPaths() : LoopPass(ID) {}
++
++  /// Pass interface implementation.
++  void getAnalysisUsage(AnalysisUsage &) const override;
++  bool runOnLoop(Loop *, LPPassManager &) override;
++
++  bool hasPaths(const Loop *L) const { return Paths.count(L); }
++  const std::vector<LoopPath> &getPaths(const Loop *L) const;
++};
++
++}
++
++#endif
++
 Index: include/llvm/Analysis/Passes.h
 ===================================================================
 --- include/llvm/Analysis/Passes.h	(revision 277823)
 +++ include/llvm/Analysis/Passes.h	(working copy)
-@@ -173,6 +173,13 @@
+@@ -173,6 +173,19 @@
    //
    FunctionPass *createMemDerefPrinter();
  
@@ -466,6 +598,12 @@ Index: include/llvm/Analysis/Passes.h
 +  //
 +  FunctionPass *createLiveValuesPass();
 +
++  //===--------------------------------------------------------------------===//
++  //
++  // createEnumerateLoopPathsPass - This pass calculates all paths between
++  // equivalence points within a loop.
++  //
++  LoopPass *createEnumerateLoopPathsPass();
  }
  
  #endif
@@ -1516,7 +1654,15 @@ Index: include/llvm/InitializePasses.h
 ===================================================================
 --- include/llvm/InitializePasses.h	(revision 277823)
 +++ include/llvm/InitializePasses.h	(working copy)
-@@ -131,6 +131,7 @@
+@@ -119,6 +119,7 @@
+ void initializeDominatorTreeWrapperPassPass(PassRegistry&);
+ void initializeEarlyIfConverterPass(PassRegistry&);
+ void initializeEdgeBundlesPass(PassRegistry&);
++void initializeEnumerateLoopPathsPass(PassRegistry&);
+ void initializeExpandPostRAPass(PassRegistry&);
+ void initializeGCOVProfilerPass(PassRegistry&);
+ void initializeInstrProfilingPass(PassRegistry&);
+@@ -131,6 +132,7 @@
  void initializeScalarizerPass(PassRegistry&);
  void initializeEarlyCSELegacyPassPass(PassRegistry &);
  void initializeEliminateAvailableExternallyPass(PassRegistry&);
@@ -1524,7 +1670,7 @@ Index: include/llvm/InitializePasses.h
  void initializeExpandISelPseudosPass(PassRegistry&);
  void initializeFunctionAttrsPass(PassRegistry&);
  void initializeGCMachineCodeAnalysisPass(PassRegistry&);
-@@ -146,6 +147,7 @@
+@@ -146,6 +148,7 @@
  void initializeInductiveRangeCheckEliminationPass(PassRegistry&);
  void initializeIndVarSimplifyPass(PassRegistry&);
  void initializeInlineCostAnalysisPass(PassRegistry&);
@@ -1532,7 +1678,7 @@ Index: include/llvm/InitializePasses.h
  void initializeInstructionCombiningPassPass(PassRegistry&);
  void initializeInstCountPass(PassRegistry&);
  void initializeInstNamerPass(PassRegistry&);
-@@ -153,6 +155,7 @@
+@@ -153,6 +156,7 @@
  void initializeIntervalPartitionPass(PassRegistry&);
  void initializeJumpThreadingPass(PassRegistry&);
  void initializeLCSSAPass(PassRegistry&);
@@ -1540,7 +1686,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLICMPass(PassRegistry&);
  void initializeLazyValueInfoPass(PassRegistry&);
  void initializeLibCallAliasAnalysisPass(PassRegistry&);
-@@ -162,6 +165,7 @@
+@@ -162,6 +166,7 @@
  void initializeLiveRegMatrixPass(PassRegistry&);
  void initializeLiveStacksPass(PassRegistry&);
  void initializeLiveVariablesPass(PassRegistry&);
@@ -1548,7 +1694,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLoaderPassPass(PassRegistry&);
  void initializeLocalStackSlotPassPass(PassRegistry&);
  void initializeLoopDeletionPass(PassRegistry&);
-@@ -208,6 +212,7 @@
+@@ -208,6 +213,7 @@
  void initializeMetaRenamerPass(PassRegistry&);
  void initializeMergeFunctionsPass(PassRegistry&);
  void initializeModuleDebugInfoPrinterPass(PassRegistry&);
@@ -1556,7 +1702,7 @@ Index: include/llvm/InitializePasses.h
  void initializeNaryReassociatePass(PassRegistry&);
  void initializeNoAAPass(PassRegistry&);
  void initializeObjCARCAliasAnalysisPass(PassRegistry&);
-@@ -252,7 +257,8 @@
+@@ -252,7 +258,8 @@
  void initializeScalarEvolutionPass(PassRegistry&);
  void initializeShrinkWrapPass(PassRegistry &);
  void initializeSimpleInlinerPass(PassRegistry&);
@@ -1566,7 +1712,7 @@ Index: include/llvm/InitializePasses.h
  void initializeRegisterCoalescerPass(PassRegistry&);
  void initializeSingleLoopExtractorPass(PassRegistry&);
  void initializeSinkingPass(PassRegistry&);
-@@ -263,6 +269,7 @@
+@@ -263,6 +270,7 @@
  void initializeStackProtectorPass(PassRegistry&);
  void initializeStackColoringPass(PassRegistry&);
  void initializeStackSlotColoringPass(PassRegistry&);
@@ -1586,15 +1732,18 @@ Index: include/llvm/LinkAllPasses.h
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
  #include "llvm/Transforms/Vectorize.h"
-@@ -81,6 +82,7 @@
+@@ -81,8 +82,10 @@
        (void) llvm::createDomPrinterPass();
        (void) llvm::createDomOnlyViewerPass();
        (void) llvm::createDomViewerPass();
 +      (void) llvm::createMigrationPointsPass();
        (void) llvm::createGCOVProfilerPass();
        (void) llvm::createInstrProfilingPass();
++      (void) llvm::createEnumerateLoopPathsPass();
        (void) llvm::createFunctionInliningPass();
-@@ -92,11 +94,14 @@
+       (void) llvm::createAlwaysInlinerPass();
+       (void) llvm::createGlobalDCEPass();
+@@ -92,11 +95,14 @@
        (void) llvm::createIPSCCPPass();
        (void) llvm::createInductiveRangeCheckEliminationPass();
        (void) llvm::createIndVarSimplifyPass();
@@ -1609,7 +1758,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createLoopExtractorPass();
        (void) llvm::createLoopInterchangePass();
        (void) llvm::createLoopSimplifyPass();
-@@ -110,6 +115,7 @@
+@@ -110,6 +116,7 @@
        (void) llvm::createLowerInvokePass();
        (void) llvm::createLowerSwitchPass();
        (void) llvm::createNaryReassociatePass();
@@ -1617,7 +1766,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createNoAAPass();
        (void) llvm::createObjCARCAliasAnalysisPass();
        (void) llvm::createObjCARCAPElimPass();
-@@ -134,6 +140,7 @@
+@@ -134,6 +141,7 @@
        (void) llvm::createSafeStackPass();
        (void) llvm::createScalarReplAggregatesPass();
        (void) llvm::createSingleLoopExtractorPass();
@@ -1868,7 +2017,15 @@ Index: lib/Analysis/Analysis.cpp
 ===================================================================
 --- lib/Analysis/Analysis.cpp	(revision 277823)
 +++ lib/Analysis/Analysis.cpp	(working copy)
-@@ -53,6 +53,7 @@
+@@ -42,6 +42,7 @@
+   initializeDomViewerPass(Registry);
+   initializeDomPrinterPass(Registry);
+   initializeDomOnlyViewerPass(Registry);
++  initializeEnumerateLoopPathsPass(Registry);
+   initializePostDomViewerPass(Registry);
+   initializeDomOnlyPrinterPass(Registry);
+   initializePostDomPrinterPass(Registry);
+@@ -53,6 +54,7 @@
    initializeLazyValueInfoPass(Registry);
    initializeLibCallAliasAnalysisPass(Registry);
    initializeLintPass(Registry);
@@ -1880,7 +2037,7 @@ Index: lib/Analysis/CMakeLists.txt
 ===================================================================
 --- lib/Analysis/CMakeLists.txt	(revision 277823)
 +++ lib/Analysis/CMakeLists.txt	(working copy)
-@@ -34,9 +34,11 @@
+@@ -34,10 +34,13 @@
    LibCallAliasAnalysis.cpp
    LibCallSemantics.cpp
    Lint.cpp
@@ -1890,8 +2047,10 @@ Index: lib/Analysis/CMakeLists.txt
    LoopInfo.cpp
 +  LoopNestingTree.cpp
    LoopPass.cpp
++  LoopPaths.cpp
    MemDepPrinter.cpp
    MemDerefPrinter.cpp
+   MemoryBuiltins.cpp
 Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
@@ -2422,6 +2581,154 @@ Index: lib/Analysis/LoopNestingTree.cpp
 +      if((*it)->isLoopHeader)
 +        remaining.push(*it);
 +  }
++}
++
+Index: lib/Analysis/LoopPaths.cpp
+===================================================================
+--- lib/Analysis/LoopPaths.cpp	(nonexistent)
++++ lib/Analysis/LoopPaths.cpp	(working copy)
+@@ -0,0 +1,143 @@
++//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements analysis which enumerates paths in loops.  In
++// particular, this pass calculates all paths in loops which are of the
++// following form:
++//
++//  - Header to backedge block, with no equivalence points on the path
++//  - Header to block with equivalence point
++//  - Block with equivalence point to block with equivalence point
++//  - Block with equivalence point to backedge block
++//
++// Note that backedge blocks may or may not also be exit blocks.
++//
++//===----------------------------------------------------------------------===//
++
++#include <queue>
++#include "llvm/Analysis/LoopPaths.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "looppaths"
++
++LoopPath::LoopPath(const std::vector<BasicBlock *> &Blocks,
++                   Instruction *Start, Instruction *End,
++                   bool StartsAtHeader, bool EndsAtBackedge)
++  : Blocks(Blocks), Start(Start), End(End), StartsAtHeader(StartsAtHeader),
++    EndsAtBackedge(EndsAtBackedge) {
++  assert(Blocks.size() && "Trivial path");
++  assert(Start && Start->getParent() == Blocks.front() &&
++         "Invalid starting instruction");
++  assert(End && End->getParent() == Blocks.back() &&
++         "Invalid ending instruction");
++}
++
++void LoopPath::print(raw_ostream &O) const {
++  O << "  Path with " << std::to_string(Blocks.size()) << " block(s)\n";
++  O << "  Start:"; Start->print(O); O << "\n";
++  O << "  End:"; End->print(O); O << "\n";
++  O << "  Blocks:\n";
++  for(auto Block : Blocks)
++    O << "    " << Block->getName() << "\n";
++}
++
++void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
++  AU.setPreservesAll();
++}
++
++/// Search over the instructions in a basic block (starting at I) for
++/// equivalence points.  Return an equivalence point if found, or null
++/// otherwise.
++static Instruction *hasEquivalencePoint(Instruction *I) {
++  if(!I) return nullptr;
++  for(BasicBlock::iterator it(I), e = I->getParent()->end(); it != e; ++it)
++    if(isa<CallInst>(it) || isa<InvokeInst>(it)) return it;
++  return nullptr;
++}
++
++void EnumerateLoopPaths::loopDFS(Instruction *I,
++                                 LoopDFSInfo &DFSI,
++                                 std::vector<LoopPath> &CurPaths,
++                                 std::queue<Instruction *> &NewPaths) {
++  Instruction *EqPoint;
++  BasicBlock *BB = I->getParent();
++  DFSI.PathBlocks.push_back(BB);
++
++  if((EqPoint = hasEquivalencePoint(I))) {
++    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, EqPoint,
++                          DFSI.StartsAtHeader, false);
++    NewPaths.push(EqPoint->getNextNode());
++    DEBUG(dbgs() << "Found path that ends at an equivalence point:\n";
++          CurPaths.back().print(dbgs()));
++  }
++  else if(Latches.count(BB)) {
++    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, BB->getTerminator(),
++                          DFSI.StartsAtHeader, true);
++    DEBUG(dbgs() << "Found path that ends at a backedge:\n";
++          CurPaths.back().print(dbgs()));
++  }
++  else {
++    // TODO if successor is in child loop, glob all child loop blocks together
++    // as a virtual path node and only search successors of the loop
++    for(auto SuccBB : successors(BB))
++      loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths);
++  }
++
++  DFSI.PathBlocks.pop_back();
++}
++
++bool EnumerateLoopPaths::runOnLoop(Loop *L, LPPassManager &LPPM) {
++  std::vector<LoopPath> &CurPaths = Paths[L];
++  std::queue<Instruction *> NewPaths;
++  SmallVector<BasicBlock *, 4> LatchVec;
++  LoopDFSInfo DFSI;
++
++  DEBUG(dbgs() << "Enumerating paths for "; L->print(dbgs()));
++
++  Header = L->getHeader();
++  L->getLoopLatches(LatchVec);
++  for(auto L : LatchVec) Latches.insert(L);
++
++  assert(CurPaths.size() == 0 && "Re-processing loop?");
++  assert(Latches.size() && "Not a loop? (No backedges)");
++
++  DFSI.Start = &Header->front();
++  DFSI.StartsAtHeader = true;
++  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
++
++  DFSI.StartsAtHeader = false;
++  while(!NewPaths.empty()) {
++    DFSI.Start = NewPaths.front();
++    NewPaths.pop();
++    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
++  }
++
++  return false;
++}
++
++const std::vector<LoopPath> &EnumerateLoopPaths::getPaths(const Loop *L) const {
++  assert(hasPaths(L) && "No paths for loop");
++  return Paths.find(L)->second;
++}
++
++char EnumerateLoopPaths::ID = 0;
++INITIALIZE_PASS(EnumerateLoopPaths, "looppaths",
++                "Enumerate paths between equivalence points in loops",
++                false, true)
++
++namespace llvm {
++  LoopPass *createEnumerateLoopPathsPass() { return new EnumerateLoopPaths(); }
 +}
 +
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
@@ -6616,7 +6923,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,964 @@
+@@ -0,0 +1,1030 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -6661,7 +6968,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +#include "llvm/Analysis/CFG.h"
 +#include "llvm/Analysis/LoopInfo.h"
 +#include "llvm/Analysis/LoopIterator.h"
++#include "llvm/Analysis/ScalarEvolution.h"
 +#include "llvm/IR/DiagnosticInfo.h"
++#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/Intrinsics.h"
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
@@ -6725,6 +7034,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +namespace {
 +
++/// Get the integer size of a value, if statically known.
++static int64_t getValueSize(const Value *V) {
++  if(isa<ConstantInt>(V)) return cast<ConstantInt>(V)->getSExtValue();
++  DEBUG(dbgs() << "Couldn't get size for"; V->dump() );
++  return -1;
++}
++
 +/// Weight metrics.  Child classes implement for different analyses.
 +class Weight {
 +public:
@@ -6735,7 +7051,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  virtual bool isHTMWeight() const { return false; }
 +
 +  /// Analyze an instruction & update accounting.
-+  virtual void analyze(const Instruction *I) = 0;
++  virtual void analyze(const Instruction *I, const DataLayout *DL) = 0;
 +
 +  /// Return whether or not we should add an migration point.
 +  virtual bool shouldAddMigPoint() const = 0;
@@ -6757,8 +7073,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  virtual size_t numIters() const = 0;
 +
 +  /// Return whether or not the weight is within some percent (0-100) of the
-+  /// threshold.
-+  virtual bool withinPercent(unsigned percent) const = 0;
++  /// threshold metric for a type of weight.
++  virtual bool underPercentOfThreshold(unsigned percent) const = 0;
 +
 +  /// Return a human-readable string describing weight information.
 +  virtual std::string toString() const = 0;
@@ -6771,9 +7087,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  // The number of bytes loaded & stored, respectively
 +  size_t LoadBytes, StoreBytes;
 +
++  // Statistics about when the weight was reset (i.e., at HTM stop/starts)
++  size_t Resets, ResetLoad, ResetStore;
++
 +public:
 +  HTMWeight(size_t LoadBytes = 0, size_t StoreBytes = 0)
-+    : LoadBytes(LoadBytes), StoreBytes(StoreBytes) {}
++    : LoadBytes(LoadBytes), StoreBytes(StoreBytes), Resets(0), ResetLoad(0),
++      ResetStore(0) {}
 +  HTMWeight(const HTMWeight &C)
 +    : LoadBytes(C.LoadBytes), StoreBytes(C.StoreBytes) {}
 +  virtual Weight *copy() const { return new HTMWeight(*this); }
@@ -6781,7 +7101,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  virtual bool isHTMWeight() const { return true; }
 +
 +  /// Update the number of bytes loaded & stored from memory operations.
-+  virtual void analyze(const Instruction *I) {
++  virtual void analyze(const Instruction *I, const DataLayout *DL) {
++    Type *Ty;
++
 +    // TODO more advanced analysis, e.g., register pressure heuristics?
 +    // TODO do extractelement, insertelement, shufflevector, extractvalue, or
 +    // insertvalue read/write memory?
@@ -6789,24 +7111,57 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // Instruction::mayLoad() / Instruction::mayStore()):
 +    //   cmpxchg
 +    //   atomicrmw
-+    //   llvm.memcpy
-+    //   llvm.memmove
-+    //   llvm.memset
 +    //   llvm.masked.load
 +    //   llvm.masked.store
 +    //   llvm.masked.gather
 +    //   llvm.masked.store
-+    if(isa<LoadInst>(I)) {
++    switch(I->getOpcode()) {
++    default: break;
++    case Instruction::Load: {
 +      const LoadInst *LI = cast<LoadInst>(I);
-+      const DataLayout &DL = I->getModule()->getDataLayout();
-+      Type *Ty = LI->getPointerOperand()->getType()->getPointerElementType();
-+      LoadBytes += DL.getTypeStoreSize(Ty);
++      Ty = LI->getPointerOperand()->getType()->getPointerElementType();
++      LoadBytes += DL->getTypeStoreSize(Ty);
++      break;
 +    }
-+    else if(isa<StoreInst>(I)) {
++
++    case Instruction::Store: {
 +      const StoreInst *SI = cast<StoreInst>(I);
-+      const DataLayout &DL = I->getModule()->getDataLayout();
-+      Type *Ty = SI->getPointerOperand()->getType()->getPointerElementType();
-+      StoreBytes += DL.getTypeStoreSize(Ty);
++      Ty = SI->getValueOperand()->getType();
++      StoreBytes += DL->getTypeStoreSize(Ty);
++      break;
++    }
++
++    case Instruction::Call: {
++      const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
++      bool Loads = false, Stores = false;
++      int64_t Size = 0;
++
++      if(!II) break;
++
++      switch(II->getIntrinsicID()) {
++      default: break;
++      case Intrinsic::memcpy:
++      case Intrinsic::memmove:
++        // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
++        Loads = Stores = true;
++        Size = getValueSize(II->getArgOperand(2));
++        break;
++      case Intrinsic::memset:
++        // Arguments: i8* dest, i8 val, i<x> len, i32 align, i1 isvolatile
++        Stores = true;
++        Size = getValueSize(II->getArgOperand(2));
++        break;
++      }
++
++      // Negative size means we can't statically determine copy size
++      // TODO how do we account for unknown sizes?
++      if(Size > 0) {
++        if(Loads) LoadBytes += Size;
++        if(Stores) StoreBytes += Size;
++      }
++
++      break;
++    }
 +    }
 +  }
 +
@@ -6818,7 +7173,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    else return false;
 +  }
 +
-+  virtual void reset() { LoadBytes = StoreBytes = 0; }
++  virtual void reset() {
++    Resets++;
++    ResetLoad += LoadBytes;
++    ResetStore += StoreBytes;
++    LoadBytes = StoreBytes = 0;
++  }
 +
 +  /// The max value for HTM weights of predecessors is the max of potential
 +  /// load and store bytes over all predecessors.
@@ -6846,11 +7206,11 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
 +  }
 +
-+  virtual bool withinPercent(unsigned percent) const {
++  virtual bool underPercentOfThreshold(unsigned percent) const {
++    assert(percent <= 100 && "Invalid percentage");
 +    float fppercent = (float)percent / 100.0f;
-+    if((float)LoadBytes > ((float)HTMReadBufSize * fppercent))
-+      return true;
-+    else if((float)StoreBytes > ((float)HTMWriteBufSize * fppercent))
++    if((float)LoadBytes < ((float)HTMReadBufSize * fppercent) &&
++       (float)StoreBytes < ((float)HTMWriteBufSize * fppercent))
 +      return true;
 +    else return false;
 +  }
@@ -6875,14 +7235,17 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  MigrationPoints() : FunctionPass(ID) {}
 +  ~MigrationPoints() {}
 +
-+  virtual void getAnalysisUsage(AnalysisUsage &AU) const
-+  { AU.addRequired<LoopInfoWrapperPass>(); }
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
++    AU.addRequired<LoopInfoWrapperPass>();
++    AU.addRequired<ScalarEvolution>();
++  }
 +
 +  virtual const char *getPassName() const
 +  { return "Insert migration points"; }
 +
 +  virtual bool doInitialization(Module &M) {
 +    bool modified = false;
++    DL = &M.getDataLayout();
 +
 +    // Ensure HTM is supported on this architecture if attempting to instrument
 +    // with transactional execution, otherwise disable it and warn the user
@@ -6890,20 +7253,19 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      Triple TheTriple(M.getTargetTriple());
 +      Arch = TheTriple.getArch();
 +
-+      if(HTMBegin.find(Arch) != HTMBegin.end()) {
-+        // Add HTM intrinsic declarations which are called inside functions
-+        HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
-+        HTMEndDecl = addIntrinsicDecl(M, HTMEnd);
-+        HTMTestDecl = addIntrinsicDecl(M, HTMTest);
-+        modified = true;
-+      }
-+      else {
++      if(HTMBegin.find(Arch) == HTMBegin.end()) {
 +        std::string Msg("HTM instrumentation not supported for '");
 +        Msg += TheTriple.getArchName();
 +        Msg += "'";
 +        DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
 +        M.getContext().diagnose(DI);
++        return modified;
 +      }
++
++      HTMBeginDecl = Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
++      HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
++      HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
++      modified = true;
 +    }
 +
 +    return modified;
@@ -6997,6 +7359,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +  /// The current architecture - used to access architecture-specific HTM calls
 +  Triple::ArchType Arch;
++  const DataLayout *DL;
 +
 +  /// Function declarations for HTM intrinsics
 +  Value *HTMBeginDecl;
@@ -7102,8 +7465,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  /// Return whether the instruction requires HTM end instrumentation.
 +  bool shouldAddHTMEnd(Instruction *I) { return HTMEndInsts.count(I); }
 +
-+  /// Return whether the instruction is a migration point.
-+  bool isMigrationPoint(Instruction *I) { return MigPointInsts.count(I); }
++  /// Return whether the instruction is a migration point.  We assume that all
++  /// called functions have migration points internally.
++  bool isMigrationPoint(Instruction *I) {
++    if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
++      return true;
++    else return MigPointInsts.count(I);
++  }
 +
 +  /// Mark an instruction to be instrumented with an HTM begin, directly before
 +  /// the instruction
@@ -7147,10 +7515,14 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +          BasicBlock::iterator NextI(I->getNextNode());
 +          for(size_t rem = searchSpan; rem > 0 && NextI != E; rem--, NextI++) {
 +            if(isLibcIO(NextI)) {
++              DEBUG(dbgs() << "  - Found another libc call"; NextI->dump());
 +              I = NextI;
 +              rem = searchSpan;
 +            }
 +          }
++
++          // TODO analyze successor blocks as well
++
 +          markAsMigPoint(I->getNextNode(), true, false);
 +        }
 +      }
@@ -7219,7 +7591,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      CurWeight->reset();
 +      hasMigPoint = true;
 +    end:
-+      CurWeight->analyze(I);
++      CurWeight->analyze(I, DL);
 +    }
 +
 +    DEBUG(dbgs() << "  Weight: " << CurWeight->toString() << "\n");
@@ -7350,12 +7722,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +    // Finally, determine if we should add an migration point at exit block(s)
-+    // TODO tune threshold
++    // TODO tune percent of threshold
 +    for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
 +      if(isa<ReturnInst>(BB->getTerminator())) {
 +        assert(BBWeight.find(BB) != BBWeight.end() && "Missing block weight");
 +        const BasicBlockWeightInfo &BBWI = BBWeight.at(BB).BlockWeight;
-+        if(BBWI.BlockWeight->withinPercent(20))
++        if(!BBWI.BlockWeight->underPercentOfThreshold(10))
 +          markAsMigPoint(BB->getTerminator(), true, true);
 +      }
 +    }
@@ -7365,23 +7737,22 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  // Instrumentation implementation
 +  //===--------------------------------------------------------------------===//
 +
-+  /// Add a declaration for an architecture-specific intrinsic (contained in
-+  /// the map).
-+  Constant *addIntrinsicDecl(Module &M, const IntrinsicMap &Map) {
-+    IntrinsicMap::const_iterator It = Map.find(Arch);
-+    assert(It != Map.end() && "Unsupported architecture");
-+    FunctionType *FuncTy = Intrinsic::getType(M.getContext(), It->second);
-+    return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
-+  }
-+
 +  /// Transform a loop header so that migration points (and any concomitant
 +  /// costs) are only experienced every nth iteration, based on weight metrics
 +  void transformLoopHeader(Loop *L) {
-+    assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
-+    const size_t LNum = LoopsTransformed++;
-+    size_t ItersPerMigPoint = LoopWeight.find(L)->second.ItersPerMigPoint;
 +    BasicBlock *Header = L->getHeader(), *NewSuccBB, *MigPointBB;
++    size_t ItersPerMigPoint, LNum;
++
++    // If the first instruction has already been marked, nothing to do
++    Instruction *First = Header->getFirstInsertionPt();
++    if(isMigrationPoint(First) ||
++       shouldAddHTMEnd(First) ||
++       shouldAddHTMBegin(First)) return;
++
++    assert(LoopWeight.find(L) != LoopWeight.end() && "No loop analysis");
++    ItersPerMigPoint = LoopWeight.find(L)->second.ItersPerMigPoint;
 +    PHINode *IV = L->getCanonicalInductionVariable();
++    LNum = LoopsTransformed++;
 +    // TODO add our own induction variable?
 +
 +    if(ItersPerMigPoint > 1 && IV) {
@@ -7556,6 +7927,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +                      "Insert migration points into functions",
 +                      true, false)
 +INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 +INITIALIZE_PASS_END(MigrationPoints, "migration-points",
 +                    "Insert migration points into functions",
 +                    true, false)
@@ -7573,7 +7945,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  "wprintf", "fwprintf", "vwprintf", "vfwprintf",
 +  "ftell", "fgetpos", "fseek", "fsetpos", "rewind",
 +  "clearerr", "feof", "ferror", "perror",
-+  "remove", "rename", "tmpfile", "tmpnam"
++  "remove", "rename", "tmpfile", "tmpnam",
++  "__isoc99_fscanf"
 +};
 +
 +namespace llvm {
