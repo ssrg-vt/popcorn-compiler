@@ -28,7 +28,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// TODO can we trim these down?
 #include <map>
 #include <memory>
 #include <queue>
@@ -39,7 +38,6 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/SCCIterator.h"
-#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/LoopPaths.h"
@@ -218,13 +216,10 @@ public:
   virtual void analyze(const Instruction *I, const DataLayout *DL) {
     Type *Ty;
 
-    // TODO more advanced analysis, e.g., register pressure heuristics?
     // TODO do extractelement, insertelement, shufflevector, extractvalue, or
     // insertvalue read/write memory?
     // TODO Need to handle the following instructions/instrinsics (also see
     // Instruction::mayLoad() / Instruction::mayStore()):
-    //   cmpxchg
-    //   atomicrmw
     //   llvm.masked.load
     //   llvm.masked.store
     //   llvm.masked.gather
@@ -243,6 +238,20 @@ public:
       Ty = SI->getValueOperand()->getType();
       StoreBytes += DL->getTypeStoreSize(Ty);
       break;
+    }
+
+    case Instruction::AtomicCmpXchg: {
+      const AtomicCmpXchgInst *Cmp = cast<AtomicCmpXchgInst>(I);
+      Ty = Cmp->getPointerOperand()->getType()->getPointerElementType();
+      LoadBytes += DL->getTypeStoreSize(Ty);
+      StoreBytes += DL->getTypeStoreSize(Ty);
+    }
+
+    case Instruction::AtomicRMW: {
+      const AtomicRMWInst *RMW = cast<AtomicRMWInst>(I);
+      Ty = RMW->getPointerOperand()->getType()->getPointerElementType();
+      LoadBytes += DL->getTypeStoreSize(Ty);
+      StoreBytes += DL->getTypeStoreSize(Ty);
     }
 
     case Instruction::Call: {
@@ -266,11 +275,18 @@ public:
         break;
       }
 
-      // Negative size means we can't statically determine copy size
-      // TODO how do we account for unknown sizes?
+      // Size > 0: we know the size statically
+      // Size < 0: we can't determine the size statically
+      // Size == 0: some intrinsic we don't care about
       if(Size > 0) {
         if(Loads) LoadBytes += Size;
         if(Stores) StoreBytes += Size;
+      }
+      else if(Size < 0) {
+        // Assume we're doing heavy reading & writing
+        // TODO may need to revise if transaction begin/ends are too expensive
+        if(Loads) LoadBytes += HTMReadBufSize;
+        if(Stores) StoreBytes += HTMWriteBufSize;
       }
 
       break;
@@ -281,6 +297,7 @@ public:
   /// Return true if we think we're going to overflow the load or store
   /// buffer, false otherwise.
   virtual bool shouldAddMigPoint() const {
+    // TODO more advanced analysis, e.g., register pressure heuristics?
     if(underPercentOfThreshold(CapacityThreshold)) return false;
     else return true;
   }
@@ -500,7 +517,6 @@ private:
   const static IntrinsicMap HTMTest;
 
   /// libc functions which are likely to cause an HTM abort through a syscall
-  // TODO LLVM has to have a better way to detect these
   const static StringSet<> LibcIO;
 
   /// Weight information for basic blocks.
