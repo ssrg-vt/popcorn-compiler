@@ -6362,7 +6362,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
    SMShadowTracker.startFunction(MF);
  
    SetupMachineFunction(MF);
-@@ -66,8 +69,24 @@
+@@ -66,8 +69,17 @@
    // Emit the rest of the function body.
    EmitFunctionBody();
  
@@ -6372,16 +6372,9 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
 +  // maintain the saved FBP (old RBP) and return address (RIP) as callee-saved
 +  // registers, so manually add where they're saved.
 +  if(MF.getFrameInfo()->hasStackMap()) {
-+    const TargetFrameLowering *TFL = Subtarget->getFrameLowering();
-+    const X86MachineFunctionInfo *FI = MF.getInfo<X86MachineFunctionInfo>();
-+    int Offset;
-+    unsigned BaseReg;
-+
 +    UI.recordUnwindInfo(MF);
-+    Offset = TFL->getFrameIndexReferenceFromFP(MF, FI->getRAIndex(), BaseReg);
-+    UI.addRegisterUnwindInfo(MF, X86::RIP, Offset);
-+    Offset = TFL->getFrameIndexReferenceFromFP(MF, FI->getFAIndex(), BaseReg);
-+    UI.addRegisterUnwindInfo(MF, X86::RBP, Offset);
++    UI.addRegisterUnwindInfo(MF, X86::RIP, 8);
++    UI.addRegisterUnwindInfo(MF, X86::RBP, 0);
 +  }
 +
 +  // We may have modified where stack map intrinsics are located.
@@ -6389,7 +6382,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
  }
  
  /// printSymbolOperand - Print a raw symbol reference operand.  This handles
-@@ -689,8 +708,10 @@
+@@ -689,8 +701,10 @@
    }
  
    if (TT.isOSBinFormatELF()) {
