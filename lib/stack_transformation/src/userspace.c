@@ -376,7 +376,8 @@ static bool prep_stack(void)
    */
   // Note: __builtin_frame_address needs to be adjusted depending on where the
   // function is called from, we need the FBP of the first function, e.g. main
-  offset = (uint64_t)(bounds.high - __builtin_frame_address(2));
+  // TODO a better way to get the highest function activation address?
+  offset = (uint64_t)(bounds.high - __builtin_frame_address(4));
   offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
   bounds.high -= offset;
 #if _TLS_IMPL == PTHREAD_TLS

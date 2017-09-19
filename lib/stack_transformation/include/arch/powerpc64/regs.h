@@ -328,6 +328,7 @@ struct regset_powerpc64
 
 #define SET_SAVED_LR( )  asm volatile( "ld 17,0(1) ; ld 17,16(17)" : : : "r17" )
 #define SET_LR( var )  asm volatile( "ld 17,%0 ; mtlr 17" : : "m" (var) : "r17" )
+#define SET_CTR( var ) asm volatile( "ld 17,%0 ; mtctr 17" : : "m" (var) : "r17" )
 
 /*
  * The only way to set the PC is through control flow operations.
@@ -686,20 +687,13 @@ struct regset_powerpc64
   printf("lr:%p\n", lr); \
 }
 
-// TODO: How about these?
-//  SET_R0((regset_powerpc64).r[0]); \
-//  SET_R1((regset_powerpc64).r[1]); \
-//  SET_R2((regset_powerpc64).r[2]); \
-//  SET_R13((regset_powerpc64).r[13]); 
-
-// TODO: R12 might be used in global entry point.
-// Is it a good idea to skip this too?
-
-// TODO: CTR might be needed to be set as well.
 /* Set all registers from a register set. */
 // Note: do not set PC, SP(r1) and FBP(r31) as they require special handling
+// TODO condition registers
 #define SET_REGS_POWERPC64( regset_powerpc64 ) \
 { \
+  SET_R0((regset_powerpc64).r[0]); \
+  SET_R2((regset_powerpc64).r[2]); \
   SET_R3((regset_powerpc64).r[3]); \
   SET_R4((regset_powerpc64).r[4]); \
   SET_R5((regset_powerpc64).r[5]); \
@@ -710,6 +704,7 @@ struct regset_powerpc64
   SET_R10((regset_powerpc64).r[10]); \
   SET_R11((regset_powerpc64).r[11]); \
   SET_R12((regset_powerpc64).r[12]); \
+  SET_R13((regset_powerpc64).r[13]); \
   SET_R14((regset_powerpc64).r[14]); \
   SET_R15((regset_powerpc64).r[15]); \
   SET_R16((regset_powerpc64).r[16]); \
@@ -725,8 +720,10 @@ struct regset_powerpc64
   SET_R26((regset_powerpc64).r[26]); \
   SET_R27((regset_powerpc64).r[27]); \
   SET_R28((regset_powerpc64).r[28]); \
+  SET_R29((regset_powerpc64).r[29]); \
   SET_R30((regset_powerpc64).r[30]); \
   SET_LR((regset_powerpc64).lr); \
+  SET_CTR((regset_powerpc64).ctr); \
   SET_FP_REGS_POWERPC64(regset_powerpc64); \
 }
 
