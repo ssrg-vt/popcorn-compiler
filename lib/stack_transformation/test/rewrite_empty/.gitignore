@@ -1,9 +1,0 @@
-build_aarch64
-build_powerpc64
-build_x86-64
-rewrite_empty_aarch64
-rewrite_empty_powerpc64
-rewrite_empty_x86-64
-*.ll
-*.o
-*.s

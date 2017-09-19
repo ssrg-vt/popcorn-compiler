@@ -413,12 +413,11 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
 
   ASSERT(val_src && val_dest, "invalid values\n");
 
-  // TODO hack -- va_list is implemented as a different type for aarch64 &
-  // x86-64, and thus has a different size.  Need to handle more gracefully.
-  // x86_64:    24
-  // aarch64:   32
-  // powerpc64:  8 :)
-  // TODO: We need to fix this for migration between powerpc & aarch when we're able to migrate between all 3 arhcitectures
+  // TODO hack -- va_list is implemented with different sizes for different
+  // architectures.  Need to handle more gracefully.
+  //   x86_64:    24
+  //   aarch64:   32
+  //   powerpc64:  8
   if(val_src->is_alloca && VAL_SIZE(val_src) == 24 &&
      val_dest->is_alloca && VAL_SIZE(val_dest) == 32)
     skip = true;
