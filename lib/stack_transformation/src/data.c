@@ -474,7 +474,7 @@ static void apply_arch_operation(rewrite_context ctx,
       }
       break;
     default:
-      ST_ERR(1, "invalid live value location type (%u)\n", val->type);
+      ST_ERR(1, "invalid live value location type (%u)\n", val->operand_type);
       break;
     }
   }
@@ -507,8 +507,9 @@ static void apply_arch_operation(rewrite_context ctx,
                   val->operand_offset_or_constant,
                   val->operand_offset_or_constant,
                   val->operand_offset_or_constant);
+      break;
     default:
-      ST_ERR(1, "invalid live value location type (%u)\n", val->type);
+      ST_ERR(1, "invalid live value location type (%u)\n", val->operand_type);
       break;
     }
   }
