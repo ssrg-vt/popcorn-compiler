@@ -10,12 +10,6 @@
 #include "atomic.h"
 #include "futex.h"
 
-#ifdef _GNU_SOURCE
- #include <sched.h>
-#else
-  typedef struct pcpu_set_t { unsigned long __bits[128/sizeof(long)];} pcpu_set_t;
-#endif
-
 #define pthread __pthread
 
 struct pthread {
@@ -55,18 +49,8 @@ struct pthread {
 	uintptr_t canary_at_end;
 	void **dtv_copy;
 
- /* Migration functionality */
-     void* __regs;
-     void* __args;
-     int __migration_phase;
-#ifdef _GNU_SOURCE
-     cpu_set_t __orig_cpus;
-     cpu_set_t __cpus;
-#else
-     pcpu_set_t __orig_cpus;
-     pcpu_set_t __cpus;
-#endif
-     int __fix_stack;
+	/* Migration functionality */
+	void* __args;
 };
 
 struct __timer {
@@ -160,8 +144,7 @@ void __block_all_sigs(void *);
 void __block_app_sigs(void *);
 void __restore_sigs(void *);
 
-//#define DEFAULT_STACK_SIZE 81920
-#define DEFAULT_STACK_SIZE 8388608
+#define DEFAULT_STACK_SIZE 8388608 // 8MB, changed from 81920
 #define DEFAULT_GUARD_SIZE 4096
 
 #define __ATTRP_C11_THREAD ((void*)(uintptr_t)-1)

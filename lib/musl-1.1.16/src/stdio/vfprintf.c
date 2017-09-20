@@ -199,8 +199,9 @@ static char *fmt_u(uintmax_t x, char *s)
 /* Do not override this check. The floating point printing code below
  * depends on the float.h constants being right. If they are wrong, it
  * may overflow the stack. */
-//#if LDBL_MANT_DIG == 53
-#if LDBL_MANT_DIG == 117
+// TODO Popcorn: clang doesn't support generating IEEE quad-precision long
+// double types on PowerPC but instead defaults to IBM extended precision
+#if LDBL_MANT_DIG == 117 // Was originally 53
 typedef char compiler_defines_long_double_incorrectly[9-(int)sizeof(long double)];
 #endif
 

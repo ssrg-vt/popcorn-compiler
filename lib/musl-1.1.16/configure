@@ -224,13 +224,11 @@ test "$target" && \
 test "$target" != "$build" && \
 test -z "$CROSS_COMPILE" && \
 CROSS_COMPILE="$target-"
-#CROSS_COMPILE=/usr/bin/$target-linux-gnu-
+
 #
 # Find a C compiler to use
 #
 printf "checking for C compiler... "
-#echo $CROSS_COMPILE
-#echo "CC: " $CC
 trycc ${CROSS_COMPILE}gcc
 trycc ${CROSS_COMPILE}c99
 trycc ${CROSS_COMPILE}cc
@@ -697,8 +695,8 @@ esac
 # be dangerously incorrect because it depends on (1) the macros being
 # correct, and (2) IEEE semantics.
 #
-# TODO Popcorn -- fails on PowerPC, clang doesn't support generating IEEE long
-# double types but defaults to IBM extended double
+# TODO Popcorn: clang doesn't support generating IEEE quad-precision long
+# double types on PowerPC but instead defaults to IBM extended precision
 #printf "checking whether compiler's long double definition matches float.h... "
 #echo '#include <float.h>' > "$tmpc"
 #echo '#if LDBL_MANT_DIG == 53' >> "$tmpc"

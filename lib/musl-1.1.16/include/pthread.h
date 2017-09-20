@@ -221,12 +221,7 @@ int pthread_tryjoin_np(pthread_t, void **);
 int pthread_timedjoin_np(pthread_t, void **, const struct timespec *);
 
 /* POPCORN MIGRATE APIs */
-void** pthread_migrate_regs();
 void** pthread_migrate_args();
-int* pthread_migrate_migration_phase();
-cpu_set_t* pthread_migrate_orig_cpus();
-cpu_set_t* pthread_migrate_cpus();
-int *pthread_migrate_fix_stack();
 /* END POPCORN MIGRATE APIs */
 
 #endif
