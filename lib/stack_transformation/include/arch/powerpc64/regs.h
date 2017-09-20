@@ -688,7 +688,8 @@ struct regset_powerpc64
 }
 
 /* Set all registers from a register set. */
-// Note: do not set PC, SP(r1) and FBP(r31) as they require special handling
+// Note: do not set PC, SP(r1), thread-pointer register(r13) and FBP(r31) as
+// they require special handling.
 // TODO condition registers
 #define SET_REGS_POWERPC64( regset_powerpc64 ) \
 { \
@@ -704,7 +705,6 @@ struct regset_powerpc64
   SET_R10((regset_powerpc64).r[10]); \
   SET_R11((regset_powerpc64).r[11]); \
   SET_R12((regset_powerpc64).r[12]); \
-  SET_R13((regset_powerpc64).r[13]); \
   SET_R14((regset_powerpc64).r[14]); \
   SET_R15((regset_powerpc64).r[15]); \
   SET_R16((regset_powerpc64).r[16]); \

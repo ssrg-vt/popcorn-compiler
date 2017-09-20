@@ -1,0 +1,11 @@
+This test uses a live double-precision floating-point value before and after
+the call chain in recurse().  Similarly to rewrite_copy, this tests the
+runtime's ability to transfer live values from source to destination, but for
+floating-point registers.
+
+Note: this is known to currently be broken on x86
+
+Expected output for default run:
+--------------------------------
+
+Calculated 21.798902

@@ -21,6 +21,7 @@ int outer_frame()
     TIME_AND_TEST_REWRITE("./rewrite_thread_x86-64", outer_frame);
 #endif
   }
+  printf("--> child finished re-write <--\n");
   return rand();
 }
 

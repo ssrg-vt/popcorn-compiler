@@ -36,7 +36,7 @@ int main(int argc, char** argv)
     max_depth = atoi(argv[1]);
 
   recurse(1, &myvar);
-  printf("%s: myvar = %d\n", argv[0], myvar);
+  printf("myvar = %d\n", myvar);
   return (myvar == 0 ? 1 : 0);
 }
 

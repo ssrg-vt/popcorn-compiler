@@ -1,0 +1,30 @@
+This test generates a set of random values for each invocation of recurse(),
+continues recursion down to the outermost frame, and then re-uses the values
+upon returning.  This tests the runtime's basic ability to copy live values
+between the source and destination stack.
+
+Expected output for default run (note that generated values may change):
+------------------------------------------------------------------------
+
+Before values: 4 0 1 -1 4 -6 -6 -6
+Before values: 3 5 6 2 0 5 1 0
+Before values: 6 2 0 3 2 2 4 3
+Before values: 4 5 0 2 5 2 4 4
+Before values: 5 6 6 3 3 3 1 3
+Before values: 5 3 5 0 1 2 3 3
+Before values: 0 0 7 4 7 0 6 5
+Before values: 3 7 3 5 2 3 1 5
+Before values: 0 5 3 5 0 7 5 1
+Before values: 4 4 3 0 1 6 3 0
+<timing information>
+After values: 4 4 3 0 1 6 3 0
+After values: 0 5 3 5 0 7 5 1
+After values: 3 7 3 5 2 3 1 5
+After values: 0 0 7 4 7 0 6 5
+After values: 5 3 5 0 1 2 3 3
+After values: 5 6 6 3 3 3 1 3
+After values: 4 5 0 2 5 2 4 4
+After values: 6 2 0 3 2 2 4 3
+After values: 3 5 6 2 0 5 1 0
+After values: 4 0 1 -1 4 -6 -6 -6
+
