@@ -30,7 +30,6 @@
 
 #include <map>
 #include <memory>
-#include <queue>
 #include "llvm/Pass.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallVector.h"
@@ -139,7 +138,7 @@ static inline float getValuePercent(size_t V, unsigned P) {
 }
 
 /// Abstract weight metric.  Child classes implement for analyzing different
-/// resources thresholds, e.g., HTM buffer sizes.
+/// resource capacities, e.g., HTM buffer sizes.
 class Weight {
 protected:
   /// Number of times the weight was reset.
@@ -176,13 +175,13 @@ public:
   virtual void add(const Weight *RHS) = 0;
   virtual void add(const std::unique_ptr<Weight> &RHS) { add(RHS.get()); }
 
-  /// Number of times this weight "fits" into the resource threshold before we
+  /// Number of times this weight "fits" into the resource capacity before we
   /// need to place a migration point.  This is used for calculating how many
   /// iterations of a loop can be executed between migration points.
   virtual size_t numIters() const = 0;
 
   /// Return whether or not the weight is within some percent (0-100) of the
-  /// resource threshold for a type of weight.
+  /// resource capacity for a type of weight.
   virtual bool underPercentOfThreshold(unsigned percent) const = 0;
 
   /// Return a human-readable string describing weight information.
@@ -368,7 +367,9 @@ class MigrationPoints : public FunctionPass
 public:
   static char ID;
 
-  MigrationPoints() : FunctionPass(ID) {}
+  MigrationPoints() : FunctionPass(ID) {
+    initializeMigrationPointsPass(*PassRegistry::getPassRegistry());
+  }
   ~MigrationPoints() {}
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -553,7 +554,7 @@ private:
 
     /// Whether the loop has either of the two types of paths, and if so the
     /// maximum weight of each type.  Note that the spanning path weight is
-    /// *not* scaled by the number of iterations.
+    /// *not* scaled by the number of iterations, ItersPerMigPoint.
     bool LoopHasSpanningPath, LoopHasEqPointPath;
     WeightPtr LoopSpanningPathWeight, LoopEqPointPathWeight;
 
@@ -592,7 +593,7 @@ private:
     }
 
   public:
-    /// Copy of MigrationPoint's DoHTMInst, needed to get zeroed weights.
+    /// Copy of MigrationPoint's DoHTMInst, needed to get zero weights.
     bool DoHTMInst;
 
     LoopWeightInfo() = delete;
@@ -731,22 +732,6 @@ private:
   SmallPtrSet<Instruction *, 32> HTMBeginInsts;
   SmallPtrSet<Instruction *, 32> HTMEndInsts;
 
-  /// Sort loops based on nesting depth, with deeper-nested loops coming first.
-  /// If the depths are equal, sort based on pointer value so that distinct
-  /// loops with equal depths are not considered equivalent during insertion.
-  struct LoopNestCmp {
-    bool operator() (const Loop * const &A, const Loop * const &B)
-    {
-      unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
-      if(DepthA > DepthB) return true;
-      else if(DepthA < DepthB) return false;
-      else return (uint64_t)A < (uint64_t)B;
-    }
-  };
-
-  /// A loop nest, sorted by depth (deeper loops are first).
-  typedef std::set<Loop *, LoopNestCmp> LoopNest;
-
   //===--------------------------------------------------------------------===//
   // Analysis implementation
   //===--------------------------------------------------------------------===//
@@ -835,25 +820,10 @@ private:
   static void sortLoopsByDepth(const std::vector<BasicBlock *> &SCC,
                                LoopInfo &LI,
                                LoopNest &Nest) {
-    Loop *L;
-    std::queue<Loop *> ToVisit;
-
-    // Grab the outermost loop in the nest to bootstrap indexing
-    L = LI.getLoopFor(SCC.front());
+    Loop *L = LI.getLoopFor(SCC.front());
     assert(L && "SCC was marked as having loop but none found in LoopInfo");
     while(L->getLoopDepth() > 1) L = L->getParentLoop();
-    Nest.insert(L);
-    ToVisit.push(L);
-
-    // Find & index loops from innermost loop outwards
-    while(!ToVisit.empty()) {
-      L = ToVisit.front();
-      ToVisit.pop();
-      for(auto CurLoop : L->getSubLoops()) {
-        Nest.insert(CurLoop);
-        ToVisit.push(CurLoop);
-      }
-    }
+    LoopPathUtilities::populateLoopNest(L, Nest);
   }
 
   /// Get the starting weight for a basic block based on the max weights of its

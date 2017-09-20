@@ -23,14 +23,45 @@
 
 #include <set>
 #include <vector>
+#include <queue>
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/LoopPass.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/Pass.h"
 
 namespace llvm {
+
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
+/// Sort loops based on nesting depth, with deeper-nested loops coming first.
+/// If the depths are equal, sort based on pointer value so that distinct loops
+/// with equal depths are not considered equivalent during insertion.
+struct LoopNestCmp {
+  bool operator() (const Loop * const &A, const Loop * const &B) {
+    unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
+    if(DepthA > DepthB) return true;
+    else if(DepthA < DepthB) return false;
+    else return (uint64_t)A < (uint64_t)B;
+  }
+};
+
+/// A loop nest, sorted by depth (deeper loops are first).
+typedef std::set<Loop *, LoopNestCmp> LoopNest;
+
+namespace LoopPathUtilities {
+
+/// Populate a LoopNest by traversing the loop L and its children.
+void populateLoopNest(Loop *L, LoopNest &Nest);
+
+}
+
+//===----------------------------------------------------------------------===//
+// LoopPath helper class
+//===----------------------------------------------------------------------===//
 
 /// A path through the loop, which begins/ends either on the loop's header, the
 /// loop's backedge(s) or equivalence points.
@@ -95,8 +126,12 @@ public:
   void print(raw_ostream &O) const;
 };
 
+//===----------------------------------------------------------------------===//
+// Pass implementation
+//===----------------------------------------------------------------------===//
+
 /// Analyze all paths within a loop nest
-class EnumerateLoopPaths : public LoopPass {
+class EnumerateLoopPaths : public FunctionPass {
 private:
   /// All calculated paths for each analyzed loops.
   DenseMap<const Loop *, std::vector<LoopPath> > Paths;
@@ -128,11 +163,12 @@ private:
 
 public:
   static char ID;
-  EnumerateLoopPaths() : LoopPass(ID) {}
+  EnumerateLoopPaths() : FunctionPass(ID) {}
 
   /// Pass interface implementation.
   void getAnalysisUsage(AnalysisUsage &AU) const override;
-  bool runOnLoop(Loop *L, LPPassManager &LPPM) override;
+  bool doInitialization(Module &M) override;
+  bool runOnFunction(Function &F) override;
 
   /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
   /// below which populate containers with paths (for this loop only).

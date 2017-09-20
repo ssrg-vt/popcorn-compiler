@@ -30,6 +30,23 @@ using namespace llvm;
 
 #define DEBUG_TYPE "looppaths"
 
+void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
+  assert(L->getLoopDepth() == 1 && "Not the top-level loop");
+
+  std::queue<Loop *> ToVisit;
+  Nest.insert(L);
+  ToVisit.push(L);
+
+  while(!ToVisit.empty()) {
+    Loop *L = ToVisit.front();
+    ToVisit.pop();
+    for(auto Child : L->getSubLoops()) {
+      Nest.insert(Child);
+      ToVisit.push(Child);
+    }
+  }
+}
+
 LoopPath::LoopPath(const std::vector<BasicBlock *> &BlockVector,
                    Instruction *Start, Instruction *End,
                    bool StartsAtHeader, bool EndsAtBackedge)
@@ -74,12 +91,20 @@ void LoopPath::print(raw_ostream &O) const {
   O << "  Start:"; Start->print(O); O << "\n";
   O << "  End:"; End->print(O); O << "\n";
   O << "  Blocks:\n";
-  for(auto Block : Blocks)
-    O << "    " << Block->getName() << "\n";
+  for(auto Block : Blocks) {
+    if(Block->hasName()) O << "    " << Block->getName() << "\n";
+    else O << "    <unnamed block>\n";
+  }
 }
 
 void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<LoopInfoWrapperPass>();
   AU.setPreservesAll();
+}
+
+bool EnumerateLoopPaths::doInitialization(Module &M) {
+  Paths.clear();
+  return false;
 }
 
 /// Search over the instructions in a basic block (starting at I) for
@@ -185,11 +210,26 @@ void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
   }
 }
 
-bool EnumerateLoopPaths::runOnLoop(Loop *L, LPPassManager &LPPM) {
+bool EnumerateLoopPaths::runOnFunction(Function &F) {
+  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+  std::vector<LoopNest> Nests;
+
+  // Discover all loop nests.
+  for(LoopInfo::iterator I = LI.begin(), E = LI.end(); I != E; ++I) {
+    if((*I)->getLoopDepth() != 1) continue;
+    Nests.push_back(LoopNest());
+    LoopPathUtilities::populateLoopNest(*I, Nests.back());
+  }
+
   // We *should* be analyzing a loop for the first time
-  std::vector<LoopPath> &CurPaths = Paths[L];
-  assert(CurPaths.size() == 0 && "Re-processing loop?");
-  analyzeLoop(L, CurPaths);
+  for(auto Nest : Nests) {
+    for(auto L : Nest) {
+      std::vector<LoopPath> &CurPaths = Paths[L];
+      assert(CurPaths.size() == 0 && "Re-processing loop?");
+      analyzeLoop(L, CurPaths);
+    }
+  }
+
   return false;
 }
 
@@ -282,11 +322,17 @@ EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
 }
 
 char EnumerateLoopPaths::ID = 0;
-INITIALIZE_PASS(EnumerateLoopPaths, "looppaths",
-                "Enumerate paths between equivalence points in loops",
-                false, true)
+INITIALIZE_PASS_BEGIN(EnumerateLoopPaths, "looppaths",
+                      "Enumerate paths in loops",
+                      false, true)
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_END(EnumerateLoopPaths, "looppaths",
+                    "Enumerate paths in loops",
+                    false, true)
+
 
 namespace llvm {
-  LoopPass *createEnumerateLoopPathsPass() { return new EnumerateLoopPaths(); }
+  FunctionPass *createEnumerateLoopPathsPass()
+  { return new EnumerateLoopPaths(); }
 }
 

@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,208 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -498,14 +498,45 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +#include <set>
 +#include <vector>
++#include <queue>
 +#include "llvm/ADT/DenseMap.h"
 +#include "llvm/ADT/SmallPtrSet.h"
 +#include "llvm/ADT/SetVector.h"
 +#include "llvm/Analysis/LoopInfo.h"
-+#include "llvm/Analysis/LoopPass.h"
 +#include "llvm/IR/BasicBlock.h"
++#include "llvm/Pass.h"
 +
 +namespace llvm {
++
++//===----------------------------------------------------------------------===//
++// Utilities
++//===----------------------------------------------------------------------===//
++
++/// Sort loops based on nesting depth, with deeper-nested loops coming first.
++/// If the depths are equal, sort based on pointer value so that distinct loops
++/// with equal depths are not considered equivalent during insertion.
++struct LoopNestCmp {
++  bool operator() (const Loop * const &A, const Loop * const &B) {
++    unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
++    if(DepthA > DepthB) return true;
++    else if(DepthA < DepthB) return false;
++    else return (uint64_t)A < (uint64_t)B;
++  }
++};
++
++/// A loop nest, sorted by depth (deeper loops are first).
++typedef std::set<Loop *, LoopNestCmp> LoopNest;
++
++namespace LoopPathUtilities {
++
++/// Populate a LoopNest by traversing the loop L and its children.
++void populateLoopNest(Loop *L, LoopNest &Nest);
++
++}
++
++//===----------------------------------------------------------------------===//
++// LoopPath helper class
++//===----------------------------------------------------------------------===//
 +
 +/// A path through the loop, which begins/ends either on the loop's header, the
 +/// loop's backedge(s) or equivalence points.
@@ -570,8 +601,12 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  void print(raw_ostream &O) const;
 +};
 +
++//===----------------------------------------------------------------------===//
++// Pass implementation
++//===----------------------------------------------------------------------===//
++
 +/// Analyze all paths within a loop nest
-+class EnumerateLoopPaths : public LoopPass {
++class EnumerateLoopPaths : public FunctionPass {
 +private:
 +  /// All calculated paths for each analyzed loops.
 +  DenseMap<const Loop *, std::vector<LoopPath> > Paths;
@@ -603,11 +638,12 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +public:
 +  static char ID;
-+  EnumerateLoopPaths() : LoopPass(ID) {}
++  EnumerateLoopPaths() : FunctionPass(ID) {}
 +
 +  /// Pass interface implementation.
 +  void getAnalysisUsage(AnalysisUsage &AU) const override;
-+  bool runOnLoop(Loop *L, LPPassManager &LPPM) override;
++  bool doInitialization(Module &M) override;
++  bool runOnFunction(Function &F) override;
 +
 +  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
 +  /// below which populate containers with paths (for this loop only).
@@ -665,7 +701,7 @@ Index: include/llvm/Analysis/Passes.h
 +  // createEnumerateLoopPathsPass - This pass calculates all paths between
 +  // equivalence points within a loop.
 +  //
-+  LoopPass *createEnumerateLoopPathsPass();
++  FunctionPass *createEnumerateLoopPathsPass();
  }
  
  #endif
@@ -2763,7 +2799,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,338 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2795,6 +2831,23 @@ Index: lib/Analysis/LoopPaths.cpp
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "looppaths"
++
++void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
++  assert(L->getLoopDepth() == 1 && "Not the top-level loop");
++
++  std::queue<Loop *> ToVisit;
++  Nest.insert(L);
++  ToVisit.push(L);
++
++  while(!ToVisit.empty()) {
++    Loop *L = ToVisit.front();
++    ToVisit.pop();
++    for(auto Child : L->getSubLoops()) {
++      Nest.insert(Child);
++      ToVisit.push(Child);
++    }
++  }
++}
 +
 +LoopPath::LoopPath(const std::vector<BasicBlock *> &BlockVector,
 +                   Instruction *Start, Instruction *End,
@@ -2840,12 +2893,20 @@ Index: lib/Analysis/LoopPaths.cpp
 +  O << "  Start:"; Start->print(O); O << "\n";
 +  O << "  End:"; End->print(O); O << "\n";
 +  O << "  Blocks:\n";
-+  for(auto Block : Blocks)
-+    O << "    " << Block->getName() << "\n";
++  for(auto Block : Blocks) {
++    if(Block->hasName()) O << "    " << Block->getName() << "\n";
++    else O << "    <unnamed block>\n";
++  }
 +}
 +
 +void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
++  AU.addRequired<LoopInfoWrapperPass>();
 +  AU.setPreservesAll();
++}
++
++bool EnumerateLoopPaths::doInitialization(Module &M) {
++  Paths.clear();
++  return false;
 +}
 +
 +/// Search over the instructions in a basic block (starting at I) for
@@ -2951,11 +3012,26 @@ Index: lib/Analysis/LoopPaths.cpp
 +  }
 +}
 +
-+bool EnumerateLoopPaths::runOnLoop(Loop *L, LPPassManager &LPPM) {
++bool EnumerateLoopPaths::runOnFunction(Function &F) {
++  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++  std::vector<LoopNest> Nests;
++
++  // Discover all loop nests.
++  for(LoopInfo::iterator I = LI.begin(), E = LI.end(); I != E; ++I) {
++    if((*I)->getLoopDepth() != 1) continue;
++    Nests.push_back(LoopNest());
++    LoopPathUtilities::populateLoopNest(*I, Nests.back());
++  }
++
 +  // We *should* be analyzing a loop for the first time
-+  std::vector<LoopPath> &CurPaths = Paths[L];
-+  assert(CurPaths.size() == 0 && "Re-processing loop?");
-+  analyzeLoop(L, CurPaths);
++  for(auto Nest : Nests) {
++    for(auto L : Nest) {
++      std::vector<LoopPath> &CurPaths = Paths[L];
++      assert(CurPaths.size() == 0 && "Re-processing loop?");
++      analyzeLoop(L, CurPaths);
++    }
++  }
++
 +  return false;
 +}
 +
@@ -3048,12 +3124,18 @@ Index: lib/Analysis/LoopPaths.cpp
 +}
 +
 +char EnumerateLoopPaths::ID = 0;
-+INITIALIZE_PASS(EnumerateLoopPaths, "looppaths",
-+                "Enumerate paths between equivalence points in loops",
-+                false, true)
++INITIALIZE_PASS_BEGIN(EnumerateLoopPaths, "looppaths",
++                      "Enumerate paths in loops",
++                      false, true)
++INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_END(EnumerateLoopPaths, "looppaths",
++                    "Enumerate paths in loops",
++                    false, true)
++
 +
 +namespace llvm {
-+  LoopPass *createEnumerateLoopPathsPass() { return new EnumerateLoopPaths(); }
++  FunctionPass *createEnumerateLoopPathsPass()
++  { return new EnumerateLoopPaths(); }
 +}
 +
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
@@ -7241,7 +7323,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1433 @@
+@@ -0,0 +1,1403 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7274,7 +7356,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +#include <map>
 +#include <memory>
-+#include <queue>
 +#include "llvm/Pass.h"
 +#include "llvm/ADT/PostOrderIterator.h"
 +#include "llvm/ADT/SmallVector.h"
@@ -7383,7 +7464,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +}
 +
 +/// Abstract weight metric.  Child classes implement for analyzing different
-+/// resources thresholds, e.g., HTM buffer sizes.
++/// resource capacities, e.g., HTM buffer sizes.
 +class Weight {
 +protected:
 +  /// Number of times the weight was reset.
@@ -7420,13 +7501,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  virtual void add(const Weight *RHS) = 0;
 +  virtual void add(const std::unique_ptr<Weight> &RHS) { add(RHS.get()); }
 +
-+  /// Number of times this weight "fits" into the resource threshold before we
++  /// Number of times this weight "fits" into the resource capacity before we
 +  /// need to place a migration point.  This is used for calculating how many
 +  /// iterations of a loop can be executed between migration points.
 +  virtual size_t numIters() const = 0;
 +
 +  /// Return whether or not the weight is within some percent (0-100) of the
-+  /// resource threshold for a type of weight.
++  /// resource capacity for a type of weight.
 +  virtual bool underPercentOfThreshold(unsigned percent) const = 0;
 +
 +  /// Return a human-readable string describing weight information.
@@ -7612,7 +7693,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +public:
 +  static char ID;
 +
-+  MigrationPoints() : FunctionPass(ID) {}
++  MigrationPoints() : FunctionPass(ID) {
++    initializeMigrationPointsPass(*PassRegistry::getPassRegistry());
++  }
 +  ~MigrationPoints() {}
 +
 +  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -7797,7 +7880,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +    /// Whether the loop has either of the two types of paths, and if so the
 +    /// maximum weight of each type.  Note that the spanning path weight is
-+    /// *not* scaled by the number of iterations.
++    /// *not* scaled by the number of iterations, ItersPerMigPoint.
 +    bool LoopHasSpanningPath, LoopHasEqPointPath;
 +    WeightPtr LoopSpanningPathWeight, LoopEqPointPathWeight;
 +
@@ -7836,7 +7919,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +  public:
-+    /// Copy of MigrationPoint's DoHTMInst, needed to get zeroed weights.
++    /// Copy of MigrationPoint's DoHTMInst, needed to get zero weights.
 +    bool DoHTMInst;
 +
 +    LoopWeightInfo() = delete;
@@ -7975,22 +8058,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  SmallPtrSet<Instruction *, 32> HTMBeginInsts;
 +  SmallPtrSet<Instruction *, 32> HTMEndInsts;
 +
-+  /// Sort loops based on nesting depth, with deeper-nested loops coming first.
-+  /// If the depths are equal, sort based on pointer value so that distinct
-+  /// loops with equal depths are not considered equivalent during insertion.
-+  struct LoopNestCmp {
-+    bool operator() (const Loop * const &A, const Loop * const &B)
-+    {
-+      unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
-+      if(DepthA > DepthB) return true;
-+      else if(DepthA < DepthB) return false;
-+      else return (uint64_t)A < (uint64_t)B;
-+    }
-+  };
-+
-+  /// A loop nest, sorted by depth (deeper loops are first).
-+  typedef std::set<Loop *, LoopNestCmp> LoopNest;
-+
 +  //===--------------------------------------------------------------------===//
 +  // Analysis implementation
 +  //===--------------------------------------------------------------------===//
@@ -8079,25 +8146,10 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  static void sortLoopsByDepth(const std::vector<BasicBlock *> &SCC,
 +                               LoopInfo &LI,
 +                               LoopNest &Nest) {
-+    Loop *L;
-+    std::queue<Loop *> ToVisit;
-+
-+    // Grab the outermost loop in the nest to bootstrap indexing
-+    L = LI.getLoopFor(SCC.front());
++    Loop *L = LI.getLoopFor(SCC.front());
 +    assert(L && "SCC was marked as having loop but none found in LoopInfo");
 +    while(L->getLoopDepth() > 1) L = L->getParentLoop();
-+    Nest.insert(L);
-+    ToVisit.push(L);
-+
-+    // Find & index loops from innermost loop outwards
-+    while(!ToVisit.empty()) {
-+      L = ToVisit.front();
-+      ToVisit.pop();
-+      for(auto CurLoop : L->getSubLoops()) {
-+        Nest.insert(CurLoop);
-+        ToVisit.push(CurLoop);
-+      }
-+    }
++    LoopPathUtilities::populateLoopNest(L, Nest);
 +  }
 +
 +  /// Get the starting weight for a basic block based on the max weights of its
