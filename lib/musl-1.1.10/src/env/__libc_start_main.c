@@ -57,9 +57,13 @@ void __init_libc(char **envp, char *pn)
 	libc.secure = 1;
 }
 
+/* Store the highest stack address dedicated to function activations. */
+void *__popcorn_stack_base = NULL;
+
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
 	char **envp = argv+argc+1;
+	__popcorn_stack_base = envp;
 
 #ifndef SHARED
 	__init_libc(envp, argv[0]);

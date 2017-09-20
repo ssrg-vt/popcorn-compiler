@@ -33,6 +33,12 @@ static pthread_key_t stack_bounds_key = 0;
 #endif
 
 /*
+ * Set inside of musl at __libc_start_main() to point to where environment
+ * variables begin on the stack.
+ */
+extern void* __popcorn_stack_base;
+
+/*
  * Touch stack pages up to the OS-defined stack size limit, so that the OS
  * allocates them and we can divide the stack in half for rewriting.  Also,
  * calculate stack bounds for main thread.
@@ -374,10 +380,8 @@ static bool prep_stack(void)
    * Get offset of main thread's stack pointer from stack base so we can avoid
    * clobbering argv & environment variables.
    */
-  // Note: __builtin_frame_address needs to be adjusted depending on where the
-  // function is called from, we need the FBP of the first function, e.g. main
-  // TODO a better way to get the highest function activation address?
-  offset = (uint64_t)(bounds.high - __builtin_frame_address(4));
+  ASSERT(__popcorn_stack_base, "Stack base not set correctly");
+  offset = (uint64_t)(bounds.high - __popcorn_stack_base);
   offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
   bounds.high -= offset;
 #if _TLS_IMPL == PTHREAD_TLS
