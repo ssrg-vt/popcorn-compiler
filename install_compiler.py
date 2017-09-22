@@ -592,7 +592,41 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                 print('Make distclean failed.')
                 sys.exit(1)
 
-        # TODO need to build libelf for powerpc64le
+        print("Configuring libelf (powerpc64)...")
+        try:
+            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
+                     '-specs {}"'.format(os.path.join(powerpc64le_install_path,
+                                                     'lib/musl-gcc.specs'))
+            rv = subprocess.check_call(" ".join([cflags,
+                                        './configure',
+                                        '--host=powerpc64le-linux-gnu',
+                                        '--prefix=' + powerpc64le_install_path,
+                                        '--enable-elf64',
+                                        '--disable-shared',
+                                        '--enable-extended-format']),
+                                        #stdout=FNULL,
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+            print('Could not configure libelf({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('libelf configure failed.')
+                sys.exit(1)
+
+        print('Making libelf...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
 
         print("Configuring libelf (x86_64)...")
         try:
