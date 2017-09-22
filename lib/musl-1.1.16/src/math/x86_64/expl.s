@@ -3,6 +3,7 @@
 # exact log2e*x calculation depends on nearest rounding mode
 # using the exact multiplication method of Dekker and Veltkamp
 
+.section .text.expl, "ax"
 .global expl
 .type expl,@function
 expl:

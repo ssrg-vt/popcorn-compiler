@@ -1,3 +1,4 @@
+.section .text.log1pl, "ax"
 .global log1pl
 .type log1pl,@function
 log1pl:

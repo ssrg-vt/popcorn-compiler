@@ -1,3 +1,4 @@
+.section .text.fmodl, "ax"
 .global fmodl
 .type fmodl,@function
 fmodl:

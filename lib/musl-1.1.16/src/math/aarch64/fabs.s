@@ -1,4 +1,5 @@
-.text
+/* .text */
+.section .text.fabs, "ax"
 .global fabs
 .type   fabs,%function
 fabs:

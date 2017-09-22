@@ -1,3 +1,4 @@
+.section .text.remainderl, "ax"
 .global remainderl
 .type remainderl,@function
 remainderl:

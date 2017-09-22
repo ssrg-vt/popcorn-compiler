@@ -1,4 +1,5 @@
-.text
+/* .text */
+.section .text.__tlsdesc_static, "ax"
 .global __tlsdesc_static
 .hidden __tlsdesc_static
 .type __tlsdesc_static,@function
@@ -8,6 +9,7 @@ __tlsdesc_static:
 
 .hidden __tls_get_new
 
+.section .text.__tlsdesc_dynamic, "ax"
 .global __tlsdesc_dynamic
 .hidden __tlsdesc_dynamic
 .type __tlsdesc_dynamic,@function

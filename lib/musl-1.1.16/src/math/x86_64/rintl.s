@@ -1,3 +1,4 @@
+.section .text.rintl
 .global rintl
 .type rintl,@function
 rintl:

@@ -1,3 +1,4 @@
+.section .text.logl, "ax"
 .global logl
 .type logl,@function
 logl:

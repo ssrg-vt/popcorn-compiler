@@ -1,3 +1,7 @@
+/* Pierre: should be fine, I dont think __memcpy* are referenced in aarch64/
+ * ppc64 code */
+
+.section .text.memcpy, "ax"
 .global memcpy
 .global __memcpy_fwd
 .hidden __memcpy_fwd

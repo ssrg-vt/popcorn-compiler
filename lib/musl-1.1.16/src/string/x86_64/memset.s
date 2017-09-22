@@ -1,3 +1,4 @@
+.section .text.memset, "ax"
 .global memset
 .type memset,@function
 memset:

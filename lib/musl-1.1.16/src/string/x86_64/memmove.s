@@ -1,3 +1,4 @@
+.section .text.memmove, "ax"
 .global memmove
 .type memmove,@function
 memmove:

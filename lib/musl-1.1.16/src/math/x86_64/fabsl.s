@@ -1,3 +1,4 @@
+.section .text.fabsl, "ax"
 .global fabsl
 .type fabsl,@function
 fabsl:

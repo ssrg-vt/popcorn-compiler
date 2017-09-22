@@ -1,3 +1,4 @@
+.section .text.lrint, "ax"
 .global lrint
 .type lrint,@function
 lrint:

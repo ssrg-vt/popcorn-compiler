@@ -1,4 +1,5 @@
-.text
+/* .text */
+.section .text.sqrtf, "ax"
 .global sqrtf
 .type   sqrtf,%function
 sqrtf:

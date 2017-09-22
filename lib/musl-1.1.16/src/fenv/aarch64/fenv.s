@@ -1,3 +1,4 @@
+.section .text.fgetround, "ax"
 .global fegetround
 .type fegetround,%function
 fegetround:
@@ -5,6 +6,7 @@ fegetround:
 	and w0, w0, #0xc00000
 	ret
 
+.section .text.__fsetround, "ax"
 .global __fesetround
 .type __fesetround,%function
 __fesetround:
@@ -15,6 +17,7 @@ __fesetround:
 	mov w0, #0
 	ret
 
+.section .text.fetestexcept, "ax"
 .global fetestexcept
 .type fetestexcept,%function
 fetestexcept:
@@ -23,6 +26,7 @@ fetestexcept:
 	and w0, w0, w1
 	ret
 
+.section .text.feclearexcept, "ax"
 .global feclearexcept
 .type feclearexcept,%function
 feclearexcept:
@@ -33,6 +37,7 @@ feclearexcept:
 	mov w0, #0
 	ret
 
+.section .text.feraiseexcept, "ax"
 .global feraiseexcept
 .type feraiseexcept,%function
 feraiseexcept:
@@ -43,6 +48,7 @@ feraiseexcept:
 	mov w0, #0
 	ret
 
+.section .text.fgetenv, "ax"
 .global fegetenv
 .type fegetenv,%function
 fegetenv:
@@ -53,6 +59,7 @@ fegetenv:
 	ret
 
 // TODO preserve some bits
+.section .text.fsetenv, "ax"
 .global fesetenv
 .type fesetenv,%function
 fesetenv:

@@ -1,3 +1,9 @@
+/* Pierre: these 3 symbols will be very probably placed at the same address,
+ * put them into a section with a single name, and make sure we to give the 
+ * same name for each architecture
+ */
+
+.section .text.longjmp, "ax"
 .global _longjmp
 .global longjmp
 .type _longjmp,%function

@@ -1,3 +1,4 @@
+.section .text.__vfork, "ax"
 .global __vfork
 .weak vfork
 .type __vfork,@function

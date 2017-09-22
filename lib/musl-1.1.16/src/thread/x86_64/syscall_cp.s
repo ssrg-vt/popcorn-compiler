@@ -1,4 +1,14 @@
-.text
+/* PIERRE How to proceed here? I'm afraid that we cannot place __cp_end 
+ * and __cp_cancel in different sections as these can be moved around by the 
+ * alignement tool and we might break the instruction flow here. 
+ * With the current migration constraints there is absolutely no chances to 
+ * migrate while the application code is holding a reference to __cp_end and
+ * __cp_cancel, however in the future the migration constraint might be relaxed,
+ * in that case we might need a solution here.
+ */
+
+/* .text */
+.section .text.__syscall_cp_asm, "ax"
 .global __cp_begin
 .hidden __cp_begin
 .global __cp_end

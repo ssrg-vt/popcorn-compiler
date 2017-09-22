@@ -1,3 +1,4 @@
+.section .text.floorl, "ax"
 .global floorl
 .type floorl,@function
 floorl:
@@ -12,16 +13,33 @@ floorl:
 	fldcw 8(%rsp)
 	ret
 
+.section .text.ceill, "ax"
 .global ceill
 .type ceill,@function
 ceill:
 	fldt 8(%rsp)
 	mov $0xb,%al
-	jmp 1b
+	fstcw 8(%rsp)
+	mov 9(%rsp),%ah
+	mov %al,9(%rsp)
+	fldcw 8(%rsp)
+	frndint
+	mov %ah,9(%rsp)
+	fldcw 8(%rsp)
+	ret
 
+.section .text.truncl, "ax"
 .global truncl
 .type truncl,@function
 truncl:
 	fldt 8(%rsp)
 	mov $0xf,%al
-	jmp 1b
+	fstcw 8(%rsp)
+	mov 9(%rsp),%ah
+	mov %al,9(%rsp)
+	fldcw 8(%rsp)
+	frndint
+	mov %ah,9(%rsp)
+	fldcw 8(%rsp)
+	ret
+

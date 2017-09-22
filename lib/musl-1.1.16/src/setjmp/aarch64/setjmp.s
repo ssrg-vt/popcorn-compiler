@@ -1,3 +1,6 @@
+/* Pierre: cf setjmp/aarch64/longjmp.s */
+
+.section .text.setjmp, "ax"
 .global __setjmp
 .global _setjmp
 .global setjmp

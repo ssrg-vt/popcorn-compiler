@@ -1,3 +1,4 @@
+.section .text.atanl, "ax"
 .global atanl
 .type atanl,@function
 atanl:

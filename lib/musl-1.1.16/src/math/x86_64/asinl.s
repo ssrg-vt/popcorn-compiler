@@ -1,3 +1,4 @@
+.section .text.asinl, "ax"
 .global asinl
 .type asinl,@function
 asinl:

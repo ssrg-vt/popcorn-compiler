@@ -1,3 +1,4 @@
+.section .text.__syscall, "ax"
 .global __syscall
 .hidden __syscall
 .type __syscall,@function

@@ -2,6 +2,7 @@
 // {
 // 	return a[1];
 // }
+.section .text.__tlsdesc_static, "ax"
 .global __tlsdesc_static
 .hidden __tlsdesc_static
 .type __tlsdesc_static,@function
@@ -19,6 +20,7 @@ __tlsdesc_static:
 // 		return dtv[p->modidx] + p->off - tp;
 // 	return __tls_get_new(p) - tp;
 // }
+.section .text.__tlsdesc_dynamic, "ax"
 .global __tlsdesc_dynamic
 .hidden __tlsdesc_dynamic
 .type __tlsdesc_dynamic,@function

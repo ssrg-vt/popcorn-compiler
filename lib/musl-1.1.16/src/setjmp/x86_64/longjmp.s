@@ -1,4 +1,8 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
+
+/* Pierre: cf setjmp/aarch64/longjmp.s */
+
+.section .text.longjmp, "ax"
 .global _longjmp
 .global longjmp
 .type _longjmp,@function
