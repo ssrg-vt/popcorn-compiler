@@ -3421,7 +3421,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,998 @@
+@@ -0,0 +1,1002 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3461,6 +3461,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "stacktransform"
++
++static cl::opt<bool>
++NoWarnings("no-sm-warn", cl::desc("Don't issue warnings about stackmaps"),
++           cl::init(false), cl::Hidden);
 +
 +//===----------------------------------------------------------------------===//
 +//                          StackTransformMetadata
@@ -3746,7 +3750,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    findStackmapsAndStackSlotCopies();
 +    findAlternateOpLocs();
 +    findArchSpecificLiveVals();
-+    warnUnhandled();
++    if(!NoWarnings) warnUnhandled();
 +  }
 +
 +  return false;
@@ -5374,7 +5378,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,337 @@
+@@ -0,0 +1,350 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -5393,6 +5397,12 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +#define DEBUG_TYPE "insert-stackmaps"
 +
 +using namespace llvm;
++
++static cl::opt<bool>
++NoLiveVals("no-live-vals",
++           cl::desc("Don't add live values to inserted stackmaps"),
++           cl::init(false),
++           cl::Hidden);
 +
 +namespace {
 +
@@ -5474,6 +5484,17 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +             !CI->isInlineAsm() &&
 +             !isa<IntrinsicInst>(CI))
 +          {
++            IRBuilder<> builder(CI->getNextNode());
++            std::vector<Value *> args(2);
++            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
++            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++
++            if(NoLiveVals) {
++              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
++              this->numInstrumented++;
++              continue;
++            }
++
 +            live = liveVals.getLiveValues(&*i);
 +            for(const Value *val : *live) sortedLive.insert(val);
 +            for(const Instruction *val : hiddenInst) {
@@ -5521,10 +5542,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +              errs() << "\n";
 +            );
 +  
-+            IRBuilder<> builder(CI->getNextNode());
-+            std::vector<Value *> args(2);
-+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
 +            for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
 +              args.push_back((Value*)*v);
 +            builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));

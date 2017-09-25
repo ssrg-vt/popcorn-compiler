@@ -108,6 +108,13 @@ function reapply_patch {
   # Re-apply patch & remove backup
   patch -p0 < $patch || die "could not patch" $src $backup
   echo
+
+  # Remove files which were previously added to the svn index but no longer
+  # exist in the new patch
+  local missing=$(svn status | grep "! " | sed -e 's/!       //g')
+  for f in $missing; do
+    $(svn rm $f)
+  done
 }
 
 while [ "$1" != "" ]; do

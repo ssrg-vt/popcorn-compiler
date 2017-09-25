@@ -17,6 +17,12 @@
 
 using namespace llvm;
 
+static cl::opt<bool>
+NoLiveVals("no-live-vals",
+           cl::desc("Don't add live values to inserted stackmaps"),
+           cl::init(false),
+           cl::Hidden);
+
 namespace {
 
 /**
@@ -97,6 +103,17 @@ public:
              !CI->isInlineAsm() &&
              !isa<IntrinsicInst>(CI))
           {
+            IRBuilder<> builder(CI->getNextNode());
+            std::vector<Value *> args(2);
+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
+
+            if(NoLiveVals) {
+              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
+              this->numInstrumented++;
+              continue;
+            }
+
             live = liveVals.getLiveValues(&*i);
             for(const Value *val : *live) sortedLive.insert(val);
             for(const Instruction *val : hiddenInst) {
@@ -144,10 +161,6 @@ public:
               errs() << "\n";
             );
   
-            IRBuilder<> builder(CI->getNextNode());
-            std::vector<Value *> args(2);
-            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
             for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
               args.push_back((Value*)*v);
             builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
