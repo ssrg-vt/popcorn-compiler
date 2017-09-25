@@ -30,6 +30,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/Debug.h"
 
 namespace llvm {
 
@@ -124,6 +125,7 @@ public:
 
   std::string toString() const;
   void print(raw_ostream &O) const;
+  void dump() const { print(dbgs()); }
 };
 
 //===----------------------------------------------------------------------===//

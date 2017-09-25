@@ -282,8 +282,8 @@ public:
         if(Stores) StoreBytes += Size;
       }
       else if(Size < 0) {
-        // Assume we're doing heavy reading & writing
-        // TODO may need to revise if transaction begin/ends are too expensive
+        // Assume we're doing heavy reading & writing -- may need to revise if
+        // transaction begin/ends are too expensive.
         if(Loads) LoadBytes += HTMReadBufSize;
         if(Stores) StoreBytes += HTMWriteBufSize;
       }
@@ -390,19 +390,20 @@ public:
     // If instrumenting with HTM, add begin/end/test intrinsic declarations or
     // warn user if HTM is not supported on this architecture.
     if(HTMExec) {
-      if(HTMBegin.find(Arch) == HTMBegin.end()) {
+      if(HTMBegin.find(Arch) != HTMBegin.end()) {
+        HTMBeginDecl =
+          Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
+        HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
+        HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
+        modified = true;
+      }
+      else {
         std::string Msg("HTM instrumentation not supported for '");
         Msg += TheTriple.getArchName();
         Msg += "'";
         DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
         M.getContext().diagnose(DI);
-        return modified;
       }
-
-      HTMBeginDecl = Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
-      HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
-      HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
-      modified = true;
     }
 
     return modified;
@@ -443,17 +444,19 @@ public:
 
   /// Reset all analysis.
   virtual void initializeAnalysis(const Function &F) {
-    SE = &getAnalysis<ScalarEvolution>();
     NumMigPointAdded = 0;
     NumHTMBeginAdded = 0;
     NumHTMEndAdded = 0;
+    DoHTMInst = false;
+    SE = &getAnalysis<ScalarEvolution>();
+    LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+    LP = &getAnalysis<EnumerateLoopPaths>();
     BBWeights.clear();
     LoopWeights.clear();
     LoopMigPoints.clear();
     MigPointInsts.clear();
     HTMBeginInsts.clear();
     HTMEndInsts.clear();
-    DoHTMInst = false;
 
     if(HTMExec) {
       // We've checked at a global scope whether the architecture supports HTM,
@@ -491,6 +494,10 @@ private:
   // Types & fields
   //===--------------------------------------------------------------------===//
 
+  /// The current architecture - used to access architecture-specific HTM calls
+  Triple::ArchType Arch;
+  const DataLayout *DL;
+
   /// Number of various types of instrumentation added to the function
   size_t NumMigPointAdded;
   size_t NumHTMBeginAdded;
@@ -500,10 +507,10 @@ private:
   /// the command line and if the target is supported
   bool DoHTMInst;
 
-  /// The current architecture - used to access architecture-specific HTM calls
-  Triple::ArchType Arch;
-  const DataLayout *DL;
+  /// Analyses on which we depend
   ScalarEvolution *SE;
+  LoopInfo *LI;
+  EnumerateLoopPaths *LP;
 
   /// Function declarations for HTM intrinsics
   Value *HTMBeginDecl;
@@ -544,6 +551,9 @@ private:
   /// well as path-specific weight information for the loop & exit blocks.
   class LoopWeightInfo {
   private:
+    /// Copy of MigrationPoint's DoHTMInst, needed to get zero weights.
+    bool DoHTMInst;
+
     /// The weight of the loop upon entry.  Zero in the default case, but may
     /// be set if analysis elides instrumentation in and around the loop.
     WeightPtr EntryWeight;
@@ -558,15 +568,15 @@ private:
     bool LoopHasSpanningPath, LoopHasEqPointPath;
     WeightPtr LoopSpanningPathWeight, LoopEqPointPathWeight;
 
+    /// Number of iterations between migration points if the loop has one or
+    /// more spanning paths, or zero otherwise.
+    size_t ItersPerMigPoint;
+
     /// Whether there are either of the two types of paths through each exit
     /// block, and if so the maximum weight of each type.
     DenseMap<const BasicBlock *, bool> ExitHasSpanningPath, ExitHasEqPointPath;
     DenseMap<const BasicBlock *, WeightPtr> ExitSpanningPathWeights,
                                             ExitEqPointPathWeights;
-
-    /// Number of iterations between migration points if the loop has one or
-    /// more spanning paths, or zero otherwise.
-    size_t ItersPerMigPoint;
 
     /// Calculate the exit block's maximum weight, which is the max of both the
     /// spanning path exit weight and equivalence point path exit weight.
@@ -574,17 +584,17 @@ private:
       // Note: these operations are in a specific order -- change with care!
 
       // Calculate the loop weight up until the current iteration
-      WeightPtr LoopWeight(getZeroWeight(DoHTMInst));
-      if(LoopHasSpanningPath) LoopWeight->max(getLoopSpanningPathWeight());
-      if(LoopHasEqPointPath) LoopWeight->max(LoopEqPointPathWeight);
+      WeightPtr BBWeight(getZeroWeight(DoHTMInst));
+      if(LoopHasSpanningPath) BBWeight->max(getLoopSpanningPathWeight());
+      if(LoopHasEqPointPath) BBWeight->max(LoopEqPointPathWeight);
 
       // Calculate the maximum possible value of the current iteration:
       //   - Spanning path: loop weight + current path weight
       //   - Equivalence point path: current weight path
-      if(ExitHasSpanningPath[BB]) LoopWeight->add(ExitSpanningPathWeights[BB]);
-      if(ExitHasEqPointPath[BB]) LoopWeight->max(ExitEqPointPathWeights[BB]);
+      if(ExitHasSpanningPath[BB]) BBWeight->add(ExitSpanningPathWeights[BB]);
+      if(ExitHasEqPointPath[BB]) BBWeight->max(ExitEqPointPathWeights[BB]);
 
-      ExitWeights[BB] = std::move(LoopWeight);
+      ExitWeights[BB] = std::move(BBWeight);
     }
 
     void computeAllExitWeights() {
@@ -593,13 +603,12 @@ private:
     }
 
   public:
-    /// Copy of MigrationPoint's DoHTMInst, needed to get zero weights.
-    bool DoHTMInst;
 
     LoopWeightInfo() = delete;
     LoopWeightInfo(const Loop *L, bool DoHTMInst)
-      : EntryWeight(getZeroWeight(DoHTMInst)), LoopHasSpanningPath(false),
-        LoopHasEqPointPath(false), ItersPerMigPoint(0), DoHTMInst(DoHTMInst) {
+      : DoHTMInst(DoHTMInst), EntryWeight(getZeroWeight(DoHTMInst)),
+        LoopHasSpanningPath(false), LoopHasEqPointPath(false),
+        ItersPerMigPoint(0) {
       SmallVector<BasicBlock *, 4> ExitBlocks;
       L->getExitingBlocks(ExitBlocks);
       for(auto Block : ExitBlocks) {
@@ -608,6 +617,7 @@ private:
       }
     }
 
+    /// Set the weight upon entering the loop & recompute all exit weights.
     void setEntryWeight(const WeightPtr &W) {
       EntryWeight.reset(W->copy());
       computeAllExitWeights();
@@ -622,6 +632,7 @@ private:
     /// Get the loop's spanning path weight, scaled based on the number of
     /// iterations.  Also includes loop entry weight if set.
     WeightPtr getLoopSpanningPathWeight() const {
+      assert(LoopHasSpanningPath && "No spanning path weight for loop");
       WeightPtr Ret(LoopSpanningPathWeight->copy());
       Ret->multiply(ItersPerMigPoint - 1);
       Ret->add(EntryWeight);
@@ -640,7 +651,10 @@ private:
 
     /// Get the loop's equivalence point path weight.
     WeightPtr getLoopEqPointPathWeight() const
-    { return WeightPtr(LoopEqPointPathWeight->copy()); }
+    {
+      assert(LoopHasEqPointPath && "No equivalence point path weight for loop");
+      return WeightPtr(LoopEqPointPathWeight->copy());
+    }
 
     /// Set the loop's equivalence point path weight & recompute all exit
     /// weights.
@@ -653,7 +667,7 @@ private:
     /// Get an exit block's spanning path weight.
     WeightPtr getExitSpanningPathWeight(const BasicBlock *BB) const
     {
-      assert(ExitSpanningPathWeights.count(BB) &&
+      assert(ExitHasSpanningPath.find(BB)->second &&
              "No spanning path weight for exit block");
       return WeightPtr(ExitSpanningPathWeights.find(BB)->second->copy());
     }
@@ -670,7 +684,7 @@ private:
     /// Get an exit block's equivalence point path weight.
     WeightPtr getExitEqPointPathWeight(const BasicBlock *BB) const
     {
-      assert(ExitEqPointPathWeights.count(BB) &&
+      assert(ExitHasEqPointPath.find(BB)->second &&
              "No equivalence point path weight for exit block");
       return WeightPtr(ExitEqPointPathWeights.find(BB)->second->copy());
     }
@@ -818,7 +832,7 @@ private:
 
   /// Sort loops in a loop nest by their nesting depth to traverse inside-out.
   static void sortLoopsByDepth(const std::vector<BasicBlock *> &SCC,
-                               LoopInfo &LI,
+                               const LoopInfo &LI,
                                LoopNest &Nest) {
     Loop *L = LI.getLoopFor(SCC.front());
     assert(L && "SCC was marked as having loop but none found in LoopInfo");
@@ -830,13 +844,22 @@ private:
   /// predecessors.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
-  Weight *getInitialWeight(const BasicBlock *BB,
-                           const LoopInfo &LI) const {
+  Weight *getInitialWeight(const BasicBlock *BB) const {
     Weight *PredWeight = getZeroWeight(DoHTMInst);
-    const Loop *L = LI[BB];
+    const Loop *L = LI->getLoopFor(BB);
+    bool BBIsHeader = L && (BB == L->getHeader());
 
     for(auto Pred : predecessors(BB)) {
-      const Loop *PredLoop = LI[Pred];
+      const Loop *PredLoop = LI->getLoopFor(Pred);
+
+      // Weed out loop latches -- if we're the header, then we're analyzing
+      // weights upon loop entry and should not incorporate latches.
+      if(BBIsHeader && PredLoop == L) continue;
+
+      // If the predecessor is in a loop and it's not BB's loop, then it's by
+      // definition an exiting block of another loop and we have to use the
+      // loop exit weight from that block.  Otherwise, it's just normal control
+      // flow and we can use the block's exit weight.
       if(PredLoop && PredLoop != L) {
         assert(LoopWeights.count(PredLoop) &&
                "Invalid reverse post-order traversal");
@@ -862,17 +885,17 @@ private:
     Weight *CurWeight = Initial->copy();
 
     DEBUG(
-      dbgs() << "\nAnalyzing basic block";
+      dbgs() << "      Analyzing basic block";
       if(BB->hasName()) dbgs() << " '" << BB->getName() << "'";
-      dbgs() << "\n";
+      dbgs() << " - ";
     );
 
     for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
       if(isa<PHINode>(I)) continue;
 
       // Check if there is or there should be a migration point before the
-      // instruction, and if so, reset the weight.  This looks a little funky
-      // because we don't want to tamper with existing instrumentation.
+      // instruction, and if so, reset the weight.  Avoid tampering with
+      // existing instrumentation.
       if(isMigrationPoint(I)) CurWeight->reset();
       else if(CurWeight->shouldAddMigPoint()) {
         markAsMigPoint(I, true, true);
@@ -883,42 +906,62 @@ private:
       CurWeight->analyze(I, DL);
     }
 
-    DEBUG(dbgs() << "  Weight: " << CurWeight->toString() << "\n");
+    DEBUG(dbgs() << "weight: " << CurWeight->toString() << "\n");
 
     return CurWeight;
+  }
+
+  /// Mark loop predecessors, i.e., all branches into the loop header, as
+  /// migration points.
+  void markLoopPredecessors(const Loop *L) {
+    BasicBlock *Header = L->getHeader();
+    for(auto Pred : predecessors(Header)) {
+      // Avoid inadvertently adding migration points where we're exiting from
+      // one loop directly into the header of another
+      assert(LI->getLoopFor(Pred) == nullptr ||
+             (LI->getLoopFor(Pred)->getLoopDepth() < L->getLoopDepth()));
+      if(!L->contains(Pred)) markAsMigPoint(Pred->getTerminator(), true, true);
+    }
   }
 
   Weight *
   traverseBlock(BasicBlock *BB, const WeightPtr &Initial, bool &addedMigPoint)
   { return traverseBlock(BB, Initial.get(), addedMigPoint); }
 
-  /// Analyze & mark loop entry with migration points.  Avoid instrumenting
-  /// if we determine we can execute the entire loop without & any entry
-  /// code without overflowing our resource capacity.
-  void markLoopEntry(Loop *L) {
+  /// Analyze & mark loop entry with migration points.  Avoid instrumenting if
+  /// we can execute the entire loop & any entry code without overflowing our
+  /// resource capacity.
+  void traverseLoopEntry(Loop *L, bool &AddedMigPoint) {
+    // We don't need to instrument around the loop if we're instrumenting the
+    // header, as we'll hit a migration point at the beginning of the loop.
+    if(LoopMigPoints.count(L)) return;
+
     assert(LoopWeights.count(L) && "Invalid reverse post-order traversal");
     LoopWeightInfo &LWI = LoopWeights.at(L);
-
-    // We don't need to instrument around the loop in the following cases:
-    //  - If we're already instrumenting the loop we'll hit a migration point
-    //    at the beginning of the loop header.
-    //  - If the loop doesn't have any spanning paths, then by definition it
-    //    already has migration points in all paths through the body.
-    if(LoopMigPoints.count(L) || !LWI.loopHasSpanningPath()) return;
-
-    // Get the path weight entering the loop header from outside the loop.
-    // TODO what if it's an irreducible loop, i.e., > 1 header?
     BasicBlock *Header = L->getHeader();
-    WeightPtr HeaderWeight(getZeroWeight(DoHTMInst));
-    for(auto Pred : predecessors(Header)) {
-      if(!L->contains(Pred)) {
-        assert(BBWeights.count(Pred) && "Invalid reverse post-order traversal");
-        HeaderWeight->max(BBWeights[Pred].BlockWeight);
-      }
+
+    // Conservatively mark entry points if the loop only has equivalence point
+    // paths to avoid spurious first-iteration aborts -- may need to revise if
+    // transaction begin/ends are too expensive.
+    if(!LWI.loopHasSpanningPath()) {
+      DEBUG(dbgs() << "Loop only has equivalence point paths, "
+                      "instrumenting loop entry points\n");
+      markLoopPredecessors(L);
+      AddedMigPoint = true;
+      return;
     }
 
+    DEBUG(dbgs() << "Eliding entry point instrumentation for"; L->dump());
+
+    // TODO what if it's an irreducible loop, i.e., > 1 header?
+    WeightPtr HeaderWeight(getInitialWeight(Header));
+
+    DEBUG(dbgs() << "Header entry weight: "
+                 << HeaderWeight->toString() << "\n");
+
     // See if any of the exit spanning path weights are too heavy to include
-    // the entry point weight.
+    // the entry point weight -- entry point weights don't affect equivalence
+    // point paths.
     bool InstrumentLoopEntry = false;
     SmallVector<BasicBlock *, 4> ExitBlocks;
     L->getExitingBlocks(ExitBlocks);
@@ -932,21 +975,24 @@ private:
     }
 
     if(InstrumentLoopEntry) {
-      for(auto Pred : predecessors(Header))
-        if(!L->contains(Pred))
-          markAsMigPoint(Pred->getTerminator(), true, true);
+      DEBUG(dbgs() << "One or more spanning path(s) were too heavy, "
+                      "instrumenting loop entry points\n");
+      markLoopPredecessors(L);
+      AddedMigPoint = true;
     }
     else LWI.setEntryWeight(HeaderWeight);
   }
 
   /// Traverse a loop and instrument with migration points on paths that are
   /// too "heavy".  Return whether or not a migration point was added.
-  bool traverseLoop(LoopInfo &LI, Loop *L) {
+  bool traverseLoop(Loop *L) {
     bool AddedMigPoint = false;
-    LoopBlocksDFS DFS(L); DFS.perform(&LI);
+    LoopBlocksDFS DFS(L); DFS.perform(LI);
     LoopBlocksDFS::RPOIterator Block = DFS.beginRPO(), E = DFS.endRPO();
     SmallPtrSet<const Loop *, 4> MarkedLoops;
     Loop *BlockLoop;
+
+    DEBUG(dbgs() << "    Analyzing "; L->dump());
 
     // TODO what if it's an irreducible loop, i.e., > 1 header?
     assert(Block != E && "Loop with no basic blocks");
@@ -955,17 +1001,19 @@ private:
     BBWeights[CurBB] = traverseBlock(CurBB, HdrWeight, AddedMigPoint);
     for(++Block; Block != E; ++Block) {
       CurBB = *Block;
-      BlockLoop = LI.getLoopFor(CurBB);
+      BlockLoop = LI->getLoopFor(CurBB);
       if(BlockLoop == L) { // Block is at same nesting depth
-        WeightPtr PredWeight(getInitialWeight(CurBB, LI));
+        WeightPtr PredWeight(getInitialWeight(CurBB));
         BBWeights[CurBB] = traverseBlock(CurBB, PredWeight, AddedMigPoint);
       }
       else if(!MarkedLoops.count(BlockLoop)) {
-        // Block is in a sub-loop, analyze & mark sub-loop's boundaries
-        markLoopEntry(BlockLoop);
+        // Block is in a sub-loop, analyze & mark sub-loop's entry
+        traverseLoopEntry(BlockLoop, AddedMigPoint);
         MarkedLoops.insert(BlockLoop);
       }
     }
+
+    DEBUG(dbgs() << "    Finished analyzing loop\n");
 
     return AddedMigPoint;
   }
@@ -974,6 +1022,7 @@ private:
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
   Weight *traversePath(const LoopPath *LP) const {
+    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump(););
     assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
 
     // Note: path ending instructions should either be control flow or calls,
@@ -1047,7 +1096,7 @@ private:
   }
 
   /// Calculate the exit weights of a loop at all exit points.
-  void calculateLoopExitWeights(const EnumerateLoopPaths &LP, Loop *L) {
+  void calculateLoopExitWeights(Loop *L) {
     assert(!LoopWeights.count(L) && "Previously analyzed loop?");
 
     bool HasSpPath = false, HasEqPointPath = false;
@@ -1057,10 +1106,13 @@ private:
     SmallVector<BasicBlock *, 4> ExitBlocks;
     WeightPtr SpanningWeight(getZeroWeight(DoHTMInst)),
               EqPointWeight(getZeroWeight(DoHTMInst));
+    LP->getBackedgePaths(L, Paths);
+
+    DEBUG(dbgs() << "    Calculating loop exit weights: "
+                 << std::to_string(Paths.size()) << " backedge path(s)\n");
 
     // Analyze weights of individual paths through the loop that end at a
     // backedge, as these will dictate the loop's weight.
-    LP.getBackedgePaths(L, Paths);
     for(auto Path : Paths) {
       WeightPtr PathWeight(traversePath(Path));
       if(Path->isSpanningPath()) {
@@ -1075,26 +1127,40 @@ private:
 
     // Calculate/store the loop's spanning and equivalence point path weights.
     if(HasSpPath) {
-      // Note: if the loop trip count is smaller than the number of iterations
-      // between migration points, we can elide loop instrumentation.
+      // Optimization: if the loop trip count is smaller than the number of
+      // iterations between migration points, elide loop instrumentation.
       unsigned NumIters = SpanningWeight->numIters(),
                TripCount = getTripCount(L);
       if(TripCount && TripCount < NumIters) NumIters = TripCount;
       else LoopMigPoints.insert(L);
       LWI.setLoopSpanningPathWeight(SpanningWeight, NumIters);
+
+      DEBUG(
+        dbgs() << "  Loop spanning path weight: " << SpanningWeight->toString()
+               << ", " << std::to_string(NumIters)
+               << " iterations/migration point\n";
+      );
     }
-    if(HasEqPointPath) LWI.setLoopEqPointPathWeight(EqPointWeight);
+    if(HasEqPointPath) {
+      LWI.setLoopEqPointPathWeight(EqPointWeight);
+
+      DEBUG(
+        dbgs() << "  Loop eq-point path weight: " << EqPointWeight->toString()
+               << "\n";
+      );
+    }
 
     // Calculate the weight of the loop at every exit point.  Maintain separate
-    // spanning path & equivalence point path exit weights so that if we avoid
-    // instrumenting the loop boundaries, we can update the exit weights.
+    // spanning & equivalence point path exit weights so that if we avoid
+    // instrumenting loop boundaries in traverseLoopEntry() we can update the
+    // exit weights.
     L->getExitingBlocks(ExitBlocks);
     for(auto Exit : ExitBlocks) {
       HasSpPath = HasEqPointPath = false;
       SpanningWeight.reset(getZeroWeight(DoHTMInst));
       EqPointWeight.reset(getZeroWeight(DoHTMInst));
 
-      LP.getPathsThroughBlock(L, Exit, Paths);
+      LP->getPathsThroughBlock(L, Exit, Paths);
       for(auto Path : Paths) {
         WeightPtr PathWeight(traversePathUntilExit(Path, Exit));
         if(Path->isSpanningPath()) {
@@ -1106,59 +1172,54 @@ private:
           EqPointWeight->max(PathWeight);
         }
       }
+
+      if(HasSpPath) LWI.setExitSpanningPathWeight(Exit, SpanningWeight);
+      if(HasEqPointPath) LWI.setExitEqPointPathWeight(Exit, EqPointWeight);
     }
   }
 
   /// Analyze loop nests & mark locations for migration points.
-  void traverseLoopNest(const std::vector<BasicBlock *> &SCC,
-                        LoopInfo &LI,
-                        EnumerateLoopPaths &LP) {
+  void traverseLoopNest(const std::vector<BasicBlock *> &SCC) {
     LoopNest Nest;
 
-    sortLoopsByDepth(SCC, LI, Nest);
-    for(auto CurLoop : Nest) {
-      DEBUG(
-        const BasicBlock *H = CurLoop->getHeader();
-        dbgs() << "\nAnalyzing loop ";
-        if(H->hasName()) dbgs() << "with header '" << H->getName() << "'";
-        dbgs() << " (depth = " << std::to_string(CurLoop->getLoopDepth())
-               << ")\n";
-      );
+    DEBUG(dbgs() << "  + Analyzing loop nest\n");
 
-      if(traverseLoop(LI, CurLoop)) LP.rerunOnLoop(CurLoop);
-      calculateLoopExitWeights(LP, CurLoop);
+    sortLoopsByDepth(SCC, *LI, Nest);
+    for(auto CurLoop : Nest) {
+      if(traverseLoop(CurLoop)) LP->rerunOnLoop(CurLoop);
+      calculateLoopExitWeights(CurLoop);
 
       DEBUG(dbgs() << "\nLoop analysis: "
                    << LoopWeights.at(CurLoop).toString() << "\n");
     }
+
+    DEBUG(dbgs() << "  + Finished loop nest\n");
   }
 
   /// Analyze the function's body to add migration points.
   void analyzeFunctionBody(Function &F) {
-    LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-    EnumerateLoopPaths &LP = getAnalysis<EnumerateLoopPaths>();
     std::set<const Loop *> MarkedLoops;
     bool unused;
     Loop *BlockLoop;
 
     // Analyze & mark paths through loop nests
-    DEBUG(dbgs() << "\n-> Analyzing paths in loop nests <-\n");
+    DEBUG(dbgs() << "\n-> Analyzing loop nests <-\n");
     for(scc_iterator<Function *> SCC = scc_begin(&F), E = scc_end(&F);
         SCC != E; ++SCC)
-      if(SCC.hasLoop()) traverseLoopNest(*SCC, LI, LP);
+      if(SCC.hasLoop()) traverseLoopNest(*SCC);
 
     // Analyze the rest of the function body
     DEBUG(dbgs() << "\n-> Analyzing the rest of the function body <-\n");
     ReversePostOrderTraversal<Function *> RPOT(&F);
     for(auto BB = RPOT.begin(), BE = RPOT.end(); BB != BE; ++BB) {
-      BlockLoop = LI.getLoopFor(*BB);
+      BlockLoop = LI->getLoopFor(*BB);
       if(!BlockLoop) {
-        WeightPtr PredWeight(getInitialWeight(*BB, LI));
+        WeightPtr PredWeight(getInitialWeight(*BB));
         BBWeights[*BB] = traverseBlock(*BB, PredWeight, unused);
       }
       else if(!MarkedLoops.count(BlockLoop)) {
         // Block is in a loop, analyze & mark loop's boundaries
-        markLoopEntry(BlockLoop);
+        traverseLoopEntry(BlockLoop, unused);
         MarkedLoops.insert(BlockLoop);
       }
     }
@@ -1166,11 +1227,13 @@ private:
     // Finally, determine if we should add a migration point at exit block(s).
     for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
       if(isa<ReturnInst>(BB->getTerminator())) {
-        assert(!LI[BB] && "Returning inside a loop");
+        assert(!LI->getLoopFor(BB) && "Returning inside a loop");
         assert(BBWeights.count(BB) && "Missing block weight");
         const BasicBlockWeightInfo &BBWI = BBWeights[BB].BlockWeight;
-        if(!BBWI.BlockWeight->underPercentOfThreshold(RetThreshold))
+        if(!BBWI.BlockWeight->underPercentOfThreshold(RetThreshold)) {
+          DEBUG(dbgs() << " - Not under weight threshold, marking return\n");
           markAsMigPoint(BB->getTerminator(), true, true);
+        }
       }
     }
   }
@@ -1183,7 +1246,8 @@ private:
   /// costs) are only experienced every nth iteration, based on weight metrics
   void transformLoopHeader(Loop *L) {
     BasicBlock *Header = L->getHeader(), *NewSuccBB, *MigPointBB;
-    size_t ItersPerMigPoint, LNum;
+    size_t ItersPerMigPoint, LNum, Stride = 0;
+    Instruction *IV = nullptr;
 
     // If the first instruction has already been marked, nothing to do
     Instruction *First = Header->getFirstInsertionPt();
@@ -1193,9 +1257,25 @@ private:
 
     assert(LoopWeights.count(L) && "No loop analysis");
     ItersPerMigPoint = LoopWeights.at(L).getItersPerMigPoint();
-    PHINode *IV = L->getCanonicalInductionVariable();
     LNum = LoopsTransformed++;
-    // TODO use ScalarEvolution to get expression based on induction variable
+
+    // Search for the induction variable & it's stride
+    for(BasicBlock::iterator I = Header->begin(), E = Header->end();
+        I != E; ++I) {
+      if(!isa<PHINode>(*I)) break;
+      const SCEVAddRecExpr *Induct = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(I));
+      const SCEVConstant *StrideExpr;
+      if(Induct) {
+        IV = I;
+        StrideExpr = cast<SCEVConstant>(Induct->getStepRecurrence(*SE));
+        Stride = std::abs(StrideExpr->getValue()->getSExtValue());
+
+        DEBUG(dbgs() << "Found induction variable with loop stride of "
+                     << std::to_string(Stride) << "\n");
+
+        break;
+      }
+    }
 
     if(ItersPerMigPoint > 1 && IV) {
       DEBUG(
@@ -1205,7 +1285,7 @@ private:
                << std::to_string(ItersPerMigPoint) << " iterations\n"
       );
 
-      Type *IVType = IV->getType();
+      IntegerType *IVType = cast<IntegerType>(IV->getType());
       Function *CurF = Header->getParent();
       LLVMContext &C = Header->getContext();
 
@@ -1216,15 +1296,16 @@ private:
 
       // Create new block for migration point
       MigPointBB = BasicBlock::Create(C, "l.migpoint" + std::to_string(LNum),
-                                     CurF, NewSuccBB);
+                                      CurF, NewSuccBB);
       IRBuilder<> MigPointWorker(MigPointBB);
       Instruction *Br = cast<Instruction>(MigPointWorker.CreateBr(NewSuccBB));
       markAsMigPoint(Br, true, true);
 
       // Add check and branch to migration point only every nth iteration
       IRBuilder<> Worker(Header->getTerminator());
-      Constant *N = ConstantInt::get(IVType, ItersPerMigPoint, false),
-               *Zero = ConstantInt::get(IVType, 0, false);
+      Constant *N = ConstantInt::get(IVType, ItersPerMigPoint * Stride,
+                                     IVType->getSignBit()),
+               *Zero = ConstantInt::get(IVType, 0, IVType->getSignBit());
       Value *Rem = Worker.CreateURem(IV, N);
       Value *Cmp = Worker.CreateICmpEQ(Rem, Zero);
       Worker.CreateCondBr(Cmp, MigPointBB, NewSuccBB);

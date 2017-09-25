@@ -181,7 +181,7 @@ void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
   LoopDFSInfo DFSI;
   CurPaths.clear();
 
-  DEBUG(dbgs() << "Enumerating paths for "; L->print(dbgs()));
+  DEBUG(dbgs() << "Enumerating paths: "; L->print(dbgs()));
 
   // Store information about the current loop, it's backedges, and sub-loops
   CurLoop = L;
@@ -252,7 +252,7 @@ EnumerateLoopPaths::getBackedgePaths(const Loop *L,
                                      std::vector<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.endsAtBackedge()) P.push_back(&Path);
 }
 
@@ -261,7 +261,7 @@ EnumerateLoopPaths::getBackedgePaths(const Loop *L,
                                      std::set<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.endsAtBackedge()) P.insert(&Path);
 }
 
@@ -270,7 +270,7 @@ EnumerateLoopPaths::getSpanningPaths(const Loop *L,
                                      std::vector<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.isSpanningPath()) P.push_back(&Path);
 }
 
@@ -279,7 +279,7 @@ EnumerateLoopPaths::getSpanningPaths(const Loop *L,
                                      std::set<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.isSpanningPath()) P.insert(&Path);
 }
 
@@ -288,7 +288,7 @@ EnumerateLoopPaths::getEqPointPaths(const Loop *L,
                                     std::vector<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.isEqPointPath()) P.push_back(&Path);
 }
 
@@ -297,7 +297,7 @@ EnumerateLoopPaths::getEqPointPaths(const Loop *L,
                                     std::set<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.isEqPointPath()) P.insert(&Path);
 }
 
@@ -307,7 +307,7 @@ EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
   assert(hasPaths(L) && "No paths for loop");
   assert(L->contains(BB) && "Loop does not contain basic block");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.contains(BB)) P.push_back(&Path);
 }
 
@@ -317,7 +317,7 @@ EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
   assert(hasPaths(L) && "No paths for loop");
   assert(L->contains(BB) && "Loop does not contain basic block");
   P.clear();
-  for(auto Path : Paths.find(L)->second)
+  for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.contains(BB)) P.insert(&Path);
 }
 
