@@ -146,6 +146,9 @@ int pthread_setspecific(pthread_key_t, const void *);
 int pthread_attr_init(pthread_attr_t *);
 int pthread_attr_destroy(pthread_attr_t *);
 
+//int pthread_sigmask(int, const sigset_t *__restrict, sigset_t *__restrict);
+int pthread_kill(pthread_t, int);
+
 int pthread_attr_getguardsize(const pthread_attr_t *__restrict, size_t *__restrict);
 int pthread_attr_setguardsize(pthread_attr_t *, size_t);
 int pthread_attr_getstacksize(const pthread_attr_t *__restrict, size_t *__restrict);

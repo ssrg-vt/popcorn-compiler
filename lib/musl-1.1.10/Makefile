@@ -45,7 +45,8 @@ ALL_INCLUDES = $(sort $(wildcard include/*.h include/*/*.h) $(GENH) $(ARCH_INCLU
 EMPTY_LIB_NAMES = m rt pthread crypt util xnet resolv dl
 EMPTY_LIBS = $(EMPTY_LIB_NAMES:%=lib/lib%.a)
 CRT_LIBS = lib/crt1.o lib/Scrt1.o lib/rcrt1.o lib/crti.o lib/crtn.o
-STATIC_LIBS = lib/libc.a
+STATIC_LIBS = lib/libc.a 
+#lib/gnu-pth.a
 SHARED_LIBS = lib/libc.so
 TOOL_LIBS = lib/musl-gcc.specs
 ALL_LIBS = $(CRT_LIBS) $(STATIC_LIBS) $(SHARED_LIBS) $(EMPTY_LIBS) $(TOOL_LIBS)
@@ -116,10 +117,18 @@ $(dir $(patsubst %/,%,$(dir $(1))))$(notdir $(1:.s=.o)): $(1)
 endef
 $(foreach s,$(wildcard src/*/$(ARCH)*/*.s),$(eval $(call mkasmdep,$(s))))
 
+define mkabsmdep
+$(dir $(patsubst %/,%,$(dir $(1))))$(notdir $(1:.S=.o)): $(1)
+endef
+$(foreach S,$(wildcard src/*/$(ARCH)*/*.S),$(eval $(call mkabsmdep,$(S))))
+
 %.o: $(ARCH)$(ASMSUBARCH)/%.sub
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.o: $(ARCH)/%.s
+	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
+
+%.o: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
 
 %.o: %.c $(GENH) $(IMPH)
@@ -129,6 +138,9 @@ $(foreach s,$(wildcard src/*/$(ARCH)*/*.s),$(eval $(call mkasmdep,$(s))))
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.lo: $(ARCH)/%.s
+	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
+
+%.lo: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
 
 %.lo: %.c $(GENH) $(IMPH)

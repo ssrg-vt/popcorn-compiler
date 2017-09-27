@@ -196,7 +196,7 @@ int sigtimedwait(const sigset_t *__restrict, siginfo_t *__restrict, const struct
 int sigqueue(pid_t, int, const union sigval);
 
 int pthread_sigmask(int, const sigset_t *__restrict, sigset_t *__restrict);
-int pthread_kill(pthread_t, int);
+//int pthread_kill(pthread_t, int);
 
 void psiginfo(const siginfo_t *, const char *);
 void psignal(int, const char *);

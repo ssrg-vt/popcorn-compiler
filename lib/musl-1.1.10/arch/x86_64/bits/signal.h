@@ -77,7 +77,11 @@ typedef struct __ucontext {
 	stack_t uc_stack;
 	mcontext_t uc_mcontext;
 	sigset_t uc_sigmask;
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+	struct _fpstate __fpregs_mem;
+#else
 	unsigned long __fpregs_mem[64];
+#endif
 } ucontext_t;
 
 #define SA_NOCLDSTOP  1
