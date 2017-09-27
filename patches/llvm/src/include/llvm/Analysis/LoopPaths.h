@@ -55,7 +55,8 @@ typedef std::set<Loop *, LoopNestCmp> LoopNest;
 
 namespace LoopPathUtilities {
 
-/// Populate a LoopNest by traversing the loop L and its children.
+/// Populate a LoopNest by traversing the loop L and its children.  L *must* be
+/// the outermost loop in the nest, i.e., it has a depth of 1.
 void populateLoopNest(Loop *L, LoopNest &Nest);
 
 }
@@ -158,7 +159,8 @@ private:
   void loopDFS(Instruction *I,
                LoopDFSInfo &DFSI,
                std::vector<LoopPath> &CurPaths,
-               std::queue<Instruction *> &NewPaths);
+               std::queue<Instruction *> &NewPaths,
+               SmallPtrSet<Instruction *, 8> &NewVisited);
 
   /// Enumerate all paths within a loop, stored in the vector argument.
   void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
@@ -169,7 +171,6 @@ public:
 
   /// Pass interface implementation.
   void getAnalysisUsage(AnalysisUsage &AU) const override;
-  bool doInitialization(Module &M) override;
   bool runOnFunction(Function &F) override;
 
   /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
@@ -202,6 +203,9 @@ public:
                             std::vector<const LoopPath *> &P) const;
   void getPathsThroughBlock(Loop *L, BasicBlock *BB,
                             std::set<const LoopPath *> &P) const;
+
+  // TODO APIs to determine if basic block has spanning & equivalence point
+  // paths through it
 };
 
 }

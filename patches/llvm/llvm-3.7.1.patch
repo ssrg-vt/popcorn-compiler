@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,214 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -530,7 +530,8 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +namespace LoopPathUtilities {
 +
-+/// Populate a LoopNest by traversing the loop L and its children.
++/// Populate a LoopNest by traversing the loop L and its children.  L *must* be
++/// the outermost loop in the nest, i.e., it has a depth of 1.
 +void populateLoopNest(Loop *L, LoopNest &Nest);
 +
 +}
@@ -633,7 +634,8 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  void loopDFS(Instruction *I,
 +               LoopDFSInfo &DFSI,
 +               std::vector<LoopPath> &CurPaths,
-+               std::queue<Instruction *> &NewPaths);
++               std::queue<Instruction *> &NewPaths,
++               SmallPtrSet<Instruction *, 8> &NewVisited);
 +
 +  /// Enumerate all paths within a loop, stored in the vector argument.
 +  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
@@ -644,7 +646,6 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +  /// Pass interface implementation.
 +  void getAnalysisUsage(AnalysisUsage &AU) const override;
-+  bool doInitialization(Module &M) override;
 +  bool runOnFunction(Function &F) override;
 +
 +  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
@@ -677,6 +678,9 @@ Index: include/llvm/Analysis/LoopPaths.h
 +                            std::vector<const LoopPath *> &P) const;
 +  void getPathsThroughBlock(Loop *L, BasicBlock *BB,
 +                            std::set<const LoopPath *> &P) const;
++
++  // TODO APIs to determine if basic block has spanning & equivalence point
++  // paths through it
 +};
 +
 +}
@@ -2801,7 +2805,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,369 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2891,24 +2895,19 @@ Index: lib/Analysis/LoopPaths.cpp
 +}
 +
 +void LoopPath::print(raw_ostream &O) const {
-+  O << "  Path with " << std::to_string(Blocks.size()) << " block(s)\n";
-+  O << "  Start:"; Start->print(O); O << "\n";
-+  O << "  End:"; End->print(O); O << "\n";
-+  O << "  Blocks:\n";
++  O << "    Path with " << std::to_string(Blocks.size()) << " block(s)\n";
++  O << "    Start:"; Start->print(O); O << "\n";
++  O << "    End:"; End->print(O); O << "\n";
++  O << "    Blocks:\n";
 +  for(auto Block : Blocks) {
-+    if(Block->hasName()) O << "    " << Block->getName() << "\n";
-+    else O << "    <unnamed block>\n";
++    if(Block->hasName()) O << "      " << Block->getName() << "\n";
++    else O << "      <unnamed block>\n";
 +  }
 +}
 +
 +void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
 +  AU.addRequired<LoopInfoWrapperPass>();
 +  AU.setPreservesAll();
-+}
-+
-+bool EnumerateLoopPaths::doInitialization(Module &M) {
-+  Paths.clear();
-+  return false;
 +}
 +
 +/// Search over the instructions in a basic block (starting at I) for
@@ -2924,7 +2923,8 @@ Index: lib/Analysis/LoopPaths.cpp
 +void EnumerateLoopPaths::loopDFS(Instruction *I,
 +                                 LoopDFSInfo &DFSI,
 +                                 std::vector<LoopPath> &CurPaths,
-+                                 std::queue<Instruction *> &NewPaths) {
++                                 std::queue<Instruction *> &NewPaths,
++                                 SmallPtrSet<Instruction *, 8> &NewVisited) {
 +  Instruction *EqPoint;
 +  BasicBlock *BB = I->getParent();
 +  SmallVector<BasicBlock *, 4> ExitBlocks;
@@ -2934,7 +2934,33 @@ Index: lib/Analysis/LoopPaths.cpp
 +  if((EqPoint = hasEquivalencePoint(I))) {
 +    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, EqPoint,
 +                          DFSI.StartsAtHeader, false);
-+    NewPaths.push(EqPoint->getNextNode());
++
++    // Add instruction after equivalence point as start of new equivalence
++    // point path to be searched.  It's possible multiple paths end at this
++    // equivalence point, so avoid starting a new search at the same
++    // equivalence point multiple times.
++    if(!EqPoint->isTerminator()) {
++      Instruction *NextStart = EqPoint->getNextNode();
++      if(!NewVisited.count(NextStart)) {
++        NewPaths.push(NextStart);
++        NewVisited.insert(NextStart);
++      }
++    }
++    else {
++      // EqPoint is a block terminator, new search paths start in successors.
++      for(auto Succ : successors(BB)) {
++        if(!SubLoopBlocks.count(Succ)) {
++          if(!NewVisited.count(&Succ->front())) {
++            NewPaths.push(&Succ->front());
++            NewVisited.insert(&Succ->front());
++          }
++        }
++        else {
++          // TODO need to handle case where successor is in child loop
++          DEBUG(dbgs() << "WARNING: New path search point is in child loop\n");
++        }
++      }
++    }
 +
 +    DEBUG(
 +      dbgs() << "Found path that starts at ";
@@ -2949,7 +2975,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +                          DFSI.StartsAtHeader, true);
 +
 +    DEBUG(
-+      dbgs() << "Found path that start at ";
++      dbgs() << "Found path that starts at ";
 +      if(DFSI.StartsAtHeader) dbgs() << "the header";
 +      else dbgs() << "an equivalence point";
 +      dbgs() << " and ends at a backedge:\n";
@@ -2968,11 +2994,11 @@ Index: lib/Analysis/LoopPaths.cpp
 +            if(CurLoop->contains(SubExit)) {
 +              assert(SubLoopBlocks.find(SubExit) == SubLoopBlocks.end() &&
 +                     "Not expecting sub-loop to exit to another sub-loop");
-+              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths);
++              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths, NewVisited);
 +            }
 +          }
 +        }
-+        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths);
++        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths, NewVisited);
 +      }
 +    }
 +  }
@@ -2981,6 +3007,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 +  std::queue<Instruction *> NewPaths;
++  SmallPtrSet<Instruction *, 8> NewVisited;
 +  SmallVector<BasicBlock *, 4> LatchVec;
 +  LoopDFSInfo DFSI;
 +  CurPaths.clear();
@@ -3002,19 +3029,24 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +  DFSI.Start = &Header->front();
 +  DFSI.StartsAtHeader = true;
-+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
 +  assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
 +
 +  DFSI.StartsAtHeader = false;
 +  while(!NewPaths.empty()) {
 +    DFSI.Start = NewPaths.front();
 +    NewPaths.pop();
-+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    NewVisited.erase(DFSI.Start);
++    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
 +    assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
 +  }
 +}
 +
 +bool EnumerateLoopPaths::runOnFunction(Function &F) {
++  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
++               << "********** Function: " << F.getName() << "\n\n");
++
++  Paths.clear();
 +  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 +  std::vector<LoopNest> Nests;
 +
@@ -3027,6 +3059,9 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +  // We *should* be analyzing a loop for the first time
 +  for(auto Nest : Nests) {
++    DEBUG(dbgs() << "Analyznig nest with " << std::to_string(Nest.size())
++                 << " loops\n");
++
 +    for(auto L : Nest) {
 +      std::vector<LoopPath> &CurPaths = Paths[L];
 +      assert(CurPaths.size() == 0 && "Re-processing loop?");
@@ -7325,7 +7360,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1484 @@
+@@ -0,0 +1,1566 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7449,6 +7484,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +STATISTIC(NumHTMBegins, "Number of HTM begin intrinsics added");
 +STATISTIC(NumHTMEnds, "Number of HTM end intrinsics added");
 +STATISTIC(LoopsTransformed, "Number of loops transformed");
++STATISTIC(NumIVsAdded, "Number of induction variables added");
 +
 +namespace {
 +
@@ -7748,12 +7784,17 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // Mark function entry point.  Regardless if we're placing more migration
 +    // points in the function, we assume that function calls contain migration
 +    // points in caller, so we must add one in the callee body.
++    // TODO elide for ultra-short functions (e.g., < 10 insts)?
 +    DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
 +    markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +
-+    // Some libc functions (e.g., I/O) will cause aborts from system calls.
-+    // Instrument libc calls to stop & resume transactions afterwards.
-+    if(DoHTMInst && !NoWrapLibc) wrapLibcWithHTM(F);
++    // Some operations (e.g., big memory copies, I/O) will cause aborts.
++    // Instrument these operations to stop & resume transactions afterwards.
++    if(DoHTMInst) {
++      wrapWithHTM(F, isBigMemoryOp,
++                  "memory operations that will overflow HTM buffers");
++      if(!NoWrapLibc) wrapWithHTM(F, isLibcIO, "I/O functions");
++    }
 +
 +    if(MoreMigPoints) analyzeFunctionBody(F);
 +    else // Instrument function exit point(s)
@@ -7764,17 +7805,11 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // Finally, apply code transformations to marked instructions.
 +    addMigrationPoints(F);
 +
-+    NumMigPoints += NumMigPointAdded;
-+    NumHTMBegins += NumHTMBeginAdded;
-+    NumHTMEnds += NumHTMEndAdded;
-+    return NumMigPointAdded > 0 || NumHTMBeginAdded > 0 || NumHTMEndAdded > 0;
++    return true;
 +  }
 +
 +  /// Reset all analysis.
 +  virtual void initializeAnalysis(const Function &F) {
-+    NumMigPointAdded = 0;
-+    NumHTMBeginAdded = 0;
-+    NumHTMEndAdded = 0;
 +    DoHTMInst = false;
 +    SE = &getAnalysis<ScalarEvolution>();
 +    LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
@@ -7792,7 +7827,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      // enabled for the current function
 +      if(!F.hasFnAttribute("target-features")) {
 +        DEBUG(dbgs() << "-> Disabled HTM instrumentation, "
-+                        "no target-features attribute\n");
++                        "no 'target-features' attribute\n");
 +        return;
 +      }
 +
@@ -7825,11 +7860,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  /// The current architecture - used to access architecture-specific HTM calls
 +  Triple::ArchType Arch;
 +  const DataLayout *DL;
-+
-+  /// Number of various types of instrumentation added to the function
-+  size_t NumMigPointAdded;
-+  size_t NumHTMBeginAdded;
-+  size_t NumHTMEndAdded;
 +
 +  /// Should we instrument code with HTM execution?  Set if HTM is enabled on
 +  /// the command line and if the target is supported
@@ -7931,7 +7961,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +  public:
-+
 +    LoopWeightInfo() = delete;
 +    LoopWeightInfo(const Loop *L, bool DoHTMInst)
 +      : DoHTMInst(DoHTMInst), EntryWeight(getZeroWeight(DoHTMInst)),
@@ -7992,7 +8021,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      computeAllExitWeights();
 +    }
 +
-+    /// Get an exit block's spanning path weight.
++    /// Get an exit block's spanning path weight.  This is the raw weight for
++    /// a single iteration of paths through this exiting block, it does *not*
++    /// incorporate loop weights.
 +    WeightPtr getExitSpanningPathWeight(const BasicBlock *BB) const
 +    {
 +      assert(ExitHasSpanningPath.find(BB)->second &&
@@ -8009,7 +8040,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      computeExitWeight(BB);
 +    }
 +
-+    /// Get an exit block's equivalence point path weight.
++    /// Get an exit block's equivalence point path weight.  This is the raw
++    /// weight for a single iteration of paths through this exiting block, it
++    /// does *not* incorporate loop weights.
 +    WeightPtr getExitEqPointPathWeight(const BasicBlock *BB) const
 +    {
 +      assert(ExitHasEqPointPath.find(BB)->second &&
@@ -8050,7 +8083,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        std::string buf = "Exit block weights:\n";
 +        for(auto It = ExitWeights.begin(), E = ExitWeights.end();
 +            It != E; ++It) {
-+          buf += "  ";
++          buf += "    ";
 +          if(It->first->hasName()) {
 +            buf += It->first->getName();
 +            buf += ": ";
@@ -8079,10 +8112,10 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  //===--------------------------------------------------------------------===//
 +
 +  /// Return whether the instruction requires HTM begin instrumentation.
-+  bool shouldAddHTMBegin(Instruction *I) { return HTMBeginInsts.count(I); }
++  bool shouldAddHTMBegin(Instruction *I) const { return HTMBeginInsts.count(I); }
 +
 +  /// Return whether the instruction requires HTM end instrumentation.
-+  bool shouldAddHTMEnd(Instruction *I) { return HTMEndInsts.count(I); }
++  bool shouldAddHTMEnd(Instruction *I) const { return HTMEndInsts.count(I); }
 +
 +  /// Return whether the instruction is a migration point.  We assume that all
 +  /// called functions have migration points internally.
@@ -8091,36 +8124,68 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    else return MigPointInsts.count(I);
 +  }
 +
++  /// Return whether the instruction is marked for any instrumentation.
++  bool isMarkedForInstrumentation(Instruction *I) const {
++    return isMigrationPoint(I) || shouldAddHTMBegin(I) || shouldAddHTMEnd(I);
++  }
++
 +  /// Mark an instruction to be instrumented with an HTM begin, directly before
 +  /// the instruction
-+  void markAsHTMBegin(Instruction *I) {
++  bool markAsHTMBegin(Instruction *I) {
++    if(!DoHTMInst) return false;
 +    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
 +          dbgs() << " as HTM begin\n");
 +    HTMBeginInsts.insert(I);
++    return true;
 +  }
 +
 +  /// Mark an instruction to be instrumented with an HTM end, directly before
 +  /// the instruction
-+  void markAsHTMEnd(Instruction *I) {
++  bool markAsHTMEnd(Instruction *I) {
++    if(!DoHTMInst) return false;
 +    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
 +          dbgs() << " as HTM end\n");
 +    HTMEndInsts.insert(I);
++    return true;
 +  }
 +
 +  /// Mark an instruction to be instrumented with a migration point, directly
 +  /// before the instruction.  Optionally mark instruction as needing HTM
 +  /// start/stop intrinsics.
-+  void markAsMigPoint(Instruction *I, bool AddHTMBegin, bool AddHTMEnd) {
++  bool markAsMigPoint(Instruction *I, bool AddHTMBegin, bool AddHTMEnd) {
++    // Don't clobber any existing instrumentation
++    if(isMarkedForInstrumentation(I)) return false;
 +    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
 +          dbgs() << " as a migration point\n");
 +    MigPointInsts.insert(I);
 +    Popcorn::addEquivalencePointMetadata(I);
 +    if(AddHTMBegin) markAsHTMBegin(I);
 +    if(AddHTMEnd) markAsHTMEnd(I);
++    return true;
 +  }
 +
-+  /// Return whether the call instruction is a libc I/O call
-+  static inline bool isLibcIO(const Instruction *I) {
++  /// Instruction matching function type.
++  typedef bool (*InstMatch)(const Instruction *);
++
++  /// Return whether the instruction is a memory operation that will overflow
++  /// HTM buffers.
++  static bool isBigMemoryOp(const Instruction *I) {
++    if(!I || !isa<IntrinsicInst>(I)) return false;
++    const IntrinsicInst *II = cast<IntrinsicInst>(I);
++    int64_t Size = 0;
++    switch(II->getIntrinsicID()) {
++    default: return false;
++    case Intrinsic::memcpy: case Intrinsic::memmove: case Intrinsic::memset:
++      // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
++      Size = getValueSize(II->getArgOperand(2));
++      break;
++    }
++    return Size >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
++           Size >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
++  }
++
++  /// Return whether the instruction is a libc I/O call.
++  static bool isLibcIO(const Instruction *I) {
 +    if(!I || !Popcorn::isCallSite(I)) return false;
 +    const ImmutableCallSite CS(I);
 +    const Function *CalledFunc = CS.getCalledFunction();
@@ -8129,13 +8194,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    return false;
 +  }
 +
-+  /// Search for & bookend libc functions which are likely to cause an HTM
-+  /// abort with HTM stop/start intrinsics.
-+  void wrapLibcWithHTM(Function &F) {
-+    DEBUG(dbgs() << "\n-> Wrapping I/O functions with HTM stop/start <-\n");
++  /// Search for & wrap operations that match a certain criteria.
++  void wrapWithHTM(Function &F, InstMatch Matcher, const char *Desc) {
++    DEBUG(dbgs() << "\n-> Wrapping " << Desc << " with HTM stop/start <-\n");
 +    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
 +      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
-+        if(isLibcIO(I)) {
++        if(Matcher(I)) {
 +          markAsHTMEnd(I);
 +
 +          // Search subsequent instructions for other libc calls to prevent
@@ -8143,8 +8207,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +          const static size_t searchSpan = 10;
 +          BasicBlock::iterator NextI(I->getNextNode());
 +          for(size_t rem = searchSpan; rem > 0 && NextI != E; rem--, NextI++) {
-+            if(isLibcIO(NextI)) {
-+              DEBUG(dbgs() << "  - Found another libc call"; NextI->dump());
++            if(Matcher(NextI)) {
++              DEBUG(dbgs() << "  - Found another match:"; NextI->dump());
 +              I = NextI;
 +              rem = searchSpan;
 +            }
@@ -8176,23 +8240,31 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    Weight *PredWeight = getZeroWeight(DoHTMInst);
 +    const Loop *L = LI->getLoopFor(BB);
 +    bool BBIsHeader = L && (BB == L->getHeader());
++    unsigned LDepth = L ? L->getLoopDepth() : 0;
 +
 +    for(auto Pred : predecessors(BB)) {
 +      const Loop *PredLoop = LI->getLoopFor(Pred);
 +
-+      // Weed out loop latches -- if we're the header, then we're analyzing
-+      // weights upon loop entry and should not incorporate latches.
++      // We *only* gather header initial weights when analyzing whether to
++      // instrument loop entry, which should not incorporate latches.
 +      if(BBIsHeader && PredLoop == L) continue;
 +
-+      // If the predecessor is in a loop and it's not BB's loop, then it's by
-+      // definition an exiting block of another loop and we have to use the
-+      // loop exit weight from that block.  Otherwise, it's just normal control
-+      // flow and we can use the block's exit weight.
-+      if(PredLoop && PredLoop != L) {
++      // Determine if the predecessor is an exit block from another loop:
++      //
++      //   1. The predecessor is in a loop
++      //   2. The predecessor's loop is not BB's loop
++      //   3. The nesting depth of the predecessor's loop is >= BB's loop*
++      //
++      // If it's an exit block, use the loop weight info to get the exit
++      // weight.  Otherwise, use the basic block weight info.
++      //
++      // *Note: if the predecessor's nesting depth is < BB's, then BB is in a
++      // child loop inside the predecessor's loop, and the predecessor is NOT a
++      // loop exiting block.
++      if(PredLoop && PredLoop != L && PredLoop->getLoopDepth() >= LDepth) {
 +        assert(LoopWeights.count(PredLoop) &&
 +               "Invalid reverse post-order traversal");
-+        const LoopWeightInfo &LWI = LoopWeights.at(PredLoop);
-+        PredWeight->max(LWI[Pred]);
++        PredWeight->max(LoopWeights.at(PredLoop)[Pred]);
 +      }
 +      else {
 +        assert(BBWeights.count(Pred) && "Invalid reverse post-order traversal");
@@ -8209,87 +8281,95 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  ///
 +  /// Note: returns a dynamically allocated object to be managed by the caller
 +  Weight *
-+  traverseBlock(BasicBlock *BB, const Weight *Initial, bool &addedMigPoint) {
++  traverseBlock(BasicBlock *BB, const Weight *Initial, bool &AddedMigPoint) {
 +    Weight *CurWeight = Initial->copy();
 +
 +    DEBUG(
 +      dbgs() << "      Analyzing basic block";
 +      if(BB->hasName()) dbgs() << " '" << BB->getName() << "'";
-+      dbgs() << " - ";
++      dbgs() << "\n";
 +    );
++
++    // TODO this doesn't respect spans identified by wrapWithHTM()!
 +
 +    for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
 +      if(isa<PHINode>(I)) continue;
 +
 +      // Check if there is or there should be a migration point before the
-+      // instruction, and if so, reset the weight.  Avoid tampering with
-+      // existing instrumentation.
-+      if(isMigrationPoint(I)) CurWeight->reset();
-+      else if(CurWeight->shouldAddMigPoint()) {
-+        markAsMigPoint(I, true, true);
++      // instruction, and if so, reset the weight.  Note: markAsMigPoint()
++      // internally avoids tampering with existing instrumentation.
++      if(isMigrationPoint(I) || CurWeight->shouldAddMigPoint()) {
++        AddedMigPoint |= markAsMigPoint(I, true, true);
 +        CurWeight->reset();
-+        addedMigPoint = true;
 +      }
 +
 +      CurWeight->analyze(I, DL);
 +    }
 +
-+    DEBUG(dbgs() << "weight: " << CurWeight->toString() << "\n");
++    DEBUG(dbgs() << "       - Weight: " << CurWeight->toString() << "\n");
 +
 +    return CurWeight;
-+  }
-+
-+  /// Mark loop predecessors, i.e., all branches into the loop header, as
-+  /// migration points.
-+  void markLoopPredecessors(const Loop *L) {
-+    BasicBlock *Header = L->getHeader();
-+    for(auto Pred : predecessors(Header)) {
-+      // Avoid inadvertently adding migration points where we're exiting from
-+      // one loop directly into the header of another
-+      assert(LI->getLoopFor(Pred) == nullptr ||
-+             (LI->getLoopFor(Pred)->getLoopDepth() < L->getLoopDepth()));
-+      if(!L->contains(Pred)) markAsMigPoint(Pred->getTerminator(), true, true);
-+    }
 +  }
 +
 +  Weight *
 +  traverseBlock(BasicBlock *BB, const WeightPtr &Initial, bool &addedMigPoint)
 +  { return traverseBlock(BB, Initial.get(), addedMigPoint); }
 +
++  /// Mark loop predecessors, i.e., all branches into the loop header, as
++  /// migration points.
++  bool markLoopPredecessors(const Loop *L) {
++    bool marked = false;
++    BasicBlock *Header = L->getHeader();
++    for(auto Pred : predecessors(Header)) {
++      // Weed out latches
++      if(!L->contains(Pred)) {
++        // Avoid adding migration points in bodies of predecessor loops when
++        // exiting from one loop directly into the header of another, e.g.,
++        //
++        //   for.body:  ;Body of first loop
++        //     ...
++        //     br i1 %cmp, for.body, for.body.2
++        //
++        //   for.body.2: ;Body of second, completely independent loop
++        //     ...
++        const Loop *PredL = LI->getLoopFor(Pred);
++        if(PredL == nullptr || (PredL->getLoopDepth() < L->getLoopDepth()))
++          marked |= markAsMigPoint(Pred->getTerminator(), true, true);
++      }
++    }
++    return marked;
++  }
++
 +  /// Analyze & mark loop entry with migration points.  Avoid instrumenting if
 +  /// we can execute the entire loop & any entry code without overflowing our
 +  /// resource capacity.
-+  void traverseLoopEntry(Loop *L, bool &AddedMigPoint) {
++  bool traverseLoopEntry(Loop *L) {
 +    // We don't need to instrument around the loop if we're instrumenting the
 +    // header, as we'll hit a migration point at the beginning of the loop.
-+    if(LoopMigPoints.count(L)) return;
++    if(LoopMigPoints.count(L)) return false;
 +
 +    assert(LoopWeights.count(L) && "Invalid reverse post-order traversal");
 +    LoopWeightInfo &LWI = LoopWeights.at(L);
-+    BasicBlock *Header = L->getHeader();
 +
-+    // Conservatively mark entry points if the loop only has equivalence point
-+    // paths to avoid spurious first-iteration aborts -- may need to revise if
-+    // transaction begin/ends are too expensive.
++    // If the loop only has equivalence point paths, assume that we'll hit an
++    // equivalence point before we abort -- may need to revise if there are too
++    // many capacity aborts.
 +    if(!LWI.loopHasSpanningPath()) {
-+      DEBUG(dbgs() << "Loop only has equivalence point paths, "
-+                      "instrumenting loop entry points\n");
-+      markLoopPredecessors(L);
-+      AddedMigPoint = true;
-+      return;
++      DEBUG(dbgs() << "       - Loop only has equivalence point paths, "
++                      "can elide instrumenting loop entry points\n");
++      return false;
 +    }
 +
-+    DEBUG(dbgs() << "Eliding entry point instrumentation for"; L->dump());
-+
 +    // TODO what if it's an irreducible loop, i.e., > 1 header?
++    BasicBlock *Header = L->getHeader();
 +    WeightPtr HeaderWeight(getInitialWeight(Header));
 +
-+    DEBUG(dbgs() << "Header entry weight: "
++    DEBUG(dbgs() << "       + Analyzing loop entry points, header weight: "
 +                 << HeaderWeight->toString() << "\n");
 +
 +    // See if any of the exit spanning path weights are too heavy to include
-+    // the entry point weight -- entry point weights don't affect equivalence
-+    // point paths.
++    // the entry point weight (entry point weights don't affect equivalence
++    // point paths).
 +    bool InstrumentLoopEntry = false;
 +    SmallVector<BasicBlock *, 4> ExitBlocks;
 +    L->getExitingBlocks(ExitBlocks);
@@ -8303,12 +8383,15 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +    if(InstrumentLoopEntry) {
-+      DEBUG(dbgs() << "One or more spanning path(s) were too heavy, "
++      DEBUG(dbgs() << "       - One or more spanning path(s) were too heavy, "
 +                      "instrumenting loop entry points\n");
-+      markLoopPredecessors(L);
-+      AddedMigPoint = true;
++      return markLoopPredecessors(L);
 +    }
-+    else LWI.setEntryWeight(HeaderWeight);
++    else {
++      DEBUG(dbgs() << "       + Can elide instrumenting loop entry points\n");
++      LWI.setEntryWeight(HeaderWeight);
++      return false;
++    }
 +  }
 +
 +  /// Traverse a loop and instrument with migration points on paths that are
@@ -8320,23 +8403,24 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    SmallPtrSet<const Loop *, 4> MarkedLoops;
 +    Loop *BlockLoop;
 +
-+    DEBUG(dbgs() << "    Analyzing "; L->dump());
++    assert(Block != E && "Loop with no basic blocks");
++    DEBUG(dbgs() << "  + Analyzing "; L->dump());
 +
 +    // TODO what if it's an irreducible loop, i.e., > 1 header?
-+    assert(Block != E && "Loop with no basic blocks");
 +    BasicBlock *CurBB = *Block;
 +    WeightPtr HdrWeight(getZeroWeight(DoHTMInst));
 +    BBWeights[CurBB] = traverseBlock(CurBB, HdrWeight, AddedMigPoint);
++
 +    for(++Block; Block != E; ++Block) {
 +      CurBB = *Block;
 +      BlockLoop = LI->getLoopFor(CurBB);
-+      if(BlockLoop == L) { // Block is at same nesting depth
++      if(BlockLoop == L) { // Block is in same loop & nesting depth
 +        WeightPtr PredWeight(getInitialWeight(CurBB));
 +        BBWeights[CurBB] = traverseBlock(CurBB, PredWeight, AddedMigPoint);
 +      }
 +      else if(!MarkedLoops.count(BlockLoop)) {
 +        // Block is in a sub-loop, analyze & mark sub-loop's entry
-+        traverseLoopEntry(BlockLoop, AddedMigPoint);
++        AddedMigPoint |= traverseLoopEntry(BlockLoop);
 +        MarkedLoops.insert(BlockLoop);
 +      }
 +    }
@@ -8443,13 +8527,16 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // backedge, as these will dictate the loop's weight.
 +    for(auto Path : Paths) {
 +      WeightPtr PathWeight(traversePath(Path));
++      DEBUG(dbgs() << "    Path weight: " << PathWeight->toString() << " ");
 +      if(Path->isSpanningPath()) {
 +        HasSpPath = true;
 +        SpanningWeight->max(PathWeight);
++        DEBUG(dbgs() << "(spanning path)\n");
 +      }
 +      else {
 +        HasEqPointPath = true;
 +        EqPointWeight->max(PathWeight);
++        DEBUG(dbgs() << "(equivalence point path)\n");
 +      }
 +    }
 +
@@ -8459,7 +8546,11 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      // iterations between migration points, elide loop instrumentation.
 +      unsigned NumIters = SpanningWeight->numIters(),
 +               TripCount = getTripCount(L);
-+      if(TripCount && TripCount < NumIters) NumIters = TripCount;
++      if(TripCount && TripCount < NumIters) {
++        DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
++                     << std::to_string(TripCount) << "\n");
++        NumIters = TripCount;
++      }
 +      else LoopMigPoints.insert(L);
 +      LWI.setLoopSpanningPathWeight(SpanningWeight, NumIters);
 +
@@ -8509,19 +8600,20 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  /// Analyze loop nests & mark locations for migration points.
 +  void traverseLoopNest(const std::vector<BasicBlock *> &SCC) {
 +    LoopNest Nest;
-+
-+    DEBUG(dbgs() << "  + Analyzing loop nest\n");
-+
 +    sortLoopsByDepth(SCC, *LI, Nest);
++
++    DEBUG(dbgs() << " + Analyzing loop nest with "
++                 << std::to_string(Nest.size()) << " loops\n\n");
++
 +    for(auto CurLoop : Nest) {
 +      if(traverseLoop(CurLoop)) LP->rerunOnLoop(CurLoop);
 +      calculateLoopExitWeights(CurLoop);
 +
-+      DEBUG(dbgs() << "\nLoop analysis: "
++      DEBUG(dbgs() << "\n  Loop analysis: "
 +                   << LoopWeights.at(CurLoop).toString() << "\n");
 +    }
 +
-+    DEBUG(dbgs() << "  + Finished loop nest\n");
++    DEBUG(dbgs() << " - Finished loop nest\n");
 +  }
 +
 +  /// Analyze the function's body to add migration points.
@@ -8547,7 +8639,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      }
 +      else if(!MarkedLoops.count(BlockLoop)) {
 +        // Block is in a loop, analyze & mark loop's boundaries
-+        traverseLoopEntry(BlockLoop, unused);
++        traverseLoopEntry(BlockLoop);
 +        MarkedLoops.insert(BlockLoop);
 +      }
 +    }
@@ -8570,61 +8662,91 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  // Instrumentation implementation
 +  //===--------------------------------------------------------------------===//
 +
-+  /// Transform a loop header so that migration points (and any concomitant
-+  /// costs) are only experienced every nth iteration, based on weight metrics
-+  void transformLoopHeader(Loop *L) {
-+    BasicBlock *Header = L->getHeader(), *NewSuccBB, *MigPointBB;
-+    size_t ItersPerMigPoint, LNum, Stride = 0;
-+    Instruction *IV = nullptr;
-+
-+    // If the first instruction has already been marked, nothing to do
-+    Instruction *First = Header->getFirstInsertionPt();
-+    if(isMigrationPoint(First) ||
-+       shouldAddHTMEnd(First) ||
-+       shouldAddHTMBegin(First)) return;
-+
-+    assert(LoopWeights.count(L) && "No loop analysis");
-+    ItersPerMigPoint = LoopWeights.at(L).getItersPerMigPoint();
-+    LNum = LoopsTransformed++;
++  /// Either find an existing induction variable (and its stride), or create
++  /// one for a loop.
++  Instruction *getInductionVariable(Loop *L, size_t &Stride) {
++    BasicBlock *H = L->getHeader();
++    const SCEVAddRecExpr *Induct;
++    const SCEVConstant *StrideExpr;
++    Type *IVTy;
 +
 +    // Search for the induction variable & it's stride
-+    for(BasicBlock::iterator I = Header->begin(), E = Header->end();
-+        I != E; ++I) {
++    for(BasicBlock::iterator I = H->begin(), E = H->end(); I != E; ++I) {
 +      if(!isa<PHINode>(*I)) break;
-+      const SCEVAddRecExpr *Induct = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(I));
-+      const SCEVConstant *StrideExpr;
++      IVTy = I->getType();
++      if(IVTy->isPointerTy() || !SE->isSCEVable(IVTy)) continue;
++      Induct = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(I));
 +      if(Induct) {
-+        IV = I;
 +        StrideExpr = cast<SCEVConstant>(Induct->getStepRecurrence(*SE));
 +        Stride = std::abs(StrideExpr->getValue()->getSExtValue());
 +
 +        DEBUG(dbgs() << "Found induction variable with loop stride of "
-+                     << std::to_string(Stride) << "\n");
++                     << std::to_string(Stride) << ":"; I->print(dbgs());
++              dbgs() << "\n");
 +
-+        break;
++        return I;
 +      }
 +    }
 +
-+    if(ItersPerMigPoint > 1 && IV) {
-+      DEBUG(
-+        dbgs() << "Instrumenting loop ";
-+        if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
-+        dbgs() << "to hit migration point every "
-+               << std::to_string(ItersPerMigPoint) << " iterations\n"
-+      );
++    DEBUG(dbgs() << "No induction variable, creating 'migpoint.iv."
++                 << std::to_string(NumIVsAdded) << "' to the loop\n");
++
++    LLVMContext &C = H->getContext();
++    Type *Int32Ty = Type::getInt32Ty(C);
++    IRBuilder<> PhiBuilder(H->getFirstInsertionPt());
++    PHINode *IV = PhiBuilder.CreatePHI(Int32Ty, 0,
++      "migpoint.iv." + std::to_string(NumIVsAdded++));
++    Constant *One = ConstantInt::get(Int32Ty, 1, 0),
++             *Zero = ConstantInt::get(Int32Ty, 0, 0);
++    for(auto Pred : predecessors(H)) {
++      IRBuilder<> AddRecBuilder(Pred->getTerminator());
++      if(L->contains(Pred)) { // Backedge
++        Value *RecVal = AddRecBuilder.CreateAdd(IV, One);
++        IV->addIncoming(RecVal, Pred);
++      }
++      else IV->addIncoming(Zero, Pred);
++    }
++
++    Stride = 1;
++    return IV;
++  }
++
++  /// Transform a loop header so that migration points (and any concomitant
++  /// costs) are only experienced every nth iteration, based on weight metrics
++  void transformLoopHeader(Loop *L) {
++    BasicBlock *Header = L->getHeader();
++    size_t ItersPerMigPoint, Stride = 0;
++
++    // If the first instruction has already been marked, nothing to do
++    Instruction *First = Header->getFirstInsertionPt();
++    if(isMarkedForInstrumentation(First)) return;
++
++    DEBUG(dbgs() << "+ Instrumenting "; L->dump());
++
++    assert(LoopWeights.count(L) && "No loop analysis");
++    ItersPerMigPoint = LoopWeights.at(L).getItersPerMigPoint();
++
++    if(ItersPerMigPoint > 1) {
++      BasicBlock *NewSuccBB, *MigPointBB;
++      Instruction *IV = getInductionVariable(L, Stride);
++
++      DEBUG(dbgs() << "Instrumenting to hit migration point every "
++                   << std::to_string(ItersPerMigPoint) << " iterations\n");
++
++      // TODO should we make ItersPerMigPoint a multiple of 2 so we can do a
++      // simple bit mask instead of unsigned remainder?
 +
 +      IntegerType *IVType = cast<IntegerType>(IV->getType());
 +      Function *CurF = Header->getParent();
 +      LLVMContext &C = Header->getContext();
 +
 +      // Create new successor for all instructions after migration point
-+      NewSuccBB =
-+        Header->splitBasicBlock(Header->getFirstInsertionPt(),
-+                                "l.postmigpoint" + std::to_string(LNum));
++      NewSuccBB = Header->splitBasicBlock(Header->getFirstInsertionPt(),
++        "l.postmigpoint" + std::to_string(LoopsTransformed));
 +
 +      // Create new block for migration point
-+      MigPointBB = BasicBlock::Create(C, "l.migpoint" + std::to_string(LNum),
-+                                      CurF, NewSuccBB);
++      MigPointBB = BasicBlock::Create(C,
++        "l.migpoint" + std::to_string(LoopsTransformed), CurF, NewSuccBB);
 +      IRBuilder<> MigPointWorker(MigPointBB);
 +      Instruction *Br = cast<Instruction>(MigPointWorker.CreateBr(NewSuccBB));
 +      markAsMigPoint(Br, true, true);
@@ -8640,14 +8762,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      Header->getTerminator()->eraseFromParent();
 +    }
 +    else {
-+      DEBUG(
-+        dbgs() << "Instrumenting loop ";
-+        if(Header->hasName()) dbgs() << "header '" << Header->getName() << "' ";
-+        dbgs() << "to hit migration point every iteration";
-+        if(!IV) dbgs() << " (no loop induction variable)";
-+        dbgs() << "\n";
-+      );
-+
++      DEBUG(dbgs() << "Instrumenting to hit migration point every iteration\n");
 +      markAsMigPoint(Header->getFirstInsertionPt(), true, true);
 +    }
 +  }
@@ -8697,12 +8812,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // Create a new successor which contains all instructions after the HTM
 +    // check & end
 +    NewSuccBB = CurBB->splitBasicBlock(I,
-+      ".htmendsucc" + std::to_string(NumMigPointAdded));
++      ".htmendsucc" + std::to_string(NumHTMEnds));
 +
 +    // Create an HTM end block, which ends the transaction and jumps to the
 +    // new successor
 +    HTMEndBB = BasicBlock::Create(C,
-+      ".htmend" + std::to_string(NumMigPointAdded), CurF, NewSuccBB);
++      ".htmend" + std::to_string(NumHTMEnds), CurF, NewSuccBB);
 +    IRBuilder<> EndWorker(HTMEndBB);
 +    EndWorker.CreateCall(HTMEndDecl);
 +    EndWorker.CreateBr(NewSuccBB);
@@ -8713,9 +8828,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    IRBuilder<> PredWorker(CurBB->getTerminator());
 +    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
 +    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
-+    Value *Cmp =
-+      PredWorker.CreateICmpNE(HTMTestVal, Zero,
-+                              "htmcmp" + std::to_string(NumMigPointAdded));
++    Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
++      "htmcmp" + std::to_string(NumHTMEnds));
 +    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
 +    CurBB->getTerminator()->eraseFromParent();
 +  }
@@ -8728,11 +8842,14 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      dbgs() << "<-\n";
 +    );
 +
-+    for(auto Loop : LoopMigPoints) transformLoopHeader(Loop);
++    for(auto Loop : LoopMigPoints) {
++      transformLoopHeader(Loop);
++      LoopsTransformed++;
++    }
 +
 +    for(auto I = MigPointInsts.begin(), E = MigPointInsts.end(); I != E; ++I) {
 +      addMigrationPoint(*I);
-+      NumMigPointAdded++;
++      NumMigPoints++;
 +    }
 +
 +    if(DoHTMInst) {
@@ -8743,7 +8860,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        case Triple::x86_64: addX86HTMCheckAndEnd(*I); break;
 +        default: llvm_unreachable("HTM -- unsupported architecture");
 +        }
-+        NumHTMEndAdded++;
++        NumHTMEnds++;
 +      }
 +
 +      for(auto I = HTMBeginInsts.begin(), E = HTMBeginInsts.end();
@@ -8753,7 +8870,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        case Triple::x86_64: addX86HTMBegin(*I); break;
 +        default: llvm_unreachable("HTM -- unsupported architecture");
 +        }
-+        NumHTMBeginAdded++;
++        NumHTMBegins++;
 +      }
 +    }
 +  }
@@ -8802,7 +8919,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  "ftell", "fgetpos", "fseek", "fsetpos", "rewind",
 +  "clearerr", "feof", "ferror", "perror",
 +  "remove", "rename", "tmpfile", "tmpnam",
-+  "__isoc99_fscanf"
++  "__isoc99_fscanf", "exit"
 +};
 +
 +namespace llvm {

@@ -87,24 +87,19 @@ std::string LoopPath::toString() const {
 }
 
 void LoopPath::print(raw_ostream &O) const {
-  O << "  Path with " << std::to_string(Blocks.size()) << " block(s)\n";
-  O << "  Start:"; Start->print(O); O << "\n";
-  O << "  End:"; End->print(O); O << "\n";
-  O << "  Blocks:\n";
+  O << "    Path with " << std::to_string(Blocks.size()) << " block(s)\n";
+  O << "    Start:"; Start->print(O); O << "\n";
+  O << "    End:"; End->print(O); O << "\n";
+  O << "    Blocks:\n";
   for(auto Block : Blocks) {
-    if(Block->hasName()) O << "    " << Block->getName() << "\n";
-    else O << "    <unnamed block>\n";
+    if(Block->hasName()) O << "      " << Block->getName() << "\n";
+    else O << "      <unnamed block>\n";
   }
 }
 
 void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<LoopInfoWrapperPass>();
   AU.setPreservesAll();
-}
-
-bool EnumerateLoopPaths::doInitialization(Module &M) {
-  Paths.clear();
-  return false;
 }
 
 /// Search over the instructions in a basic block (starting at I) for
@@ -120,7 +115,8 @@ static Instruction *hasEquivalencePoint(Instruction *I) {
 void EnumerateLoopPaths::loopDFS(Instruction *I,
                                  LoopDFSInfo &DFSI,
                                  std::vector<LoopPath> &CurPaths,
-                                 std::queue<Instruction *> &NewPaths) {
+                                 std::queue<Instruction *> &NewPaths,
+                                 SmallPtrSet<Instruction *, 8> &NewVisited) {
   Instruction *EqPoint;
   BasicBlock *BB = I->getParent();
   SmallVector<BasicBlock *, 4> ExitBlocks;
@@ -130,7 +126,33 @@ void EnumerateLoopPaths::loopDFS(Instruction *I,
   if((EqPoint = hasEquivalencePoint(I))) {
     CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, EqPoint,
                           DFSI.StartsAtHeader, false);
-    NewPaths.push(EqPoint->getNextNode());
+
+    // Add instruction after equivalence point as start of new equivalence
+    // point path to be searched.  It's possible multiple paths end at this
+    // equivalence point, so avoid starting a new search at the same
+    // equivalence point multiple times.
+    if(!EqPoint->isTerminator()) {
+      Instruction *NextStart = EqPoint->getNextNode();
+      if(!NewVisited.count(NextStart)) {
+        NewPaths.push(NextStart);
+        NewVisited.insert(NextStart);
+      }
+    }
+    else {
+      // EqPoint is a block terminator, new search paths start in successors.
+      for(auto Succ : successors(BB)) {
+        if(!SubLoopBlocks.count(Succ)) {
+          if(!NewVisited.count(&Succ->front())) {
+            NewPaths.push(&Succ->front());
+            NewVisited.insert(&Succ->front());
+          }
+        }
+        else {
+          // TODO need to handle case where successor is in child loop
+          DEBUG(dbgs() << "WARNING: New path search point is in child loop\n");
+        }
+      }
+    }
 
     DEBUG(
       dbgs() << "Found path that starts at ";
@@ -145,7 +167,7 @@ void EnumerateLoopPaths::loopDFS(Instruction *I,
                           DFSI.StartsAtHeader, true);
 
     DEBUG(
-      dbgs() << "Found path that start at ";
+      dbgs() << "Found path that starts at ";
       if(DFSI.StartsAtHeader) dbgs() << "the header";
       else dbgs() << "an equivalence point";
       dbgs() << " and ends at a backedge:\n";
@@ -164,11 +186,11 @@ void EnumerateLoopPaths::loopDFS(Instruction *I,
             if(CurLoop->contains(SubExit)) {
               assert(SubLoopBlocks.find(SubExit) == SubLoopBlocks.end() &&
                      "Not expecting sub-loop to exit to another sub-loop");
-              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths);
+              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths, NewVisited);
             }
           }
         }
-        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths);
+        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths, NewVisited);
       }
     }
   }
@@ -177,6 +199,7 @@ void EnumerateLoopPaths::loopDFS(Instruction *I,
 
 void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
   std::queue<Instruction *> NewPaths;
+  SmallPtrSet<Instruction *, 8> NewVisited;
   SmallVector<BasicBlock *, 4> LatchVec;
   LoopDFSInfo DFSI;
   CurPaths.clear();
@@ -198,19 +221,24 @@ void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 
   DFSI.Start = &Header->front();
   DFSI.StartsAtHeader = true;
-  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
   assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
 
   DFSI.StartsAtHeader = false;
   while(!NewPaths.empty()) {
     DFSI.Start = NewPaths.front();
     NewPaths.pop();
-    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+    NewVisited.erase(DFSI.Start);
+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
     assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
   }
 }
 
 bool EnumerateLoopPaths::runOnFunction(Function &F) {
+  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
+               << "********** Function: " << F.getName() << "\n\n");
+
+  Paths.clear();
   LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
   std::vector<LoopNest> Nests;
 
@@ -223,6 +251,9 @@ bool EnumerateLoopPaths::runOnFunction(Function &F) {
 
   // We *should* be analyzing a loop for the first time
   for(auto Nest : Nests) {
+    DEBUG(dbgs() << "Analyznig nest with " << std::to_string(Nest.size())
+                 << " loops\n");
+
     for(auto L : Nest) {
       std::vector<LoopPath> &CurPaths = Paths[L];
       assert(CurPaths.size() == 0 && "Re-processing loop?");
