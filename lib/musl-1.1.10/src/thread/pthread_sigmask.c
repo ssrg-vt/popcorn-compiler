@@ -1,8 +1,9 @@
 #include <signal.h>
 #include <errno.h>
 #include "syscall.h"
+#include "libc.h"
 
-int pthread_sigmask(int how, const sigset_t *restrict set, sigset_t *restrict old)
+int __pthread_sigmask(int how, const sigset_t *restrict set, sigset_t *restrict old)
 {
 	int ret;
 	if ((unsigned)how - SIG_BLOCK > 2U) return EINVAL;
@@ -17,3 +18,5 @@ int pthread_sigmask(int how, const sigset_t *restrict set, sigset_t *restrict ol
 	}
 	return ret;
 }
+
+weak_alias(__pthread_sigmask, pthread_sigmask);

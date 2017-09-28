@@ -111,6 +111,9 @@ struct __timer {
 
 pthread_t __pthread_self_init(void);
 
+int __pthread_sigmask(int how, const sigset_t *restrict set, sigset_t *restrict old);
+
+
 int __clone(int (*)(void *), void *, int, void *, ...);
 int __set_thread_area(void *);
 int __libc_sigaction(int, const struct sigaction *, struct sigaction *);
