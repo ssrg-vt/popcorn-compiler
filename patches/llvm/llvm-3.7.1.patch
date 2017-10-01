@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,256 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -498,7 +498,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +#include <set>
 +#include <vector>
-+#include <queue>
++#include <list>
 +#include "llvm/ADT/DenseMap.h"
 +#include "llvm/ADT/SmallPtrSet.h"
 +#include "llvm/ADT/SetVector.h"
@@ -528,11 +528,19 @@ Index: include/llvm/Analysis/LoopPaths.h
 +/// A loop nest, sorted by depth (deeper loops are first).
 +typedef std::set<Loop *, LoopNestCmp> LoopNest;
 +
++/// A set of basic blocks.
++typedef SmallPtrSet<const BasicBlock *, 16> BlockSet;
++
 +namespace LoopPathUtilities {
 +
-+/// Populate a LoopNest by traversing the loop L and its children.  L *must* be
-+/// the outermost loop in the nest, i.e., it has a depth of 1.
++/// Populate a LoopNest by traversing the loop L and its children.  Does *not*
++/// traverse loops containing L (e.g., loops for which L is a child).
 +void populateLoopNest(Loop *L, LoopNest &Nest);
++
++/// Get blocks contained in all sub-loops of a loop, including loops nested
++/// deeper than those in immediate sub-loops (e.g., blocks of loop depth 3
++/// inside loop depth 1).
++void getSubBlocks(Loop *L, BlockSet &SubBlocks);
 +
 +}
 +
@@ -540,18 +548,40 @@ Index: include/llvm/Analysis/LoopPaths.h
 +// LoopPath helper class
 +//===----------------------------------------------------------------------===//
 +
++/// Nodes along a path in a loop, represented by a basic block.
++class PathNode {
++private:
++  /// The block encapsulated by the node.
++  const BasicBlock *Block;
++
++  /// Whether or not the block is an exiting block from a sub-loop inside of
++  /// the current path.
++  bool SubLoopExit;
++
++public:
++  PathNode() = delete;
++  PathNode(const BasicBlock *Block, bool SubLoopExit = false)
++    : Block(Block), SubLoopExit(SubLoopExit) {}
++
++  const BasicBlock *getBlock() const { return Block; }
++  bool isSubLoopExit() const { return SubLoopExit; }
++  bool operator<(const PathNode &RHS) const { return Block < RHS.Block; }
++};
++
 +/// A path through the loop, which begins/ends either on the loop's header, the
 +/// loop's backedge(s) or equivalence points.
 +class LoopPath {
 +private:
-+  /// Basic blocks that comprise the path.  Iteration over the container is
-+  /// equivalent to traversing the path, but container has set semantics for
-+  /// quick existence checks.
-+  SetVector<BasicBlock *> Blocks;
++  /// Nodes that comprise the path.  Iteration over the container is equivalent
++  /// to traversing the path, but container has set semantics for quick
++  /// existence checks.
++  // TODO use a DenseSet for the set template argument, which requires defining
++  // a custom comparator
++  SetVector<PathNode, std::vector<PathNode>, std::set<PathNode> > Nodes;
 +
 +  /// The path begins & ends on specific instructions.  Note that Start *must*
 +  /// be inside the starting block and End *must* be inside the ending block.
-+  Instruction *Start, *End;
++  const Instruction *Start, *End;
 +
 +  /// Does the path start at the loop header?  If not, it by definition starts
 +  /// at an equivalence point.
@@ -563,29 +593,27 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 +public:
 +  LoopPath() = delete;
-+  LoopPath(const std::vector<BasicBlock *> &BlockVector,
-+           Instruction *Start, Instruction *End,
++  LoopPath(const std::vector<PathNode> &NodeVector,
++           const Instruction *Start, const Instruction *End,
 +           bool StartsAtHeader, bool EndsAtBackedge);
 +
-+  bool contains(BasicBlock *BB) const { return Blocks.count(BB); }
++  bool contains(BasicBlock *BB) const { return Nodes.count(PathNode(BB)); }
 +
 +  /// Get the starting point of the path, guaranteed to be either the loop
 +  /// header or an equivalence point.
-+  BasicBlock *startBlock() const { return Blocks.front(); }
-+  Instruction *startInst() const { return Start; }
++  const PathNode &startNode() const { return Nodes.front(); }
++  const Instruction *startInst() const { return Start; }
 +
 +  /// Get the the ending point of the path, guaranteed to be either an
 +  /// equivalence point or a backedge.
-+  BasicBlock *endBlock() const { return Blocks.back(); }
-+  Instruction *endInst() const { return End; }
++  const PathNode &endNode() const { return Nodes.back(); }
++  const Instruction *endInst() const { return End; }
 +
 +  /// Iterators over the path's blocks.
-+  SetVector<BasicBlock *>::iterator begin() { return Blocks.begin(); }
-+  SetVector<BasicBlock *>::iterator end() { return Blocks.end(); }
-+  SetVector<BasicBlock *>::const_iterator cbegin() const
-+  { return Blocks.begin(); }
-+  SetVector<BasicBlock *>::const_iterator cend() const
-+  { return Blocks.end(); }
++  SetVector<PathNode>::iterator begin() { return Nodes.begin(); }
++  SetVector<PathNode>::iterator end() { return Nodes.end(); }
++  SetVector<PathNode>::const_iterator cbegin() const { return Nodes.begin(); }
++  SetVector<PathNode>::const_iterator cend() const { return Nodes.end(); }
 +
 +  /// Return whether the path starts at the loop header or equivalence point.
 +  bool startsAtHeader() const { return StartsAtHeader; }
@@ -611,31 +639,44 @@ Index: include/llvm/Analysis/LoopPaths.h
 +/// Analyze all paths within a loop nest
 +class EnumerateLoopPaths : public FunctionPass {
 +private:
-+  /// All calculated paths for each analyzed loops.
++  /// Loop information analysis.
++  LoopInfo *LI;
++
++  /// All calculated paths for each analyzed loop.
 +  DenseMap<const Loop *, std::vector<LoopPath> > Paths;
++
++  /// Whether there are paths of each type through a basic block in a loop.
++  /// These are *only* maintained for the current loop, not any sub-loops.
++  DenseMap<const Loop *, DenseMap<const BasicBlock *, bool> >
++  HasSpPath, HasEqPointPath;
 +
 +  /// Information about the loop currently being analyzed
 +  Loop *CurLoop;
-+  BasicBlock *Header;
 +  SmallPtrSet<const BasicBlock *, 4> Latches;
-+  DenseMap<const BasicBlock *, const Loop *> SubLoopBlocks;
++  BlockSet SubLoopBlocks;
 +
-+  /// Depth-first search traversal information for generating path objects.
++  /// Depth-first search information for the current path being explored.
 +  struct LoopDFSInfo {
 +  public:
-+    Instruction *Start;
-+    std::vector<BasicBlock *> PathBlocks;
++    const Instruction *Start;
++    std::vector<PathNode> PathNodes;
 +    bool StartsAtHeader;
 +  };
 +
++  /// Search exit blocks of the loop containing Successor.  Add the terminating
++  /// instruction of the block to either of the two vectors, depending if there
++  /// is a path of either type through the exit block.
++  inline void getSubLoopSuccessors(const BasicBlock *Successor,
++                                   std::vector<const Instruction *> &EqPoint,
++                                   std::vector<const Instruction *> &Spanning);
++
 +  /// Run a depth-first search for paths in the loop starting at an instruction.
 +  /// Any paths found are added to the vector of paths, and new paths to explore
-+  /// are added to the search queue.
-+  void loopDFS(Instruction *I,
++  /// are added to the search list.
++  void loopDFS(const Instruction *I,
 +               LoopDFSInfo &DFSI,
 +               std::vector<LoopPath> &CurPaths,
-+               std::queue<Instruction *> &NewPaths,
-+               SmallPtrSet<Instruction *, 8> &NewVisited);
++               std::list<const Instruction *> &NewPaths);
 +
 +  /// Enumerate all paths within a loop, stored in the vector argument.
 +  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
@@ -674,13 +715,14 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  void getEqPointPaths(const Loop *L, std::set<const LoopPath *> &P) const;
 +
 +  /// Get all the paths through a loop that contain a given basic block.
-+  void getPathsThroughBlock(Loop *L, BasicBlock *BB,
++  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
 +                            std::vector<const LoopPath *> &P) const;
-+  void getPathsThroughBlock(Loop *L, BasicBlock *BB,
++  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
 +                            std::set<const LoopPath *> &P) const;
 +
-+  // TODO APIs to determine if basic block has spanning & equivalence point
-+  // paths through it
++  /// Return whether there is each type of path through a basic block.
++  bool spanningPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
++  bool eqPointPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
 +};
 +
 +}
@@ -2805,7 +2847,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,369 @@
+@@ -0,0 +1,477 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2839,39 +2881,49 @@ Index: lib/Analysis/LoopPaths.cpp
 +#define DEBUG_TYPE "looppaths"
 +
 +void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
-+  assert(L->getLoopDepth() == 1 && "Not the top-level loop");
-+
 +  std::queue<Loop *> ToVisit;
++  Nest.clear();
 +  Nest.insert(L);
 +  ToVisit.push(L);
 +
-+  while(!ToVisit.empty()) {
-+    Loop *L = ToVisit.front();
++  while(ToVisit.size()) {
++    const Loop *Sub = ToVisit.front();
 +    ToVisit.pop();
-+    for(auto Child : L->getSubLoops()) {
-+      Nest.insert(Child);
-+      ToVisit.push(Child);
++    for(auto L : Sub->getSubLoops()) {
++      Nest.insert(L);
++      ToVisit.push(L);
 +    }
 +  }
 +}
 +
-+LoopPath::LoopPath(const std::vector<BasicBlock *> &BlockVector,
-+                   Instruction *Start, Instruction *End,
++void LoopPathUtilities::getSubBlocks(Loop *L, BlockSet &SubBlocks) {
++  SubBlocks.clear();
++  LoopNest Nest;
++
++  for(auto Sub : L->getSubLoops()) {
++    populateLoopNest(Sub, Nest);
++    for(auto Nested : Nest)
++      for(auto BB : Nested->getBlocks())
++        SubBlocks.insert(BB);
++  }
++}
++
++LoopPath::LoopPath(const std::vector<PathNode> &NodeVector,
++                   const Instruction *Start, const Instruction *End,
 +                   bool StartsAtHeader, bool EndsAtBackedge)
 +  : Start(Start), End(End), StartsAtHeader(StartsAtHeader),
 +    EndsAtBackedge(EndsAtBackedge) {
-+  assert(BlockVector.size() && "Trivial path");
-+  assert(Start && Start->getParent() == BlockVector.front() &&
++  assert(NodeVector.size() && "Trivial path");
++  assert(Start && Start->getParent() == NodeVector.front().getBlock() &&
 +         "Invalid starting instruction");
-+  assert(End && End->getParent() == BlockVector.back() &&
++  assert(End && End->getParent() == NodeVector.back().getBlock() &&
 +         "Invalid ending instruction");
 +
-+  for(auto Block : BlockVector) Blocks.insert(Block);
++  for(auto Node : NodeVector) Nodes.insert(Node);
 +}
 +
 +std::string LoopPath::toString() const {
-+  std::string buf = "Path with " + std::to_string(Blocks.size()) +
-+                    " block(s)\n";
++  std::string buf = "Path with " + std::to_string(Nodes.size()) + " nodes(s)\n";
 +
 +  buf += "  Start: ";
 +  if(Start->hasName()) buf += Start->getName();
@@ -2883,11 +2935,13 @@ Index: lib/Analysis/LoopPaths.cpp
 +  else buf += "<unnamed instruction>";
 +  buf += "\n";
 +
-+  buf += "  Blocks:\n";
-+  for(auto Block : Blocks) {
++  buf += "  Nodes:\n";
++  for(auto Node : Nodes) {
 +    buf += "    ";
-+    if(Block->hasName()) buf += Block->getName();
++    const BasicBlock *BB = Node.getBlock();
++    if(BB->hasName()) buf += BB->getName();
 +    else buf += "<unnamed block>";
++    if(Node.isSubLoopExit()) buf += " (sub-loop exit)";
 +    buf += "\n";
 +  }
 +
@@ -2895,13 +2949,16 @@ Index: lib/Analysis/LoopPaths.cpp
 +}
 +
 +void LoopPath::print(raw_ostream &O) const {
-+  O << "    Path with " << std::to_string(Blocks.size()) << " block(s)\n";
++  O << "    Path with " << std::to_string(Nodes.size()) << " nodes(s)\n";
 +  O << "    Start:"; Start->print(O); O << "\n";
 +  O << "    End:"; End->print(O); O << "\n";
-+  O << "    Blocks:\n";
-+  for(auto Block : Blocks) {
-+    if(Block->hasName()) O << "      " << Block->getName() << "\n";
-+    else O << "      <unnamed block>\n";
++  O << "    Nodes:\n";
++  for(auto Node : Nodes) {
++    const BasicBlock *BB = Node.getBlock();
++    if(BB->hasName()) O << "      " << BB->getName();
++    else O << "      <unnamed block>";
++    if(Node.isSubLoopExit()) O << " (sub-loop exit)";
++    O << "\n";
 +  }
 +}
 +
@@ -2913,132 +2970,211 @@ Index: lib/Analysis/LoopPaths.cpp
 +/// Search over the instructions in a basic block (starting at I) for
 +/// equivalence points.  Return an equivalence point if found, or null
 +/// otherwise.
-+static Instruction *hasEquivalencePoint(Instruction *I) {
++static const Instruction *hasEquivalencePoint(const Instruction *I) {
 +  if(!I) return nullptr;
-+  for(BasicBlock::iterator it(I), e = I->getParent()->end(); it != e; ++it)
++  for(BasicBlock::const_iterator it(I), e = I->getParent()->end();
++      it != e; ++it)
 +    if(Popcorn::isEquivalencePoint(it)) return it;
 +  return nullptr;
 +}
 +
-+void EnumerateLoopPaths::loopDFS(Instruction *I,
++/// Add a value to a list if it's not already contained in the list.  This is
++/// used to unique new instructions at which to start searches, as multiple
++/// paths may end at the same equivalence point (but we don't need to search
++/// it multiple times).
++static inline void pushIfNotPresent(const Instruction *I,
++                                    std::list<const Instruction *> &List) {
++  if(std::find(List.begin(), List.end(), I) == List.end()) List.push_back(I);
++}
++
++// TODO this needs to be converted to iteration rather than recursion
++
++void
++EnumerateLoopPaths::getSubLoopSuccessors(const BasicBlock *Successor,
++                                   std::vector<const Instruction *> &EqPoint,
++                                   std::vector<const Instruction *> &Spanning) {
++  const Instruction *Term;
++  const Loop *SubLoop;
++  SmallVector<BasicBlock *, 4> ExitBlocks;
++
++  EqPoint.clear();
++  Spanning.clear();
++  assert(CurLoop->contains(Successor) && SubLoopBlocks.count(Successor) &&
++         "Invalid sub-loop block");
++
++  SubLoop = LI->getLoopFor(Successor);
++  SubLoop->getExitingBlocks(ExitBlocks);
++  for(auto Exit : ExitBlocks) {
++    Term = Exit->getTerminator();
++    if(HasSpPath[SubLoop][Exit]) Spanning.push_back(Term);
++    if(HasEqPointPath[SubLoop][Exit]) EqPoint.push_back(Term);
++  }
++}
++
++static inline void printNewPath(raw_ostream &O, const LoopPath &Path) {
++  O << "Found path that start at ";
++  if(Path.startsAtHeader()) O << "the header";
++  else O << "an equivalence point";
++  O << " and ends at ";
++  if(Path.endsAtBackedge()) O << "a loop backedge";
++  else O << "an equivalence point";
++  Path.print(O);
++}
++
++void EnumerateLoopPaths::loopDFS(const Instruction *I,
 +                                 LoopDFSInfo &DFSI,
 +                                 std::vector<LoopPath> &CurPaths,
-+                                 std::queue<Instruction *> &NewPaths,
-+                                 SmallPtrSet<Instruction *, 8> &NewVisited) {
-+  Instruction *EqPoint;
-+  BasicBlock *BB = I->getParent();
-+  SmallVector<BasicBlock *, 4> ExitBlocks;
-+  DenseMap<const BasicBlock *, const Loop *>::const_iterator SubIt;
++                                 std::list<const Instruction *> &NewPaths) {
++  const Instruction *EqPoint;
++  const BasicBlock *BB = I->getParent(), *PathBlock;
++  std::vector<const Instruction *> EqPointInsts, SpanningInsts;
 +
-+  DFSI.PathBlocks.push_back(BB);
-+  if((EqPoint = hasEquivalencePoint(I))) {
-+    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, EqPoint,
-+                          DFSI.StartsAtHeader, false);
-+
-+    // Add instruction after equivalence point as start of new equivalence
-+    // point path to be searched.  It's possible multiple paths end at this
-+    // equivalence point, so avoid starting a new search at the same
-+    // equivalence point multiple times.
-+    if(!EqPoint->isTerminator()) {
-+      Instruction *NextStart = EqPoint->getNextNode();
-+      if(!NewVisited.count(NextStart)) {
-+        NewPaths.push(NextStart);
-+        NewVisited.insert(NextStart);
++  if(!SubLoopBlocks.count(BB)) {
++    DFSI.PathNodes.emplace_back(BB, false);
++    if((EqPoint = hasEquivalencePoint(I))) {
++      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
++                            DFSI.StartsAtHeader, false);
++      for(auto Node : DFSI.PathNodes) {
++        PathBlock = Node.getBlock();
++        if(!SubLoopBlocks.count(PathBlock))
++          HasEqPointPath[CurLoop][PathBlock] = true;
 +      }
++
++      // Add instruction after equivalence point (or at start of successor
++      // basic blocks if EqPoint is the last instruction in its block) as start
++      // of new equivalence point path to be searched.
++      if(!EqPoint->isTerminator())
++        pushIfNotPresent(EqPoint->getNextNode(), NewPaths);
++      else {
++        for(auto Succ : successors(BB)) {
++          if(!CurLoop->contains(Succ)) continue; // Skip exit blocks
++          else if(!SubLoopBlocks.count(Succ)) // Successor is in same outer loop
++            pushIfNotPresent(&Succ->front(), NewPaths);
++          else { // Successor is in sub-loop
++            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
++            for(auto SLE : SpanningInsts)
++              loopDFS(SLE, DFSI, CurPaths, NewPaths);
++          }
++        }
++      }
++
++      DEBUG(printNewPath(dbgs(), CurPaths.back()));
++    }
++    else if(Latches.count(BB)) {
++      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
++                            DFSI.StartsAtHeader, true);
++      if(DFSI.StartsAtHeader) {
++        for(auto Node : DFSI.PathNodes) {
++          PathBlock = Node.getBlock();
++          if(!SubLoopBlocks.count(PathBlock))
++            HasSpPath[CurLoop][PathBlock] = true;
++        }
++      }
++      else {
++        for(auto Node : DFSI.PathNodes) {
++          PathBlock = Node.getBlock();
++          if(!SubLoopBlocks.count(PathBlock))
++            HasEqPointPath[CurLoop][PathBlock] = true;
++        }
++      }
++
++      DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +    }
 +    else {
-+      // EqPoint is a block terminator, new search paths start in successors.
 +      for(auto Succ : successors(BB)) {
-+        if(!SubLoopBlocks.count(Succ)) {
-+          if(!NewVisited.count(&Succ->front())) {
-+            NewPaths.push(&Succ->front());
-+            NewVisited.insert(&Succ->front());
-+          }
-+        }
++        if(!CurLoop->contains(Succ)) continue;
++        else if(!SubLoopBlocks.count(Succ))
++          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
 +        else {
-+          // TODO need to handle case where successor is in child loop
-+          DEBUG(dbgs() << "WARNING: New path search point is in child loop\n");
++          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++          for(auto SLE : EqPointInsts) {
++            // Rather than stopping the path at the equivalence point inside
++            // of a sub-loop, stop it at the end of the current block
++            // TODO this can create duplicates for a path that reaches a
++            // sub-loop with multiple exiting blocks, but the analysis in
++            // MigrationPoints doesn't care about paths that don't end at a
++            // backedge anyway
++            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
++                                  BB->getTerminator(),
++                                  DFSI.StartsAtHeader, false);
++            pushIfNotPresent(SLE, NewPaths);
++            DEBUG(printNewPath(dbgs(), CurPaths.back()));
++          }
++          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
 +        }
 +      }
 +    }
-+
-+    DEBUG(
-+      dbgs() << "Found path that starts at ";
-+      if(DFSI.StartsAtHeader) dbgs() << "the header";
-+      else dbgs() << "an equivalence point";
-+      dbgs() << " and ends at an equivalence point:\n";
-+      CurPaths.back().print(dbgs())
-+    );
-+  }
-+  else if(Latches.count(BB)) {
-+    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, BB->getTerminator(),
-+                          DFSI.StartsAtHeader, true);
-+
-+    DEBUG(
-+      dbgs() << "Found path that starts at ";
-+      if(DFSI.StartsAtHeader) dbgs() << "the header";
-+      else dbgs() << "an equivalence point";
-+      dbgs() << " and ends at a backedge:\n";
-+      CurPaths.back().print(dbgs())
-+    );
++    DFSI.PathNodes.pop_back();
 +  }
 +  else {
-+    for(auto SuccBB : successors(BB)) {
-+      if(CurLoop->contains(SuccBB)) {
-+        if((SubIt = SubLoopBlocks.find(SuccBB)) != SubLoopBlocks.end()) {
-+          // Conceptually, glob all sub-loop blocks into a single virtual node
-+          // on the path so we only need to search the sub-loop's exit blocks
-+          // TODO this needs some work...
-+          SubIt->second->getExitBlocks(ExitBlocks);
-+          for(auto SubExit : ExitBlocks) {
-+            if(CurLoop->contains(SubExit)) {
-+              assert(SubLoopBlocks.find(SubExit) == SubLoopBlocks.end() &&
-+                     "Not expecting sub-loop to exit to another sub-loop");
-+              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths, NewVisited);
-+            }
-+          }
++    // This is a sub-loop block; we only want to explore successors who are not
++    // contained in this sub-loop but are still contained in the current loop.
++    DFSI.PathNodes.emplace_back(BB, true);
++    const Loop *WeedOutLoop = LI->getLoopFor(BB);
++    for(auto Succ : successors(BB)) {
++      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
++      else if(!SubLoopBlocks.count(Succ))
++        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++      else {
++        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++        for(auto SLE : EqPointInsts) {
++          // TODO this can create duplicates for a path that reaches a sub-loop
++          // with multiple exiting blocks, but the analysis in MigrationPoints
++          // doesn't care about paths that don't end at a backedge anyway
++          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
++                                BB->getTerminator(),
++                                DFSI.StartsAtHeader, false);
++          DEBUG(printNewPath(dbgs(), CurPaths.back()));
++          pushIfNotPresent(SLE, NewPaths);
 +        }
-+        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths, NewVisited);
++        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
 +      }
 +    }
++    DFSI.PathNodes.pop_back();
 +  }
-+  DFSI.PathBlocks.pop_back();
 +}
 +
 +void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
-+  std::queue<Instruction *> NewPaths;
-+  SmallPtrSet<Instruction *, 8> NewVisited;
++  std::list<const Instruction *> NewPaths;
 +  SmallVector<BasicBlock *, 4> LatchVec;
 +  LoopDFSInfo DFSI;
-+  CurPaths.clear();
 +
-+  DEBUG(dbgs() << "Enumerating paths: "; L->print(dbgs()));
++  CurPaths.clear();
++  HasSpPath[L].clear();
++  HasEqPointPath[L].clear();
++
++  DEBUG(
++    DebugLoc DL(L->getStartLoc());
++    dbgs() << "Enumerating paths";
++    if(DL) {
++      dbgs() << " for loop at ";
++      DL.print(dbgs());
++    }
++    dbgs() << ": "; L->dump();
++  );
 +
 +  // Store information about the current loop, it's backedges, and sub-loops
 +  CurLoop = L;
-+  Header = L->getHeader();
 +  Latches.clear();
 +  L->getLoopLatches(LatchVec);
 +  for(auto L : LatchVec) Latches.insert(L);
-+  SubLoopBlocks.clear();
-+  for(auto SubLoop : L->getSubLoopsVector())
-+    for(auto SubBB : SubLoop->getBlocks())
-+      SubLoopBlocks[SubBB] = SubLoop;
++  LoopPathUtilities::getSubBlocks(L, SubLoopBlocks);
 +
 +  assert(Latches.size() && "No backedges, not a loop?");
++  assert(!SubLoopBlocks.count(L->getHeader()) && "Header is in sub-loop?");
 +
-+  DFSI.Start = &Header->front();
++  DFSI.Start = &L->getHeader()->front();
 +  DFSI.StartsAtHeader = true;
-+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
-+  assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
++  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +
 +  DFSI.StartsAtHeader = false;
 +  while(!NewPaths.empty()) {
 +    DFSI.Start = NewPaths.front();
-+    NewPaths.pop();
-+    NewVisited.erase(DFSI.Start);
-+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
-+    assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
++    NewPaths.pop_front();
++    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +  }
 +}
 +
@@ -3047,19 +3183,19 @@ Index: lib/Analysis/LoopPaths.cpp
 +               << "********** Function: " << F.getName() << "\n\n");
 +
 +  Paths.clear();
-+  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 +  std::vector<LoopNest> Nests;
 +
 +  // Discover all loop nests.
-+  for(LoopInfo::iterator I = LI.begin(), E = LI.end(); I != E; ++I) {
++  for(LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
 +    if((*I)->getLoopDepth() != 1) continue;
 +    Nests.push_back(LoopNest());
 +    LoopPathUtilities::populateLoopNest(*I, Nests.back());
 +  }
 +
-+  // We *should* be analyzing a loop for the first time
++  // Search all loops within all loop nests.
 +  for(auto Nest : Nests) {
-+    DEBUG(dbgs() << "Analyznig nest with " << std::to_string(Nest.size())
++    DEBUG(dbgs() << "Analyzing nest with " << std::to_string(Nest.size())
 +                 << " loops\n");
 +
 +    for(auto L : Nest) {
@@ -3083,7 +3219,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +                                  std::vector<const LoopPath *> &P) const {
 +  assert(hasPaths(L) && "No paths for loop");
 +  P.clear();
-+  for(auto Path : Paths.find(L)->second) P.push_back(&Path);
++  for(const LoopPath &Path : Paths.find(L)->second) P.push_back(&Path);
 +}
 +
 +void
@@ -3141,7 +3277,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +}
 +
 +void
-+EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
++EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
 +                                         std::vector<const LoopPath *> &P) const {
 +  assert(hasPaths(L) && "No paths for loop");
 +  assert(L->contains(BB) && "Loop does not contain basic block");
@@ -3151,13 +3287,27 @@ Index: lib/Analysis/LoopPaths.cpp
 +}
 +
 +void
-+EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
++EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
 +                                         std::set<const LoopPath *> &P) const {
 +  assert(hasPaths(L) && "No paths for loop");
 +  assert(L->contains(BB) && "Loop does not contain basic block");
 +  P.clear();
 +  for(const LoopPath &Path : Paths.find(L)->second)
 +    if(Path.contains(BB)) P.insert(&Path);
++}
++
++bool EnumerateLoopPaths::spanningPathThroughBlock(const Loop *L,
++                                                  const BasicBlock *BB) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  return HasSpPath.find(L)->second.find(BB)->second;
++}
++
++bool EnumerateLoopPaths::eqPointPathThroughBlock(const Loop *L,
++                                                 const BasicBlock *BB) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  return HasEqPointPath.find(L)->second.find(BB)->second;
 +}
 +
 +char EnumerateLoopPaths::ID = 0;
@@ -7360,7 +7510,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1566 @@
+@@ -0,0 +1,1650 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7439,7 +7589,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +/// If we're below some percent of capacity, skip this instrumentation (useful
 +/// for very small/short-lived functions).
 +const static cl::opt<unsigned>
-+RetThreshold("ret-threshold", cl::Hidden, cl::init(10),
++RetThreshold("ret-threshold", cl::Hidden, cl::init(5),
 +  cl::desc("Don't instrument function exit points under a percent of "
 +           "capacity (only applies to -more-mig-points)"));
 +
@@ -7719,6 +7869,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +/// Get a weight object with zero-initialized weight based on the type of
 +/// analysis being used to instrument the application.
++///
++/// Note: returns a dynamically allocated object to be managed by the caller
 +static Weight *getZeroWeight(bool DoHTMInst) {
 +  if(DoHTMInst) return new HTMWeight();
 +  else llvm_unreachable("Unknown weight type");
@@ -7781,13 +7933,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +    initializeAnalysis(F);
 +
-+    // Mark function entry point.  Regardless if we're placing more migration
-+    // points in the function, we assume that function calls contain migration
-+    // points in caller, so we must add one in the callee body.
-+    // TODO elide for ultra-short functions (e.g., < 10 insts)?
-+    DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
-+    markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
-+
 +    // Some operations (e.g., big memory copies, I/O) will cause aborts.
 +    // Instrument these operations to stop & resume transactions afterwards.
 +    if(DoHTMInst) {
@@ -7796,11 +7941,34 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      if(!NoWrapLibc) wrapWithHTM(F, isLibcIO, "I/O functions");
 +    }
 +
-+    if(MoreMigPoints) analyzeFunctionBody(F);
-+    else // Instrument function exit point(s)
++    if(MoreMigPoints) {
++      // We by default mark the function start as a migration point, but if we
++      // don't add any instrumentation & the function's exit weights are
++      // sufficiently small avoid instrumentation altogether.
++      bool MarkStart = false;
++      if(!analyzeFunctionBody(F)) {
++        for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
++          if(isa<ReturnInst>(BB->getTerminator()) &&
++             !BBWeights[BB].BlockWeight->underPercentOfThreshold(5))
++            MarkStart = true;
++      }
++      else MarkStart = true;
++
++      if(MarkStart) {
++        DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
++        markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
++      }
++      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
++    }
++    else {
++      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
++      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
++
++      // Instrument function exit point(s)
 +      for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
 +        if(isa<ReturnInst>(BB->getTerminator()))
 +          markAsMigPoint(BB->getTerminator(), true, true);
++    }
 +
 +    // Finally, apply code transformations to marked instructions.
 +    addMigrationPoints(F);
@@ -7943,7 +8111,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +      // Calculate the loop weight up until the current iteration
 +      WeightPtr BBWeight(getZeroWeight(DoHTMInst));
-+      if(LoopHasSpanningPath) BBWeight->max(getLoopSpanningPathWeight());
++      if(LoopHasSpanningPath) BBWeight->max(getLoopSpanningPathWeight(true));
 +      if(LoopHasEqPointPath) BBWeight->max(LoopEqPointPathWeight);
 +
 +      // Calculate the maximum possible value of the current iteration:
@@ -7987,12 +8155,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +    /// Get the loop's spanning path weight, scaled based on the number of
-+    /// iterations.  Also includes loop entry weight if set.
-+    WeightPtr getLoopSpanningPathWeight() const {
++    /// iterations.  Also includes loop entry weight if requested.
++    WeightPtr getLoopSpanningPathWeight(bool AddEntry) const {
 +      assert(LoopHasSpanningPath && "No spanning path weight for loop");
 +      WeightPtr Ret(LoopSpanningPathWeight->copy());
 +      Ret->multiply(ItersPerMigPoint - 1);
-+      Ret->add(EntryWeight);
++      if(AddEntry) Ret->add(EntryWeight);
 +      return Ret;
 +    }
 +
@@ -8222,16 +8390,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +  }
 +
-+  /// Sort loops in a loop nest by their nesting depth to traverse inside-out.
-+  static void sortLoopsByDepth(const std::vector<BasicBlock *> &SCC,
-+                               const LoopInfo &LI,
-+                               LoopNest &Nest) {
-+    Loop *L = LI.getLoopFor(SCC.front());
-+    assert(L && "SCC was marked as having loop but none found in LoopInfo");
-+    while(L->getLoopDepth() > 1) L = L->getParentLoop();
-+    LoopPathUtilities::populateLoopNest(L, Nest);
-+  }
-+
 +  /// Get the starting weight for a basic block based on the max weights of its
 +  /// predecessors.
 +  ///
@@ -8246,7 +8404,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      const Loop *PredLoop = LI->getLoopFor(Pred);
 +
 +      // We *only* gather header initial weights when analyzing whether to
-+      // instrument loop entry, which should not incorporate latches.
++      // instrument loop entry, which doesn't depend on latches.
 +      if(BBIsHeader && PredLoop == L) continue;
 +
 +      // Determine if the predecessor is an exit block from another loop:
@@ -8275,14 +8433,11 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    return PredWeight;
 +  }
 +
-+  /// Analyze a single basic block with an initial starting weight and return
-+  /// the block's ending weight.  The boolean output argument will be set to
-+  /// true if a migration point was added.
-+  ///
-+  /// Note: returns a dynamically allocated object to be managed by the caller
-+  Weight *
-+  traverseBlock(BasicBlock *BB, const Weight *Initial, bool &AddedMigPoint) {
-+    Weight *CurWeight = Initial->copy();
++  /// Analyze a single basic block with an initial starting weight and update
++  /// it with the block's ending weight.  Return whether or not a migration
++  /// point was added.
++  bool traverseBlock(BasicBlock *BB, Weight *CurWeight) {
++    bool AddedMigPoint = false;
 +
 +    DEBUG(
 +      dbgs() << "      Analyzing basic block";
@@ -8308,17 +8463,16 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +    DEBUG(dbgs() << "       - Weight: " << CurWeight->toString() << "\n");
 +
-+    return CurWeight;
++    return AddedMigPoint;
 +  }
 +
-+  Weight *
-+  traverseBlock(BasicBlock *BB, const WeightPtr &Initial, bool &addedMigPoint)
-+  { return traverseBlock(BB, Initial.get(), addedMigPoint); }
++  bool traverseBlock(BasicBlock *BB, WeightPtr &Initial)
++  { return traverseBlock(BB, Initial.get()); }
 +
 +  /// Mark loop predecessors, i.e., all branches into the loop header, as
-+  /// migration points.
++  /// migration points.  Return whether or not a migration point was added.
 +  bool markLoopPredecessors(const Loop *L) {
-+    bool marked = false;
++    bool AddedMigPoint = false;
 +    BasicBlock *Header = L->getHeader();
 +    for(auto Pred : predecessors(Header)) {
 +      // Weed out latches
@@ -8334,10 +8488,10 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        //     ...
 +        const Loop *PredL = LI->getLoopFor(Pred);
 +        if(PredL == nullptr || (PredL->getLoopDepth() < L->getLoopDepth()))
-+          marked |= markAsMigPoint(Pred->getTerminator(), true, true);
++          AddedMigPoint |= markAsMigPoint(Pred->getTerminator(), true, true);
 +      }
 +    }
-+    return marked;
++    return AddedMigPoint;
 +  }
 +
 +  /// Analyze & mark loop entry with migration points.  Avoid instrumenting if
@@ -8375,7 +8529,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    L->getExitingBlocks(ExitBlocks);
 +    for(auto Exit : ExitBlocks) {
 +      if(LWI.exitHasSpanningPath(Exit)) {
-+        WeightPtr SpExitWeight(LWI.getLoopSpanningPathWeight());
++        WeightPtr SpExitWeight(LWI.getLoopSpanningPathWeight(false));
 +        SpExitWeight->add(LWI.getExitSpanningPathWeight(Exit));
 +        SpExitWeight->add(HeaderWeight);
 +        if(SpExitWeight->shouldAddMigPoint()) InstrumentLoopEntry = true;
@@ -8409,14 +8563,16 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // TODO what if it's an irreducible loop, i.e., > 1 header?
 +    BasicBlock *CurBB = *Block;
 +    WeightPtr HdrWeight(getZeroWeight(DoHTMInst));
-+    BBWeights[CurBB] = traverseBlock(CurBB, HdrWeight, AddedMigPoint);
++    AddedMigPoint |= traverseBlock(CurBB, HdrWeight);
++    BBWeights[CurBB] = std::move(HdrWeight);
 +
 +    for(++Block; Block != E; ++Block) {
 +      CurBB = *Block;
 +      BlockLoop = LI->getLoopFor(CurBB);
 +      if(BlockLoop == L) { // Block is in same loop & nesting depth
 +        WeightPtr PredWeight(getInitialWeight(CurBB));
-+        BBWeights[CurBB] = traverseBlock(CurBB, PredWeight, AddedMigPoint);
++        AddedMigPoint |= traverseBlock(CurBB, PredWeight);
++        BBWeights[CurBB] = std::move(PredWeight);
 +      }
 +      else if(!MarkedLoops.count(BlockLoop)) {
 +        // Block is in a sub-loop, analyze & mark sub-loop's entry
@@ -8439,21 +8595,46 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +    // Note: path ending instructions should either be control flow or calls,
 +    // so they do not need to be analyzed.
++    const Loop *SubLoop;
 +    Weight *PathWeight = getZeroWeight(DoHTMInst);
-+    SetVector<BasicBlock *>::const_iterator Block = LP->cbegin(),
-+                                            EndBlock = LP->cend();
++    SetVector<PathNode>::const_iterator Node = LP->cbegin(),
++                                        EndNode = LP->cend();
++    const BasicBlock *NodeBlock = Node->getBlock();
 +    BasicBlock::const_iterator Inst(LP->startInst()),
-+                               EndInst((*Block)->end()),
++                               EndInst(NodeBlock->end()),
 +                               PathEndInst(LP->endInst());
-+    for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-+      PathWeight->analyze(Inst, DL);
 +
-+    for(Block++; Block != EndBlock; Block++) {
-+      // TODO TODO TODO need to look for implicit sub-loop predecessors
-+      Inst = (*Block)->begin();
-+      EndInst = (*Block)->end();
++
++    if(Node->isSubLoopExit()) {
++      // Since the sub-loop exit block is the start of the path, it's by
++      // definition exiting from an equivalence point path.
++      SubLoop = LI->getLoopFor(NodeBlock);
++      assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++      const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++      PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
++    }
++    else {
 +      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
 +        PathWeight->analyze(Inst, DL);
++    }
++
++    for(Node++; Node != EndNode; Node++) {
++      NodeBlock = Node->getBlock();
++      if(Node->isSubLoopExit()) {
++        // Since the sub-loop exit block is in the middle of the path, it's by
++        // definition exiting from a spanning path
++        SubLoop = LI->getLoopFor(NodeBlock);
++        assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++        const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++        PathWeight->add(LWI.getLoopSpanningPathWeight(false));
++        PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
++      }
++      else {
++        Inst = NodeBlock->begin();
++        EndInst = NodeBlock->end();
++        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
++          PathWeight->analyze(Inst, DL);
++      }
 +    }
 +
 +    return PathWeight;
@@ -8471,23 +8652,47 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // Note: the path's end must be either the terminator of the exit block (if
 +    // the exit block is also a latch) or an equivalence point/backedge branch
 +    // further down the path from the exit block.
++    const Loop *SubLoop;
 +    Weight *PathWeight = getZeroWeight(DoHTMInst);
-+    SetVector<BasicBlock *>::const_iterator Block = LP->cbegin(),
-+                                            EndBlock = LP->cend();
++    SetVector<PathNode>::const_iterator Node = LP->cbegin(),
++                                        EndNode = LP->cend();
++    const BasicBlock *NodeBlock = Node->getBlock();
 +    BasicBlock::const_iterator Inst(LP->startInst()),
-+                               EndInst((*Block)->end()),
++                               EndInst(Node->getBlock()->end()),
 +                               PathEndInst(Exit->end());
-+    for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-+      PathWeight->analyze(Inst, DL);
-+    if(*Block == Exit) return PathWeight;
 +
-+    for(Block++; Block != EndBlock; Block++) {
-+      // TODO TODO TODO need to look for implicit sub-loop predecessors
-+      Inst = (*Block)->begin();
-+      EndInst = (*Block)->end();
++    if(Node->isSubLoopExit()) {
++      // Since the sub-loop exit block is the start of the path, it's by
++      // definition exiting from an equivalence point path.
++      SubLoop = LI->getLoopFor(NodeBlock);
++      assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++      const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++      PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
++    }
++    else {
 +      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
 +        PathWeight->analyze(Inst, DL);
-+      if(*Block == Exit) break;
++    }
++    if(Node->getBlock() == Exit) return PathWeight;
++
++    for(Node++; Node != EndNode; Node++) {
++      NodeBlock = Node->getBlock();
++      if(Node->isSubLoopExit()) {
++        // Since the sub-loop exit block is in the middle of the path, it's by
++        // definition exiting from a spanning path
++        SubLoop = LI->getLoopFor(NodeBlock);
++        assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++        const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++        PathWeight->add(LWI.getLoopSpanningPathWeight(false));
++        PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
++      }
++      else {
++        Inst = Node->getBlock()->begin();
++        EndInst = Node->getBlock()->end();
++        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
++          PathWeight->analyze(Inst, DL);
++      }
++      if(Node->getBlock() == Exit) break;
 +    }
 +
 +    return PathWeight;
@@ -8597,16 +8802,27 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +  }
 +
-+  /// Analyze loop nests & mark locations for migration points.
-+  void traverseLoopNest(const std::vector<BasicBlock *> &SCC) {
++  /// Analyze loop nests & mark locations for migration points.  Return whether
++  /// or not a migration point was added.
++  bool traverseLoopNest(const std::vector<BasicBlock *> &SCC) {
++    bool AddedMigPoint = false;
++    Loop *L;
 +    LoopNest Nest;
-+    sortLoopsByDepth(SCC, *LI, Nest);
++
++    // Get outermost loop in loop nest & enumerate the rest of the nest
++    assert(LI->getLoopFor(SCC.front()) && "No loop in SCC");
++    L = LI->getLoopFor(SCC.front());
++    while(L->getLoopDepth() != 1) L = L->getParentLoop();
++    LoopPathUtilities::populateLoopNest(L, Nest);
 +
 +    DEBUG(dbgs() << " + Analyzing loop nest with "
 +                 << std::to_string(Nest.size()) << " loops\n\n");
 +
 +    for(auto CurLoop : Nest) {
-+      if(traverseLoop(CurLoop)) LP->rerunOnLoop(CurLoop);
++      if(traverseLoop(CurLoop)) {
++        AddedMigPoint = true;
++        LP->rerunOnLoop(CurLoop);
++      }
 +      calculateLoopExitWeights(CurLoop);
 +
 +      DEBUG(dbgs() << "\n  Loop analysis: "
@@ -8614,19 +8830,22 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +    DEBUG(dbgs() << " - Finished loop nest\n");
++
++    return AddedMigPoint;
 +  }
 +
-+  /// Analyze the function's body to add migration points.
-+  void analyzeFunctionBody(Function &F) {
++  /// Analyze the function's body to add migration points.  Return whether or
++  /// not a migration point was added.
++  bool analyzeFunctionBody(Function &F) {
 +    std::set<const Loop *> MarkedLoops;
-+    bool unused;
++    bool AddedMigPoint = false;
 +    Loop *BlockLoop;
 +
 +    // Analyze & mark paths through loop nests
 +    DEBUG(dbgs() << "\n-> Analyzing loop nests <-\n");
 +    for(scc_iterator<Function *> SCC = scc_begin(&F), E = scc_end(&F);
 +        SCC != E; ++SCC)
-+      if(SCC.hasLoop()) traverseLoopNest(*SCC);
++      if(SCC.hasLoop()) AddedMigPoint |= traverseLoopNest(*SCC);
 +
 +    // Analyze the rest of the function body
 +    DEBUG(dbgs() << "\n-> Analyzing the rest of the function body <-\n");
@@ -8635,11 +8854,12 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      BlockLoop = LI->getLoopFor(*BB);
 +      if(!BlockLoop) {
 +        WeightPtr PredWeight(getInitialWeight(*BB));
-+        BBWeights[*BB] = traverseBlock(*BB, PredWeight, unused);
++        AddedMigPoint |= traverseBlock(*BB, PredWeight);
++        BBWeights[*BB] = std::move(PredWeight);
 +      }
 +      else if(!MarkedLoops.count(BlockLoop)) {
 +        // Block is in a loop, analyze & mark loop's boundaries
-+        traverseLoopEntry(BlockLoop);
++        AddedMigPoint |= traverseLoopEntry(BlockLoop);
 +        MarkedLoops.insert(BlockLoop);
 +      }
 +    }
@@ -8656,6 +8876,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        }
 +      }
 +    }
++
++    return AddedMigPoint;
 +  }
 +
 +  //===--------------------------------------------------------------------===//
@@ -8676,7 +8898,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      IVTy = I->getType();
 +      if(IVTy->isPointerTy() || !SE->isSCEVable(IVTy)) continue;
 +      Induct = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(I));
-+      if(Induct) {
++      if(Induct && isa<SCEVConstant>(Induct->getStepRecurrence(*SE))) {
 +        StrideExpr = cast<SCEVConstant>(Induct->getStepRecurrence(*SE));
 +        Stride = std::abs(StrideExpr->getValue()->getSExtValue());
 +
@@ -8711,11 +8933,24 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    return IV;
 +  }
 +
++  /// Round a value down to the nearest power of 2.  Stolen/modified from
++  /// https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
++  unsigned roundDownPowerOf2(unsigned Count) {
++    Count--;
++    Count |= Count >> 1;
++    Count |= Count >> 2;
++    Count |= Count >> 4;
++    Count |= Count >> 8;
++    Count |= Count >> 16;
++    Count++;
++    return Count >> 1;
++  }
++
 +  /// Transform a loop header so that migration points (and any concomitant
 +  /// costs) are only experienced every nth iteration, based on weight metrics
 +  void transformLoopHeader(Loop *L) {
 +    BasicBlock *Header = L->getHeader();
-+    size_t ItersPerMigPoint, Stride = 0;
++    size_t ItersPerMigPoint, Stride = 0, InstrStride;
 +
 +    // If the first instruction has already been marked, nothing to do
 +    Instruction *First = Header->getFirstInsertionPt();
@@ -8729,12 +8964,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    if(ItersPerMigPoint > 1) {
 +      BasicBlock *NewSuccBB, *MigPointBB;
 +      Instruction *IV = getInductionVariable(L, Stride);
-+
-+      DEBUG(dbgs() << "Instrumenting to hit migration point every "
-+                   << std::to_string(ItersPerMigPoint) << " iterations\n");
-+
-+      // TODO should we make ItersPerMigPoint a multiple of 2 so we can do a
-+      // simple bit mask instead of unsigned remainder?
 +
 +      IntegerType *IVType = cast<IntegerType>(IV->getType());
 +      Function *CurF = Header->getParent();
@@ -8751,15 +8980,20 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      Instruction *Br = cast<Instruction>(MigPointWorker.CreateBr(NewSuccBB));
 +      markAsMigPoint(Br, true, true);
 +
-+      // Add check and branch to migration point only every nth iteration
++      // Add check and branch to migration point only every nth iteration.
++      // Round down to the nearest power of 2 so we can use a bit mask to check
++      // if we hit a migration point rather than expensive remainder math.
 +      IRBuilder<> Worker(Header->getTerminator());
-+      Constant *N = ConstantInt::get(IVType, ItersPerMigPoint * Stride,
-+                                     IVType->getSignBit()),
++      InstrStride = roundDownPowerOf2(ItersPerMigPoint * Stride) - 1;
++      Constant *N = ConstantInt::get(IVType, InstrStride, IVType->getSignBit()),
 +               *Zero = ConstantInt::get(IVType, 0, IVType->getSignBit());
-+      Value *Rem = Worker.CreateURem(IV, N);
++      Value *Rem = Worker.CreateAnd(IV, N);
 +      Value *Cmp = Worker.CreateICmpEQ(Rem, Zero);
 +      Worker.CreateCondBr(Cmp, MigPointBB, NewSuccBB);
 +      Header->getTerminator()->eraseFromParent();
++
++      DEBUG(dbgs() << "Instrumenting to hit migration point every "
++                   << std::to_string(InstrStride + 1) << " iterations\n");
 +    }
 +    else {
 +      DEBUG(dbgs() << "Instrumenting to hit migration point every iteration\n");

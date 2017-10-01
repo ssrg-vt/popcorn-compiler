@@ -23,7 +23,7 @@
 
 #include <set>
 #include <vector>
-#include <queue>
+#include <list>
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SetVector.h"
@@ -53,11 +53,19 @@ struct LoopNestCmp {
 /// A loop nest, sorted by depth (deeper loops are first).
 typedef std::set<Loop *, LoopNestCmp> LoopNest;
 
+/// A set of basic blocks.
+typedef SmallPtrSet<const BasicBlock *, 16> BlockSet;
+
 namespace LoopPathUtilities {
 
-/// Populate a LoopNest by traversing the loop L and its children.  L *must* be
-/// the outermost loop in the nest, i.e., it has a depth of 1.
+/// Populate a LoopNest by traversing the loop L and its children.  Does *not*
+/// traverse loops containing L (e.g., loops for which L is a child).
 void populateLoopNest(Loop *L, LoopNest &Nest);
+
+/// Get blocks contained in all sub-loops of a loop, including loops nested
+/// deeper than those in immediate sub-loops (e.g., blocks of loop depth 3
+/// inside loop depth 1).
+void getSubBlocks(Loop *L, BlockSet &SubBlocks);
 
 }
 
@@ -65,18 +73,40 @@ void populateLoopNest(Loop *L, LoopNest &Nest);
 // LoopPath helper class
 //===----------------------------------------------------------------------===//
 
+/// Nodes along a path in a loop, represented by a basic block.
+class PathNode {
+private:
+  /// The block encapsulated by the node.
+  const BasicBlock *Block;
+
+  /// Whether or not the block is an exiting block from a sub-loop inside of
+  /// the current path.
+  bool SubLoopExit;
+
+public:
+  PathNode() = delete;
+  PathNode(const BasicBlock *Block, bool SubLoopExit = false)
+    : Block(Block), SubLoopExit(SubLoopExit) {}
+
+  const BasicBlock *getBlock() const { return Block; }
+  bool isSubLoopExit() const { return SubLoopExit; }
+  bool operator<(const PathNode &RHS) const { return Block < RHS.Block; }
+};
+
 /// A path through the loop, which begins/ends either on the loop's header, the
 /// loop's backedge(s) or equivalence points.
 class LoopPath {
 private:
-  /// Basic blocks that comprise the path.  Iteration over the container is
-  /// equivalent to traversing the path, but container has set semantics for
-  /// quick existence checks.
-  SetVector<BasicBlock *> Blocks;
+  /// Nodes that comprise the path.  Iteration over the container is equivalent
+  /// to traversing the path, but container has set semantics for quick
+  /// existence checks.
+  // TODO use a DenseSet for the set template argument, which requires defining
+  // a custom comparator
+  SetVector<PathNode, std::vector<PathNode>, std::set<PathNode> > Nodes;
 
   /// The path begins & ends on specific instructions.  Note that Start *must*
   /// be inside the starting block and End *must* be inside the ending block.
-  Instruction *Start, *End;
+  const Instruction *Start, *End;
 
   /// Does the path start at the loop header?  If not, it by definition starts
   /// at an equivalence point.
@@ -88,29 +118,27 @@ private:
 
 public:
   LoopPath() = delete;
-  LoopPath(const std::vector<BasicBlock *> &BlockVector,
-           Instruction *Start, Instruction *End,
+  LoopPath(const std::vector<PathNode> &NodeVector,
+           const Instruction *Start, const Instruction *End,
            bool StartsAtHeader, bool EndsAtBackedge);
 
-  bool contains(BasicBlock *BB) const { return Blocks.count(BB); }
+  bool contains(BasicBlock *BB) const { return Nodes.count(PathNode(BB)); }
 
   /// Get the starting point of the path, guaranteed to be either the loop
   /// header or an equivalence point.
-  BasicBlock *startBlock() const { return Blocks.front(); }
-  Instruction *startInst() const { return Start; }
+  const PathNode &startNode() const { return Nodes.front(); }
+  const Instruction *startInst() const { return Start; }
 
   /// Get the the ending point of the path, guaranteed to be either an
   /// equivalence point or a backedge.
-  BasicBlock *endBlock() const { return Blocks.back(); }
-  Instruction *endInst() const { return End; }
+  const PathNode &endNode() const { return Nodes.back(); }
+  const Instruction *endInst() const { return End; }
 
   /// Iterators over the path's blocks.
-  SetVector<BasicBlock *>::iterator begin() { return Blocks.begin(); }
-  SetVector<BasicBlock *>::iterator end() { return Blocks.end(); }
-  SetVector<BasicBlock *>::const_iterator cbegin() const
-  { return Blocks.begin(); }
-  SetVector<BasicBlock *>::const_iterator cend() const
-  { return Blocks.end(); }
+  SetVector<PathNode>::iterator begin() { return Nodes.begin(); }
+  SetVector<PathNode>::iterator end() { return Nodes.end(); }
+  SetVector<PathNode>::const_iterator cbegin() const { return Nodes.begin(); }
+  SetVector<PathNode>::const_iterator cend() const { return Nodes.end(); }
 
   /// Return whether the path starts at the loop header or equivalence point.
   bool startsAtHeader() const { return StartsAtHeader; }
@@ -136,31 +164,44 @@ public:
 /// Analyze all paths within a loop nest
 class EnumerateLoopPaths : public FunctionPass {
 private:
-  /// All calculated paths for each analyzed loops.
+  /// Loop information analysis.
+  LoopInfo *LI;
+
+  /// All calculated paths for each analyzed loop.
   DenseMap<const Loop *, std::vector<LoopPath> > Paths;
+
+  /// Whether there are paths of each type through a basic block in a loop.
+  /// These are *only* maintained for the current loop, not any sub-loops.
+  DenseMap<const Loop *, DenseMap<const BasicBlock *, bool> >
+  HasSpPath, HasEqPointPath;
 
   /// Information about the loop currently being analyzed
   Loop *CurLoop;
-  BasicBlock *Header;
   SmallPtrSet<const BasicBlock *, 4> Latches;
-  DenseMap<const BasicBlock *, const Loop *> SubLoopBlocks;
+  BlockSet SubLoopBlocks;
 
-  /// Depth-first search traversal information for generating path objects.
+  /// Depth-first search information for the current path being explored.
   struct LoopDFSInfo {
   public:
-    Instruction *Start;
-    std::vector<BasicBlock *> PathBlocks;
+    const Instruction *Start;
+    std::vector<PathNode> PathNodes;
     bool StartsAtHeader;
   };
 
+  /// Search exit blocks of the loop containing Successor.  Add the terminating
+  /// instruction of the block to either of the two vectors, depending if there
+  /// is a path of either type through the exit block.
+  inline void getSubLoopSuccessors(const BasicBlock *Successor,
+                                   std::vector<const Instruction *> &EqPoint,
+                                   std::vector<const Instruction *> &Spanning);
+
   /// Run a depth-first search for paths in the loop starting at an instruction.
   /// Any paths found are added to the vector of paths, and new paths to explore
-  /// are added to the search queue.
-  void loopDFS(Instruction *I,
+  /// are added to the search list.
+  void loopDFS(const Instruction *I,
                LoopDFSInfo &DFSI,
                std::vector<LoopPath> &CurPaths,
-               std::queue<Instruction *> &NewPaths,
-               SmallPtrSet<Instruction *, 8> &NewVisited);
+               std::list<const Instruction *> &NewPaths);
 
   /// Enumerate all paths within a loop, stored in the vector argument.
   void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
@@ -199,13 +240,14 @@ public:
   void getEqPointPaths(const Loop *L, std::set<const LoopPath *> &P) const;
 
   /// Get all the paths through a loop that contain a given basic block.
-  void getPathsThroughBlock(Loop *L, BasicBlock *BB,
+  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
                             std::vector<const LoopPath *> &P) const;
-  void getPathsThroughBlock(Loop *L, BasicBlock *BB,
+  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
                             std::set<const LoopPath *> &P) const;
 
-  // TODO APIs to determine if basic block has spanning & equivalence point
-  // paths through it
+  /// Return whether there is each type of path through a basic block.
+  bool spanningPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
+  bool eqPointPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
 };
 
 }

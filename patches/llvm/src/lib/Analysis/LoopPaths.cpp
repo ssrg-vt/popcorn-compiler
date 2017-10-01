@@ -31,39 +31,49 @@ using namespace llvm;
 #define DEBUG_TYPE "looppaths"
 
 void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
-  assert(L->getLoopDepth() == 1 && "Not the top-level loop");
-
   std::queue<Loop *> ToVisit;
+  Nest.clear();
   Nest.insert(L);
   ToVisit.push(L);
 
-  while(!ToVisit.empty()) {
-    Loop *L = ToVisit.front();
+  while(ToVisit.size()) {
+    const Loop *Sub = ToVisit.front();
     ToVisit.pop();
-    for(auto Child : L->getSubLoops()) {
-      Nest.insert(Child);
-      ToVisit.push(Child);
+    for(auto L : Sub->getSubLoops()) {
+      Nest.insert(L);
+      ToVisit.push(L);
     }
   }
 }
 
-LoopPath::LoopPath(const std::vector<BasicBlock *> &BlockVector,
-                   Instruction *Start, Instruction *End,
+void LoopPathUtilities::getSubBlocks(Loop *L, BlockSet &SubBlocks) {
+  SubBlocks.clear();
+  LoopNest Nest;
+
+  for(auto Sub : L->getSubLoops()) {
+    populateLoopNest(Sub, Nest);
+    for(auto Nested : Nest)
+      for(auto BB : Nested->getBlocks())
+        SubBlocks.insert(BB);
+  }
+}
+
+LoopPath::LoopPath(const std::vector<PathNode> &NodeVector,
+                   const Instruction *Start, const Instruction *End,
                    bool StartsAtHeader, bool EndsAtBackedge)
   : Start(Start), End(End), StartsAtHeader(StartsAtHeader),
     EndsAtBackedge(EndsAtBackedge) {
-  assert(BlockVector.size() && "Trivial path");
-  assert(Start && Start->getParent() == BlockVector.front() &&
+  assert(NodeVector.size() && "Trivial path");
+  assert(Start && Start->getParent() == NodeVector.front().getBlock() &&
          "Invalid starting instruction");
-  assert(End && End->getParent() == BlockVector.back() &&
+  assert(End && End->getParent() == NodeVector.back().getBlock() &&
          "Invalid ending instruction");
 
-  for(auto Block : BlockVector) Blocks.insert(Block);
+  for(auto Node : NodeVector) Nodes.insert(Node);
 }
 
 std::string LoopPath::toString() const {
-  std::string buf = "Path with " + std::to_string(Blocks.size()) +
-                    " block(s)\n";
+  std::string buf = "Path with " + std::to_string(Nodes.size()) + " nodes(s)\n";
 
   buf += "  Start: ";
   if(Start->hasName()) buf += Start->getName();
@@ -75,11 +85,13 @@ std::string LoopPath::toString() const {
   else buf += "<unnamed instruction>";
   buf += "\n";
 
-  buf += "  Blocks:\n";
-  for(auto Block : Blocks) {
+  buf += "  Nodes:\n";
+  for(auto Node : Nodes) {
     buf += "    ";
-    if(Block->hasName()) buf += Block->getName();
+    const BasicBlock *BB = Node.getBlock();
+    if(BB->hasName()) buf += BB->getName();
     else buf += "<unnamed block>";
+    if(Node.isSubLoopExit()) buf += " (sub-loop exit)";
     buf += "\n";
   }
 
@@ -87,13 +99,16 @@ std::string LoopPath::toString() const {
 }
 
 void LoopPath::print(raw_ostream &O) const {
-  O << "    Path with " << std::to_string(Blocks.size()) << " block(s)\n";
+  O << "    Path with " << std::to_string(Nodes.size()) << " nodes(s)\n";
   O << "    Start:"; Start->print(O); O << "\n";
   O << "    End:"; End->print(O); O << "\n";
-  O << "    Blocks:\n";
-  for(auto Block : Blocks) {
-    if(Block->hasName()) O << "      " << Block->getName() << "\n";
-    else O << "      <unnamed block>\n";
+  O << "    Nodes:\n";
+  for(auto Node : Nodes) {
+    const BasicBlock *BB = Node.getBlock();
+    if(BB->hasName()) O << "      " << BB->getName();
+    else O << "      <unnamed block>";
+    if(Node.isSubLoopExit()) O << " (sub-loop exit)";
+    O << "\n";
   }
 }
 
@@ -105,132 +120,211 @@ void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
 /// Search over the instructions in a basic block (starting at I) for
 /// equivalence points.  Return an equivalence point if found, or null
 /// otherwise.
-static Instruction *hasEquivalencePoint(Instruction *I) {
+static const Instruction *hasEquivalencePoint(const Instruction *I) {
   if(!I) return nullptr;
-  for(BasicBlock::iterator it(I), e = I->getParent()->end(); it != e; ++it)
+  for(BasicBlock::const_iterator it(I), e = I->getParent()->end();
+      it != e; ++it)
     if(Popcorn::isEquivalencePoint(it)) return it;
   return nullptr;
 }
 
-void EnumerateLoopPaths::loopDFS(Instruction *I,
+/// Add a value to a list if it's not already contained in the list.  This is
+/// used to unique new instructions at which to start searches, as multiple
+/// paths may end at the same equivalence point (but we don't need to search
+/// it multiple times).
+static inline void pushIfNotPresent(const Instruction *I,
+                                    std::list<const Instruction *> &List) {
+  if(std::find(List.begin(), List.end(), I) == List.end()) List.push_back(I);
+}
+
+// TODO this needs to be converted to iteration rather than recursion
+
+void
+EnumerateLoopPaths::getSubLoopSuccessors(const BasicBlock *Successor,
+                                   std::vector<const Instruction *> &EqPoint,
+                                   std::vector<const Instruction *> &Spanning) {
+  const Instruction *Term;
+  const Loop *SubLoop;
+  SmallVector<BasicBlock *, 4> ExitBlocks;
+
+  EqPoint.clear();
+  Spanning.clear();
+  assert(CurLoop->contains(Successor) && SubLoopBlocks.count(Successor) &&
+         "Invalid sub-loop block");
+
+  SubLoop = LI->getLoopFor(Successor);
+  SubLoop->getExitingBlocks(ExitBlocks);
+  for(auto Exit : ExitBlocks) {
+    Term = Exit->getTerminator();
+    if(HasSpPath[SubLoop][Exit]) Spanning.push_back(Term);
+    if(HasEqPointPath[SubLoop][Exit]) EqPoint.push_back(Term);
+  }
+}
+
+static inline void printNewPath(raw_ostream &O, const LoopPath &Path) {
+  O << "Found path that start at ";
+  if(Path.startsAtHeader()) O << "the header";
+  else O << "an equivalence point";
+  O << " and ends at ";
+  if(Path.endsAtBackedge()) O << "a loop backedge";
+  else O << "an equivalence point";
+  Path.print(O);
+}
+
+void EnumerateLoopPaths::loopDFS(const Instruction *I,
                                  LoopDFSInfo &DFSI,
                                  std::vector<LoopPath> &CurPaths,
-                                 std::queue<Instruction *> &NewPaths,
-                                 SmallPtrSet<Instruction *, 8> &NewVisited) {
-  Instruction *EqPoint;
-  BasicBlock *BB = I->getParent();
-  SmallVector<BasicBlock *, 4> ExitBlocks;
-  DenseMap<const BasicBlock *, const Loop *>::const_iterator SubIt;
+                                 std::list<const Instruction *> &NewPaths) {
+  const Instruction *EqPoint;
+  const BasicBlock *BB = I->getParent(), *PathBlock;
+  std::vector<const Instruction *> EqPointInsts, SpanningInsts;
 
-  DFSI.PathBlocks.push_back(BB);
-  if((EqPoint = hasEquivalencePoint(I))) {
-    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, EqPoint,
-                          DFSI.StartsAtHeader, false);
-
-    // Add instruction after equivalence point as start of new equivalence
-    // point path to be searched.  It's possible multiple paths end at this
-    // equivalence point, so avoid starting a new search at the same
-    // equivalence point multiple times.
-    if(!EqPoint->isTerminator()) {
-      Instruction *NextStart = EqPoint->getNextNode();
-      if(!NewVisited.count(NextStart)) {
-        NewPaths.push(NextStart);
-        NewVisited.insert(NextStart);
+  if(!SubLoopBlocks.count(BB)) {
+    DFSI.PathNodes.emplace_back(BB, false);
+    if((EqPoint = hasEquivalencePoint(I))) {
+      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
+                            DFSI.StartsAtHeader, false);
+      for(auto Node : DFSI.PathNodes) {
+        PathBlock = Node.getBlock();
+        if(!SubLoopBlocks.count(PathBlock))
+          HasEqPointPath[CurLoop][PathBlock] = true;
       }
+
+      // Add instruction after equivalence point (or at start of successor
+      // basic blocks if EqPoint is the last instruction in its block) as start
+      // of new equivalence point path to be searched.
+      if(!EqPoint->isTerminator())
+        pushIfNotPresent(EqPoint->getNextNode(), NewPaths);
+      else {
+        for(auto Succ : successors(BB)) {
+          if(!CurLoop->contains(Succ)) continue; // Skip exit blocks
+          else if(!SubLoopBlocks.count(Succ)) // Successor is in same outer loop
+            pushIfNotPresent(&Succ->front(), NewPaths);
+          else { // Successor is in sub-loop
+            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
+            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
+            for(auto SLE : SpanningInsts)
+              loopDFS(SLE, DFSI, CurPaths, NewPaths);
+          }
+        }
+      }
+
+      DEBUG(printNewPath(dbgs(), CurPaths.back()));
+    }
+    else if(Latches.count(BB)) {
+      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
+                            DFSI.StartsAtHeader, true);
+      if(DFSI.StartsAtHeader) {
+        for(auto Node : DFSI.PathNodes) {
+          PathBlock = Node.getBlock();
+          if(!SubLoopBlocks.count(PathBlock))
+            HasSpPath[CurLoop][PathBlock] = true;
+        }
+      }
+      else {
+        for(auto Node : DFSI.PathNodes) {
+          PathBlock = Node.getBlock();
+          if(!SubLoopBlocks.count(PathBlock))
+            HasEqPointPath[CurLoop][PathBlock] = true;
+        }
+      }
+
+      DEBUG(printNewPath(dbgs(), CurPaths.back()));
     }
     else {
-      // EqPoint is a block terminator, new search paths start in successors.
       for(auto Succ : successors(BB)) {
-        if(!SubLoopBlocks.count(Succ)) {
-          if(!NewVisited.count(&Succ->front())) {
-            NewPaths.push(&Succ->front());
-            NewVisited.insert(&Succ->front());
-          }
-        }
+        if(!CurLoop->contains(Succ)) continue;
+        else if(!SubLoopBlocks.count(Succ))
+          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
         else {
-          // TODO need to handle case where successor is in child loop
-          DEBUG(dbgs() << "WARNING: New path search point is in child loop\n");
+          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
+          for(auto SLE : EqPointInsts) {
+            // Rather than stopping the path at the equivalence point inside
+            // of a sub-loop, stop it at the end of the current block
+            // TODO this can create duplicates for a path that reaches a
+            // sub-loop with multiple exiting blocks, but the analysis in
+            // MigrationPoints doesn't care about paths that don't end at a
+            // backedge anyway
+            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
+                                  BB->getTerminator(),
+                                  DFSI.StartsAtHeader, false);
+            pushIfNotPresent(SLE, NewPaths);
+            DEBUG(printNewPath(dbgs(), CurPaths.back()));
+          }
+          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
         }
       }
     }
-
-    DEBUG(
-      dbgs() << "Found path that starts at ";
-      if(DFSI.StartsAtHeader) dbgs() << "the header";
-      else dbgs() << "an equivalence point";
-      dbgs() << " and ends at an equivalence point:\n";
-      CurPaths.back().print(dbgs())
-    );
-  }
-  else if(Latches.count(BB)) {
-    CurPaths.emplace_back(DFSI.PathBlocks, DFSI.Start, BB->getTerminator(),
-                          DFSI.StartsAtHeader, true);
-
-    DEBUG(
-      dbgs() << "Found path that starts at ";
-      if(DFSI.StartsAtHeader) dbgs() << "the header";
-      else dbgs() << "an equivalence point";
-      dbgs() << " and ends at a backedge:\n";
-      CurPaths.back().print(dbgs())
-    );
+    DFSI.PathNodes.pop_back();
   }
   else {
-    for(auto SuccBB : successors(BB)) {
-      if(CurLoop->contains(SuccBB)) {
-        if((SubIt = SubLoopBlocks.find(SuccBB)) != SubLoopBlocks.end()) {
-          // Conceptually, glob all sub-loop blocks into a single virtual node
-          // on the path so we only need to search the sub-loop's exit blocks
-          // TODO this needs some work...
-          SubIt->second->getExitBlocks(ExitBlocks);
-          for(auto SubExit : ExitBlocks) {
-            if(CurLoop->contains(SubExit)) {
-              assert(SubLoopBlocks.find(SubExit) == SubLoopBlocks.end() &&
-                     "Not expecting sub-loop to exit to another sub-loop");
-              loopDFS(&SubExit->front(), DFSI, CurPaths, NewPaths, NewVisited);
-            }
-          }
+    // This is a sub-loop block; we only want to explore successors who are not
+    // contained in this sub-loop but are still contained in the current loop.
+    DFSI.PathNodes.emplace_back(BB, true);
+    const Loop *WeedOutLoop = LI->getLoopFor(BB);
+    for(auto Succ : successors(BB)) {
+      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
+      else if(!SubLoopBlocks.count(Succ))
+        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
+      else {
+        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
+        for(auto SLE : EqPointInsts) {
+          // TODO this can create duplicates for a path that reaches a sub-loop
+          // with multiple exiting blocks, but the analysis in MigrationPoints
+          // doesn't care about paths that don't end at a backedge anyway
+          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
+                                BB->getTerminator(),
+                                DFSI.StartsAtHeader, false);
+          DEBUG(printNewPath(dbgs(), CurPaths.back()));
+          pushIfNotPresent(SLE, NewPaths);
         }
-        else loopDFS(&SuccBB->front(), DFSI, CurPaths, NewPaths, NewVisited);
+        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
       }
     }
+    DFSI.PathNodes.pop_back();
   }
-  DFSI.PathBlocks.pop_back();
 }
 
 void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
-  std::queue<Instruction *> NewPaths;
-  SmallPtrSet<Instruction *, 8> NewVisited;
+  std::list<const Instruction *> NewPaths;
   SmallVector<BasicBlock *, 4> LatchVec;
   LoopDFSInfo DFSI;
-  CurPaths.clear();
 
-  DEBUG(dbgs() << "Enumerating paths: "; L->print(dbgs()));
+  CurPaths.clear();
+  HasSpPath[L].clear();
+  HasEqPointPath[L].clear();
+
+  DEBUG(
+    DebugLoc DL(L->getStartLoc());
+    dbgs() << "Enumerating paths";
+    if(DL) {
+      dbgs() << " for loop at ";
+      DL.print(dbgs());
+    }
+    dbgs() << ": "; L->dump();
+  );
 
   // Store information about the current loop, it's backedges, and sub-loops
   CurLoop = L;
-  Header = L->getHeader();
   Latches.clear();
   L->getLoopLatches(LatchVec);
   for(auto L : LatchVec) Latches.insert(L);
-  SubLoopBlocks.clear();
-  for(auto SubLoop : L->getSubLoopsVector())
-    for(auto SubBB : SubLoop->getBlocks())
-      SubLoopBlocks[SubBB] = SubLoop;
+  LoopPathUtilities::getSubBlocks(L, SubLoopBlocks);
 
   assert(Latches.size() && "No backedges, not a loop?");
+  assert(!SubLoopBlocks.count(L->getHeader()) && "Header is in sub-loop?");
 
-  DFSI.Start = &Header->front();
+  DFSI.Start = &L->getHeader()->front();
   DFSI.StartsAtHeader = true;
-  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
-  assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 
   DFSI.StartsAtHeader = false;
   while(!NewPaths.empty()) {
     DFSI.Start = NewPaths.front();
-    NewPaths.pop();
-    NewVisited.erase(DFSI.Start);
-    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths, NewVisited);
-    assert(DFSI.PathBlocks.size() == 0 && "Invalid traversal");
+    NewPaths.pop_front();
+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
   }
 }
 
@@ -239,19 +333,19 @@ bool EnumerateLoopPaths::runOnFunction(Function &F) {
                << "********** Function: " << F.getName() << "\n\n");
 
   Paths.clear();
-  LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
   std::vector<LoopNest> Nests;
 
   // Discover all loop nests.
-  for(LoopInfo::iterator I = LI.begin(), E = LI.end(); I != E; ++I) {
+  for(LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
     if((*I)->getLoopDepth() != 1) continue;
     Nests.push_back(LoopNest());
     LoopPathUtilities::populateLoopNest(*I, Nests.back());
   }
 
-  // We *should* be analyzing a loop for the first time
+  // Search all loops within all loop nests.
   for(auto Nest : Nests) {
-    DEBUG(dbgs() << "Analyznig nest with " << std::to_string(Nest.size())
+    DEBUG(dbgs() << "Analyzing nest with " << std::to_string(Nest.size())
                  << " loops\n");
 
     for(auto L : Nest) {
@@ -275,7 +369,7 @@ void EnumerateLoopPaths::getPaths(const Loop *L,
                                   std::vector<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   P.clear();
-  for(auto Path : Paths.find(L)->second) P.push_back(&Path);
+  for(const LoopPath &Path : Paths.find(L)->second) P.push_back(&Path);
 }
 
 void
@@ -333,7 +427,7 @@ EnumerateLoopPaths::getEqPointPaths(const Loop *L,
 }
 
 void
-EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
+EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
                                          std::vector<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   assert(L->contains(BB) && "Loop does not contain basic block");
@@ -343,13 +437,27 @@ EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
 }
 
 void
-EnumerateLoopPaths::getPathsThroughBlock(Loop *L, BasicBlock *BB,
+EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
                                          std::set<const LoopPath *> &P) const {
   assert(hasPaths(L) && "No paths for loop");
   assert(L->contains(BB) && "Loop does not contain basic block");
   P.clear();
   for(const LoopPath &Path : Paths.find(L)->second)
     if(Path.contains(BB)) P.insert(&Path);
+}
+
+bool EnumerateLoopPaths::spanningPathThroughBlock(const Loop *L,
+                                                  const BasicBlock *BB) const {
+  assert(hasPaths(L) && "No paths for loop");
+  assert(L->contains(BB) && "Loop does not contain basic block");
+  return HasSpPath.find(L)->second.find(BB)->second;
+}
+
+bool EnumerateLoopPaths::eqPointPathThroughBlock(const Loop *L,
+                                                 const BasicBlock *BB) const {
+  assert(hasPaths(L) && "No paths for loop");
+  assert(L->contains(BB) && "Loop does not contain basic block");
+  return HasEqPointPath.find(L)->second.find(BB)->second;
 }
 
 char EnumerateLoopPaths::ID = 0;
