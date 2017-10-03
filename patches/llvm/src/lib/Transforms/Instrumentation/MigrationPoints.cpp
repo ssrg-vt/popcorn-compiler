@@ -45,6 +45,7 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Instructions.h"
@@ -102,7 +103,7 @@ NoROTPPC("htm-ppc-no-rot", cl::Hidden, cl::init(false),
 /// HTM memory read buffer size for tuning analysis when inserting additional
 /// migration points.
 const static cl::opt<unsigned>
-HTMReadBufSizeArg("htm-buf-read", cl::Hidden, cl::init(8),
+HTMReadBufSizeArg("htm-buf-read", cl::Hidden, cl::init(32),
   cl::desc("HTM analysis tuning - HTM read buffer size, in kilobytes"),
   cl::value_desc("size"));
 
@@ -384,8 +385,32 @@ public:
   virtual const char *getPassName() const
   { return "Insert migration points"; }
 
+  /// Generate the migration library API function declaration.
+  void addMigrationIntrinsic(Module &M, bool DoHTM) {
+    LLVMContext &C = M.getContext();
+    Type *VoidTy = Type::getVoidTy(C);
+    PointerType *VoidPtrTy = Type::getInt8PtrTy(C, 0);
+    std::vector<Type *> FuncPtrArgTy = { VoidPtrTy };
+    FunctionType *FuncPtrTy = FunctionType::get(VoidTy, FuncPtrArgTy, false);
+    CallbackType = PointerType::get(FuncPtrTy, 0);
+    std::vector<Type *> ArgTy = { CallbackType, VoidPtrTy };
+    FunctionType *FuncTy = FunctionType::get(VoidTy, ArgTy, false);
+    if(DoHTM) {
+      MigrateAPI = M.getOrInsertFunction("migrate", FuncTy);
+      MigrateFlag =
+        cast<GlobalValue>(M.getOrInsertGlobal("__migrate_flag",
+                                              Type::getInt32Ty(C)));
+      MigrateFlag->setThreadLocal(true);
+      MigrateFlag->setThreadLocalMode(GlobalValue::InitialExecTLSModel);
+    }
+    else {
+      MigrateAPI = M.getOrInsertFunction("check_migrate", FuncTy);
+      MigrateFlag = nullptr;
+    }
+  }
+
   virtual bool doInitialization(Module &M) {
-    bool modified = false;
+    bool AddedHTM = false;
     DL = &M.getDataLayout();
     Triple TheTriple(M.getTargetTriple());
     Arch = TheTriple.getArch();
@@ -394,11 +419,10 @@ public:
     // warn user if HTM is not supported on this architecture.
     if(HTMExec) {
       if(HTMBegin.find(Arch) != HTMBegin.end()) {
-        HTMBeginDecl =
-          Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
         HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
         HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
-        modified = true;
+        addMigrationIntrinsic(M, true);
+        AddedHTM = true;
       }
       else {
         std::string Msg("HTM instrumentation not supported for '");
@@ -409,7 +433,8 @@ public:
       }
     }
 
-    return modified;
+    if(!AddedHTM) addMigrationIntrinsic(M, false);
+    return true;
   }
 
   /// Insert migration points into functions
@@ -525,14 +550,21 @@ private:
   LoopInfo *LI;
   EnumerateLoopPaths *LP;
 
+  /// Function declaration & migration node ID for migration library API
+  Constant *MigrateAPI;
+  GlobalValue *MigrateFlag;
+  PointerType *CallbackType;
+
   /// Function declarations for HTM intrinsics
-  Value *HTMBeginDecl;
   Value *HTMEndDecl;
   Value *HTMTestDecl;
 
   /// Per-architecture LLVM intrinsic IDs for HTM begin, HTM end, and testing
   /// if executing transactionally
   typedef std::map<Triple::ArchType, Intrinsic::ID> IntrinsicMap;
+  typedef std::map<Triple::ArchType, StringRef> AsmMap;
+  const static AsmMap HTMBeginAsm;
+  const static AsmMap HTMBeginClobbers;
   const static IntrinsicMap HTMBegin;
   const static IntrinsicMap HTMEnd;
   const static IntrinsicMap HTMTest;
@@ -1490,26 +1522,72 @@ private:
 
   /// Add a migration point directly before an instruction.
   void addMigrationPoint(Instruction *I) {
-    // TODO insert flag check & migration call if flag is set
+    LLVMContext &C = I->getContext();
+    IRBuilder<> Worker(I);
+    std::vector<Value *> Args = {
+      ConstantPointerNull::get(CallbackType),
+      ConstantPointerNull::get(Type::getInt8PtrTy(C, 0))
+    };
+    Worker.CreateCall(MigrateAPI, Args);
   }
 
   // Note: because we're only supporting 2 architectures for now, we're not
   // going to abstract this out into the appropriate Target/* folders
 
-  /// Add a transactional execution begin intrinsic for PowerPC, optionally
-  /// with rollback-only transactions.
-  void addPowerPCHTMBegin(Instruction *I) {
+  /// Add HTM begin assembly which avoids doing any work unless there's an
+  /// abort.  In the event of an abort, the instrumentation checks if it should
+  /// migrate, and if so, invokes the migration API.
+  void addHTMBeginInternal(Instruction *I, StringRef Asm, StringRef Clobber) {
     LLVMContext &C = I->getContext();
-    IRBuilder<> Worker(I);
-    ConstantInt *ROT = ConstantInt::get(IntegerType::getInt32Ty(C),
-                                        !NoROTPPC, false);
-    Worker.CreateCall(HTMBeginDecl, ArrayRef<Value *>(ROT));
+    FunctionType *AsmType;
+    BasicBlock *CurBB = I->getParent();
+    std::string Constraints("i,");
+
+    // TODO for some reason we need to split the basic block to prevent the
+    // backend from moving code into the abort handler
+    CurBB->splitBasicBlock(I, "migpointsucc" + std::to_string(NumMigPoints));
+    IRBuilder<> HTMWorker(CurBB->getTerminator());
+
+    // Add transaction begin assembly which does the following:
+    //
+    //   1. Starts transaction & sets up abort handler
+    //      - If successful, jump forward to application code
+    //   2. At start of abort handler, compare migration flag to -1
+    //      - If -1, jump forward to application code
+    //      - If not, call migration API
+    std::vector<Type *> AsmArgTypes = { MigrateFlag->getType() };
+    AsmType = FunctionType::get(Type::getVoidTy(C), AsmArgTypes, false);
+    Constraints += Clobber;
+    InlineAsm *HTMBeginVal = InlineAsm::get(AsmType, Asm, Constraints, true);
+    std::vector<Value *> AsmArgs = { MigrateFlag };
+    HTMWorker.CreateCall(HTMBeginVal, AsmArgs);
+
+    // Create call to migration library
+    std::vector<Value *> Args = {
+      ConstantPointerNull::get(CallbackType),
+      ConstantPointerNull::get(Type::getInt8PtrTy(C, 0))
+    };
+    HTMWorker.CreateCall(MigrateAPI, Args);
+
+    // Create target label for normal execution
+    AsmType = FunctionType::get(Type::getVoidTy(C), false);
+    InlineAsm *HTMPostMigLabel = InlineAsm::get(AsmType, "2:", Clobber, true);
+    HTMWorker.CreateCall(HTMPostMigLabel);
   }
 
-  /// Add a transactional execution begin intrinsic for x86.
+  /// Add a transactional execution begin assembly for PowerPC, optionally
+  /// with rollback-only transactions.
+  void addPowerPCHTMBegin(Instruction *I) {
+    std::string BeginAsm(HTMBeginAsm.at(Arch)),
+                BeginClobber(HTMBeginClobbers.at(Arch));
+    assert(BeginAsm.find("R") != BeginAsm.npos && "Invalid PPC HTM begin");
+    BeginAsm[BeginAsm.find("R")] = (NoROTPPC ? '0' : '1');
+    addHTMBeginInternal(I, BeginAsm, BeginClobber);
+  }
+
+  /// Add a transactional execution begin assembly for x86.
   void addX86HTMBegin(Instruction *I) {
-    IRBuilder<> Worker(I);
-    Worker.CreateCall(HTMBeginDecl);
+    addHTMBeginInternal(I, HTMBeginAsm.at(Arch), HTMBeginClobbers.at(Arch));
   }
 
   /// Add transactional execution end intrinsic for PowerPC.
@@ -1568,13 +1646,8 @@ private:
       LoopsTransformed++;
     }
 
-    for(auto I = MigPointInsts.begin(), E = MigPointInsts.end(); I != E; ++I) {
-      addMigrationPoint(*I);
-      NumMigPoints++;
-    }
-
     if(DoHTMInst) {
-      // Note: add the HTM ends before begins
+      // Note: need to add the HTM ends before begins
       for(auto I = HTMEndInsts.begin(), E = HTMEndInsts.end(); I != E; ++I) {
         switch(Arch) {
         case Triple::ppc64le: addPowerPCHTMEnd(*I); break;
@@ -1584,6 +1657,8 @@ private:
         NumHTMEnds++;
       }
 
+      // The following APIs both insert HTM begins & migration points because
+      // the control flow with/without abort handlers is intertwined
       for(auto I = HTMBeginInsts.begin(), E = HTMBeginInsts.end();
           I != E; ++I) {
         switch(Arch) {
@@ -1592,6 +1667,14 @@ private:
         default: llvm_unreachable("HTM -- unsupported architecture");
         }
         NumHTMBegins++;
+        NumMigPoints++;
+      }
+    }
+    else {
+      for(auto I = MigPointInsts.begin(), E = MigPointInsts.end();
+          I != E; ++I) {
+        addMigrationPoint(*I);
+        NumMigPoints++;
       }
     }
   }
@@ -1601,17 +1684,28 @@ private:
 
 char MigrationPoints::ID = 0;
 
-const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMBegin = {
+const MigrationPoints::AsmMap MigrationPoints::HTMBeginAsm = {
+  {Triple::x86_64,
+   "xbegin 1f; jmp 2f; 1: movq $0, %rax; cmpl $$0xffffffff, (%rax); je 2f"},
+  {Triple::ppc64le, "tbegin. R; bz 2f;"}
+};
+
+const MigrationPoints::AsmMap MigrationPoints::HTMBeginClobbers = {
+  {Triple::x86_64, "~{rax},~{dirflag},~{fpsr},~{flags}"},
+  {Triple::ppc64le, "~{cr0}"}
+};
+
+const MigrationPoints::IntrinsicMap MigrationPoints::HTMBegin = {
   {Triple::x86_64, Intrinsic::x86_xbegin},
   {Triple::ppc64le, Intrinsic::ppc_tbegin}
 };
 
-const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMEnd = {
+const MigrationPoints::IntrinsicMap MigrationPoints::HTMEnd = {
   {Triple::x86_64, Intrinsic::x86_xend},
   {Triple::ppc64le, Intrinsic::ppc_tend}
 };
 
-const std::map<Triple::ArchType, Intrinsic::ID> MigrationPoints::HTMTest = {
+const MigrationPoints::IntrinsicMap MigrationPoints::HTMTest = {
   {Triple::x86_64, Intrinsic::x86_xtest},
   {Triple::ppc64le, Intrinsic::ppc_ttest}
 };

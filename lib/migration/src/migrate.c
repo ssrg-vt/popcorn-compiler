@@ -186,6 +186,9 @@ static inline int do_migrate(void *addr)
 
 #endif /* _ENV_SELECT_MIGRATE */
 
+/* Flag set by signal handler indicating thread should migrate. */
+__thread int __migrate_flag = -1;
+
 /* Data needed post-migration. */
 struct shim_data {
   void (*callback)(void *);
