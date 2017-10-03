@@ -187,7 +187,8 @@ static inline int do_migrate(void *addr)
 #endif /* _ENV_SELECT_MIGRATE */
 
 /* Flag set by signal handler indicating thread should migrate. */
-__thread int __migrate_flag = -1;
+// TODO make this TLS
+int __migrate_flag = -1;
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -233,6 +234,9 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
     // Hack: the kernel can't set floating-point registers, so we have to
     // manually copy them over in userspace
     SET_FP_REGS;
+
+    // Reset the migration flag
+    __migrate_flag = -1;
   }
   else // Invoke migration
   { 

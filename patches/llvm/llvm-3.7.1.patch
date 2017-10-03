@@ -7510,7 +7510,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1744 @@
+@@ -0,0 +1,1741 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7570,6 +7570,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "migration-points"
++#define MIGRATE_FLAG_NAME "__migrate_flag"
 +
 +/// Insert more migration points into the body of a function.  Analyze memory
 +/// usage & attempt to instrument the code to reduce the time until the thread
@@ -7911,10 +7912,10 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    if(DoHTM) {
 +      MigrateAPI = M.getOrInsertFunction("migrate", FuncTy);
 +      MigrateFlag =
-+        cast<GlobalValue>(M.getOrInsertGlobal("__migrate_flag",
++        cast<GlobalValue>(M.getOrInsertGlobal(MIGRATE_FLAG_NAME,
 +                                              Type::getInt32Ty(C)));
-+      MigrateFlag->setThreadLocal(true);
-+      MigrateFlag->setThreadLocalMode(GlobalValue::InitialExecTLSModel);
++      // TODO this needs to be thread-local storage
++      //MigrateFlag->setThreadLocal(true);
 +    }
 +    else {
 +      MigrateAPI = M.getOrInsertFunction("check_migrate", FuncTy);
@@ -7932,6 +7933,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    // warn user if HTM is not supported on this architecture.
 +    if(HTMExec) {
 +      if(HTMBegin.find(Arch) != HTMBegin.end()) {
++        HTMBeginDecl =
++          Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
 +        HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
 +        HTMTestDecl = Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
 +        addMigrationIntrinsic(M, true);
@@ -8069,15 +8072,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  PointerType *CallbackType;
 +
 +  /// Function declarations for HTM intrinsics
++  Value *HTMBeginDecl;
 +  Value *HTMEndDecl;
 +  Value *HTMTestDecl;
 +
 +  /// Per-architecture LLVM intrinsic IDs for HTM begin, HTM end, and testing
 +  /// if executing transactionally
 +  typedef std::map<Triple::ArchType, Intrinsic::ID> IntrinsicMap;
-+  typedef std::map<Triple::ArchType, StringRef> AsmMap;
-+  const static AsmMap HTMBeginAsm;
-+  const static AsmMap HTMBeginClobbers;
 +  const static IntrinsicMap HTMBegin;
 +  const static IntrinsicMap HTMEnd;
 +  const static IntrinsicMap HTMTest;
@@ -9047,60 +9048,67 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  // Note: because we're only supporting 2 architectures for now, we're not
 +  // going to abstract this out into the appropriate Target/* folders
 +
-+  /// Add HTM begin assembly which avoids doing any work unless there's an
-+  /// abort.  In the event of an abort, the instrumentation checks if it should
-+  /// migrate, and if so, invokes the migration API.
-+  void addHTMBeginInternal(Instruction *I, StringRef Asm, StringRef Clobber) {
++  /// Add HTM begin which avoids doing any work unless there's an abort.  In
++  /// the event of an abort, the instrumentation checks if it should migrate,
++  /// and if so, invokes the migration API.
++  void addHTMBeginInternal(Instruction *I, Value *Begin, Value *BeginSuccess) {
 +    LLVMContext &C = I->getContext();
-+    FunctionType *AsmType;
-+    BasicBlock *CurBB = I->getParent();
-+    std::string Constraints("i,");
++    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *FlagCheckBB, *MigPointBB;
 +
-+    // TODO for some reason we need to split the basic block to prevent the
-+    // backend from moving code into the abort handler
-+    CurBB->splitBasicBlock(I, "migpointsucc" + std::to_string(NumMigPoints));
++    // Set up each of the new basic blocks
++    NewSuccBB =
++      CurBB->splitBasicBlock(I, "migpointsucc" + std::to_string(NumMigPoints));
++    MigPointBB =
++      BasicBlock::Create(C, "migpoint" + std::to_string(NumMigPoints),
++                         CurBB->getParent(), NewSuccBB);
++    FlagCheckBB =
++      BasicBlock::Create(C, "migflagcheck" + std::to_string(NumMigPoints),
++                         CurBB->getParent(), MigPointBB);
++
++    // Add check & branch based on HTM begin result; if Begin == BeginSuccess,
++    // we've successfully started the transaction.
 +    IRBuilder<> HTMWorker(CurBB->getTerminator());
++    Value *Cmp = HTMWorker.CreateICmpEQ(Begin, BeginSuccess);
++    HTMWorker.CreateCondBr(Cmp, NewSuccBB, FlagCheckBB);
++    CurBB->getTerminator()->eraseFromParent();
 +
-+    // Add transaction begin assembly which does the following:
-+    //
-+    //   1. Starts transaction & sets up abort handler
-+    //      - If successful, jump forward to application code
-+    //   2. At start of abort handler, compare migration flag to -1
-+    //      - If -1, jump forward to application code
-+    //      - If not, call migration API
-+    std::vector<Type *> AsmArgTypes = { MigrateFlag->getType() };
-+    AsmType = FunctionType::get(Type::getVoidTy(C), AsmArgTypes, false);
-+    Constraints += Clobber;
-+    InlineAsm *HTMBeginVal = InlineAsm::get(AsmType, Asm, Constraints, true);
-+    std::vector<Value *> AsmArgs = { MigrateFlag };
-+    HTMWorker.CreateCall(HTMBeginVal, AsmArgs);
++    // Check flag to see if we should invoke migration library API.
++    IRBuilder<> FlagCheckWorker(FlagCheckBB);
++    Value *Flag = FlagCheckWorker.CreateLoad(MigrateFlag);
++    Value *NegOne = ConstantInt::get(Type::getInt32Ty(C), -1, true);
++    Cmp = FlagCheckWorker.CreateICmpEQ(Flag, NegOne);
++    FlagCheckWorker.CreateCondBr(Cmp, NewSuccBB, MigPointBB);
 +
-+    // Create call to migration library
++    // Add call to migration library API.
++    IRBuilder<> MigPointWorker(MigPointBB);
 +    std::vector<Value *> Args = {
 +      ConstantPointerNull::get(CallbackType),
 +      ConstantPointerNull::get(Type::getInt8PtrTy(C, 0))
 +    };
-+    HTMWorker.CreateCall(MigrateAPI, Args);
-+
-+    // Create target label for normal execution
-+    AsmType = FunctionType::get(Type::getVoidTy(C), false);
-+    InlineAsm *HTMPostMigLabel = InlineAsm::get(AsmType, "2:", Clobber, true);
-+    HTMWorker.CreateCall(HTMPostMigLabel);
++    MigPointWorker.CreateCall(MigrateAPI, Args);
++    MigPointWorker.CreateBr(NewSuccBB);
 +  }
 +
-+  /// Add a transactional execution begin assembly for PowerPC, optionally
++  /// Add a transactional execution begin intrinsic for PowerPC, optionally
 +  /// with rollback-only transactions.
 +  void addPowerPCHTMBegin(Instruction *I) {
-+    std::string BeginAsm(HTMBeginAsm.at(Arch)),
-+                BeginClobber(HTMBeginClobbers.at(Arch));
-+    assert(BeginAsm.find("R") != BeginAsm.npos && "Invalid PPC HTM begin");
-+    BeginAsm[BeginAsm.find("R")] = (NoROTPPC ? '0' : '1');
-+    addHTMBeginInternal(I, BeginAsm, BeginClobber);
++    LLVMContext &C = I->getContext();
++    IRBuilder<> Worker(I);
++    std::vector<Value *> Args = { ConstantInt::get(Type::getInt32Ty(C),
++                                                   NoROTPPC ? 0 : 1,
++                                                   false) };
++    Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl, Args);
++    Value *Zero = ConstantInt::get(Type::getInt32Ty(C), 0, false);
++    addHTMBeginInternal(I, HTMBeginVal, Zero);
 +  }
 +
-+  /// Add a transactional execution begin assembly for x86.
++  /// Add a transactional execution begin intrinsice for x86.
 +  void addX86HTMBegin(Instruction *I) {
-+    addHTMBeginInternal(I, HTMBeginAsm.at(Arch), HTMBeginClobbers.at(Arch));
++    LLVMContext &C = I->getContext();
++    IRBuilder<> Worker(I);
++    Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl);
++    Value *Success = ConstantInt::get(Type::getInt32Ty(C), 0xffffffff, false);
++    addHTMBeginInternal(I, HTMBeginVal, Success);
 +  }
 +
 +  /// Add transactional execution end intrinsic for PowerPC.
@@ -9196,17 +9204,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +} /* end anonymous namespace */
 +
 +char MigrationPoints::ID = 0;
-+
-+const MigrationPoints::AsmMap MigrationPoints::HTMBeginAsm = {
-+  {Triple::x86_64,
-+   "xbegin 1f; jmp 2f; 1: movq $0, %rax; cmpl $$0xffffffff, (%rax); je 2f"},
-+  {Triple::ppc64le, "tbegin. R; bz 2f;"}
-+};
-+
-+const MigrationPoints::AsmMap MigrationPoints::HTMBeginClobbers = {
-+  {Triple::x86_64, "~{rax},~{dirflag},~{fpsr},~{flags}"},
-+  {Triple::ppc64le, "~{cr0}"}
-+};
 +
 +const MigrationPoints::IntrinsicMap MigrationPoints::HTMBegin = {
 +  {Triple::x86_64, Intrinsic::x86_xbegin},
