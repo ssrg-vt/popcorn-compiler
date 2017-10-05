@@ -15,6 +15,8 @@ locations.  The stack transformation runtime uses libelf to read this generated
 metadata to correlate return addresses when rewriting and to locate live
 values.
 
-We use libelf unmodified, except for a couple of changes in the build procedure
-to cross-compile for aarch64.
+We use libelf mostly unmodified, except for a couple of changes in the build
+procedure to cross-compile for aarch64. The other modification is the bugfix
+for ignoring file open permission during mmap, which is solved by commit
+#32761f7.
 
