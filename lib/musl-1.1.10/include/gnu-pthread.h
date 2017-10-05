@@ -83,6 +83,8 @@
 #define pthread_mutexattr_t    __vendor_pthread_mutexattr_t
 #define pthread_cond_t         __vendor_pthread_cond_t
 #define pthread_condattr_t     __vendor_pthread_condattr_t
+#define pthread_barrier_t      __vendor_pthread_barrier_t
+#define pthread_barrierattr_t  __vendor_pthread_barrierattr_t
 #define pthread_rwlock_t       __vendor_pthread_rwlock_t
 #define pthread_rwlockattr_t   __vendor_pthread_rwlockattr_t
 #define sched_param            __vendor_sched_param
@@ -100,6 +102,7 @@ typedef int __vendor_pthread_mutex_t;
 typedef int __vendor_pthread_mutexattr_t;
 typedef int __vendor_pthread_cond_t;
 typedef int __vendor_pthread_condattr_t;
+typedef int __vendor_pthread_barrierattr_t;
 typedef int __vendor_pthread_rwlock_t;
 typedef int __vendor_pthread_rwlockattr_t;
 typedef int __vendor_sched_param;
@@ -127,6 +130,8 @@ typedef int __vendor_sched_param;
 #undef pthread_mutexattr_t
 #undef pthread_cond_t
 #undef pthread_condattr_t
+#undef pthread_barrier_t
+#undef pthread_barrierattr_t
 #undef pthread_rwlock_t
 #undef pthread_rwlockattr_t
 #undef sched_param
@@ -290,6 +295,8 @@ typedef int                              pthread_mutexattr_t;
 typedef struct  pthread_mutex_st        *pthread_mutex_t;
 typedef int                              pthread_condattr_t;
 typedef struct  pthread_cond_st         *pthread_cond_t;
+typedef int                              pthread_barrierattr_t;
+typedef struct  pthread_barrier_st      *pthread_barrier_t;
 typedef int                              pthread_rwlockattr_t;
 typedef struct  pthread_rwlock_st       *pthread_rwlock_t;
 
@@ -313,6 +320,7 @@ enum pthread_mutextype {
  */
 #define PTHREAD_MUTEX_INITIALIZER   (pthread_mutex_t)(NULL)
 #define PTHREAD_COND_INITIALIZER    (pthread_cond_t)(NULL)
+#define PTHREAD_BARRIER_INITIALIZER (pthread_barrier_t)(NULL)
 #define PTHREAD_RWLOCK_INITIALIZER  (pthread_rwlock_t)(NULL)
 
 /*
@@ -430,6 +438,12 @@ extern int       pthread_cond_broadcast(pthread_cond_t *);
 extern int       pthread_cond_signal(pthread_cond_t *);
 extern int       pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
 extern int       pthread_cond_timedwait(pthread_cond_t *, pthread_mutex_t *, const struct timespec *);
+
+/* barrier routines */
+extern int pthread_barrier_destroy(pthread_barrier_t *barrier);
+extern int pthread_barrier_init(pthread_barrier_t *restrict barrier,
+       const pthread_barrierattr_t *restrict attr, unsigned count);
+int pthread_barrier_wait(pthread_barrier_t *barrier);
 
 /*
  * Extensions created by POSIX 1003.1j

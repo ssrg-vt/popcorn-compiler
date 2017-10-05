@@ -27,7 +27,7 @@ LDFLAGS =
 LIBCC = -lgcc
 CPPFLAGS = 
 #CFLAGS = -Os -pipe -g
-CFLAGS = -Os -pipe -g
+CFLAGS = -O2 -pipe -g
 CFLAGS_C99FSE = -std=c99 -ffreestanding -nostdinc 
 
 CFLAGS_ALL = $(CFLAGS_C99FSE) #-DPTH_DEBUG
