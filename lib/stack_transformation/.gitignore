@@ -1,4 +1,8 @@
 build/
+aarch.s
+ppc.s
+README.harubyy
 TODO
+x86.s
 *.swp
 .ycm_extra_conf.py
