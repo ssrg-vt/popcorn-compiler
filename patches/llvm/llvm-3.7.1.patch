@@ -7510,7 +7510,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1741 @@
+@@ -0,0 +1,1838 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7582,18 +7582,43 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 +/// Percent of capacity (determined by analysis type, e.g., HTM buffer size) at
 +/// which point weight objects will request a new migration point be inserted.
-+const static cl::opt<unsigned>
++static cl::opt<unsigned>
 +CapacityThreshold("cap-threshold", cl::Hidden, cl::init(80),
 +  cl::desc("Percent of capacity at which point a new migration point should "
 +           "be inserted (only applies to -more-mig-points)"));
 +
++/// Per-function capacity threshold.
++const static cl::list<std::string>
++FuncCapThreshold("func-cap", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific capacity threshold in function,value pairs"));
++
++/// Normally we instrument function entry points with migration points.  If
++/// we're below some percent of capacity at all exit points & we haven't added
++/// instrumentation into the body (i.e., nothing depends on a clean slate to
++/// start), skip this instrumentation.
++static cl::opt<unsigned>
++StartThreshold("start-threshold", cl::Hidden, cl::init(5),
++  cl::desc("Don't instrument function entry points under a percent of "
++           "capacity (only applies to -more-mig-points), used for "
++           "small functions"));
++
++/// Per-function starting threshold.
++const static cl::list<std::string>
++FuncStartThreshold("func-start", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific start threshold in function,value pairs"));
++
 +/// Normally we instrument function entry & exit points with migration points.
 +/// If we're below some percent of capacity, skip this instrumentation (useful
 +/// for very small/short-lived functions).
-+const static cl::opt<unsigned>
++static cl::opt<unsigned>
 +RetThreshold("ret-threshold", cl::Hidden, cl::init(5),
 +  cl::desc("Don't instrument function exit points under a percent of "
 +           "capacity (only applies to -more-mig-points)"));
++
++/// Per-function return threshold.
++const static cl::list<std::string>
++FuncRetThreshold("func-ret", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific return threshold in function,value pairs"));
 +
 +/// Cover the application in transactional execution by inserting HTM
 +/// stop/start instructions at migration points.
@@ -7923,11 +7948,46 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +  }
 +
++  static inline unsigned splitFuncValPair(const std::string &Pair,
++                                          std::string &Func) {
++    unsigned Val;
++    size_t Comma = Pair.rfind(',');
++    Func = Pair.substr(0, Comma);
++    Val = stoul(Pair.substr(Comma + 1));
++    assert(Val <= 100 && "Invalid percentage");
++    return Val;
++  }
++
++  /// Parse per-function threshold values from the command line.
++  void parsePerFuncThresholds() {
++    unsigned Val;
++    std::string Name;
++
++    FuncCapList.clear();
++    FuncStartList.clear();
++    FuncRetList.clear();
++
++    for(auto Pair : FuncCapThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncCapList[Name] = Val;
++    }
++    for(auto Pair : FuncStartThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncStartList[Name] = Val;
++    }
++    for(auto Pair : FuncRetThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncRetList[Name] = Val;
++    }
++  }
++
 +  virtual bool doInitialization(Module &M) {
 +    bool AddedHTM = false;
 +    DL = &M.getDataLayout();
 +    Triple TheTriple(M.getTargetTriple());
 +    Arch = TheTriple.getArch();
++
++    if(MoreMigPoints) parsePerFuncThresholds();
 +
 +    // If instrumenting with HTM, add begin/end/test intrinsic declarations or
 +    // warn user if HTM is not supported on this architecture.
@@ -7970,6 +8030,30 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    }
 +
 +    if(MoreMigPoints) {
++      // Check if user specified function-specific thresholds.
++      unsigned OldCap = UINT32_MAX, OldStart = UINT32_MAX, OldRet = UINT32_MAX;
++      StringRef FuncName = F.getName();
++      StringMap<unsigned>::const_iterator It;
++      if((It = FuncCapList.find(FuncName)) != FuncCapList.end()) {
++        OldCap = CapacityThreshold;
++        CapacityThreshold = It->second;
++      }
++      if((It = FuncStartList.find(FuncName)) != FuncStartList.end()) {
++        OldStart = StartThreshold;
++        StartThreshold = It->second;
++      }
++      if((It = FuncRetList.find(FuncName)) != FuncRetList.end()) {
++        OldRet = RetThreshold;
++        RetThreshold = It->second;
++      }
++
++      DEBUG(
++        dbgs() << "-> Analyzing function body to add migration points <-\n"
++               << "\nCapacity threshold: " << std::to_string(CapacityThreshold)
++               << "\nStart threshold: " << std::to_string(StartThreshold)
++               << "\nReturn threshold: " << std::to_string(RetThreshold) << "\n"
++      );
++
 +      // We by default mark the function start as a migration point, but if we
 +      // don't add any instrumentation & the function's exit weights are
 +      // sufficiently small avoid instrumentation altogether.
@@ -7977,7 +8061,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      if(!analyzeFunctionBody(F)) {
 +        for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
 +          if(isa<ReturnInst>(BB->getTerminator()) &&
-+             !BBWeights[BB].BlockWeight->underPercentOfThreshold(5))
++             !BBWeights[BB].BlockWeight->underPercentOfThreshold(StartThreshold))
 +            MarkStart = true;
 +      }
 +      else MarkStart = true;
@@ -7987,12 +8071,18 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +      }
 +      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
++
++      // Restore global thresholds.
++      if(OldCap != UINT32_MAX) CapacityThreshold = OldCap;
++      if(OldStart != UINT32_MAX) StartThreshold = OldStart;
++      if(OldRet != UINT32_MAX) RetThreshold = OldRet;
 +    }
 +    else {
 +      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
 +      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +
 +      // Instrument function exit point(s)
++      DEBUG(dbgs() << "-> Marking function exit(s) as a migration point <-\n");
 +      for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
 +        if(isa<ReturnInst>(BB->getTerminator()))
 +          markAsMigPoint(BB->getTerminator(), true, true);
@@ -8056,6 +8146,11 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  /// The current architecture - used to access architecture-specific HTM calls
 +  Triple::ArchType Arch;
 +  const DataLayout *DL;
++
++  /// Parsed per-function thresholds.
++  StringMap<unsigned> FuncCapList;
++  StringMap<unsigned> FuncStartList;
++  StringMap<unsigned> FuncRetList;
 +
 +  /// Should we instrument code with HTM execution?  Set if HTM is enabled on
 +  /// the command line and if the target is supported
@@ -8852,7 +8947,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +                 << std::to_string(Nest.size()) << " loops\n\n");
 +
 +    for(auto CurLoop : Nest) {
-+      if(traverseLoop(CurLoop)) {
++      // Note: if migration points were added to any sub-loo(s) then we need to
++      // re-run the LoopPaths analysis on the outer loop.
++      if(traverseLoop(CurLoop) || AddedMigPoint) {
 +        AddedMigPoint = true;
 +        LP->rerunOnLoop(CurLoop);
 +      }
