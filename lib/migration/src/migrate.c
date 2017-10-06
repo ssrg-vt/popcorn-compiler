@@ -16,6 +16,13 @@
 // TODO Rob: we need to change to a node ID rather than CPU set for selecting a
 // destination architecture
 
+// [harubyy]: What if we get rid of these conditional compilation altogether and add all migrate.h? will they clash?
+// nned to get rid of this mess of 
+// __init_cpu_sets
+// arch_to_cpus(enum arch ar)
+// current_arch()
+// select_arch()
+
 // TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Architecture-specific assembly for migrating between architectures. */
 #ifdef __aarch64__
