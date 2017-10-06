@@ -1,0 +1,3 @@
+compile_and_dump_asm
+out
+test_all
