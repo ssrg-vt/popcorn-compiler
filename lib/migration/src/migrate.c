@@ -23,6 +23,7 @@
 // current_arch()
 // select_arch()
 
+// TODO: eliminate these by paremetrizing commong functions like REWRITE_STACK
 // TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Architecture-specific assembly for migrating between architectures. */
 #ifdef __aarch64__
@@ -33,10 +34,22 @@
 # include <arch/x86_64/migrate.h>
 #endif
 
+static void __attribute__((constructor)) __set_migration_pair(){
+ migration_pair[0] = get_src_arch();
+ migration_pair[1] = get_dest_arch();
+}
+
+int get_src_arch(){ return 0; }
+int get_dest_arch(){ return 1; }
+
+
 // TODO: This has to change when we are able to do a migration between all of the three architectures
 static int cpus_x86 = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
+
+  // Buse: why is this needed in the first place?
+  //       this can be done with a simple grep -c instead of reading the file
   char s[512];
   FILE *fd;
 
