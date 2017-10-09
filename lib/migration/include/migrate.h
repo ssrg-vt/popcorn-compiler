@@ -22,12 +22,6 @@ enum arch {
   NUM_ARCHES
 };
 
-// depending on the model for scheduling (I'm not sure for now I need to see migration in action) this should be changed
-// scalability is the top concern
-// # of possible het. migration = NUM_ARCHES * (NUM_ARCHES - 1)
-// # of possible hom. migration = NUM_ARCHES
-int migration_pair[2];
-
 /**
  * Get source node identification to assign an id for migration_pair -- I assumed the return of int for now
  */

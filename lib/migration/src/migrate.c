@@ -13,18 +13,23 @@
 #include <time.h>
 #endif
 
-// TODO Rob: we need to change to a node ID rather than CPU set for selecting a
-// destination architecture
+// TODO: continue with migrate.c changes needed consult sanghoon
 
-// [harubyy]: What if we get rid of these conditional compilation altogether and add all migrate.h? will they clash?
-// nned to get rid of this mess of 
-// __init_cpu_sets
-// arch_to_cpus(enum arch ar)
-// current_arch()
-// select_arch()
+/* Pierre: due to the-fdata-sections flags, in combination with the way the 
+ * library is compiled for each architecture, global variables here end up 
+ * placed into sections with different names, making them difficult to link 
+ * back together from the alignment tool  perspective without ugly hacks. 
+ * So, the solution here is to force these global variables to be in a custom 
+ * section. By construction it will have the same name on both architecture. 
+ * However for soem reason this doesn't work if the global variable is static so 
+ * I had to remove the static keyword for the concerned variables. They are:
+ * - cpus_x86
+ * - migrate_callback
+ * - migrate_callback_data
+ * - popcorn_vdso
+ */
+int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
 
-// TODO: eliminate these by paremetrizing commong functions like REWRITE_STACK
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Architecture-specific assembly for migrating between architectures. */
 #ifdef __aarch64__
 # include <arch/aarch64/migrate.h>
@@ -34,16 +39,6 @@
 # include <arch/x86_64/migrate.h>
 #endif
 
-static void __attribute__((constructor)) __set_migration_pair(){
- migration_pair[0] = get_src_arch();
- migration_pair[1] = get_dest_arch();
-}
-
-int get_src_arch(){ return 0; }
-int get_dest_arch(){ return 1; }
-
-
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 static int cpus_x86 = 0;
 static void __attribute__((constructor)) __init_cpu_sets()
 {
@@ -67,7 +62,6 @@ static void __attribute__((constructor)) __init_cpu_sets()
   *pthread_migrate_args() = NULL;
 }
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Returns a CPU set for architecture AR. */
 cpu_set_t arch_to_cpus(enum arch ar)
 {
@@ -82,7 +76,6 @@ cpu_set_t arch_to_cpus(enum arch ar)
   return cpus;
 }
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Returns a CPU for the current architecture. */
 cpu_set_t current_arch()
 {
@@ -212,10 +205,9 @@ static inline int do_migrate(void *addr)
 
 #else
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Popcorn vDSO prctl code & page pointer. */
 # define POPCORN_VDSO_CODE 41
-static volatile long *popcorn_vdso = NULL;
+volatile long *popcorn_vdso __attribute__ ((section(".bss.popcorn_vdso"))) = NULL;
 
 /* Initialize Popcorn vDSO page */
 static void __attribute__((constructor))
@@ -226,7 +218,6 @@ __init_migrate_vdso(void)
     popcorn_vdso = (long *)addr;
 }
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /*
  * Read Popcorn vDSO page to see if we should migrate.
  *
@@ -249,6 +240,29 @@ static inline int do_migrate(void *addr)
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
+
+
+#define MAX_POPCORN_NODES 32
+intarchs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
+
+staticvoid __attribute__((constructor)) __init_nodes_info(void)
+{
+ int i;
+ struct node_info {
+   unsigned int status;
+   int arch;
+   int distance;
+ } ni;
+
+ for (i = 0; i < MAX_POPCORN_NODES; i++) {
+   if (syscall(SYSCALL_GET_NODE_INFO, i, &ni) == 0
+       && ni.status == 1) {
+     archs[i] = ni.arch;
+   } else {
+     archs[i] = NUM_ARCHES;
+   }
+ }
+}
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -343,8 +357,8 @@ void migrate(void (*callback)(void *), void *callback_data)
 }
 
 /* Callback function & data for migration points inserted via compiler. */
-static void (*migrate_callback)(void *) = NULL;
-static void *migrate_callback_data = NULL;
+void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
+void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data")))= NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)

@@ -1,73 +1,81 @@
 /*
- * Assembly to prepare stack for migration & to migrate between architectures
- * on aarch64.
- */
+ *  * Assembly to prepare stack for migration & to migrate between architectures
+ *   * on aarch64.
+ *    */
 
 #ifndef _MIGRATE_AARCH64_H
 #define _MIGRATE_AARCH64_H
 
+#define SYSCALL_SCHED_MIGRATE 285
+#define SYSCALL_PROPOSE_MIGRATION 286
+#define SYSCALL_MIGRATION_PROPOSED 287
+#define SYSCALL_GET_NODE_INFO 288
+
+#define GET_LOCAL_REGSET \
+    struct regset_aarch64 regs_src; \
+  READ_REGS_AARCH64(regs_src)
+
+#define LOCAL_STACK_FRAME \
+    (void *)regs_src.sp
+
+
 #ifdef _NATIVE /* Safe for native execution/debugging */
 
 #define REWRITE_STACK \
-  ({ \
-    int ret = 1; \
-    READ_REGS_AARCH64(regs_aarch64); \
-    regs_aarch64.pc = get_call_site(); \
-    if(st_userspace_rewrite_aarch64(regs_aarch64.sp, &regs_aarch64, &regs_aarch64)) \
-    { \
-      fprintf(stderr, "Could not rewrite stack!\n"); \
-      ret = 0; \
-    } \
-    ret; \
-  })
+    ({ \
+         int ret = 1; \
+         if(st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, &regs_src, &regs_src)) \
+         { \
+           fprintf(stderr, "Could not rewrite stack!\n"); \
+           ret = 0; \
+         } \
+         ret; \
+       })
 
 #define SET_FP_REGS // N/A
 
-#define SAVE_REGSET // N/A
-
-#define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) \
-  { \
-    SET_REGS_AARCH64(regs_aarch64); \
-    SET_FRAME_AARCH64(regs_aarch64.x[29], regs_aarch64.sp); \
-    SET_PC_IMM(new_pc); \
-  }
+#define MIGRATE \
+    { \
+          SET_REGS_AARCH64(regs_src); \
+          SET_FRAME_AARCH64(bp, sp); \
+          SET_PC_IMM(__migrate_shim_internal); \
+        }
 
 #else /* Heterogeneous migration */
 
 #define REWRITE_STACK \
-  ({ \
-    int ret = 1; \
-    READ_REGS_AARCH64(regs_aarch64); \
-    regs_aarch64.pc = get_call_site(); \
-    if(st_userspace_rewrite(regs_aarch64.sp, &regs_aarch64, &regs_x86_64)) \
-    { \
-      fprintf(stderr, "Could not rewrite stack!\n"); \
-      ret = 0; \
-    } \
-    ret; \
-  })
+    ({ \
+      int ret = 1; \
+      if (dst_arch == X86_64) { \
+        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
+                    &regs_src, &regs_dst.x86); \
+         } else if (dst_arch == AARCH64) { \
+        ret = st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, \
+                    &regs_src, &regs_dst.aarch); \
+         } else if (dst_arch == POWERPC64) { \
+        ret = st_userspace_rewrite_powerpc64(LOCAL_STACK_FRAME, \
+                    &regs_src, &regs_dst.powerpc); \
+         } \
+        ret; \
+       })
 
 #define SET_FP_REGS \
-  SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
+    SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
 
-#define SAVE_REGSET { data.regset = &regs_x86_64; }
-
-#define MIGRATE( pid, cpu_set_size, cpu_set, new_pc ) \
-  asm volatile ("mov x0, %0;" \
-                "mov x1, %1;" \
-                "mov x2, %2;" \
-                "mov x3, %3;" \
-                "mov x4, #0;" \
-                "mov x5, %4;" \
-                "mov x8, #274;" /* __NR_sched_setaffinity_popcorn */ \
-                "mov sp, %5;" \
-                "mov x29, %6;" \
-                "svc 0;" \
-    : /* Outputs */ \
-    : "i"(pid), "i"(cpu_set_size), "r"(cpu_set), "r"(new_pc), \
-      "r"(&regs_x86_64), "r"(regs_x86_64.rsp), "r"(regs_x86_64.rbp) /* Inputs */ \
-    : "x0", "x1", "x2", "x3", "x4", "x5", "x8" /* Clobbered */ \
-  )
+#define MIGRATE \
+    asm volatile ("mov w0, %w0;" \
+                  "mov x1, %1;" \
+                  "mov sp, %2;" \
+                  "mov x29, %3;" \
+                  "mov x8, %4;" \
+                  "svc 0;" \
+                  : /* Outputs */ \
+                  : /* Inputs */ \
+                  "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
+                  "i"(SYSCALL_SCHED_MIGRATE) \
+                  : /* Clobbered */ \
+                  "w0", "x1", "x8" \
+    )
 
 #endif
 
