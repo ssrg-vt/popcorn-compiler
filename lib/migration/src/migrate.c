@@ -134,12 +134,27 @@ struct shim_data {
 static volatile int __hold = 1;
 #endif
 
-int archs[] __attribute__ ((section (".data.archs"))) = {
-	X86_64,
-	X86_64,
-	AARCH64,
-	AARCH64,
-};
+#define MAX_POPCORN_NODES 32
+int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
+
+static void __attribute__((constructor)) __init_nodes_info(void)
+{
+	int i;
+	struct node_info {
+		unsigned int status;
+		int arch;
+		int distance;
+	} ni;
+
+	for (i = 0; i < MAX_POPCORN_NODES; i++) {
+		if (syscall(SYSCALL_GET_NODE_INFO, i, &ni) == 0
+				&& ni.status == 1) {
+			archs[i] = ni.arch;
+		} else {
+			archs[i] = NUM_ARCHES;
+		}
+	}
+}
 
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
