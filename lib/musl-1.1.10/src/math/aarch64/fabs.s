@@ -5,10 +5,11 @@
  * in which -ffunction-sections will put fabs for power, and put the same name 
  * here */
 
-.section .text.fabs, "ax4"
+.section .text.fabs, "ax"
 /* .text */
 .global fabs
 .type   fabs,%function
+.align 4
 fabs:
 	fabs d0, d0
 	ret
