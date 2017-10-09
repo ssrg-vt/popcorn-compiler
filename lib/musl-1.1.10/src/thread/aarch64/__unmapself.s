@@ -1,4 +1,4 @@
-.section .text.__unmapself, "ax"
+.section .text.__unmapself, "ax4"
 .global __unmapself
 .type   __unmapself,%function
 __unmapself:

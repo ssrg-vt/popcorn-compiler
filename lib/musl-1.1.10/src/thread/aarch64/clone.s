@@ -4,7 +4,7 @@
 // syscall(SYS_clone, flags, stack, ptid, tls, ctid)
 //         x8,        x0,    x1,    x2,   x3,  x4
 
-.section .text.__clone, "ax"
+.section .text.__clone, "ax4"
 .global __clone
 .type   __clone,%function
 __clone:
