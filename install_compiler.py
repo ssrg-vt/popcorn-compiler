@@ -43,11 +43,11 @@ def setup_argument_parsing():
 
     config_opts = parser.add_argument_group('Configuration Options')
     config_opts.add_argument("--base-path",
-                        help="Base path of popcorn-x86-arm compiler repo",
+                        help="Base path of popcorn-compiler repo",
                         default=os.getcwd(),
                         dest="base_path")
     config_opts.add_argument("--install-path",
-                        help="Install path of popcorn-x86-arm compiler",
+                        help="Install path of Popcorn compiler",
                         default="/usr/local/popcorn",
                         dest="install_path")
     config_opts.add_argument("--threads",
@@ -113,7 +113,7 @@ def setup_argument_parsing():
 #================================================
 # PREREQUISITE CHECKING
 #   Determines if all needed prerequisites are installed
-#   See popcorn-compiler-arm-x86/README for more details
+#   See popcorn-compiler/README for more details
 #================================================
 def _check_for_prerequisite(prereq):
     try:
@@ -176,7 +176,7 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
     llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
     clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
 
-    cmake_flags = ['-DCMAKE_BUILD_TYPE=Release',
+    cmake_flags = ['-DCMAKE_BUILD_TYPE=Debug',
                    '-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
                    '-DLLVM_ENABLE_RTTI=ON']
 
