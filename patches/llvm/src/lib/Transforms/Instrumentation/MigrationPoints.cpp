@@ -28,6 +28,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <fstream>
 #include <map>
 #include <memory>
 #include "llvm/Pass.h"
@@ -139,6 +140,13 @@ const static cl::opt<unsigned>
 HTMWriteBufSizeArg("htm-buf-write", cl::Hidden, cl::init(8),
   cl::desc("HTM analysis tuning - HTM write buffer size, in kilobytes"),
   cl::value_desc("size"));
+
+/// Add counters to abort handlers for the specified function.  Allows in-depth
+/// profiling of which HTM sections added to the function are causing aborts.
+const static cl::opt<std::string>
+AbortCount("abort-count", cl::Hidden, cl::init(""),
+  cl::desc("Add counters for each abort handler in the specified function"),
+  cl::value_desc("function"));
 
 #define KB 1024
 #define HTMReadBufSize (HTMReadBufSizeArg * KB)
@@ -363,9 +371,13 @@ public:
     size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX;
     float FPHtmReadSize = getValuePercent(HTMReadBufSize, CapacityThreshold),
           FPHtmWriteSize = getValuePercent(HTMWriteBufSize, CapacityThreshold);
-    if(LoadBytes) NumLoadIters = FPHtmReadSize / (float)LoadBytes;
-    if(StoreBytes) NumStoreIters = FPHtmWriteSize / (float)StoreBytes;
-    return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
+
+    if(!LoadBytes && !StoreBytes) return 1024; // Return a safe value
+    else {
+      if(LoadBytes) NumLoadIters = FPHtmReadSize / (float)LoadBytes;
+      if(StoreBytes) NumStoreIters = FPHtmWriteSize / (float)StoreBytes;
+      return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
+    }
   }
 
   virtual bool underPercentOfThreshold(unsigned percent) const {
@@ -423,9 +435,8 @@ public:
     FunctionType *FuncTy = FunctionType::get(VoidTy, ArgTy, false);
     if(DoHTM) {
       MigrateAPI = M.getOrInsertFunction("migrate", FuncTy);
-      MigrateFlag =
-        cast<GlobalValue>(M.getOrInsertGlobal(MIGRATE_FLAG_NAME,
-                                              Type::getInt32Ty(C)));
+      MigrateFlag = cast<GlobalValue>(
+        M.getOrInsertGlobal(MIGRATE_FLAG_NAME, Type::getInt32Ty(C)));
       // TODO this needs to be thread-local storage
       //MigrateFlag->setThreadLocal(true);
     }
@@ -496,6 +507,16 @@ public:
       }
     }
 
+    if(AbortCount != "") {
+      LLVMContext &C = M.getContext();
+      IntegerType *Unsigned = Type::getInt32Ty(C);
+      GlobalVariable *NumCtrs = cast<GlobalVariable>(
+        M.getOrInsertGlobal("__num_abort_counters", Unsigned));
+      NumCtrs->setInitializer(ConstantInt::get(Unsigned, 1024, false));
+      Type *ArrType = ArrayType::get(Type::getInt64Ty(C), 1024);
+      AbortCounters = M.getOrInsertGlobal("__abort_counters", ArrType);
+    }
+
     if(!AddedHTM) addMigrationIntrinsic(M, false);
     return true;
   }
@@ -535,7 +556,7 @@ public:
       }
 
       DEBUG(
-        dbgs() << "-> Analyzing function body to add migration points <-\n"
+        dbgs() << "\n-> Analyzing function body to add migration points <-\n"
                << "\nCapacity threshold: " << std::to_string(CapacityThreshold)
                << "\nStart threshold: " << std::to_string(StartThreshold)
                << "\nReturn threshold: " << std::to_string(RetThreshold) << "\n"
@@ -578,6 +599,9 @@ public:
     // Finally, apply code transformations to marked instructions.
     addMigrationPoints(F);
 
+    // Close the abort handler map file if we were writing it.
+    if(MapFile.is_open()) MapFile.close();
+
     return true;
   }
 
@@ -617,6 +641,15 @@ public:
 
       DoHTMInst = (pos != StringRef::npos);
 
+      // Enable HTM abort handler profiling if specified
+      if(DoHTMInst && AbortCount == F.getName()) {
+        DoAbortInstrument = true;
+        AbortHandlerCount = 0;
+        MapFile.open("htm-abort.map", std::ios::ate);
+        assert(MapFile.is_open() && MapFile.good() &&
+               "Could not open abort handler map file");
+      }
+
       DEBUG(
         if(DoHTMInst) dbgs() << "-> Enabling HTM instrumentation\n";
         else dbgs() << "-> Disabled HTM instrumentation, HTM not listed in "
@@ -642,6 +675,13 @@ private:
   /// Should we instrument code with HTM execution?  Set if HTM is enabled on
   /// the command line and if the target is supported
   bool DoHTMInst;
+
+  /// Should we instrument HTM abort handlers with counters for precise
+  /// profiling of which code locations cause aborts & all associated state.
+  bool DoAbortInstrument;
+  Value *AbortCounters;
+  unsigned AbortHandlerCount;
+  std::ofstream MapFile;
 
   /// Analyses on which we depend
   ScalarEvolution *SE;
@@ -963,8 +1003,11 @@ private:
       Size = getValueSize(II->getArgOperand(2));
       break;
     }
-    return Size >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
-           Size >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
+
+    // If we can't get the size assume it's a big memory operation
+    if(Size < 0) return true;
+    else return Size >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
+                Size >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
   }
 
   /// Return whether the instruction is a libc I/O call.
@@ -1173,7 +1216,11 @@ private:
     Loop *BlockLoop;
 
     assert(Block != E && "Loop with no basic blocks");
-    DEBUG(dbgs() << "  + Analyzing "; L->dump());
+
+    DEBUG(
+      dbgs() << "  + Analyzing "; L->dump();
+      dbgs() << "    - At "; L->getStartLoc().dump();
+    );
 
     // TODO what if it's an irreducible loop, i.e., > 1 header?
     BasicBlock *CurBB = *Block;
@@ -1210,7 +1257,7 @@ private:
 
     // Note: path ending instructions should either be control flow or calls,
     // so they do not need to be analyzed.
-    const Loop *SubLoop;
+    Loop *SubLoop;
     Weight *PathWeight = getZeroWeight(DoHTMInst);
     SetVector<PathNode>::const_iterator Node = LP->cbegin(),
                                         EndNode = LP->cend();
@@ -1241,6 +1288,12 @@ private:
         SubLoop = LI->getLoopFor(NodeBlock);
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
+
+        // EnumerateLoopPaths doesn't nkow about loops we've marked for
+        // transformation, so explicitly reset the path weight for loops
+        // that'll have a migration point added to their header.
+        if(LoopMigPoints.count(SubLoop)) PathWeight->reset();
+
         PathWeight->add(LWI.getLoopSpanningPathWeight(false));
         PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
       }
@@ -1267,7 +1320,7 @@ private:
     // Note: the path's end must be either the terminator of the exit block (if
     // the exit block is also a latch) or an equivalence point/backedge branch
     // further down the path from the exit block.
-    const Loop *SubLoop;
+    Loop *SubLoop;
     Weight *PathWeight = getZeroWeight(DoHTMInst);
     SetVector<PathNode>::const_iterator Node = LP->cbegin(),
                                         EndNode = LP->cend();
@@ -1298,6 +1351,12 @@ private:
         SubLoop = LI->getLoopFor(NodeBlock);
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
+
+        // EnumerateLoopPaths doesn't nkow about loops we've marked for
+        // transformation, so explicitly reset the path weight for loops
+        // that'll have a migration point added to their header.
+        if(LoopMigPoints.count(SubLoop)) PathWeight->reset();
+
         PathWeight->add(LWI.getLoopSpanningPathWeight(false));
         PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
       }
@@ -1340,7 +1399,7 @@ private:
               EqPointWeight(getZeroWeight(DoHTMInst));
     LP->getBackedgePaths(L, Paths);
 
-    DEBUG(dbgs() << "    Calculating loop exit weights: "
+    DEBUG(dbgs() << "\n    Calculating loop path weights: "
                  << std::to_string(Paths.size()) << " backedge path(s)\n");
 
     // Analyze weights of individual paths through the loop that end at a
@@ -1366,6 +1425,7 @@ private:
       // iterations between migration points, elide loop instrumentation.
       unsigned NumIters = SpanningWeight->numIters(),
                TripCount = getTripCount(L);
+      assert(NumIters > 0 && "Should have added a migration point");
       if(TripCount && TripCount < NumIters) {
         DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
                      << std::to_string(TripCount) << "\n");
@@ -1388,6 +1448,8 @@ private:
                << "\n";
       );
     }
+
+    DEBUG(dbgs() << "\n    Calculating loop exit weights");
 
     // Calculate the weight of the loop at every exit point.  Maintain separate
     // spanning & equivalence point path exit weights so that if we avoid
@@ -1430,8 +1492,10 @@ private:
     while(L->getLoopDepth() != 1) L = L->getParentLoop();
     LoopPathUtilities::populateLoopNest(L, Nest);
 
-    DEBUG(dbgs() << " + Analyzing loop nest with "
-                 << std::to_string(Nest.size()) << " loops\n\n");
+    DEBUG(
+      dbgs() << " + Analyzing loop nest at "; L->getStartLoc().dump();
+      dbgs() << " with " << std::to_string(Nest.size()) << " loops\n\n";
+    );
 
     for(auto CurLoop : Nest) {
       // Note: if migration points were added to any sub-loo(s) then we need to
@@ -1553,14 +1617,17 @@ private:
   /// Round a value down to the nearest power of 2.  Stolen/modified from
   /// https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
   unsigned roundDownPowerOf2(unsigned Count) {
-    Count--;
-    Count |= Count >> 1;
-    Count |= Count >> 2;
-    Count |= Count >> 4;
-    Count |= Count >> 8;
-    Count |= Count >> 16;
-    Count++;
-    return Count >> 1;
+    if(Count % 2) { // This math only works if we're not a power of 2
+      Count--;
+      Count |= Count >> 1;
+      Count |= Count >> 2;
+      Count |= Count >> 4;
+      Count |= Count >> 8;
+      Count |= Count >> 16;
+      Count++;
+      Count >>= 1;
+    }
+    return Count;
   }
 
   /// Transform a loop header so that migration points (and any concomitant
@@ -1602,6 +1669,7 @@ private:
       // if we hit a migration point rather than expensive remainder math.
       IRBuilder<> Worker(Header->getTerminator());
       InstrStride = roundDownPowerOf2(ItersPerMigPoint * Stride) - 1;
+      assert(InstrStride > 0 && "Invalid migration point stride");
       Constant *N = ConstantInt::get(IVType, InstrStride, IVType->getSignBit()),
                *Zero = ConstantInt::get(IVType, 0, IVType->getSignBit());
       Value *Rem = Worker.CreateAnd(IV, N);
@@ -1658,6 +1726,29 @@ private:
 
     // Check flag to see if we should invoke migration library API.
     IRBuilder<> FlagCheckWorker(FlagCheckBB);
+    if(DoAbortInstrument) {
+      assert(AbortHandlerCount < 1024 && "Too abort handler many counters!");
+
+      // Write the name of the basic block to the map file so we can map abort
+      // counters to their basic blocks.
+      if(!AbortHandlerCount) MapFile << FlagCheckBB->getName().str();
+      else MapFile << " " << FlagCheckBB->getName().str();
+
+      // Add instrumentation to increment the counter's value.
+      std::string CtrNum(std::to_string(AbortHandlerCount));
+      std::vector<Value *> Idx = {
+        ConstantInt::get(Type::getInt64Ty(C), 0),
+        ConstantInt::get(Type::getInt64Ty(C), AbortHandlerCount),
+      };
+      Value *One = ConstantInt::get(Type::getInt64Ty(C), 1, false);
+      Value *GEP = FlagCheckWorker.CreateInBoundsGEP(AbortCounters, Idx,
+                                                     "ctrptr" + CtrNum);
+      Value *CtrVal = FlagCheckWorker.CreateLoad(GEP, "ctr" + CtrNum);
+      Value *Inc = FlagCheckWorker.CreateAdd(CtrVal, One);
+      FlagCheckWorker.CreateStore(Inc, GEP);
+
+      AbortHandlerCount++;
+    }
     Value *Flag = FlagCheckWorker.CreateLoad(MigrateFlag);
     Value *NegOne = ConstantInt::get(Type::getInt32Ty(C), -1, true);
     Cmp = FlagCheckWorker.CreateICmpEQ(Flag, NegOne);
