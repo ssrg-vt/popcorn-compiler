@@ -23,35 +23,6 @@ enum arch {
 };
 
 /**
- * Get source node identification to assign an id for migration_pair -- I assumed the return of int for now
- */
-int get_src_arch();
-
-/**
- * Get destination node identification to assign an id for migration_pair -- I assumed the return of int for now
- */
-int get_dest_arch();
-
-/**
- * Get the CPUs associated with a given architecture in the system.
- * @param ar the architecture
- * @return the CPUs for the architecture
- */
-cpu_set_t arch_to_cpus(enum arch ar);
-
-/**
- * Get the current architecture.
- * @return the architecture on which we're executing
- */
-cpu_set_t current_arch();
-
-/**
- * Select a destination architecture for migration.
- * @return the architecture on which to migrate
- */
-cpu_set_t select_arch();
-
-/**
  * Check if thread should migrate, and if so, invoke migration.  The optional
  * callback function will be invoked before execution resumes on destination
  * architecture.

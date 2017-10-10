@@ -28,7 +28,7 @@
  * - migrate_callback_data
  * - popcorn_vdso
  */
-int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
+//int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
 
 /* Architecture-specific assembly for migrating between architectures. */
 #ifdef __aarch64__
@@ -38,68 +38,6 @@ int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
 #else
 # include <arch/x86_64/migrate.h>
 #endif
-
-static int cpus_x86 = 0;
-static void __attribute__((constructor)) __init_cpu_sets()
-{
-
-  // Buse: why is this needed in the first place?
-  //       this can be done with a simple grep -c instead of reading the file
-  char s[512];
-  FILE *fd;
-
-  fd = fopen("/proc/cpuinfo", "r");
-  if(fd)
-  {
-    cpus_x86 = 0;
-    while(fgets(s, 512, fd) != NULL)
-      if(strstr(s, "GenuineIntel") != NULL || strstr(s, "AuthenticAMD") != NULL)
-        cpus_x86++;
-    fclose(fd);
-  }
-  else cpus_x86 = 8;
-
-  *pthread_migrate_args() = NULL;
-}
-
-/* Returns a CPU set for architecture AR. */
-cpu_set_t arch_to_cpus(enum arch ar)
-{
-  cpu_set_t cpus;
-  CPU_ZERO(&cpus);
-  switch(ar) {
-  case AARCH64: CPU_SET(0, &cpus); break;
-  case POWERPC64: CPU_SET(0, &cpus); break;
-  case X86_64: CPU_SET(cpus_x86, &cpus); break;
-  default: break;
-  }
-  return cpus;
-}
-
-/* Returns a CPU for the current architecture. */
-cpu_set_t current_arch()
-{
-#ifdef __aarch64__
-  return arch_to_cpus(AARCH64);
-#elif defined(__powerpc64__)
-  return arch_to_cpus(POWERPC64);
-#elif defined(__x86_64__)
-  return arch_to_cpus(X86_64);
-#endif
-}
-
-// TODO: This has to change when we are able to do a migration between all of the three architectures
-/* Returns a CPU set for an architecture that we want to migrate to. */
-cpu_set_t select_arch()
-{
-#ifdef __aarch64__
-  return arch_to_cpus(X86_64);
-#elif defined(__powerpc64__)
-  return arch_to_cpus(X86_64);
-#elif defined(__x86_64__)
-  return arch_to_cpus(AARCH64);
-#endif
-}
 
 #ifdef _ENV_SELECT_MIGRATE
 
@@ -129,7 +67,6 @@ static pthread_key_t num_migrated_aarch64 = 0;
 static pthread_key_t num_migrated_powerpc64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /* Read environment variables to setup migration points. */
 static void __attribute__((constructor))
 __init_migrate_testing(void)
@@ -170,19 +107,18 @@ __init_migrate_testing(void)
 #endif
 }
 
-// TODO: This has to change when we are able to do a migration between all of the three architectures
 /*
  * Check environment variables to see if this call site is the function at
  * which we should migrate.
  */
 static inline int do_migrate(void *addr)
 {
-  int retval = 0;
+  int retval = -1;
 #ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
       pthread_setspecific(num_migrated_aarch64, (void *)1);
-      retval = 1;
+      retval = 0;
     }
   }
 #elif defined(__powerpc64__)
@@ -196,7 +132,7 @@ static inline int do_migrate(void *addr)
   if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
     if(start_x86_64 <= addr && addr < end_x86_64) {
       pthread_setspecific(num_migrated_x86_64, (void *)1);
-      retval = 1;
+      retval = 2;
     }
   }
 #endif
@@ -205,47 +141,20 @@ static inline int do_migrate(void *addr)
 
 #else
 
-/* Popcorn vDSO prctl code & page pointer. */
-# define POPCORN_VDSO_CODE 41
-volatile long *popcorn_vdso __attribute__ ((section(".bss.popcorn_vdso"))) = NULL;
-
-/* Initialize Popcorn vDSO page */
-static void __attribute__((constructor))
-__init_migrate_vdso(void)
-{
-  unsigned long addr;
-  if(prctl(POPCORN_VDSO_CODE, &addr) >= 0)
-    popcorn_vdso = (long *)addr;
-}
-
-/*
- * Read Popcorn vDSO page to see if we should migrate.
- *
- * 0 -> process should be on x86
- * 1 -> process should be on aarch64 OR
- * 1 -> process should be on powerpc64
- */
-static inline int do_migrate(void *addr)
-{
-  int ret = 0;
-  if(popcorn_vdso)
-  {
-#if defined(__aarch64__) || defined(__powerpc64__)
-    if(*popcorn_vdso == 0) ret = 1;
-#else /* x86_64 */
-    if(*popcorn_vdso == 1) ret = 1;
-#endif
-  }
-  return ret;
-}
-
 #endif /* _ENV_SELECT_MIGRATE */
 
+
+/* Data needed post-migration. */
+struct shim_data {
+  void (*callback)(void *);
+  void *callback_data;
+  void *regset;
+};
 
 #define MAX_POPCORN_NODES 32
 intarchs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
 
-staticvoid __attribute__((constructor)) __init_nodes_info(void)
+static void __attribute__((constructor)) __init_nodes_info(void)
 {
  int i;
  struct node_info {
@@ -263,20 +172,6 @@ staticvoid __attribute__((constructor)) __init_nodes_info(void)
    }
  }
 }
-
-/* Data needed post-migration. */
-struct shim_data {
-  void (*callback)(void *);
-  void *callback_data;
-  void *regset;
-};
-
-/*
- * Create a program location for which the compiler will generate
- * transformation metadata.
- */
-static void *__attribute__((noinline))
-get_call_site() { return __builtin_return_address(0); }
 
 #ifdef _DEBUG
 /*
@@ -310,23 +205,28 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
     SET_FP_REGS;
   }
   else // Invoke migration
-  { 
-    struct regset_aarch64 regs_aarch64;
-    struct regset_powerpc64 regs_powerpc64;
-    struct regset_x86_64 regs_x86_64;
+  {
+    const int dst_arch = archs[nid];
+
+    GET_LOCAL_REGSET;
+    union {
+       struct regset_aarch64 aarch;
+       struct regset_powerpc64 powerpc;
+       struct regset_x86_64 x86;
+    } regs_dst;
+
+    unsigned long sp = 0, bp = 0;
+            
 #ifdef _TIME_REWRITE
     struct timespec start, end;
     unsigned long start_ns, end_ns;
-#endif
-    cpu_set_t cpus;
 
+#endif
     data.callback = callback;
     data.callback_data = callback_data;
+    data.regset = &regs_dst;
     *pthread_migrate_args() = &data;
-    cpus = select_arch();
-#ifdef _TIME_REWRITE
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
+
     if(REWRITE_STACK)
     {
 #ifdef _TIME_REWRITE
@@ -335,9 +235,24 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
       end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
       printf("Stack transformation time: %ldns\n", end_ns - start_ns);
 #endif
-      SAVE_REGSET;
-      MIGRATE(0, sizeof(cpu_set_t), (void *)&cpus,
-              (void *)__migrate_shim_internal);
+
+    if(dst_arch == X86_64) {
+      regs_dst.x86.rip = __migrate_shim_internal;
+      sp = (unsigned long)regs_dst.x86.rsp;
+      bp = (unsigned long)regs_dst.x86.rbp;
+    } else if (dst_arch == AARCH64) {
+      regs_dst.aarch.pc = __migrate_shim_internal;
+      sp = (unsigned long)regs_dst.aarch.sp;
+      bp = (unsigned long)regs_dst.aarch.x[29];
+    } else if (dst_arch == POWERPC64) {
+      regs_dst.powerpc.pc = __migrate_shim_internal;
+      sp = (unsigned long)regs_dst.powerpc.r[1];
+      bp = (unsigned long)regs_dst.powerpc.r[31];
+    } else {
+      assert(0 && "Unsupported architecture!");
+    }
+
+      MIGRATE;
       assert(0 && "Couldn't migrate!");
     }
   }
@@ -346,14 +261,15 @@ static void inline __migrate_shim_internal(void (*callback)(void *),
 /* Check if we should migrate, and invoke migration. */
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
-  if(do_migrate(__builtin_return_address(0)))
-    __migrate_shim_internal(callback, callback_data);
+  int nid = do_migrate(__builtin_return_address(0));
+    if (nid >= 0)
+      __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Externally-visible function to invoke migration. */
 void migrate(void (*callback)(void *), void *callback_data)
 {
-  __migrate_shim_internal(callback, callback_data);
+  __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Callback function & data for migration points inserted via compiler. */
@@ -370,14 +286,16 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 /* Hook inserted by compiler at the beginning of a function. */
 void __cyg_profile_func_enter(void *this_fn, void *call_site)
 {
-  if(do_migrate(this_fn))
-    __migrate_shim_internal(migrate_callback, migrate_callback_data);
+  int nid = do_migrate(this_fn);
+  if (nid >= 0)
+    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
 }
 
 /* Hook inserted by compiler at the end of a function. */
 void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
-  if(do_migrate(this_fn))
-    __migrate_shim_internal(migrate_callback, migrate_callback_data);
+   int nid = do_migrate(this_fn);
+   if (nid >= 0)
+     __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
 }
 
