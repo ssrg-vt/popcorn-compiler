@@ -54,6 +54,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_os_ostream.h"
 
 using namespace llvm;
 
@@ -507,14 +508,16 @@ public:
       }
     }
 
-    if(AbortCount != "") {
+    if(AbortCount != "" && M.getFunction(AbortCount)) {
       LLVMContext &C = M.getContext();
       IntegerType *Unsigned = Type::getInt32Ty(C);
       GlobalVariable *NumCtrs = cast<GlobalVariable>(
         M.getOrInsertGlobal("__num_abort_counters", Unsigned));
       NumCtrs->setInitializer(ConstantInt::get(Unsigned, 1024, false));
       Type *ArrType = ArrayType::get(Type::getInt64Ty(C), 1024);
-      AbortCounters = M.getOrInsertGlobal("__abort_counters", ArrType);
+      AbortCounters = cast<GlobalVariable>(
+        M.getOrInsertGlobal("__abort_counters", ArrType));
+      AbortCounters->setInitializer(ConstantAggregateZero::get(ArrType));
     }
 
     if(!AddedHTM) addMigrationIntrinsic(M, false);
@@ -599,8 +602,15 @@ public:
     // Finally, apply code transformations to marked instructions.
     addMigrationPoints(F);
 
-    // Close the abort handler map file if we were writing it.
-    if(MapFile.is_open()) MapFile.close();
+    // Write the modified IR & close the abort handler map file if we
+    // instrumented the code to profile abort handlers.
+    if(MapFile.is_open()) {
+      MapFile.close();
+      std::fstream TheIR("htm-abort-ir.ll", std::ios::out | std::ios::trunc);
+      raw_os_ostream IRStream(TheIR);
+      F.print(IRStream);
+      TheIR.close();
+    }
 
     return true;
   }
@@ -645,7 +655,7 @@ public:
       if(DoHTMInst && AbortCount == F.getName()) {
         DoAbortInstrument = true;
         AbortHandlerCount = 0;
-        MapFile.open("htm-abort.map", std::ios::ate);
+        MapFile.open("htm-abort.map", std::ios::out | std::ios::trunc);
         assert(MapFile.is_open() && MapFile.good() &&
                "Could not open abort handler map file");
       }
@@ -679,7 +689,7 @@ private:
   /// Should we instrument HTM abort handlers with counters for precise
   /// profiling of which code locations cause aborts & all associated state.
   bool DoAbortInstrument;
-  Value *AbortCounters;
+  GlobalVariable *AbortCounters;
   unsigned AbortHandlerCount;
   std::ofstream MapFile;
 
