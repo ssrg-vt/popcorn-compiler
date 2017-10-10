@@ -1261,9 +1261,10 @@ private:
   /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
-  Weight *traversePath(const LoopPath *LP) const {
+  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
     DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump(););
     assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
+    ActuallyEqPoint = false;
 
     // Note: path ending instructions should either be control flow or calls,
     // so they do not need to be analyzed.
@@ -1299,10 +1300,13 @@ private:
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
 
-        // EnumerateLoopPaths doesn't nkow about loops we've marked for
+        // EnumerateLoopPaths doesn't know about loops we've marked for
         // transformation, so explicitly reset the path weight for loops
         // that'll have a migration point added to their header.
-        if(LoopMigPoints.count(SubLoop)) PathWeight->reset();
+        if(LoopMigPoints.count(SubLoop)) {
+          ActuallyEqPoint = true;
+          PathWeight->reset();
+        }
 
         PathWeight->add(LWI.getLoopSpanningPathWeight(false));
         PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
@@ -1323,9 +1327,11 @@ private:
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
   Weight *traversePathUntilExit(const LoopPath *LP,
-                                BasicBlock *Exit) const {
+                                BasicBlock *Exit,
+                                bool &ActuallyEqPoint) const {
     assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
     assert(LP->contains(Exit) && "Invalid path and/or exit block");
+    ActuallyEqPoint = false;
 
     // Note: the path's end must be either the terminator of the exit block (if
     // the exit block is also a latch) or an equivalence point/backedge branch
@@ -1362,10 +1368,13 @@ private:
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
 
-        // EnumerateLoopPaths doesn't nkow about loops we've marked for
+        // EnumerateLoopPaths doesn't know about loops we've marked for
         // transformation, so explicitly reset the path weight for loops
         // that'll have a migration point added to their header.
-        if(LoopMigPoints.count(SubLoop)) PathWeight->reset();
+        if(LoopMigPoints.count(SubLoop)) {
+          ActuallyEqPoint = true;
+          PathWeight->reset();
+        }
 
         PathWeight->add(LWI.getLoopSpanningPathWeight(false));
         PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
@@ -1400,7 +1409,7 @@ private:
   void calculateLoopExitWeights(Loop *L) {
     assert(!LoopWeights.count(L) && "Previously analyzed loop?");
 
-    bool HasSpPath = false, HasEqPointPath = false;
+    bool HasSpPath = false, HasEqPointPath = false, ActuallyEqPoint;
     std::vector<const LoopPath *> Paths;
     LoopWeights.emplace(L, LoopWeightInfo(L, DoHTMInst));
     LoopWeightInfo &LWI = LoopWeights.at(L);
@@ -1415,9 +1424,9 @@ private:
     // Analyze weights of individual paths through the loop that end at a
     // backedge, as these will dictate the loop's weight.
     for(auto Path : Paths) {
-      WeightPtr PathWeight(traversePath(Path));
+      WeightPtr PathWeight(traversePath(Path, ActuallyEqPoint));
       DEBUG(dbgs() << "    Path weight: " << PathWeight->toString() << " ");
-      if(Path->isSpanningPath()) {
+      if(Path->isSpanningPath() && !ActuallyEqPoint) {
         HasSpPath = true;
         SpanningWeight->max(PathWeight);
         DEBUG(dbgs() << "(spanning path)\n");
@@ -1473,8 +1482,8 @@ private:
 
       LP->getPathsThroughBlock(L, Exit, Paths);
       for(auto Path : Paths) {
-        WeightPtr PathWeight(traversePathUntilExit(Path, Exit));
-        if(Path->isSpanningPath()) {
+        WeightPtr PathWeight(traversePathUntilExit(Path, Exit, ActuallyEqPoint));
+        if(Path->isSpanningPath() && !ActuallyEqPoint) {
           HasSpPath = true;
           SpanningWeight->max(PathWeight);
         }
