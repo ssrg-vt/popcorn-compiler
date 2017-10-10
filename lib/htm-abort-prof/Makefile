@@ -1,8 +1,14 @@
+POPCORN         := /usr/local/popcorn
+POPCORN_X86_64  := $(POPCORN)/x86_64
+POPCORN_PPC64   := $(POPCORN)/powerpc64
+
 BIN	:= print-abort-counters
 LIB	:= libabort-prof.a
 
-CC 			:= clang
-CXX 		:= clang++
+# TODO PowerPC build/install
+
+CC 			:= $(POPCORN)/bin/clang
+CXX			:= $(POPCORN)/bin/clang++
 CFLAGS	:= -O2 -Wall
 
 SRC := src/abort-prof.c
@@ -14,6 +20,15 @@ ARFLAGS	:= -cq
 all: $(LIB) $(BIN)
 lib: $(LIB)
 bin: $(BIN)
+install: install-lib install-bin
+
+install-lib: $(LIB)
+	@echo " [INSTALL] $< to $(POPCORN_X86_64)/lib"
+	@cp $< $(POPCORN_X86_64)/lib
+
+install-bin: $(BIN)
+	@echo " [INSTALL] $< to $(POPCORN)/bin"
+	@cp $< $(POPCORN)/bin
 
 src/%.o: src/%.c
 	@echo " [CC] $<"
@@ -31,4 +46,4 @@ clean:
 	@echo " [RM] $(BIN) $(LIB) $(OBJ)"
 	@rm -f $(BIN) $(LIB) $(OBJ)
 
-.PHONY: all lib bin clean
+.PHONY: all lib bin install install-lib install-bin clean

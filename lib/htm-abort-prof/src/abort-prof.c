@@ -6,7 +6,7 @@
 #define ENV_ABORT_PROF_FILE "ABORT_PROF_FN"
 
 /* The LLVM pass *must* insert definitions for these */
-extern uint64_t *__abort_counters;
+extern uint64_t __abort_counters[];
 extern uint32_t __num_abort_counters;
 
 void __attribute__((destructor)) __dump_abort_loc_ctrs() {
@@ -18,6 +18,8 @@ void __attribute__((destructor)) __dump_abort_loc_ctrs() {
                     "HTM abort counter data!\n", fn);
     return;
   }
+
+  printf(" [ Printing %u counters to '%s' ]\n", __num_abort_counters, fn);
 
   uint32_t i;
   for(i = 0; i < __num_abort_counters; i++) {
