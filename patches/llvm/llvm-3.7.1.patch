@@ -7510,7 +7510,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1948 @@
+@@ -0,0 +1,1955 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7677,7 +7677,6 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +/// Get the integer size of a value, if statically known.
 +static int64_t getValueSize(const Value *V) {
 +  if(isa<ConstantInt>(V)) return cast<ConstantInt>(V)->getSExtValue();
-+  DEBUG(dbgs() << "Couldn't get size for"; V->dump() );
 +  return -1;
 +}
 +
@@ -8969,16 +8968,14 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      DEBUG(
 +        dbgs() << "  Loop spanning path weight: " << SpanningWeight->toString()
 +               << ", " << std::to_string(NumIters)
-+               << " iterations/migration point\n";
++               << " iteration(s)/migration point\n";
 +      );
 +    }
 +    if(HasEqPointPath) {
 +      LWI.setLoopEqPointPathWeight(EqPointWeight);
 +
-+      DEBUG(
-+        dbgs() << "  Loop eq-point path weight: " << EqPointWeight->toString()
-+               << "\n";
-+      );
++      DEBUG(dbgs() << "  Loop equivalence point path weight: "
++                   << EqPointWeight->toString() << "\n");
 +    }
 +
 +    DEBUG(dbgs() << "\n    Calculating loop exit weights");
@@ -9025,8 +9022,8 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +    LoopPathUtilities::populateLoopNest(L, Nest);
 +
 +    DEBUG(
-+      dbgs() << " + Analyzing loop nest at "; L->getStartLoc().dump();
-+      dbgs() << " with " << std::to_string(Nest.size()) << " loops\n\n";
++      dbgs() << " + Analyzing loop nest at "; L->getStartLoc().print(dbgs());
++      dbgs() << " with " << std::to_string(Nest.size()) << " loop(s)\n\n";
 +    );
 +
 +    for(auto CurLoop : Nest) {
@@ -9115,6 +9112,13 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +        StrideExpr = cast<SCEVConstant>(Induct->getStepRecurrence(*SE));
 +        Stride = std::abs(StrideExpr->getValue()->getSExtValue());
 +
++        // TODO if stride != 1, it's hard to ensure we're hitting a migration
++        // point every n iterations unless we know the *exact* number at which
++        // it starts.  For example, if stride = 4 but we start at 1, the
++        // migration point checking logic has to add checks for 1, 5, 9, etc.
++        // It's easier to just create our own induction variable.
++        if(Stride != 1) continue;
++
 +        DEBUG(dbgs() << "Found induction variable with loop stride of "
 +                     << std::to_string(Stride) << ":"; I->print(dbgs());
 +              dbgs() << "\n");
@@ -9149,16 +9153,19 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  /// Round a value down to the nearest power of 2.  Stolen/modified from
 +  /// https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
 +  unsigned roundDownPowerOf2(unsigned Count) {
-+    if(Count % 2) { // This math only works if we're not a power of 2
-+      Count--;
-+      Count |= Count >> 1;
-+      Count |= Count >> 2;
-+      Count |= Count >> 4;
-+      Count |= Count >> 8;
-+      Count |= Count >> 16;
-+      Count++;
-+      Count >>= 1;
-+    }
++    unsigned Starting = Count;
++    Count--;
++    Count |= Count >> 1;
++    Count |= Count >> 2;
++    Count |= Count >> 4;
++    Count |= Count >> 8;
++    Count |= Count >> 16;
++    Count++;
++
++    // If we're already a power of 2, then the above math returns the same
++    // value.  Otherwise, we've rounded *up* to the nearest power of 2 and need
++    // to divide by 2 to round *down*.
++    if(Count != Starting) Count >>= 1;
 +    return Count;
 +  }
 +
