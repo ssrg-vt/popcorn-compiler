@@ -19,7 +19,7 @@ void parse_args(int argc, char **argv) {
   while((c = getopt(argc, argv, "m:c:h")) != -1) {
     switch(c) {
     case 'h':
-      cout << "Parse & display counter data\n\n"
+      cout << argv[0] << " -- parse & display counter data\n\n"
            << "Options:\n"
            << "  -m name : map filename printed by compiler "
            << "(default: '" << map_fn << "')\n"
@@ -53,6 +53,7 @@ size_t parse_map_file(list<string> &basic_blocks) {
     if(bb.size() > longest) longest = bb.size();
     fp >> bb;
   }
+  if(bb != "") basic_blocks.push_back(bb);
 
   fp.close();
   return longest;
@@ -71,8 +72,10 @@ void parse_counter_file(list<uint64_t> &counters) {
   fp >> counter;
   while(!fp.eof()) {
     counters.push_back(counter);
+    counter = UINT64_MAX;
     fp >> counter;
   }
+  if(counter != UINT64_MAX) counters.push_back(counter);
 
   fp.close();
 }

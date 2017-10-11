@@ -2,7 +2,7 @@ POPCORN         := /usr/local/popcorn
 POPCORN_X86_64  := $(POPCORN)/x86_64
 POPCORN_PPC64   := $(POPCORN)/powerpc64
 
-BIN	:= print-abort-counters
+BIN	:= abort-counters
 LIB	:= libabort-prof.a
 
 # TODO PowerPC build/install
@@ -38,7 +38,7 @@ $(LIB): $(OBJ)
 	@echo " [AR] $@"
 	@$(AR) $(ARFLAGS) $@ $(OBJ) -o &> /dev/null
 
-$(BIN): src/display.cpp
+$(BIN): src/abort-counters.cpp
 	@echo " [CXX] $<"
 	@$(CXX) $(CFLAGS) -o $@ $<
 
