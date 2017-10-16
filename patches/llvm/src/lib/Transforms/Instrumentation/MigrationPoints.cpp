@@ -109,6 +109,11 @@ const static cl::list<std::string>
 FuncRetThreshold("func-ret", cl::Hidden, cl::ZeroOrMore,
   cl::desc("Function-specific return threshold in function,value pairs"));
 
+/// Don't instrument a specific function with extra migration points.
+const static cl::list<std::string>
+FuncNoInst("func-no-inst", cl::Hidden, cl::ZeroOrMore,
+  cl::desc("Don't instrument a particular function with migration points"));
+
 /// Cover the application in transactional execution by inserting HTM
 /// stop/start instructions at migration points.
 const static cl::opt<bool>
@@ -464,6 +469,7 @@ public:
     FuncCapList.clear();
     FuncStartList.clear();
     FuncRetList.clear();
+    NoInstFuncs.clear();
 
     for(auto Pair : FuncCapThreshold) {
       Val = splitFuncValPair(Pair, Name);
@@ -477,6 +483,7 @@ public:
       Val = splitFuncValPair(Pair, Name);
       FuncRetList[Name] = Val;
     }
+    for(auto Func : FuncNoInst) NoInstFuncs.insert(Func);
   }
 
   virtual bool doInitialization(Module &M) {
@@ -531,12 +538,25 @@ public:
 
     initializeAnalysis(F);
 
+    // If the user has requested the function not be instrumented, do some
+    // basic marking (to avoid spurious HTM aborts) and return.
+    if(NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) {
+      markAsHTMEnd(F.getEntryBlock().getFirstInsertionPt());
+      addMigrationPoints(F);
+      return true;
+    }
+
     // Some operations (e.g., big memory copies, I/O) will cause aborts.
     // Instrument these operations to stop & resume transactions afterwards.
     if(DoHTMInst) {
-      wrapWithHTM(F, isBigMemoryOp,
-                  "memory operations that will overflow HTM buffers");
-      if(!NoWrapLibc) wrapWithHTM(F, isLibcIO, "I/O functions");
+      bool AddedMigPoint;
+
+      AddedMigPoint = wrapWithHTM(F, isBigMemoryOp,
+        "memory operations that overflow HTM buffers");
+      if(!NoWrapLibc)
+        AddedMigPoint |= wrapWithHTM(F, isLibcIO, "I/O functions");
+
+      if(AddedMigPoint) LP->runOnFunction(F);
     }
 
     if(MoreMigPoints) {
@@ -680,6 +700,7 @@ private:
   StringMap<unsigned> FuncCapList;
   StringMap<unsigned> FuncStartList;
   StringMap<unsigned> FuncRetList;
+  StringSet<> NoInstFuncs;
 
   /// Should we instrument code with HTM execution?  Set if HTM is enabled on
   /// the command line and if the target is supported
@@ -1030,7 +1051,9 @@ private:
   }
 
   /// Search for & wrap operations that match a certain criteria.
-  void wrapWithHTM(Function &F, InstMatch Matcher, const char *Desc) {
+  bool wrapWithHTM(Function &F, InstMatch Matcher, const char *Desc) {
+    bool AddedMigPoint = false;
+
     DEBUG(dbgs() << "\n-> Wrapping " << Desc << " with HTM stop/start <-\n");
     for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
       for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
@@ -1051,10 +1074,12 @@ private:
 
           // TODO analyze successor blocks as well
 
-          markAsMigPoint(I->getNextNode(), true, false);
+          AddedMigPoint |= markAsMigPoint(I->getNextNode(), true, false);
         }
       }
     }
+
+    return AddedMigPoint;
   }
 
   /// Get the starting weight for a basic block based on the max weights of its
@@ -1307,8 +1332,29 @@ private:
           PathWeight->reset();
         }
 
-        PathWeight->add(LWI.getLoopSpanningPathWeight(false));
-        PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
+        // TODO we need to ultimately deal with the following situation more
+        // gracefully:
+        //
+        //   loop 1: all spanning paths, contains loop 2
+        //     loop 2: all spanning paths, contains loop 3
+        //       loop 3: all spanning paths, to be instrumented
+        //
+        // Analysis determines loop 3 needs to be instrumented.  If all paths
+        // in loop 2 go through loop 3, then loop 2 no longer has spanning
+        // paths but only equivalence point paths.  The previous if statement
+        // detects this, and reports it to calculateLoopExitWeights().  However
+        // when analyzing paths through loop 1, we can't detect that loop 2
+        // only has equivalence points paths.
+
+        if(LWI.loopHasSpanningPath()) {
+          PathWeight->add(LWI.getLoopSpanningPathWeight(false));
+          PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
+        }
+        else {
+          ActuallyEqPoint = true;
+          PathWeight->reset();
+          PathWeight->add(LWI[NodeBlock]);
+        }
       }
       else {
         Inst = NodeBlock->begin();
@@ -1375,8 +1421,29 @@ private:
           PathWeight->reset();
         }
 
-        PathWeight->add(LWI.getLoopSpanningPathWeight(false));
-        PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
+        // TODO we need to ultimately deal with the following situation more
+        // gracefully:
+        //
+        //   loop 1: all spanning paths, contains loop 2
+        //     loop 2: all spanning paths, contains loop 3
+        //       loop 3: all spanning paths, to be instrumented
+        //
+        // Analysis determines loop 3 needs to be instrumented.  If all paths
+        // in loop 2 go through loop 3, then loop 2 no longer has spanning
+        // paths but only equivalence point paths.  The previous if statement
+        // detects this, and reports it to calculateLoopExitWeights().  However
+        // when analyzing paths through loop 1, we can't detect that loop 2
+        // only has equivalence points paths.
+
+        if(LWI.loopHasSpanningPath()) {
+          PathWeight->add(LWI.getLoopSpanningPathWeight(false));
+          PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
+        }
+        else {
+          ActuallyEqPoint = true;
+          PathWeight->reset();
+          PathWeight->add(LWI[NodeBlock]);
+        }
       }
       else {
         Inst = Node->getBlock()->begin();
@@ -1449,6 +1516,8 @@ private:
                      << std::to_string(TripCount) << "\n");
         NumIters = TripCount;
       }
+      // TODO mark first insertion point in loop header as migration point,
+      // propagate whether we added a migration point as return value
       else LoopMigPoints.insert(L);
       LWI.setLoopSpanningPathWeight(SpanningWeight, NumIters);
 
@@ -1516,10 +1585,15 @@ private:
     for(auto CurLoop : Nest) {
       // Note: if migration points were added to any sub-loo(s) then we need to
       // re-run the LoopPaths analysis on the outer loop.
+      // TODO this is a little overzealous, sibling loops (e.g., 2 sub-loops at
+      // the same depth and contained in the same outer loop) can cause
+      // unnecessary re-enumerations.
       if(traverseLoop(CurLoop) || AddedMigPoint) {
         AddedMigPoint = true;
         LP->rerunOnLoop(CurLoop);
       }
+
+      // TODO if we are instrumenting the loop header, re-enumerate paths
       calculateLoopExitWeights(CurLoop);
 
       DEBUG(dbgs() << "\n  Loop analysis: "
@@ -1662,7 +1736,8 @@ private:
     BasicBlock *Header = L->getHeader();
     size_t ItersPerMigPoint, Stride = 0, InstrStride;
 
-    // If the first instruction has already been marked, nothing to do
+    // If the first instruction has already been marked due to heuristics that
+    // bookend libc I/O & big memory operations, then there's nothing to do.
     Instruction *First = Header->getFirstInsertionPt();
     if(isMarkedForInstrumentation(First)) return;
 
