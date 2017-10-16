@@ -1,0 +1,3 @@
+abort-counters
+libabort-prof.a
+src/abort-prof.o
