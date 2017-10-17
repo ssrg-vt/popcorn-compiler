@@ -6,10 +6,12 @@
 #define ENV_ABORT_PROF_FILE "ABORT_PROF_FN"
 
 /* The LLVM pass *must* insert definitions for these */
-extern uint64_t __abort_counters[];
-extern uint32_t __num_abort_counters;
+uint64_t __attribute__((weak)) __abort_counters[] = { 0 };
+volatile uint32_t __attribute__((weak)) __num_abort_counters = UINT32_MAX;
 
 void __attribute__((destructor)) __dump_abort_loc_ctrs() {
+  if(__num_abort_counters == UINT32_MAX) return;
+
   const char *fn = "htm-abort.ctr", *env;
   if((env = getenv(ENV_ABORT_PROF_FILE))) fn = env;
   FILE *fp = fopen(fn, "w");
