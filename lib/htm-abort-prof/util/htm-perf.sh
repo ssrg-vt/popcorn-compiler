@@ -24,7 +24,7 @@ DO_RECORD=1
 #   tx-abort: transactions aborted
 #   tx-capacity: transactions aborted due to capacity overflow
 #   tx-conflict: transactions aborted due to access conflict
-X86_RECORD_EVENTS="cpu/tx-abort/pp"
+X86_RECORD_EVENTS="cycles cpu/tx-abort/pp"
 X86_STAT_EVENTS="cycles cycles-t cycles-ct tx-start tx-commit tx-abort
                  tx-capacity tx-conflict"
 
@@ -43,13 +43,13 @@ function print_help {
   echo "Usage: tsx_perf.sh [ OPTIONS ] -- <binary> [ BINARY OPTIONS ]"
   echo
   echo "Options:"
-  echo "  -powerpc64 | -x86_64   : select architecture (& perf events)," \
+  echo "  -ppc64le | -x86_64  : select architecture (& perf events)," \
        "default: $ARCH"
-  echo "  -p | -perf bin         : which perf binary to use, default: $PERF"
-  echo "  -r | -repeat num       : number of times to repeat for perf stat," \
+  echo "  -p | -perf bin      : which perf binary to use, default: $PERF"
+  echo "  -r | -repeat num    : number of times to repeat for perf stat," \
        "default: $PERF_STAT_REPEAT"
-  echo "  -no-stat               : don't run perf-stat"
-  echo "  -no-record             : don't run perf-record"
+  echo "  -no-stat            : don't run perf-stat"
+  echo "  -no-record          : don't run perf-record"
 }
 
 function build_cmd {
@@ -67,7 +67,7 @@ while [ "$1" != "--" ] && [ "$1" != "" ]; do
     -h | -help)
       print_help
       exit 0 ;;
-    -powerpc64) ARCH="powerpc64" ;;
+    -ppc64le) ARCH="ppc64le" ;;
     -x86_64) ARCH="x86_64" ;;
     -p | -perf)
       PERF=$2
@@ -89,7 +89,7 @@ if [ "$@" == "" ]; then
 fi
 
 case $ARCH in
-  powerpc64)
+  ppc64le)
     PERF_RECORD_EVENTS="$PPC_RECORD_EVENTS"
     PERF_STAT_EVENTS="$PPC_STAT_EVENTS" ;;
   x86_64)
