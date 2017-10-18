@@ -152,7 +152,7 @@ struct shim_data {
 };
 
 #define MAX_POPCORN_NODES 32
-intarchs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
+int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
 
 static void __attribute__((constructor)) __init_nodes_info(void)
 {
