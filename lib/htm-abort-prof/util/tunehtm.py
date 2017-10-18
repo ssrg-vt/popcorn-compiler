@@ -17,9 +17,8 @@ def parseArguments():
     desc = "Automagically tune placement of migration points/HTM " \
            "transactions in an application by observing perf output of HTM " \
            "counters.  NOTE: the build environment must be set up to accept " \
-           "environment variables CAP_THRESH, START_THRESH, RET_THRESH, and " \
-           "OTHER to configure the various thresholds and add additional " \
-           "arguments, respectively."
+           "environment variable HTM_FLAGS to configure the various " \
+           "thresholds and add additional arguments."
 
     parser = argparse.ArgumentParser(description=desc,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -136,10 +135,10 @@ def buildBinary(buildCmd, binary, cap, start, ret, func):
 
     try:
         args = buildCmd.strip().split()
-        args.append("CAP_THRESH={}".format(cap))
-        args.append("START_THRESH={}".format(start))
-        args.append("RET_THRESH={}".format(ret))
-        args.append("OTHER=\"{}\"".format(funcThreshArgs(func)))
+        args.append("HTM_FLAGS=\"-mllvm -cap-threshold={} \
+                     -mllvm -start-threshold={} \
+                     -mllvm -ret-threshold={} \
+                     {}\"".format(cap, start, ret, funcThreshArgs(func)))
         rv = subprocess.check_call(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("Could not build the binary:\n{}".format(e))

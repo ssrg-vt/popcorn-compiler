@@ -8,11 +8,24 @@ def percent(numerator, denominator):
     else: return (float(numerator) / float(denominator)) * 100.0
 
 '''
-Reduce a threshold's value.
+Reduce a threshold's value.  Aggressively search over larger values, but
+fine-tune as threshold approaches zero (as results seem to become more
+sensitive in this region).
 '''
 def reduceThresh(val):
     assert val > 0 and val <= 100, "Invalid threshold value"
-    assert False, "Need to pick up here"
+
+    if val > 75: val = 75
+    elif val > 50: val = 50
+    elif val > 25: val = 25
+    elif val > 10: val = val - 5
+    else: val = val - 2
+
+    return max(val, 1)
+
+def increaseThresh(val):
+    assert val > 0 and val <= 100, "Invalid threshold value"
+    assert False, "Needs implementin'"
 
 '''
 All perf results for a given configuration.  Includes both HTM event counters
@@ -120,6 +133,7 @@ class ConfigureHTM:
         self.globalConfig = [ Configuration("Global") ]
         self.functionConfig = [ {} ]
         self.results = []
+        log(self.globalConfig[-1])
 
         # TODO these parameters need to be fine-tuned
         # Minimum percent of execution that should be covered in transactions
@@ -175,32 +189,52 @@ class ConfigureHTM:
             if len(HighAbortFuncs) > 5:
                 # A bunch of functions have high abort rates, cut down the
                 # overall capacity threshold.
-                newGlobalConfig.cap = reduceThresh(newGlobalConfig.cap)
-                log("{} have high abort rates, reducing overall " \
-                    "capacity threshold to {}" \
-                    .format(HighAbortFuncs, newGlobalConfig.cap))
+                newCap = reduceThresh(newGlobalConfig.cap)
+                if prevCap == newGlobalConfig.cap:
+                    log("NOTE: functions {} have many aborts, but we can't " \
+                        "reduce the global capacity threshold any further" \
+                        .format(HighAbortFuncs))
+                    self.keepGoing = False
+                    return
+
+                newGlobalConfig.cap = newCap
+                log("Functions {} have high abort rates, reducing overall " \
+                    "capacity threshold to {}".format(HighAbortFuncs, newCap))
             else:
-                # Reduce capacity threshold for the function with the highest
-                # abort rates and which has not been previously analyzed too
-                # many times
+                # Reduce capacity threshold for function with highest abort
+                # rates and which has not been analyzed too many times
                 FuncConfig = None
                 for Func in HighAbortFuncs:
                     if Func not in newFuncConfig:
                         FuncConfig = FunctionConfiguration(Func)
                         FuncConfig.copy(newGlobalConfig)
-                        newFuncConfig[Func] = FuncConfig
-                        break
                     elif newFuncConfig[Func].iter < self.maxFuncIters:
                         FuncConfig = newFuncConfig[Func]
-                        break
+                    else:
+                        log("NOTE: function '{}' has many aborts but we ran " \
+                            "out of tuning iterations".format(Func))
+                        continue
+
+                    # See if we can reduce the capacity threshold further
+                    assert FuncConfig != None, "Should have picked a function"
+                    newCap = reduceThresh(FuncConfig.cap)
+                    if newCap == FuncConfig.cap:
+                        log("NOTE: function '{}' has many aborts but we " \
+                            "can't reduce its capacity threshold any further" \
+                            .format(Func))
+                        FuncConfig = None
+                        continue
+                    FuncConfig.cap = newCap
+                    break
 
                 if FuncConfig == None:
-                    log("All candidates have been fully evaluated!")
+                    log("All candidate high-abort have been fully evaluated!")
                     self.keepGoing = False
                     return
 
+                if FuncConfig.name not in newFuncConfig:
+                    newFuncConfig[FuncConfig.name] = FuncConfig
                 FuncConfig.iter += 1
-                FuncConfig.cap = reduceThresh(FuncConfig.cap)
                 log("Reducing capacity threshold for '{}' to {}".format(
                     FuncConfig.name, FuncConfig.cap))
 
