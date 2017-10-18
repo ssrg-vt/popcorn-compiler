@@ -2,6 +2,7 @@
 
 import sys
 import copy
+import perfscrape
 
 def percent(numerator, denominator):
     if denominator <= 0: return sys.float_info.max
@@ -43,8 +44,8 @@ class Result:
     transactional execution.
     '''
     def percentTransactional(self):
-        transactCycles = getTransactCycles(self.counters)
-        cycles = getCycles(self.counters)
+        transactCycles = perfscrape.getTransactCycles(self.counters)
+        cycles = perfscrape.getCycles(self.counters)
         assert transactCycles != 0 and cycles != 0, "Invalid counter values"
         return percent(transactCycles, cycles)
 
@@ -59,7 +60,7 @@ class Result:
     def getHighAbortFuncs(self, percent):
         # perf-report should have sorted the list in descending order of sample
         # rate, iterate until we find a value below the threshold.
-        SymPercentList = getHTMAbortLocs(self.symbolSamples)
+        SymPercentList = perfscrape.getHTMAbortLocs(self.symbolSamples)
         HighAbortFuncs = []
         for Pair in SymPercentList:
             if Pair[1] > percent: HighAbortFuncs.append(Pair[0])
@@ -72,6 +73,9 @@ class Result:
 
     def getTime(self):
         return self.time
+
+    def getSlowdown(self, target):
+        return percent(self.time, target) - 100.0
 
     def getNumSamples(self):
         return self.samples
@@ -97,7 +101,7 @@ class Configuration:
         self.ret = ret
 
     def __str__(self):
-        return "{}: capacity={}, start={}, return={}".format(
+        return "{}: capacity={}%, start={}%, return={}%".format(
             self.name, self.cap, self.start, self.ret)
 
     def copy(self, rhs):
@@ -113,27 +117,29 @@ configuration.
 class FunctionConfiguration(Configuration):
     def __init__(self, name, cap = 95, start = 95, ret = 95):
         Configuration.__init__(self, name, cap, start, ret)
-        self.iter = 0
+        self.iteration = 0
 
     def __str__(self):
-        return "{}, # tunings={}".format(Configuration, self.iter)
+        return "{}, # tunings={}".format(Configuration, self.iteration)
 
 class ConfigureHTM:
     def __init__(self, targetTime, slowdownThresh, maxIters,
                  maxFuncIters, resultsFolder):
         self.keepGoing = True
-        self.iter = 0
+        self.iteration = 1
         self.maxIters = maxIters
         self.maxFuncIters = maxFuncIters
+        self.targetTime = targetTime
         self.stopRuntime = targetTime * ((float(slowdownThresh) + 100) / 100.0)
         self.decisions = open(resultsFolder + "/decision-log.txt", 'w')
+        self.log("Target stopping time: {:.3f}s".format(self.stopRuntime))
 
         # There's a 1-to-1 correspondence between each of the following, i.e.,
         # globalConfig[3] & functionConfig[3] generated results[3]
         self.globalConfig = [ Configuration("Global") ]
         self.functionConfig = [ {} ]
         self.results = []
-        log(self.globalConfig[-1])
+        self.log(self.globalConfig[-1])
 
         # TODO these parameters need to be fine-tuned
         # Minimum percent of execution that should be covered in transactions
@@ -146,7 +152,11 @@ class ConfigureHTM:
         self.decisions.close()
 
     def log(self, msg):
-        self.decisions.write("[Iteration {}] {}\n".format(self.iter, str(msg)))
+        self.decisions.write("[ Iteration {:>2} ] {}\n" \
+                             .format(self.iteration, str(msg)))
+
+    def logFinal(self, msg):
+        self.decisions.write("[ Final Result ] {}\n".format(str(msg)))
 
     def getConfiguration(self):
         # buildBinary() expects a function -> capacity threshold dictionary
@@ -162,15 +172,16 @@ class ConfigureHTM:
     def analyze(self, time, counters, numSamples, symbolSamples):
         self.results.append(Result(time, counters, numSamples, symbolSamples))
         CurResult = self.results[-1]
+        slowdown = CurResult.getSlowdown(self.targetTime)
         percentTransactional = CurResult.percentTransactional()
-        self.iter += 1
 
-        log("Results from configuration: {}s, {%.2f}% covered".format( \
-            time, percentTransactional))
+        self.log("Results from configuration: {:.3f}s ({:.2f}% slowdown), " \
+                 "{:.2f}% covered" \
+                 .format(time, slowdown, percentTransactional))
 
         # If we've exhausted our max, we can't do any further configuration.
-        if self.iter >= self.maxIters:
-            log("Hit maximum number of iterations")
+        if self.iteration >= self.maxIters:
+            self.log("Hit maximum number of iterations")
             self.keepGoing = False
             return
 
@@ -183,7 +194,7 @@ class ConfigureHTM:
         self.functionConfig.append(newFuncConfig)
 
         if percentTransactional < self.minCovered:
-            log("High abort rate, reducing HTM granularity")
+            self.log("High abort rate, reducing HTM granularity")
 
             HighAbortFuncs = CurResult.getHighAbortFuncs(self.highAbort)
             if len(HighAbortFuncs) > 5:
@@ -191,15 +202,16 @@ class ConfigureHTM:
                 # overall capacity threshold.
                 newCap = reduceThresh(newGlobalConfig.cap)
                 if prevCap == newGlobalConfig.cap:
-                    log("NOTE: functions {} have many aborts, but we can't " \
-                        "reduce the global capacity threshold any further" \
-                        .format(HighAbortFuncs))
+                    self.log("NOTE: functions {} have many aborts, but we " \
+                             "can't reduce the global capacity threshold " \
+                             "any further".format(HighAbortFuncs))
                     self.keepGoing = False
                     return
 
                 newGlobalConfig.cap = newCap
-                log("Functions {} have high abort rates, reducing overall " \
-                    "capacity threshold to {}".format(HighAbortFuncs, newCap))
+                self.log("Functions {} have high abort rates, reducing " \
+                         "overall capacity threshold to {}" \
+                         .format(HighAbortFuncs, newCap))
             else:
                 # Reduce capacity threshold for function with highest abort
                 # rates and which has not been analyzed too many times
@@ -208,51 +220,56 @@ class ConfigureHTM:
                     if Func not in newFuncConfig:
                         FuncConfig = FunctionConfiguration(Func)
                         FuncConfig.copy(newGlobalConfig)
-                    elif newFuncConfig[Func].iter < self.maxFuncIters:
+                    elif newFuncConfig[Func].iteration < self.maxFuncIters:
                         FuncConfig = newFuncConfig[Func]
                     else:
-                        log("NOTE: function '{}' has many aborts but we ran " \
-                            "out of tuning iterations".format(Func))
+                        self.log("NOTE: function '{}' has many aborts but " \
+                                 "we ran out of tuning iterations" \
+                                 .format(Func))
                         continue
 
                     # See if we can reduce the capacity threshold further
                     assert FuncConfig != None, "Should have picked a function"
                     newCap = reduceThresh(FuncConfig.cap)
                     if newCap == FuncConfig.cap:
-                        log("NOTE: function '{}' has many aborts but we " \
-                            "can't reduce its capacity threshold any further" \
-                            .format(Func))
+                        self.log("NOTE: function '{}' has many aborts but " \
+                                 "we can't reduce its capacity threshold " \
+                                 "any further".format(Func))
                         FuncConfig = None
                         continue
                     FuncConfig.cap = newCap
                     break
 
                 if FuncConfig == None:
-                    log("All candidate high-abort have been fully evaluated!")
+                    self.log("All candidates have been fully evaluated!")
                     self.keepGoing = False
                     return
 
                 if FuncConfig.name not in newFuncConfig:
                     newFuncConfig[FuncConfig.name] = FuncConfig
                 FuncConfig.iter += 1
-                log("Reducing capacity threshold for '{}' to {}".format(
+                self.log("Reducing capacity threshold for '{}' to {}".format(
                     FuncConfig.name, FuncConfig.cap))
 
         elif CurResult.time > self.stopRuntime:
             # TODO need to implement reduced instrumentation
-            log("Over-instrumented application")
+            self.log("Over-instrumented application!")
             self.keepGoing = False
+            return
         else:
             # We've met both criteria -- we're done!
-            log("Hit abort rate & overhead targets!")
+            self.log("Hit abort rate & overhead targets!")
             self.keepGoing = False
+            return
+
+        self.iteration += 1
 
     '''
     Write the best result to the file.  The best result is the configuration
     which had the lowest runtime while still covering the minimum amount of the
     application in transactional execution.
     '''
-    def writeBest():
+    def writeBest(self):
         BestResult = None
         BestTime = sys.float_info.max
         for Result in self.results:
@@ -262,17 +279,21 @@ class ConfigureHTM:
                 BestResult = Result
 
         if BestResult == None:
-            log("No configurations covered enough of the application in " \
-                "transactional execution!")
+            self.logFinal("No configurations covered enough of the " \
+                          "application in transactional execution!")
             return
 
         Idx = self.results.index(BestResult)
         GlobalConf = self.globalConfig[Idx]
         FuncConf = self.functionConfig[Idx]
-        log("Best configuration:")
-        log("Time: {}\nPercent covered: {}".format(
-            BestTime, BestResult.percentTransactional()))
-        log(GlobalConf)
+        Slowdown = BestResult.getSlowdown(self.targetTime)
+        self.logFinal("Best configuration:")
+        self.logFinal("Time: {:.3f}s, {:.2f}% slowdown" \
+                      .format(BestTime, Slowdown))
+        self.logFinal("Percent covered: {:.2f}%" \
+                      .format(BestResult.percentTransactional()))
+        self.logFinal
+        self.logFinal(GlobalConf)
         for Func in FuncConf:
-            log(FuncConf[Func])
+            self.logFinal(FuncConf[Func])
 

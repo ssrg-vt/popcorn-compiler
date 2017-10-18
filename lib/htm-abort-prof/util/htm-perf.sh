@@ -2,7 +2,7 @@
 
 PERF="perf"
 PERF_STAT_REPEAT=1
-ARCH=$(uname -p)
+ARCH=$(uname -m)
 DO_STAT=1
 DO_RECORD=1
 

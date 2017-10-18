@@ -7,7 +7,7 @@ import subprocess
 import datetime
 
 import perfscrape
-import htmconfig
+from htmconfig import ConfigureHTM
 
 ###############################################################################
 # Initialization
@@ -78,8 +78,8 @@ def sanityCheckArgs(args):
            "Invalid maximum number of iterations"
     assert args.maxFuncIters > 0 and args.maxFuncIters <= args.maxIters, \
            "Invalid maximum number of per-function iterations"
-    assert targetTime > 0, "Invalid target runtime"
-    assert slowdownThresh > 0, "Invalid slowdown percentage threshold"
+    assert args.targetTime > 0, "Invalid target runtime"
+    assert args.slowdownThresh > 0, "Invalid slowdown percentage threshold"
 
 def writeReadme(readme, args):
     readme.write("Results for '{}':\n".format(args.binary))
@@ -94,12 +94,12 @@ def writeReadme(readme, args):
     readme.write("  Max iterations per function: {}\n".format(
         args.maxFuncIters))
     readme.write("  Target time: {}\n".format(args.targetTime))
-    readme.write("  Stop threshold: {}\n".format(args.slowdownThresh))
+    readme.write("  Stop threshold: {}%\n".format(args.slowdownThresh))
 
 def initialize(args):
     sanityCheckArgs(args)
     now = datetime.datetime.now()
-    results = "htm-instrument-{}:{}-{}-{}-{}".format(
+    results = "htm-instrument-{}:{:0>2}-{}-{}-{}".format(
         now.hour, now.minute, now.day, now.month, now.year)
     assert not os.path.exists(results), \
            "Tuning output folder '{}' already exists!".format(results)
@@ -135,10 +135,10 @@ def buildBinary(buildCmd, binary, cap, start, ret, func):
 
     try:
         args = buildCmd.strip().split()
-        args.append("HTM_FLAGS=\"-mllvm -cap-threshold={} \
-                     -mllvm -start-threshold={} \
-                     -mllvm -ret-threshold={} \
-                     {}\"".format(cap, start, ret, funcThreshArgs(func)))
+        args.append("HTM_FLAGS=-mllvm -cap-threshold={} " \
+                    "-mllvm -start-threshold={} " \
+                    "-mllvm -ret-threshold={} " \
+                    "{}".format(cap, start, ret, funcThreshArgs(func)))
         rv = subprocess.check_call(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("Could not build the binary:\n{}".format(e))
@@ -151,7 +151,7 @@ def buildBinary(buildCmd, binary, cap, start, ret, func):
     assert os.path.isfile(binary), \
            "Binary '{}' does not exist after build!".format(binary)
 
-def runBinary(it, outputFolder, runCmd, perf, htmPerf, binary):
+def runBinary(outputFolder, runCmd, perf, htmPerf, binary):
     try:
         args = [ htmPerf, "-p", perf, "--" ]
         args.extend(runCmd.strip().split())
@@ -171,8 +171,8 @@ def runBinary(it, outputFolder, runCmd, perf, htmPerf, binary):
            .format(recordOutput)
     statDest = outputFolder + '/' + os.path.basename(statOutput)
     recordDest = outputFolder + '/' + os.path.basename(recordOutput)
-    os.rename(statOutput, statOutput)
-    os.rename(recordOutput, recordOutput)
+    os.rename(statOutput, statDest)
+    os.rename(recordOutput, recordDest)
     return statDest, recordDest
 
 def runConfiguration(args, iteration, results, cap, start, ret, func):
@@ -183,7 +183,7 @@ def runConfiguration(args, iteration, results, cap, start, ret, func):
     # Clean/build/run the current configuration
     cleanBuild(args.cleanCmd)
     buildBinary(args.buildCmd, args.binary, cap, start, ret, func)
-    return runBinary(it, iterDir, args.runCmd, args.perf,
+    return runBinary(iterDir, args.runCmd, args.perf,
                      args.htmPerf, args.binary)
 
 ###############################################################################
@@ -198,10 +198,11 @@ if __name__ == "__main__":
 
     while marcoPolo.keepGoing:
         cap, start, ret, func = marcoPolo.getConfiguration()
-        stat, record = runConfiguration(args, marcoPolo.iter, results, \
+        stat, record = runConfiguration(args, marcoPolo.iteration, results,
                                         cap, start, ret, func)
-        time, counters = scrapePerfStat(stat)
-        numSamples, eventCount, samples = scrapePerfReport(args.perf, record)
+        time, counters = perfscrape.scrapePerfStat(stat)
+        numSamples, eventCount, samples = \
+            perfscrape.scrapePerfReport(args.perf, record)
         marcoPolo.analyze(time, counters, numSamples, samples)
 
     marcoPolo.writeBest()
