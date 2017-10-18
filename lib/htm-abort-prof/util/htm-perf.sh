@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PERF="perf"
-PERF_STAT_REPEAT=1
+PERF_STAT_REPEAT=3
 ARCH=$(uname -m)
 DO_STAT=1
 DO_RECORD=1
@@ -46,7 +46,7 @@ function print_help {
   echo "  -ppc64le | -x86_64  : select architecture (& perf events)," \
        "default: $ARCH"
   echo "  -p | -perf bin      : which perf binary to use, default: $PERF"
-  echo "  -r | -repeat num    : number of times to repeat for perf stat," \
+  echo "  -r | -repeat num    : number of times to repeat for perf-stat," \
        "default: $PERF_STAT_REPEAT"
   echo "  -no-stat            : don't run perf-stat"
   echo "  -no-record          : don't run perf-record"

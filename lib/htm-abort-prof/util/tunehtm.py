@@ -63,6 +63,10 @@ def parseArguments():
              "configuration exploration",
         default=5,
         dest="slowdownThresh")
+    tuning.add_argument("-fast-tune", action="store_true",
+        help="Only run perf-stat once per configuration to gather profiling " \
+             "information rather than the normal 3 times (reduces stability)",
+        dest="fastTune")
 
     return parser.parse_args()
 
@@ -95,6 +99,7 @@ def writeReadme(readme, args):
         args.maxFuncIters))
     readme.write("  Target time: {}\n".format(args.targetTime))
     readme.write("  Stop threshold: {}%\n".format(args.slowdownThresh))
+    if(args.fastTune): readme.write("  + Fast tune")
 
 def initialize(args):
     sanityCheckArgs(args)
@@ -151,9 +156,10 @@ def buildBinary(buildCmd, binary, cap, start, ret, func):
     assert os.path.isfile(binary), \
            "Binary '{}' does not exist after build!".format(binary)
 
-def runBinary(outputFolder, runCmd, perf, htmPerf, binary):
+def runBinary(outputFolder, runCmd, perf, htmPerf, binary, fast):
     try:
         args = [ htmPerf, "-p", perf, "--" ]
+        if fast: args[3:3] = [ "-r", "1" ]
         args.extend(runCmd.strip().split())
         rv = subprocess.check_call(args, stderr=subprocess.STDOUT)
     except Exception as e:
@@ -184,7 +190,7 @@ def runConfiguration(args, iteration, results, cap, start, ret, func):
     cleanBuild(args.cleanCmd)
     buildBinary(args.buildCmd, args.binary, cap, start, ret, func)
     return runBinary(iterDir, args.runCmd, args.perf,
-                     args.htmPerf, args.binary)
+                     args.htmPerf, args.binary, args.fastTune)
 
 ###############################################################################
 # Driver
