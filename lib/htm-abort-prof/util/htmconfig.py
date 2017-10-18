@@ -50,6 +50,16 @@ class Result:
         return percent(transactCycles, cycles)
 
     '''
+    Return the percent of transactions which were aborted due to HTM capacity
+    overflows.
+    '''
+    def capacityAbortRate(self):
+        transactions = perfscrape.getHTMBegins(self.counters)
+        aborted = perfscrape.getHTMCapacityAborts(self.counters)
+        assert transactions > 0, "No transactions"
+        return percent(aborted, transactions)
+
+    '''
     Return the number of functions whose sample rates for abort events is
     higher than a given threshold.
 
@@ -143,7 +153,9 @@ class ConfigureHTM:
 
         # TODO these parameters need to be fine-tuned
         # Minimum percent of execution that should be covered in transactions
-        self.minCovered = 80.0
+        # and maximum desired abort rate, respectively
+        self.minCovered = 90.0
+        self.maxAbortRate = 2.0
 
         # Percent at which a function is considered to have a high abort rate
         self.highAbort = 5.0
@@ -174,10 +186,11 @@ class ConfigureHTM:
         CurResult = self.results[-1]
         slowdown = CurResult.getSlowdown(self.targetTime)
         percentTransactional = CurResult.percentTransactional()
+        abortRate = CurResult.capacityAbortRate()
 
         self.log("Results from configuration: {:.3f}s ({:.2f}% slowdown), " \
-                 "{:.2f}% covered" \
-                 .format(time, slowdown, percentTransactional))
+                 "{:.2f}% covered, {:.2f}% abort rate" \
+                 .format(time, slowdown, percentTransactional, abortRate))
 
         # If we've exhausted our max, we can't do any further configuration.
         if self.iteration >= self.maxIters:
@@ -193,7 +206,8 @@ class ConfigureHTM:
         self.globalConfig.append(newGlobalConfig)
         self.functionConfig.append(newFuncConfig)
 
-        if percentTransactional < self.minCovered:
+        if percentTransactional < self.minCovered or \
+           abortRate > self.maxAbortRate:
             self.log("High abort rate, reducing HTM granularity")
 
             HighAbortFuncs = CurResult.getHighAbortFuncs(self.highAbort)
