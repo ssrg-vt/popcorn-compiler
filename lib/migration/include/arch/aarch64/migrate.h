@@ -53,7 +53,7 @@
         ret = st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, \
                     &regs_src, &regs_dst.aarch); \
          } else if (dst_arch == POWERPC64) { \
-        ret = st_userspace_rewrite_powerpc64(LOCAL_STACK_FRAME, \
+        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
                     &regs_src, &regs_dst.powerpc); \
          } \
         ret; \

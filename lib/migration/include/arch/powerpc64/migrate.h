@@ -13,10 +13,10 @@
 
 #define GET_LOCAL_REGSET \
     struct regset_powerpc64 regs_src; \
-  READ_REGS_powerpc64(regs_src)
+  READ_REGS_POWERPC64(regs_src)
 
 #define LOCAL_STACK_FRAME \
-    (void *)regs_src.r1
+    (void *)regs_src.r[1]
 
 
 #ifdef _NATIVE /* Safe for native execution/debugging */
@@ -36,8 +36,8 @@
 
 #define MIGRATE \
     { \
-          SET_REGS_powerpc64(regs_src); \
-          SET_FRAME_powerpc64(bp, sp); \
+          SET_REGS_POWERPC64(regs_src); \
+          SET_FRAME_POWERPC64(bp, sp); \
           SET_PC_IMM(__migrate_shim_internal); \
         }
 
@@ -60,7 +60,7 @@
        })
 
 #define SET_FP_REGS \
-    SET_FP_REGS_NOCLOBBER_powerpc64(*(struct regset_powerpc64 *)data_ptr->regset)
+    SET_FP_REGS_NOCLOBBER_POWERPC64(*(struct regset_powerpc64 *)data_ptr->regset)
 
 #define MIGRATE \
     asm volatile ("mr 3, %0;" \
@@ -68,7 +68,7 @@
                   "mr 1, %2;" \
                   "mr 31,%3;" \
                   "li 0, %4;" \
-                  "svc ;" \
+                  "sc ;" \
                   : /* Outputs */ \
                   : /* Inputs */ \
                   "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \

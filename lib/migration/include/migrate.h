@@ -41,7 +41,7 @@ void check_migrate(void (*callback)(void*), void *callback_data);
  *                 on destination architecture
  * @param callback_data data to be passed to the callback function
  */
-void migrate(void (*callback)(void*), void *callback_data);
+void migrate(int nid, void (*callback)(void*), void *callback_data);
 
 /**
  * Register a function to be used for migration points inserted by

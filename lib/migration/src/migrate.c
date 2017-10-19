@@ -13,8 +13,6 @@
 #include <time.h>
 #endif
 
-// TODO: continue with migrate.c changes needed consult sanghoon
-
 /* Pierre: due to the-fdata-sections flags, in combination with the way the 
  * library is compiled for each architecture, global variables here end up 
  * placed into sections with different names, making them difficult to link 
@@ -139,7 +137,13 @@ static inline int do_migrate(void *addr)
   return retval;
 }
 
-#else
+#else /* _ENV_SELECT_MIGRATE */
+
+static inline int do_migrate(void *fn)
+{
+    int ret = syscall(SYSCALL_MIGRATION_PROPOSED);
+      return ret >= 0 ? ret : -1;
+}
 
 #endif /* _ENV_SELECT_MIGRATE */
 
@@ -184,7 +188,7 @@ static volatile int __hold = 1;
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.
-static void inline __migrate_shim_internal(void (*callback)(void *),
+static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
                                            void *callback_data)
 {
   struct shim_data data;
@@ -267,7 +271,7 @@ void check_migrate(void (*callback)(void *), void *callback_data)
 }
 
 /* Externally-visible function to invoke migration. */
-void migrate(void (*callback)(void *), void *callback_data)
+void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
   __migrate_shim_internal(nid, callback, callback_data);
 }
