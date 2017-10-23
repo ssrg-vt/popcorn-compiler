@@ -130,10 +130,12 @@ class Configuration:
 
     def recordResult(self, result):
         def calculateTCR(result):
-            return result.time * (1 / result.percentTransactional())
+            ratio = result.percentTransactional() * 0.01
+            return result.time * (1 / ratio)
 
         tcr = calculateTCR(result)
         if tcr < self.bestTCR:
+          self.bestTCR = tcr
           self.bestCap = self.cap
           self.bestStart = self.start
           self.bestRet = self.ret
@@ -163,7 +165,8 @@ class FunctionConfiguration(Configuration):
         self.iteration = 0
 
     def __str__(self):
-        return "{}, # tunings={}".format(Configuration, self.iteration)
+        return "{}, # tunings={}" \
+               .format(Configuration.__str__(self), self.iteration)
 
 '''
 An action taken by the driver class.
@@ -239,9 +242,6 @@ class ConfigureHTM:
             # overall capacity threshold.
             newCap = reduceThresh(globalConfig.cap)
             if newCap == globalConfig.cap:
-                self.log("NOTE: functions {} have many aborts, but we " \
-                         "can't reduce the global capacity threshold " \
-                         "any further".format(HighAbortFuncs))
                 self.keepGoing = False
                 return
 
@@ -260,11 +260,7 @@ class ConfigureHTM:
                     CurConfig.copy(globalConfig)
                 elif funcConfig[Func].iteration < self.maxFuncIters:
                     CurConfig = funcConfig[Func]
-                else:
-                    self.log("NOTE: function '{}' has many aborts but " \
-                             "we ran out of tuning iterations" \
-                             .format(Func))
-                    continue
+                else: continue
 
                 # See if we can reduce the capacity threshold further
                 assert CurConfig != None, "Should have picked a function"
@@ -322,6 +318,7 @@ class ConfigureHTM:
            self.prevAction.config.name != "Global" and \
            self.prevAction.config.iteration == self.maxFuncIters:
             self.prevAction.config.resetBest()
+            newFuncConfig[self.prevAction.config.name].copy(self.prevAction.config)
             self.log("Hit max iterations, rolling back configuration -- {}" \
                      .format(str(self.prevAction.config)))
 
@@ -349,7 +346,7 @@ class ConfigureHTM:
         BestResult = None
         BestTime = sys.float_info.max
         for Result in self.results:
-            if Result.percentTransactional() >= self.minCovered and \
+            if Result.percentTransactional() >= 80.0 and \
                Result.time < BestTime:
                 BestTime = Result.time
                 BestResult = Result
