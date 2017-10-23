@@ -386,8 +386,8 @@ public:
   }
 
   virtual bool underPercentOfThreshold(unsigned percent) const {
-    if((float)LoadBytes < getValuePercent(HTMReadBufSize, percent) &&
-       (float)StoreBytes < getValuePercent(HTMWriteBufSize, percent))
+    if((float)LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
+       (float)StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
       return true;
     else return false;
   }
@@ -637,6 +637,7 @@ public:
   /// Reset all analysis.
   virtual void initializeAnalysis(const Function &F) {
     DoHTMInst = false;
+    DoAbortInstrument = false;
     SE = &getAnalysis<ScalarEvolution>();
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     LP = &getAnalysis<EnumerateLoopPaths>();
@@ -1688,7 +1689,7 @@ private:
       }
     }
 
-    DEBUG(dbgs() << "No induction variable, creating 'migpoint.iv."
+    DEBUG(dbgs() << "No induction variable, adding'migpoint.iv."
                  << std::to_string(NumIVsAdded) << "' to the loop\n");
 
     LLVMContext &C = H->getContext();
@@ -1766,8 +1767,9 @@ private:
       markAsMigPoint(Br, true, true);
 
       // Add check and branch to migration point only every nth iteration.
-      // Round down to the nearest power of 2 so we can use a bit mask to check
-      // if we hit a migration point rather than expensive remainder math.
+      // Round down to nearest power-of-2, which allows us to use a simple
+      // bitmask for migration point check (URem instructions can cause
+      // non-negligible overhead in tight-loops).
       IRBuilder<> Worker(Header->getTerminator());
       InstrStride = roundDownPowerOf2(ItersPerMigPoint * Stride) - 1;
       assert(InstrStride > 0 && "Invalid migration point stride");
