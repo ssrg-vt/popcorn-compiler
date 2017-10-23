@@ -14,6 +14,8 @@ long outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./rewrite_copy_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./rewrite_copy_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./rewrite_copy_x86-64", outer_frame);
 #endif
@@ -34,6 +36,9 @@ long recurse(int depth, int rand1, int rand2, int rand3, int rand4)
   use = (rand() + rand3) % 8;
   now = (rand() + rand4) % 8;
 
+  printf("Before values: %d %d %d %d %d %d %d %d\n",
+         all, of, these, variables, are, in, use, now);
+
   if(depth < max_depth)
     ret = recurse(depth + 1,
                   all + of,
@@ -42,6 +47,9 @@ long recurse(int depth, int rand1, int rand2, int rand3, int rand4)
                   use + now);
   else ret = outer_frame();
   ret %= 8;
+
+  printf("After values: %d %d %d %d %d %d %d %d\n",
+         all, of, these, variables, are, in, use, now);
 
   switch(ret)
   {

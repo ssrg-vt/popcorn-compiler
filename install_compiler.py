@@ -142,6 +142,7 @@ def check_for_prerequisites():
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['aarch64-linux-gnu-gcc',
+                         'powerpc64le-linux-gnu-gcc',
                          'x86_64-linux-gnu-gcc',
                          'x86_64-linux-gnu-g++']
     other_prequisites = ['flex', 'bison', 'svn', 'cmake']
@@ -176,12 +177,13 @@ def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
     llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
     clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
 
-    cmake_flags = ['-DCMAKE_BUILD_TYPE=Release',
-                   '-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
-                   '-DLLVM_ENABLE_RTTI=ON']
+    cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
+                   '-DCMAKE_BUILD_TYPE=Debug',
+                   '-DLLVM_ENABLE_RTTI=ON',
+                   '-DBUILD_SHARED_LIBS=ON']
 
     if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86']
+        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;PowerPC;X86']
 
     with open(os.devnull, 'wb') as FNULL:
 
@@ -375,209 +377,294 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     aarch64_install_path = os.path.join(install_path, 'aarch64')
+    powerpc64le_install_path = os.path.join(install_path, 'powerpc64')
     x86_64_install_path = os.path.join(install_path, 'x86_64')
 
     with open(os.devnull, 'wb') as FNULL:
-
-        #=====================================================
-        # CONFIGURE & INSTALL MUSL
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
-
-        if os.path.isfile('Makefile'):
-            try:
-                rv = subprocess.check_call(['make', 'distclean'])
-            except Exception as e:
-                print('ERROR running distclean!')
-                sys.exit(1)
-            else:
-                if rv != 0:
-                    print('Make distclean failed.')
-                    sys.exit(1)
-
-
-        print("Configuring musl (aarch64)...")
-        try:
-            rv = subprocess.check_call(" ".join(['./configure',
-                                '--prefix=' + aarch64_install_path,
-                                '--target=aarch64-linux-gnu',
-                                '--enable-debug',
-                                '--enable-gcc-wrapper',
-                                '--enable-optimize',
-                                '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target aarch64-linux-gnu -popcorn-libc"']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure musl({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('musl configure failed.')
-                sys.exit(1)
-
-        print('Making musl...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-
-        try:
-            rv = subprocess.check_call(['make', 'distclean'])
-        except Exception as e:
-            print('ERROR running distclean!')
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
-
-        print("Configuring musl (x86-64)...")
-        try:
-            rv = subprocess.check_call(" ".join(['./configure',
-                                '--prefix=' + x86_64_install_path,
-                                '--target=x86_64-linux-gnu',
-                                '--enable-debug',
-                                '--enable-gcc-wrapper',
-                                '--enable-optimize',
-                                '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target x86_64-linux-gnu -popcorn-libc"']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure musl({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('musl configure failed.')
-                sys.exit(1)
-
-        print('Making musl...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        os.chdir(cur_dir)
-
-        #=====================================================
-        # CONFIGURE & INSTALL LIBELF
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/libelf'))
-
-        if os.path.isfile('Makefile'):
-            try:
-                rv = subprocess.check_call(['make', 'distclean'])
-            except Exception as e:
-                print('ERROR running distclean!')
-                sys.exit(1)
-            else:
-                if rv != 0:
-                    print('Make distclean failed.')
-                    sys.exit(1)
-
-        print("Configuring libelf (aarch64)...")
-        try:
-            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-                     '-specs {}"'.format(os.path.join(aarch64_install_path,
-                                                     'lib/musl-gcc.specs'))
-            rv = subprocess.check_call(" ".join([cflags,
-                                        './configure',
-                                        '--host=aarch64-linux-gnu',
-                                        '--prefix=' + aarch64_install_path,
-                                        '--enable-elf64',
-                                        '--disable-shared',
-                                        '--enable-extended-format']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-           print('Could not configure libelf ({})!'.format(e))
-           sys.exit(1)
-        else:
-           if rv != 0:
-               print('libelf configure failed.')
-               sys.exit(1)
-
-        print('Making libelf...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        try:
-            rv = subprocess.check_call(['make', 'distclean'])
-        except Exception as e:
-            print('ERROR running distclean!')
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
-
-        print("Configuring libelf (x86_64)...")
-        try:
-            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
-                     '-specs {}"'.format(os.path.join(x86_64_install_path,
-                                                     'lib/musl-gcc.specs'))
-            rv = subprocess.check_call(" ".join([cflags,
-                                        './configure',
-                                        '--prefix=' + x86_64_install_path,
-                                        '--enable-elf64',
-                                        '--disable-shared',
-                                        '--enable-extended-format']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure libelf({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('libelf configure failed.')
-                sys.exit(1)
-
-        print('Making libelf...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        os.chdir(cur_dir)
-
+#        # TODO all architectures should use musl 1.1.16
+#
+#        #=====================================================
+#        # CONFIGURE & INSTALL MUSL
+#        #=====================================================
+#        os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
+#
+#        if os.path.isfile('Makefile'):
+#            try:
+#                rv = subprocess.check_call(['make', 'distclean'])
+#            except Exception as e:
+#                print('ERROR running distclean!')
+#                sys.exit(1)
+#            else:
+#                if rv != 0:
+#                    print('Make distclean failed.')
+#                    sys.exit(1)
+#
+#
+#        print("Configuring musl (aarch64)...")
+#        try:
+#            rv = subprocess.check_call(" ".join(['./configure',
+#                                '--prefix=' + aarch64_install_path,
+#                                '--target=aarch64-linux-gnu',
+#                                '--enable-debug',
+#                                '--enable-gcc-wrapper',
+#                                '--enable-optimize',
+#                                '--disable-shared',
+#                                'CC={}/bin/clang'.format(install_path),
+#                                'CFLAGS="-target aarch64-linux-gnu -popcorn-libc"']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#        except Exception as e:
+#            print('Could not configure musl({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('musl configure failed.')
+#                sys.exit(1)
+#
+#        print('Making musl...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        try:
+#            rv = subprocess.check_call(['make', 'distclean'])
+#        except Exception as e:
+#            print('ERROR running distclean!')
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make distclean failed.')
+#                sys.exit(1)
+#
+#        print("Configuring musl (x86-64)...")
+#        try:
+#            rv = subprocess.check_call(" ".join(['./configure',
+#                                '--prefix=' + x86_64_install_path,
+#                                '--target=x86_64-linux-gnu',
+#                                '--enable-debug',
+#                                '--enable-gcc-wrapper',
+#                                '--enable-optimize',
+#                                '--disable-shared',
+#                                'CC={}/bin/clang'.format(install_path),
+#                                'CFLAGS="-target x86_64-linux-gnu -popcorn-libc"']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#        except Exception as e:
+#            print('Could not configure musl({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('musl configure failed.')
+#                sys.exit(1)
+#
+#        print('Making musl...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        os.chdir(os.path.join(base_path, 'lib/musl-1.1.16'))
+#
+#        print("Configuring musl (powerpc64)...")
+#        try:
+#            rv = subprocess.check_call(" ".join(['./configure',
+#                                '--prefix=' + powerpc64le_install_path,
+#                                '--target=powerpc64le-linux-gnu',
+#                                '--enable-debug',
+#                                '--enable-gcc-wrapper',
+#                                '--enable-optimize',
+#                                '--disable-shared',
+#                                'CC={}/bin/clang'.format(install_path),
+#                                'CFLAGS="-target powerpc64le-linux-gnu -popcorn-libc"']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#
+#        except Exception as e:
+#            print('Could not configure musl({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('musl configure failed.')
+#                sys.exit(1)
+#
+#        print('Making musl...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        try:
+#            rv = subprocess.check_call(['make', 'distclean'])
+#        except Exception as e:
+#            print('ERROR running distclean!')
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make distclean failed.')
+#                sys.exit(1)
+#
+#        os.chdir(cur_dir)
+#
+#        #=====================================================
+#        # CONFIGURE & INSTALL LIBELF
+#        #=====================================================
+#        os.chdir(os.path.join(base_path, 'lib/libelf'))
+#
+#        if os.path.isfile('Makefile'):
+#            try:
+#                rv = subprocess.check_call(['make', 'distclean'])
+#            except Exception as e:
+#                print('ERROR running distclean!')
+#                sys.exit(1)
+#            else:
+#                if rv != 0:
+#                    print('Make distclean failed.')
+#                    sys.exit(1)
+#
+#        print("Configuring libelf (aarch64)...")
+#        try:
+#            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
+#                     '-specs {}"'.format(os.path.join(aarch64_install_path,
+#                                                     'lib/musl-gcc.specs'))
+#            rv = subprocess.check_call(" ".join([cflags,
+#                                        './configure',
+#                                        '--host=aarch64-linux-gnu',
+#                                        '--prefix=' + aarch64_install_path,
+#                                        '--enable-elf64',
+#                                        '--disable-shared',
+#                                        '--enable-extended-format']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#        except Exception as e:
+#           print('Could not configure libelf ({})!'.format(e))
+#           sys.exit(1)
+#        else:
+#           if rv != 0:
+#               print('libelf configure failed.')
+#               sys.exit(1)
+#
+#        print('Making libelf...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        try:
+#            rv = subprocess.check_call(['make', 'distclean'])
+#        except Exception as e:
+#            print('ERROR running distclean!')
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make distclean failed.')
+#                sys.exit(1)
+#
+#        print("Configuring libelf (powerpc64)...")
+#        try:
+#            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
+#                     '-specs {}"'.format(os.path.join(powerpc64le_install_path,
+#                                                     'lib/musl-gcc.specs'))
+#            rv = subprocess.check_call(" ".join([cflags,
+#                                        './configure',
+#                                        '--host=powerpc64le-linux-gnu',
+#                                        '--prefix=' + powerpc64le_install_path,
+#                                        '--enable-elf64',
+#                                        '--disable-shared',
+#                                        '--enable-extended-format']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#        except Exception as e:
+#            print('Could not configure libelf({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('libelf configure failed.')
+#                sys.exit(1)
+#
+#        print('Making libelf...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        print("Configuring libelf (x86_64)...")
+#        try:
+#            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
+#                     '-specs {}"'.format(os.path.join(x86_64_install_path,
+#                                                     'lib/musl-gcc.specs'))
+#            rv = subprocess.check_call(" ".join([cflags,
+#                                        './configure',
+#                                        '--prefix=' + x86_64_install_path,
+#                                        '--enable-elf64',
+#                                        '--disable-shared',
+#                                        '--enable-extended-format']),
+#                                        #stdout=FNULL,
+#                                        stderr=subprocess.STDOUT,
+#                                        shell=True)
+#        except Exception as e:
+#            print('Could not configure libelf({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('libelf configure failed.')
+#                sys.exit(1)
+#
+#        print('Making libelf...')
+#        try:
+#            print('Running Make...')
+#            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+#            rv = subprocess.check_call(['make', 'install'])
+#        except Exception as e:
+#            print('Could not run Make ({})!'.format(e))
+#            sys.exit(1)
+#        else:
+#            if rv != 0:
+#                print('Make failed.')
+#                sys.exit(1)
+#
+#        os.chdir(cur_dir)
+#
         #=====================================================
         # CONFIGURE & INSTALL LIBBOMP
         #=====================================================
@@ -675,9 +762,11 @@ def install_tools(base_path, install_path, num_threads):
         #=====================================================
         # INSTALL ALIGNMENT TOOL
         #=====================================================
-        os.chdir(os.path.join(base_path, 'tool/alignment'))
 
-        print('Making alignment tool...')
+        # 1. Old java tool, TODO remove it later
+        os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
+
+        print('Making java alignment tool...')
         try:
             print('Running Make...')
             rv = subprocess.check_call(['make', '-j', str(num_threads),
@@ -696,6 +785,25 @@ def install_tools(base_path, install_path, num_threads):
             if rv != 0:
                 print('Make failed.')
                 sys.exit(1)
+
+        os.chdir(cur_dir)
+
+        # 2. Pyalign
+        os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
+
+        print('Making pyalign...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads),
+               'POPCORN={}'.format(install_path), 'install'])
+        except Exception as e:
+             print('Could not run Make ({})!'.format(e))
+             sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed')
+                sys.exit(1)
+
 
         os.chdir(cur_dir)
 

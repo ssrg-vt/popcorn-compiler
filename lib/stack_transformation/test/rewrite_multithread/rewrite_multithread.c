@@ -11,19 +11,17 @@ static int num_threads = 10;
 static int max_depth = 10;
 static st_handle handle = NULL;
 static __thread int post_transform = 0;
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 int outer_frame()
 {
+  int tid = syscall(SYS_gettid);
   if(!post_transform)
   {
-    pthread_mutex_lock(&lock);
-    int tid = syscall(SYS_gettid);
     printf("--> Child %d beginning re-write <--\n", tid);
     TIME_AND_TEST_NO_INIT(handle, outer_frame);
   }
   else
-    pthread_mutex_unlock(&lock);
+    printf("--> Child %d finished re-write <--\n", tid);
   return rand();
 }
 

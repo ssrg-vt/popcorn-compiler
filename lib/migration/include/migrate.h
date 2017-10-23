@@ -1,7 +1,7 @@
 #ifndef _MIGRATE_H
 #define _MIGRATE_H
 
-#if !defined __aarch64__ && !defined __x86_64__
+#if !defined(__aarch64__) && !defined(__powerpc64__) && !defined(__x86_64__)
 # error Unknown/unsupported architecture!
 #endif
 
@@ -17,28 +17,10 @@ extern "C" {
 /* Supported architectures */
 enum arch {
   AARCH64 = 0,
+  POWERPC64,
   X86_64,
   NUM_ARCHES
 };
-
-/**
- * Get the CPUs associated with a given architecture in the system.
- * @param ar the architecture
- * @return the CPUs for the architecture
- */
-cpu_set_t arch_to_cpus(enum arch ar);
-
-/**
- * Get the current architecture.
- * @return the architecture on which we're executing
- */
-cpu_set_t current_arch();
-
-/**
- * Select a destination architecture for migration.
- * @return the architecture on which to migrate
- */
-cpu_set_t select_arch();
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional
@@ -59,7 +41,7 @@ void check_migrate(void (*callback)(void*), void *callback_data);
  *                 on destination architecture
  * @param callback_data data to be passed to the callback function
  */
-void migrate(void (*callback)(void*), void *callback_data);
+void migrate(int nid, void (*callback)(void*), void *callback_data);
 
 /**
  * Register a function to be used for migration points inserted by

@@ -14,7 +14,6 @@
 
 #define AARCH64_STACK_ALIGNMENT 0x10
 #define AARCH64_RA_OFFSET -0x8
-#define AARCH64_SAVED_FBP_OFFSET -0x10
 #define AARCH64_CFA_OFFSET_FUNCENTRY 0x0
 
 static const uint16_t callee_saved_aarch64[] = {
@@ -40,7 +39,6 @@ const struct properties_t properties_aarch64 = {
   .callee_saved = callee_saved_aarch64,
   .callee_saved_size = callee_saved_size_aarch64,
   .ra_offset = AARCH64_RA_OFFSET,
-  .savedfbp_offset = AARCH64_SAVED_FBP_OFFSET,
   .cfa_offset_funcentry = AARCH64_CFA_OFFSET_FUNCENTRY,
 
   .align_sp = align_sp_aarch64,

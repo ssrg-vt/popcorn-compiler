@@ -360,6 +360,7 @@ static void unwind_and_size(rewrite_context src,
     if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
       ST_ERR(1, "could not get source call site information (address=%p)\n",
              REGOPS(src)->pc(ACT(src).regs));
+
     if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
       ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
              REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
@@ -382,10 +383,7 @@ static void unwind_and_size(rewrite_context src,
   src->act = 0;
   dest->act = 0;
 
-  /*
-   * Set destination stack pointer (align if necessary) and finish setting up
-   * outermost frame.
-   */
+  /* Set destination stack pointer and finish setting up outermost frame */
   dest->stack = PROPS(dest)->align_sp(dest->stack_base - stack_size);
   bootstrap_first_frame_funcentry(dest, dest->stack);
   fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
@@ -415,14 +413,24 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
 
   ASSERT(val_src && val_dest, "invalid values\n");
 
-  // TODO hack -- va_list is implemented as a different type for aarch64 &
-  // x86-64, and thus has a different size.  Need to handle more gracefully.
+  // TODO hack -- va_list is implemented with different sizes for different
+  // architectures.  Need to handle more gracefully.
+  //   x86_64:    24
+  //   aarch64:   32
+  //   powerpc64:  8
   if(val_src->is_alloca && VAL_SIZE(val_src) == 24 &&
      val_dest->is_alloca && VAL_SIZE(val_dest) == 32)
     skip = true;
   else if(val_src->is_alloca && VAL_SIZE(val_src) == 32 &&
           val_dest->is_alloca && VAL_SIZE(val_dest) == 24)
     skip = true;
+  else if(val_src->is_alloca && VAL_SIZE(val_src) == 24 &&
+          val_dest->is_alloca && VAL_SIZE(val_dest) == 8)
+    skip = true;
+  else if(val_src->is_alloca && VAL_SIZE(val_src) == 8 &&
+          val_dest->is_alloca && VAL_SIZE(val_dest) == 24)
+    skip = true;
+
   if(skip)
   {
     ST_INFO("Skipping va_list (different size for aarch64/x86-64)\n");

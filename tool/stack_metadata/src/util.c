@@ -25,9 +25,9 @@ bool check_elf_ehdr(Elf *e)
 
   /* Architecture checks */
   if(!(ehdr = elf64_getehdr(e))) return false;
-  if(ehdr->e_machine != EM_X86_64 &&
-     ehdr->e_machine != EM_AARCH64 &&
-     ehdr->e_machine != EM_PPC64)
+  if(ehdr->e_machine != EM_AARCH64 &&
+     ehdr->e_machine != EM_PPC64 &&
+     ehdr->e_machine != EM_X86_64)
     return false;
 
   return true;

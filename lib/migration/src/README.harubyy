@@ -1,0 +1,4 @@
+# Environment variables are for Rob to test migration quickly by indicating migration points
+# We don't migrate at every call of a function. We only migrate at the first call. That's wky keys are set to 0, then 1 (if it's migrated) and then stays at 1 since we're not going to migrate again (again for testing purposes)
+# The sources where SET_FP_REGS...etc are in the ~/LLVMPlayBox/popcorn-compiler-arm-x86/lib/migration/include/arch/migrate.h
+# We call MIGRATE with __migrate_shim... itself so that on the target architecture we go back to the beginning of __migrate_shim and initially data_ptr..etc are set to null. These are set on the target architecture
