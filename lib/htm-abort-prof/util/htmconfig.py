@@ -361,10 +361,9 @@ class ConfigureHTM:
         FuncConf = self.functionConfig[Idx]
         Slowdown = BestResult.getSlowdown(self.targetTime)
         self.logFinal("Best configuration:")
-        self.logFinal("Time: {:.3f}s, {:.2f}% slowdown" \
-                      .format(BestTime, Slowdown))
-        self.logFinal("Percent covered: {:.2f}%" \
-                      .format(BestResult.percentTransactional()))
+        self.logFinal("Time: {:.3f}s, {:.2f}% slowdown, {:.2f}% covered" \
+                      .format(BestTime, Slowdown,
+                              BestResult.percentTransactional()))
         self.logFinal
         self.logFinal(GlobalConf)
         for Func in FuncConf:
