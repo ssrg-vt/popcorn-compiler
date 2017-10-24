@@ -70,6 +70,13 @@ const static cl::opt<bool>
 MoreMigPoints("more-mig-points", cl::Hidden, cl::init(false),
   cl::desc("Add additional migration points into the body of functions"));
 
+/// Target cycles between migration points when instrumenting applications with
+/// more migration points (but without HTM).  Allows tuning trade off between
+/// migration point response time and overhead.
+const static cl::opt<unsigned>
+MillionCyclesBetweenMigPoints("migpoint-cycles", cl::Hidden, cl::init(50),
+  cl::desc("Cycles between migration points, in millions of cycles"));
+
 /// Percent of capacity (determined by analysis type, e.g., HTM buffer size) at
 /// which point weight objects will request a new migration point be inserted.
 static cl::opt<unsigned>
@@ -114,13 +121,6 @@ FuncRetThreshold("func-ret", cl::Hidden, cl::ZeroOrMore,
 const static cl::list<std::string>
 FuncNoInst("func-no-inst", cl::Hidden, cl::ZeroOrMore,
   cl::desc("Don't instrument a particular function with migration points"));
-
-/// Target cycles between migration points when instrumenting applications with
-/// more migration points (but without HTM).  Allows tuning trade off between
-/// migration point response time and overhead.
-const static cl::opt<size_t>
-MillionCyclesBetweenMigPoints("migpoint-cycles", cl::Hidden, cl::init(50),
-  cl::desc("Cycles between migration points, in millions of cycles"));
 
 /// Cover the application in transactional execution by inserting HTM
 /// stop/start instructions at migration points.
@@ -743,7 +743,16 @@ public:
         dbgs() << "\n-> Analyzing function body to add migration points <-\n"
                << "\nCapacity threshold: " << std::to_string(CapacityThreshold)
                << "\nStart threshold: " << std::to_string(StartThreshold)
-               << "\nReturn threshold: " << std::to_string(RetThreshold) << "\n"
+               << "\nReturn threshold: " << std::to_string(RetThreshold);
+
+        if(DoHTMInst)
+          dbgs() << "\nHTM read buffer size: "
+                 << std::to_string(HTMReadBufSizeArg) << "kb"
+                 << "\nHTM write buffer size: "
+                 << std::to_string(HTMWriteBufSizeArg) << "kb\n";
+        else
+          dbgs() << "\nTarget millions of cycles between migration points: "
+                 << std::to_string(MillionCyclesBetweenMigPoints) << "\n";
       );
 
       // We by default mark the function start as a migration point, but if we
