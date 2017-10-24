@@ -141,8 +141,8 @@ static inline int do_migrate(void *addr)
 
 static inline int do_migrate(void *fn)
 {
-    int ret = syscall(SYSCALL_MIGRATION_PROPOSED);
-      return ret >= 0 ? ret : -1;
+  int ret = syscall(SYSCALL_MIGRATION_PROPOSED);
+  return ret >= 0 ? ret : -1;
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
@@ -163,21 +163,21 @@ int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
 
 static void __attribute__((constructor)) __init_nodes_info(void)
 {
- int i;
- struct node_info {
-   unsigned int status;
-   int arch;
-   int distance;
- } ni;
+  int i;
+  struct node_info {
+    unsigned int status;
+    int arch;
+    int distance;
+  } ni;
 
- for (i = 0; i < MAX_POPCORN_NODES; i++) {
-   if (syscall(SYSCALL_GET_NODE_INFO, i, &ni) == 0
-       && ni.status == 1) {
-     archs[i] = ni.arch;
-   } else {
-     archs[i] = NUM_ARCHES;
-   }
- }
+  for (i = 0; i < MAX_POPCORN_NODES; i++) {
+    if (syscall(SYSCALL_GET_NODE_INFO, i, &ni) == 0
+        && ni.status == 1) {
+      archs[i] = ni.arch;
+    } else {
+      archs[i] = NUM_ARCHES;
+    }
+  }
 }
 
 #ifdef _DEBUG
@@ -246,21 +246,21 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
       printf("Stack transformation time: %ldns\n", end_ns - start_ns);
 #endif
 
-    if(dst_arch == X86_64) {
-      regs_dst.x86.rip = __migrate_shim_internal;
-      sp = (unsigned long)regs_dst.x86.rsp;
-      bp = (unsigned long)regs_dst.x86.rbp;
-    } else if (dst_arch == AARCH64) {
-      regs_dst.aarch.pc = __migrate_shim_internal;
-      sp = (unsigned long)regs_dst.aarch.sp;
-      bp = (unsigned long)regs_dst.aarch.x[29];
-    } else if (dst_arch == POWERPC64) {
-      regs_dst.powerpc.pc = __migrate_shim_internal;
-      sp = (unsigned long)regs_dst.powerpc.r[1];
-      bp = (unsigned long)regs_dst.powerpc.r[31];
-    } else {
-      assert(0 && "Unsupported architecture!");
-    }
+      if(dst_arch == X86_64) {
+        regs_dst.x86.rip = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.x86.rsp;
+        bp = (unsigned long)regs_dst.x86.rbp;
+      } else if (dst_arch == AARCH64) {
+        regs_dst.aarch.pc = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.aarch.sp;
+        bp = (unsigned long)regs_dst.aarch.x[29];
+      } else if (dst_arch == POWERPC64) {
+        regs_dst.powerpc.pc = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.powerpc.r[1];
+        bp = (unsigned long)regs_dst.powerpc.r[31];
+      } else {
+        assert(0 && "Unsupported architecture!");
+      }
 
       MIGRATE;
       assert(0 && "Couldn't migrate!");
@@ -272,8 +272,8 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
-    if (nid >= 0)
-      __migrate_shim_internal(nid, callback, callback_data);
+  if (nid >= 0)
+    __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Externally-visible function to invoke migration. */
@@ -304,8 +304,8 @@ void __cyg_profile_func_enter(void *this_fn, void *call_site)
 /* Hook inserted by compiler at the end of a function. */
 void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
-   int nid = do_migrate(this_fn);
-   if (nid >= 0)
-     __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
+  int nid = do_migrate(this_fn);
+  if (nid >= 0)
+    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
 }
 
