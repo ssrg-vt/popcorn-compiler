@@ -40,7 +40,9 @@ def runProcess(args):
     cmd[0] = os.path.abspath(cmd[0])
     assert os.path.isfile(cmd[0]), "Invalid binary '{}'".format(cmd[0])
     try:
-        process = subprocess.Popen(stdout=subprocess.PIPE,
+        print("Running process '{}'...".format(cmd[0]))
+        process = subprocess.Popen(cmd,
+                                   stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
     except Exception as e:
         print("Could not run the binary ({})".format(e))
@@ -52,16 +54,23 @@ def signalProcess(args, process):
     delta = args.period * 0.1
     low = args.period - delta
     high = args.period + delta
+    numSignalled = 0
+    print("Signalling every {} seconds, += 10%".format(args.period))
 
     # Periodically (+/- delta) signal the application
     while process.poll() is None:
         process.send_signal(args.signal)
         time.sleep(random.uniform(low, high))
+        numSignalled += 1
+
+    print("Signalled {} times".format(numSignalled))
 
 def writeOutput(args, process):
     assert process.poll() is not None, "Process didn't finish"
     with open(args.out, 'w') as fp:
-        io = process.communicate()
+        print("Writing output to '{}'".format(args.out))
+        out, err = process.communicate()
+        assert out is not None, "No output from process"
         fp.write(out.decode("utf-8"))
 
 ###############################################################################
@@ -72,5 +81,5 @@ if __name__ == "__main__":
     args = parseArguments()
     process = runProcess(args)
     signalProcess(args, process)
-    writeOutput
+    writeOutput(args, process)
 
