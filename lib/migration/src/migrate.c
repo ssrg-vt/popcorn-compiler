@@ -8,36 +8,17 @@
 #include <stack_transform.h>
 #include <sys/prctl.h>
 #include "migrate.h"
+#include "config.h"
 
-#ifdef _TIME_REWRITE
+#if _SIG_MIGRATION == 1
+#include "trigger.h"
+#endif
+
+#if _TIME_REWRITE == 1
 #include <time.h>
 #endif
 
-/* Pierre: due to the-fdata-sections flags, in combination with the way the 
- * library is compiled for each architecture, global variables here end up 
- * placed into sections with different names, making them difficult to link 
- * back together from the alignment tool  perspective without ugly hacks. 
- * So, the solution here is to force these global variables to be in a custom 
- * section. By construction it will have the same name on both architecture. 
- * However for soem reason this doesn't work if the global variable is static so 
- * I had to remove the static keyword for the concerned variables. They are:
- * - cpus_x86
- * - migrate_callback
- * - migrate_callback_data
- * - popcorn_vdso
- */
-//int cpus_x86 __attribute__ ((section (".bss.cpus_x86"))) = 0;
-
-/* Architecture-specific assembly for migrating between architectures. */
-#ifdef __aarch64__
-# include <arch/aarch64/migrate.h>
-#elif defined(__powerpc64__)
-# include <arch/powerpc64/migrate.h>
-#else
-# include <arch/x86_64/migrate.h>
-#endif
-
-#ifdef _ENV_SELECT_MIGRATE
+#if _ENV_SELECT_MIGRATE == 1
 
 /*
  * The user can specify at which point a thread should migrate by specifying
@@ -141,15 +122,10 @@ static inline int do_migrate(void *addr)
 
 static inline int do_migrate(void *fn)
 {
-  int ret = syscall(SYSCALL_MIGRATION_PROPOSED);
-  return ret >= 0 ? ret : -1;
+  return syscall(SYSCALL_MIGRATION_PROPOSED);
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
-
-/* Flag set by signal handler indicating thread should migrate. */
-// TODO make this TLS
-int __migrate_flag = -1;
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -158,7 +134,6 @@ struct shim_data {
   void *regset;
 };
 
-#define MAX_POPCORN_NODES 32
 int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
 
 static void __attribute__((constructor)) __init_nodes_info(void)
@@ -180,7 +155,7 @@ static void __attribute__((constructor)) __init_nodes_info(void)
   }
 }
 
-#ifdef _DEBUG
+#if _DEBUG == 1
 /*
  * Flag indicating we should spin post-migration in order to wait until a
  * debugger can attach.
@@ -199,7 +174,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 
   if(data_ptr) // Post-migration
   {
-#ifdef _DEBUG
+#if _DEBUG == 1
     // Hold until we can attach post-migration
     while(__hold);
 #endif
@@ -210,12 +185,12 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
     // Hack: the kernel can't set floating-point registers, so we have to
     // manually copy them over in userspace
     SET_FP_REGS;
-
-    // Reset the migration flag
-    __migrate_flag = -1;
   }
   else // Invoke migration
   {
+#if _SIG_MIGRATION == 1
+    clear_migrate_flag();
+#endif
     const int dst_arch = archs[nid];
 
     GET_LOCAL_REGSET;
@@ -227,19 +202,19 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 
     unsigned long sp = 0, bp = 0;
             
-#ifdef _TIME_REWRITE
-    struct timespec start, end;
-    unsigned long start_ns, end_ns;
-
-#endif
     data.callback = callback;
     data.callback_data = callback_data;
     data.regset = &regs_dst;
     *pthread_migrate_args() = &data;
 
+#if _TIME_REWRITE == 1
+    struct timespec start, end;
+    unsigned long start_ns, end_ns;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
     if(REWRITE_STACK)
     {
-#ifdef _TIME_REWRITE
+#if _TIME_REWRITE == 1
       clock_gettime(CLOCK_MONOTONIC, &end);
       start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
       end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
@@ -283,8 +258,10 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
 }
 
 /* Callback function & data for migration points inserted via compiler. */
-void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
-void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data")))= NULL;
+void (*migrate_callback)(void *)
+__attribute__ ((section(".bss.migrate_callback"))) = NULL;
+void *migrate_callback_data
+__attribute__ ((section(".bss.migrate_callback_data"))) = NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)
@@ -302,10 +279,6 @@ void __cyg_profile_func_enter(void *this_fn, void *call_site)
 }
 
 /* Hook inserted by compiler at the end of a function. */
-void __cyg_profile_func_exit(void *this_fn, void *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
+void __attribute__((alias("__cyg_profile_func_enter")))
+__cyg_profile_func_exit(void *this_fn, void *call_site);
 
