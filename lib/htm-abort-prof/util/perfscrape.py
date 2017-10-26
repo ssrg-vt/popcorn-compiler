@@ -173,6 +173,13 @@ def scrapePerfReport(perf, filename):
             Percent = float(fields[0][:-1])
             Symbols[Event].append((Symbol, Percent))
 
+    # Remove events for which we don't have any samples
+    for k,v in list(NumSamples.items()):
+        if v == 0:
+            del NumSamples[k]
+            del EventCount[k]
+            # perf-report won't print any symbols
+
     assert len(NumSamples) > 0 and len(EventCount) > 0 and len(Symbols) > 0, \
            "No samples found in perf-record output ({})".format(args)
     assert len(NumSamples) == len(EventCount) and \

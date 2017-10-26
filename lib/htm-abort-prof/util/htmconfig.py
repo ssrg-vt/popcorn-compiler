@@ -223,15 +223,16 @@ class ConfigureHTM:
         self.decisions.write("[ Final Result ] {}\n".format(str(msg)))
 
     def getConfiguration(self):
-        # buildBinary() expects a function -> capacity threshold dictionary
-        configDict = {}
+        # Construct function-specific arguments for buildBinary()
+        funcArgs = ""
         functionConfig = self.functionConfig[-1]
         for func in functionConfig:
-            configDict[func] = functionConfig[func].cap
+            funcArgs += "-mllvm -func-cap={},{} " \
+                        .format(func, functionConfig[func].cap)
 
         globalConfig = self.globalConfig[-1]
         return globalConfig.cap, globalConfig.start, \
-               globalConfig.ret, configDict
+               globalConfig.ret, funcArgs[:-1]
 
     def reduceAbortRate(self, result, globalConfig, funcConfig):
         self.log("High abort rate, reducing HTM granularity")
@@ -298,7 +299,7 @@ class ConfigureHTM:
                  .format(time, slowdown, percentTx, abortRate))
 
         # If we've exhausted our max, we can't do any further configuration.
-        if self.iteration >= self.maxIters:
+        if self.iteration > self.maxIters:
             self.log("Hit maximum number of iterations")
             self.keepGoing = False
             return
@@ -364,7 +365,6 @@ class ConfigureHTM:
         self.logFinal("Time: {:.3f}s, {:.2f}% slowdown, {:.2f}% covered" \
                       .format(BestTime, Slowdown,
                               BestResult.percentTransactional()))
-        self.logFinal
         self.logFinal(GlobalConf)
         for Func in FuncConf:
             self.logFinal(FuncConf[Func])
