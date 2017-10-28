@@ -16,8 +16,7 @@ archs = {	Arch.X86 : x86_obj,
 			Arch.ARM : arm_obj,
 			Arch.POWER : power_obj}
 
-#TODO add power later here
-considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
+considered_archs = [] # filled by setConsideredArchs
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata",
 		".tbss"]
 
@@ -28,16 +27,17 @@ def buildArgParser():
 	res = argparse.ArgumentParser(description="Align symbols in binaries from" +
 		" multiple ISAs")
 
-	res.add_argument("--x86-bin", help="Path to the input x86 executable",
-		required=True)
-	res.add_argument("--arm-bin", help="Path to the input ARM executable",
-		required=True)
+	res.add_argument("--x86-bin", help="Path to the input x86 executable")
+	res.add_argument("--arm-bin", help="Path to the input ARM executable")
+        res.add_argument("--ppc-bin", help = "Path to the input PPC64 " + 
+                "executable")
 	res.add_argument("--x86-map", help="Path to the x86 memory map file " +
-		"corresponding to the x86 binary (generated through ld -MAP)",
-		required=True)
+		"corresponding to the x86 binary (generated through ld -MAP)")
 	res.add_argument("--arm-map", help="Path to the ARM memory map file " +
-		"corresponding to the x86 binary (generated through ld -MAP)",
-		required=True)
+		"corresponding to the ARM binary (generated through ld -MAP)")
+	res.add_argument("--ppc-map", help="Path to the PPC64 memory map "
+                "file corresponding to the PPC64 binary (generated through " + 
+                "ld -MAP)")
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")
 	res.add_argument("--clean-work-dir", type=bool,
@@ -46,26 +46,78 @@ def buildArgParser():
 	"script", default="linker_script_x86.x")
 	res.add_argument("--output-arm-ls", help="Path to the output ARM linker " +
 	"script", default="linker_script_arm.x")
+        res.add_argument("--output-ppc-ls", help="Path to the output PPC64 " + 
+        "linker script", default="linker_script_ppc.x")
 
 	return res
 
 def parseAndCheckArgs(parser):
 	""" Parse command line arguments and perform some sanity checks """
 	args = parser.parse_args()
-	# TODO checks here (ex wit power we can have 2 or 3 architectures to take
-	# care of
+    
+    # For now we only support 2 nodes setups so the combinations are:
+    # x86-arm, x86-ppc, arm-ppc
+
+    if (args.x86_bin and args.arm_bin and args.power_bin) or \
+            (args.x86_map and args.arm_map and args.ppc_map):
+        er("Only 2-nodes setups are supported, so bin & maps parameters " +
+            "should only be x86-arm or x86-ppc or arm-ppc")
+        os.exit(-1)
+
+    if args.x86_bin and args.arm_bin:
+        if (not args.x86_map) or (not args.arm_map):
+            er("Mapfile parameter missing for some/all archs")
+            os.exit(-1)
+
+    if args.x86_bin and args.ppc_bin:
+        if (not args.x86_map) or (not args.ppc_map):
+            er("Mapfile parameter missing for some/all archs")
+            os.exit(-1)
+
+    if args.arm_bin and args.ppc_bin:
+        if (not args.arm_map) or (not args.ppc_map):
+            er("Mapfile parameter missing for some/all archs")
+            os.exit(-1)
 
 	return args
 
+def setConsideredArchs(args):
+    """ Set the considered arch pair from the command line argument"""
+    # No need to perform sanity checks as this function is supposed to be called
+    # after parseAndCheckArgs
+
+    if args.x86_bin and args.arm_bin:
+        considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
+
+    if args.x86_bin and args.ppc_bin:
+        considered_archs = [archs[Arch.X86], archs[Arch.POWER]]
+
+    if args.arm_bin and args.ppc_bin:
+        considered_archs = [archs[Arch.X86], archs[Arch.POWER]]
+
 def setInputOutputs(args):
 	""" Fill internal data structures with info about input and ouput files """
+    
+    bins = {Arch.X86 : args.x86_bin, Arch.ARM : args.arm_bin, 
+            Arch.POWER : args.ppc_bin}
+    maps = {Arch.X86 : args.x86_map, Arch.ARM : args.arm_map, 
+            Arch.POWER : args.ppc_map}
+    lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : output_arm_ls, 
+            Arch.POWER : args.output_ppc_ls}
 
-	archs[Arch.X86].setExecutable(os.path.abspath(args.x86_bin))
-	archs[Arch.ARM].setExecutable(os.path.abspath(args.arm_bin))
-	archs[Arch.X86].setMapFile(os.path.abspath(args.x86_map))
-	archs[Arch.ARM].setMapFile(os.path.abspath(args.arm_map))
-	archs[Arch.X86].setLinkerScript(os.path.abspath(args.output_x86_ls))
-	archs[Arch.ARM].setLinkerScript(os.path.abspath(args.output_arm_ls))
+    for k, arch in considered_archs.iteritem():
+        arch.setExecutable(os.path.abspath(bins[k]))
+        arch.setMapFile(os.path.abspath(maps[k]))
+        arch.setLinkerScript(os.path.abspath(lss[k]))
+
+    # TODO is the above stuff working ^^
+
+#	archs[Arch.X86].setExecutable(os.path.abspath(args.x86_bin))
+#	archs[Arch.ARM].setExecutable(os.path.abspath(args.arm_bin))
+#	archs[Arch.X86].setMapFile(os.path.abspath(args.x86_map))
+#	archs[Arch.ARM].setMapFile(os.path.abspath(args.arm_map))
+#	archs[Arch.X86].setLinkerScript(os.path.abspath(args.output_x86_ls))
+#	archs[Arch.ARM].setLinkerScript(os.path.abspath(args.output_arm_ls))
 
 def orderSymbolList(sl):
 	"""In each section, the symbols will be ordered by number of architectures
@@ -160,7 +212,9 @@ if __name__ == "__main__":
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
 
-	# Grab input/output files from the command line arguments
+	# Set the considered architectures then grab input/output files from the 
+    # command line arguments
+    setConsideredArchs(args)
 	setInputOutputs(args)
 
 	# List of per-section symbols that we are going to fill and manipulate

@@ -1,0 +1,38 @@
+#!/bin/bash
+
+if [ "$1" == "--help" ] || [ "$#" -ne 1 ]; then
+  echo "Usage:"
+  echo "     \$1: target (x86_64 / aarch64 / powerpc64le)"
+  exit 0
+fi
+
+target_path=$1
+gcc_path="gcc"
+if [ $1 == "powerpc64le"  ]; then
+  target_path="powerpc64"
+  target_ld_flag="elf64-powerpcle"
+  gcc_path="gcc-cross"
+elif [ $1 == "aarch64"  ]; then
+  target_ld_flag="aarch64linux"
+  gcc_path="gcc-cross"
+elif [ $1 == "x86_64"  ]; then
+  target_ld_flag="elf_x86_64"
+else 
+  echo "unsupported target!"
+  exit 0
+fi
+
+mkdir -p build_$target_path/
+
+/usr/local/popcorn/bin/clang -target $1-linux-gnu -O0 -Wall -nostdinc -g -popcorn-migratable -fno-common -ftls-model=initial-exec -c  \
+-isystem /usr/local/popcorn/$target_path/include -o helloWorld.o helloWorld.c
+
+/usr/local/popcorn/bin/ld.gold -o build_$target_path/test_$target_path helloWorld_$1.o -z relro --hash-style=gnu --build-id -static  \
+-m $target_ld_flag -L/usr/local/popcorn/$target_path/lib -L/usr/lib/$gcc_path/$1-linux-gnu/5 /usr/local/popcorn/$target_path/lib/crt1.o \
+/usr/local/popcorn/$target_path/lib/libc.a /usr/local/popcorn/$target_path/lib/libmigrate.a /usr/local/popcorn/$target_path/lib/libstack-transform.a \
+/usr/local/popcorn/$target_path/lib/libelf.a /usr/local/popcorn/$target_path/lib/libpthread.a /usr/local/popcorn/$target_path/lib/libc.a /usr/local/popcorn/$target_path/lib/libm.a \
+ --start-group -lgcc -lgcc_eh --end-group -Map build_$target_path/map.txt
+
+# linking sanity check
+for i in `ls *.o`; do echo $i; readelf -h $i | grep Machine; done
+
