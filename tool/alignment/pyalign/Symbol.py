@@ -196,7 +196,8 @@ class Symbol:
 
 					# First handle the special case of user object files that
 					# differs by name because they are for different archs
-					# but result of the compilation of the same user source file
+					# but are the result of the compilation of the same user 
+                    # source file
 					# FIXME this is hardcoded for x86-ARM for now, we need a
 					# convention for the user object files created by the
 					# popcorn compiler. Need a better way to handle that when

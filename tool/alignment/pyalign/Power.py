@@ -2,8 +2,6 @@
 Class representing the power8 architecture specific attributes
 """
 
-# TODO This file needs to be completed when the power compiler is working
-
 from AbstractArchitecture import AbstractArchitecture
 from Arch import Arch
 import Symbol
