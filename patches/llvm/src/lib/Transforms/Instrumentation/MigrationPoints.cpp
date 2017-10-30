@@ -167,7 +167,8 @@ AbortCount("abort-count", cl::Hidden, cl::init(""),
 #define HTMWriteBufSize (HTMWriteBufSizeArg * KB)
 
 #define MILLION 1000000
-#define CyclesBetweenMigPoints (MillionCyclesBetweenMigPoints * MILLION)
+#define CyclesBetweenMigPoints \
+  ((unsigned long)MillionCyclesBetweenMigPoints * MILLION)
 #define MEM_WEIGHT 40
 
 STATISTIC(NumMigPoints, "Number of migration points added");
@@ -185,15 +186,15 @@ static int64_t getValueSize(const Value *V) {
 }
 
 /// Return a percentage of a value.
-static inline float getValuePercent(size_t V, unsigned P) {
+static inline size_t getValuePercent(size_t V, unsigned P) {
   assert(P <= 100 && "Invalid percentage");
-  return ((float)V) * (((float)P) / 100.0f);
+  return floor(((double)V) * (((double)P) / 100.0));
 }
 
 /// Return the number of cache lines accessed for a given number of
 /// (assumed contiguous) bytes.
 static inline size_t getNumCacheLines(size_t Bytes, unsigned LineSize) {
-  return ceil((float)Bytes / (float)LineSize);
+  return ceil((double)Bytes / (double)LineSize);
 }
 
 /// Abstract weight metric.  Child classes implement for analyzing different
@@ -386,21 +387,21 @@ public:
   /// The number of times this weight's load & stores could be executed without
   /// overflowing the capacity threshold of the HTM buffers.
   virtual size_t numIters() const {
-    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX;
-    float FPHtmReadSize = getValuePercent(HTMReadBufSize, CapacityThreshold),
-          FPHtmWriteSize = getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX,
+      FPHtmReadSize = getValuePercent(HTMReadBufSize, CapacityThreshold),
+      FPHtmWriteSize = getValuePercent(HTMWriteBufSize, CapacityThreshold);
 
     if(!LoadBytes && !StoreBytes) return 1024; // Return a safe value
     else {
-      if(LoadBytes) NumLoadIters = FPHtmReadSize / (float)LoadBytes;
-      if(StoreBytes) NumStoreIters = FPHtmWriteSize / (float)StoreBytes;
+      if(LoadBytes) NumLoadIters = FPHtmReadSize / LoadBytes;
+      if(StoreBytes) NumStoreIters = FPHtmWriteSize / StoreBytes;
       return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
     }
   }
 
   virtual bool underPercentOfThreshold(unsigned percent) const {
-    if((float)LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
-       (float)StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
+    if(LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
+       StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
       return true;
     else return false;
   }
@@ -543,15 +544,14 @@ public:
   virtual size_t numIters() const {
     if(!Cycles) return 1048576; // Return a safe value
     else {
-      float FPCycleCap = getValuePercent(CyclesBetweenMigPoints,
-                                         CapacityThreshold);
-      return FPCycleCap / (float)Cycles;
+      size_t FPCycleCap = getValuePercent(CyclesBetweenMigPoints,
+                                          CapacityThreshold);
+      return FPCycleCap / Cycles;
     }
   }
 
   virtual bool underPercentOfThreshold(unsigned percent) const {
-    if((float)Cycles <= getValuePercent(CyclesBetweenMigPoints, percent))
-      return true;
+    if(Cycles <= getValuePercent(CyclesBetweenMigPoints, percent)) return true;
     else return false;
   }
 
@@ -1208,8 +1208,11 @@ private:
 
     // If we can't get the size assume it's a big memory operation
     if(Size < 0) return true;
-    else return Size >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
-                Size >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    else {
+      size_t USize = (size_t)Size;
+      return USize >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
+             USize >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    }
   }
 
   /// Return whether the instruction is a libc I/O call.
@@ -1443,8 +1446,11 @@ private:
         BBWeights[CurBB] = std::move(PredWeight);
       }
       else if(!MarkedLoops.count(BlockLoop)) {
-        // Block is in a sub-loop, analyze & mark sub-loop's entry
-        AddedMigPoint |= traverseLoopEntry(BlockLoop);
+        // Block is in a sub-loop, analyze & mark sub-loop's entry.  Only
+        // analyze direct sub-loops, as deeper-nested (2+) loops will have
+        // already been analyzed by their parents.
+        if(BlockLoop->getLoopDepth() - L->getLoopDepth() == 1)
+          AddedMigPoint |= traverseLoopEntry(BlockLoop);
         MarkedLoops.insert(BlockLoop);
       }
     }
@@ -1535,6 +1541,7 @@ private:
           PathWeight->analyze(Inst, DL);
       }
     }
+    PathWeight->analyze(PathEndInst, DL);
 
     return PathWeight;
   }
@@ -1625,6 +1632,7 @@ private:
       }
       if(Node->getBlock() == Exit) break;
     }
+    PathWeight->analyze(PathEndInst, DL);
 
     return PathWeight;
   }
@@ -1680,8 +1688,8 @@ private:
     if(HasSpPath) {
       // Optimization: if the loop trip count is smaller than the number of
       // iterations between migration points, elide loop instrumentation.
-      unsigned NumIters = SpanningWeight->numIters(),
-               TripCount = getTripCount(L);
+      size_t NumIters = SpanningWeight->numIters();
+      unsigned TripCount = getTripCount(L);
       assert(NumIters > 0 && "Should have added a migration point");
       if(TripCount && TripCount < NumIters) {
         DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
