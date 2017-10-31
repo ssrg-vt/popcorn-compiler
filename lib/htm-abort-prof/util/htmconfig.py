@@ -206,7 +206,7 @@ class ConfigureHTM:
         # TODO these parameters need to be fine-tuned
         # Minimum percent of execution that should be covered in transactions
         # and maximum desired abort rate, respectively
-        self.minCovered = 90.0
+        self.minCovered = 95.0
         self.maxAbortRate = 2.0
 
         # Percent at which a function is considered to have a high abort rate
@@ -223,16 +223,17 @@ class ConfigureHTM:
         self.decisions.write("[ Final Result ] {}\n".format(str(msg)))
 
     def getConfiguration(self):
+        otherArgs = "-mllvm -htm-execution"
+
         # Construct function-specific arguments for buildBinary()
-        funcArgs = ""
         functionConfig = self.functionConfig[-1]
         for func in functionConfig:
-            funcArgs += "-mllvm -func-cap={},{} " \
-                        .format(func, functionConfig[func].cap)
+            otherArgs += " -mllvm -func-cap={},{}" \
+                         .format(func, functionConfig[func].cap)
 
         globalConfig = self.globalConfig[-1]
         return globalConfig.cap, globalConfig.start, \
-               globalConfig.ret, funcArgs[:-1]
+               globalConfig.ret, otherArgs
 
     def reduceAbortRate(self, result, globalConfig, funcConfig):
         self.log("High abort rate, reducing HTM granularity")
@@ -287,7 +288,7 @@ class ConfigureHTM:
             self.log("Reducing capacity threshold for '{}' to {}" \
                      .format(CurConfig.name, CurConfig.cap))
 
-    def analyze(self, time, counters, numSamples, symbolSamples):
+    def analyze(self, time, counters, numSamples, symbolSamples, respStats):
         self.results.append(Result(time, counters, numSamples, symbolSamples))
         CurResult = self.results[-1]
         slowdown = CurResult.getSlowdown(self.targetTime)
@@ -297,6 +298,13 @@ class ConfigureHTM:
         self.log("Results from configuration: {:.3f}s ({:.2f}% slowdown), " \
                  "{:.2f}% covered, {:.2f}% abort rate" \
                  .format(time, slowdown, percentTx, abortRate))
+
+        def statStr(stats):
+            result = ""
+            for stat in stats:
+                result += "{}={:.1f}, ".format(stat, stats[stat])
+            return result[:-2]
+        self.log("Response time statistics: {}".format(statStr(respStats)))
 
         # If we've exhausted our max, we can't do any further configuration.
         if self.iteration > self.maxIters:

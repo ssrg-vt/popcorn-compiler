@@ -2,6 +2,7 @@
 
 import sys
 import copy
+import itertools
 import perfscrape
 
 def percent(numerator, denominator):
@@ -10,6 +11,8 @@ def percent(numerator, denominator):
 
 '''
 The main driver class which analyzes results and makes decisions.
+
+TODO this needs to be unified with ConfigureHTM.
 '''
 class ConfigureCycles:
     def __init__(self, targetTime, slowdownThresh, maxIters, resultsFolder):
@@ -25,7 +28,9 @@ class ConfigureCycles:
         self.cap = 95
         self.start = 95
         self.ret = 95
-        self.cycVals = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+        self.cycVals = [1, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+        self.maxIters = [2048, 8192, 32768, 1048576, 4294967295]
+        self.configs = list(itertools.product(self.cycVals, self.maxIters))
 
     def __del__(self):
         self.decisions.close()
@@ -38,11 +43,14 @@ class ConfigureCycles:
         self.decisions.write("[ Final Result ] {}\n".format(str(msg)))
 
     def getConfiguration(self):
-        self.log("Configuration: capacity={}, start={}, return={}, cycles={}" \
-                 .format(self.cap, self.start, self.ret,
-                         self.cycVals[self.iteration - 1]))
-        cyclesArg = "-mllvm -migpoint-cycles={}" \
-                    .format(self.cycVals[self.iteration - 1])
+        curConfig = self.configs[self.iteration - 1]
+        self.log("Configuration: capacity={}, start={}, return={}, " \
+                 "cycles={}, max iters per migration point={}" \
+                 .format(self.cap, self.start, self.ret, curConfig[0],
+                         curConfig[1]))
+        cyclesArg = "-mllvm -migpoint-cycles={} " \
+                    "-mllvm -max-iters-per-migpoint={}" \
+                    .format(curConfig[0], curConfig[1])
         return self.cap, self.start, self.ret, cyclesArg
 
     def analyze(self, time, counters, numSamples, symbolSamples):
@@ -52,6 +60,13 @@ class ConfigureCycles:
 
         self.log("Results from configuration: {:.3f}s ({:.2f}% slowdown)" \
                  .format(time, slowdown))
+
+        def statStr(stats):
+            result = ""
+            for stat in stats:
+                result += "{}={:.1f}, ".format(stat, stats[stat])
+            return result[:-2]
+        self.log("Response time statistics: {}".format(statStr(respStats)))
 
         if self.iteration > self.maxIters:
             self.log("Hit maximum number of iterations")

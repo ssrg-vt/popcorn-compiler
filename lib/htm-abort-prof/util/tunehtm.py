@@ -7,6 +7,7 @@ import subprocess
 import datetime
 
 import perfscrape
+import responsetimescrape
 from htmconfig import ConfigureHTM
 from cycconfig import ConfigureCycles
 
@@ -41,6 +42,10 @@ def parseArguments():
         help="Command to run the HTM profiling script",
         default="htm-perf.sh",
         dest="htmPerf")
+    running.add_argument("-response-perf", type=str,
+        help="Command to run the response time profiling script",
+        default="test-response-time.py",
+        dest="respPerf")
     running.add_argument("-clean-cmd", type=str,
         help="Command to clean the build",
         default="make clean",
@@ -80,11 +85,15 @@ def parseArguments():
 def sanityCheckArgs(args):
     args.perf = os.path.abspath(args.perf)
     args.htmPerf = os.path.abspath(args.htmPerf)
+    args.respPerf = os.path.abspath(args.respPerf)
 
     assert os.path.exists(args.perf), \
            "Perf binary '{}' doesn't exist!".format(args.perf)
     assert os.path.exists(args.htmPerf), \
            "HTM profiling script '{}' doesn't exist!".format(args.htmPerf)
+    assert os.path.exists(args.respPerf), \
+           "Response time profiling script '{}' doesn't exist!" \
+           .format(args.respPerf)
     assert args.maxIters > 0 and args.maxIters < 100, \
            "Invalid maximum number of iterations"
     assert args.maxFuncIters > 0 and args.maxFuncIters <= args.maxIters, \
@@ -98,6 +107,7 @@ def writeReadme(readme, args):
     readme.write("  Run command: '{}'\n".format(args.runCmd))
     readme.write("  Perf binary: {}\n".format(args.perf))
     readme.write("  HTM profiling script: {}\n".format(args.htmPerf))
+    readme.write("  Response time profiling script: {}\n".format(args.respPerf))
     readme.write("  Clean command: '{}'\n\n".format(args.cleanCmd))
 
     readme.write("Tuning configuration:\n");
@@ -159,12 +169,19 @@ def buildBinary(buildCmd, binary, cap, start, ret, other):
     assert os.path.isfile(binary), \
            "Binary '{}' does not exist after build!".format(binary)
 
-def runBinary(outputFolder, runCmd, perf, htmPerf, binary, fast):
+def runBinary(outputFolder, runCmd, perf, htmPerf, respPerf, binary, fast):
     try:
+        # Pure event counts without migration signaling
         args = [ htmPerf, "-p", perf, "--" ]
         if fast: args[3:3] = [ "-r", "1" ]
         args.extend(runCmd.strip().split())
         out = subprocess.check_output(args, stderr=subprocess.STDOUT)
+
+        # Measure response times for migration signaling
+        respDest = outputFolder + "/{}.resp.out" \
+                                  .format(os.path.basename(binary))
+        args = [ respPerf, "-run-cmd", runCmd, "-output", respDest ]
+        subprocess.check_call(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("Could not run the binary ({})!".format(e))
         sys.exit(1)
@@ -186,7 +203,7 @@ def runBinary(outputFolder, runCmd, perf, htmPerf, binary, fast):
     recordDest = outputFolder + '/' + os.path.basename(recordOutput)
     os.rename(statOutput, statDest)
     os.rename(recordOutput, recordDest)
-    return statDest, recordDest
+    return statDest, recordDest, respDest
 
 def runConfiguration(args, iteration, results, cap, start, ret, other):
     # Make an output folder for the current iteration.
@@ -196,8 +213,8 @@ def runConfiguration(args, iteration, results, cap, start, ret, other):
     # Clean/build/run the current configuration
     cleanBuild(args.cleanCmd)
     buildBinary(args.buildCmd, args.binary, cap, start, ret, other)
-    return runBinary(iterDir, args.runCmd, args.perf,
-                     args.htmPerf, args.binary, args.fastTune)
+    return runBinary(iterDir, args.runCmd, args.perf, args.htmPerf,
+                     args.respPerf, args.binary, args.fastTune)
 
 ###############################################################################
 # Driver
@@ -215,12 +232,14 @@ if __name__ == "__main__":
 
     while marcoPolo.keepGoing:
         cap, start, ret, other = marcoPolo.getConfiguration()
-        stat, record = runConfiguration(args, marcoPolo.iteration, results,
-                                        cap, start, ret, other)
+        stat, record, resp = runConfiguration(args, marcoPolo.iteration,
+                                              results, cap, start, ret, other)
         time, counters = perfscrape.scrapePerfStat(stat)
         numSamples, eventCount, samples = \
             perfscrape.scrapePerfReport(args.perf, record)
-        marcoPolo.analyze(time, counters, numSamples, samples)
+        respStats, respTimes, migLibCalls = \
+            responsetimescrape.scrapeResponseTimes(resp)
+        marcoPolo.analyze(time, counters, numSamples, samples, respStats)
 
     marcoPolo.writeBest()
 
