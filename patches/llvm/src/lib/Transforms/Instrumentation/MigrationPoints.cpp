@@ -70,6 +70,15 @@ const static cl::opt<bool>
 MoreMigPoints("more-mig-points", cl::Hidden, cl::init(false),
   cl::desc("Add additional migration points into the body of functions"));
 
+/// By default we assume that loops will execute "enough iterations as to
+/// require instrumentation".  That's not necessarily true, so contrain N in
+/// hitting migration point every N iterations.  If analysis determines that
+/// we need to hit analysis for some number larger than N, don't instrument
+/// the loop.
+const static cl::opt<unsigned>
+MaxItersPerMigPoint("max-iters-per-migpoint", cl::Hidden, cl::init(UINT32_MAX),
+  cl::desc("Max iterations per migration point"));
+
 /// Target cycles between migration points when instrumenting applications with
 /// more migration points (but without HTM).  Allows tuning trade off between
 /// migration point response time and overhead.
@@ -395,7 +404,9 @@ public:
     else {
       if(LoadBytes) NumLoadIters = FPHtmReadSize / LoadBytes;
       if(StoreBytes) NumStoreIters = FPHtmWriteSize / StoreBytes;
-      return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
+
+      if(!NumLoadIters && !NumStoreIters) return 1;
+      else return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
     }
   }
 
@@ -546,7 +557,8 @@ public:
     else {
       size_t FPCycleCap = getValuePercent(CyclesBetweenMigPoints,
                                           CapacityThreshold);
-      return FPCycleCap / Cycles;
+      size_t Iters = FPCycleCap / Cycles;
+      return Iters ? Iters : 1;
     }
   }
 
@@ -743,7 +755,9 @@ public:
         dbgs() << "\n-> Analyzing function body to add migration points <-\n"
                << "\nCapacity threshold: " << std::to_string(CapacityThreshold)
                << "\nStart threshold: " << std::to_string(StartThreshold)
-               << "\nReturn threshold: " << std::to_string(RetThreshold);
+               << "\nReturn threshold: " << std::to_string(RetThreshold)
+               << "\nMaximum iterations/migration point: "
+               << std::to_string(MaxItersPerMigPoint);
 
         if(DoHTMInst)
           dbgs() << "\nHTM read buffer size: "
@@ -1385,7 +1399,8 @@ private:
     BasicBlock *Header = L->getHeader();
     WeightPtr HeaderWeight(getInitialWeight(Header));
 
-    DEBUG(dbgs() << "       + Analyzing loop entry points, header weight: "
+    DEBUG(dbgs() << "       + Analyzing loop entry points to "
+                 << Header->getName() << ", header weight: "
                  << HeaderWeight->toString() << "\n");
 
     // See if any of the exit spanning path weights are too heavy to include
@@ -1460,25 +1475,24 @@ private:
     return AddedMigPoint;
   }
 
-  /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
+  /// Analyze a path in a loop up until a particular end instruction and return
+  /// its weight.  Doesn't do any marking.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
-  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
-    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump(););
+  Weight *traversePathInternal(const LoopPath *LP,
+                               const Instruction *PathEnd,
+                               bool &ActuallyEqPoint) const {
     assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
+    assert(LP->contains(PathEnd->getParent()) && "Invalid end instruction");
     ActuallyEqPoint = false;
 
-    // Note: path ending instructions should either be control flow or calls,
-    // so they do not need to be analyzed.
     Loop *SubLoop;
     Weight *PathWeight = getZeroWeight(DoHTMInst);
     SetVector<PathNode>::const_iterator Node = LP->cbegin(),
                                         EndNode = LP->cend();
-    const BasicBlock *NodeBlock = Node->getBlock();
-    BasicBlock::const_iterator Inst(LP->startInst()),
-                               EndInst(NodeBlock->end()),
-                               PathEndInst(LP->endInst());
-
+    const BasicBlock *NodeBlock = Node->getBlock(),
+                     *EndBlock = PathEnd->getParent();
+    BasicBlock::const_iterator Inst, EndInst, PathEndInst(PathEnd);
 
     if(Node->isSubLoopExit()) {
       // Since the sub-loop exit block is the start of the path, it's by
@@ -1489,22 +1503,27 @@ private:
       PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
     }
     else {
-      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
+      for(Inst = LP->startInst(), EndInst = NodeBlock->end();
+          Inst != EndInst && Inst != PathEndInst; Inst++)
         PathWeight->analyze(Inst, DL);
+    }
+
+    if(NodeBlock == EndBlock) {
+      PathWeight->analyze(PathEndInst, DL);
+      return PathWeight;
     }
 
     for(Node++; Node != EndNode; Node++) {
       NodeBlock = Node->getBlock();
       if(Node->isSubLoopExit()) {
         // Since the sub-loop exit block is in the middle of the path, it's by
-        // definition exiting from a spanning path
+        // definition exiting from a spanning path.  EnumerateLoopPaths doesn't
+        // know about loops we've marked for transformation, however, so reset
+        // the path weight for loops that'll have a migration point added to
+        // their header.
         SubLoop = LI->getLoopFor(NodeBlock);
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-
-        // EnumerateLoopPaths doesn't know about loops we've marked for
-        // transformation, so explicitly reset the path weight for loops
-        // that'll have a migration point added to their header.
         if(LoopMigPoints.count(SubLoop)) {
           ActuallyEqPoint = true;
           PathWeight->reset();
@@ -1535,107 +1554,34 @@ private:
         }
       }
       else {
-        Inst = NodeBlock->begin();
-        EndInst = NodeBlock->end();
-        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
+        for(Inst = NodeBlock->begin(), EndInst = NodeBlock->end();
+            Inst != EndInst && Inst != PathEndInst; Inst++)
           PathWeight->analyze(Inst, DL);
       }
+
+      if(NodeBlock == EndBlock) break;
     }
     PathWeight->analyze(PathEndInst, DL);
 
     return PathWeight;
   }
 
-  /// Traverse a path until a given exit block & return path's weight up until
+  /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
+  ///
+  /// Note: returns a dynamically allocated object to be managed by the caller
+  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
+    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump());
+    return traversePathInternal(LP, LP->endInst(), ActuallyEqPoint);
+  }
+
+  /// Analyze a path until a given exit block & return path's weight up until
   /// the exit point.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
   Weight *traversePathUntilExit(const LoopPath *LP,
                                 BasicBlock *Exit,
-                                bool &ActuallyEqPoint) const {
-    assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
-    assert(LP->contains(Exit) && "Invalid path and/or exit block");
-    ActuallyEqPoint = false;
-
-    // Note: the path's end must be either the terminator of the exit block (if
-    // the exit block is also a latch) or an equivalence point/backedge branch
-    // further down the path from the exit block.
-    Loop *SubLoop;
-    Weight *PathWeight = getZeroWeight(DoHTMInst);
-    SetVector<PathNode>::const_iterator Node = LP->cbegin(),
-                                        EndNode = LP->cend();
-    const BasicBlock *NodeBlock = Node->getBlock();
-    BasicBlock::const_iterator Inst(LP->startInst()),
-                               EndInst(Node->getBlock()->end()),
-                               PathEndInst(Exit->end());
-
-    if(Node->isSubLoopExit()) {
-      // Since the sub-loop exit block is the start of the path, it's by
-      // definition exiting from an equivalence point path.
-      SubLoop = LI->getLoopFor(NodeBlock);
-      assert(LoopWeights.count(SubLoop) && "Invalid traversal");
-      const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-      PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
-    }
-    else {
-      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-        PathWeight->analyze(Inst, DL);
-    }
-    if(Node->getBlock() == Exit) return PathWeight;
-
-    for(Node++; Node != EndNode; Node++) {
-      NodeBlock = Node->getBlock();
-      if(Node->isSubLoopExit()) {
-        // Since the sub-loop exit block is in the middle of the path, it's by
-        // definition exiting from a spanning path
-        SubLoop = LI->getLoopFor(NodeBlock);
-        assert(LoopWeights.count(SubLoop) && "Invalid traversal");
-        const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-
-        // EnumerateLoopPaths doesn't know about loops we've marked for
-        // transformation, so explicitly reset the path weight for loops
-        // that'll have a migration point added to their header.
-        if(LoopMigPoints.count(SubLoop)) {
-          ActuallyEqPoint = true;
-          PathWeight->reset();
-        }
-
-        // TODO we need to ultimately deal with the following situation more
-        // gracefully:
-        //
-        //   loop 1: all spanning paths, contains loop 2
-        //     loop 2: all spanning paths, contains loop 3
-        //       loop 3: all spanning paths, to be instrumented
-        //
-        // Analysis determines loop 3 needs to be instrumented.  If all paths
-        // in loop 2 go through loop 3, then loop 2 no longer has spanning
-        // paths but only equivalence point paths.  The previous if statement
-        // detects this, and reports it to calculateLoopExitWeights().  However
-        // when analyzing paths through loop 1, we can't detect that loop 2
-        // only has equivalence points paths.
-
-        if(LWI.loopHasSpanningPath()) {
-          PathWeight->add(LWI.getLoopSpanningPathWeight(false));
-          PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
-        }
-        else {
-          ActuallyEqPoint = true;
-          PathWeight->reset();
-          PathWeight->add(LWI[NodeBlock]);
-        }
-      }
-      else {
-        Inst = Node->getBlock()->begin();
-        EndInst = Node->getBlock()->end();
-        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-          PathWeight->analyze(Inst, DL);
-      }
-      if(Node->getBlock() == Exit) break;
-    }
-    PathWeight->analyze(PathEndInst, DL);
-
-    return PathWeight;
-  }
+                                bool &ActuallyEqPoint) const
+  { return traversePathInternal(LP, Exit->getTerminator(), ActuallyEqPoint); }
 
   /// Get the loop trip count if available and less than UINT32_MAX, or 0
   /// otherwise.
@@ -1695,6 +1641,12 @@ private:
         DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
                      << std::to_string(TripCount) << "\n");
         NumIters = TripCount;
+      }
+      else if(NumIters > (size_t)MaxItersPerMigPoint) {
+        DEBUG(dbgs() << "  Eliding loop instrumentation (exceeded maximum "
+                        " iterations per migration point), loop trip count: "
+                     << std::to_string(MaxItersPerMigPoint) << "\n");
+        NumIters = MaxItersPerMigPoint;
       }
       // TODO mark first insertion point in loop header as migration point,
       // propagate whether we added a migration point as return value
