@@ -4,3 +4,10 @@ check-stackmaps
 dump-llvm-stackmap
 dump-stackinfo
 gen-stackinfo
+ppc.s
+process
+rewrite_empty_aarch64_stack_info
+rewrite_empty_powerpc64_stack_info
+rewrite_empty_x86-64_stack_info
+*.o
+*.swp

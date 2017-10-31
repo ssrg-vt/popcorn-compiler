@@ -197,7 +197,8 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
         pushIfNotPresent(EqPoint->getNextNode(), NewPaths);
       else {
         for(auto Succ : successors(BB)) {
-          if(!CurLoop->contains(Succ)) continue; // Skip exit blocks
+          if(!CurLoop->contains(Succ) || // Skip exit blocks & latches
+             Succ == CurLoop->getHeader()) continue;
           else if(!SubLoopBlocks.count(Succ)) // Successor is in same outer loop
             pushIfNotPresent(&Succ->front(), NewPaths);
           else { // Successor is in sub-loop

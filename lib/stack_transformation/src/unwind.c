@@ -17,6 +17,7 @@
  */
 static inline void setup_regset(rewrite_context ctx, int act)
 {
+  ASSERT(act > 0, "Cannot set up outermost activation using this function\n");
   ctx->acts[act].regs = &ctx->regset_pool[act * REGOPS(ctx)->regset_size];
   REGOPS(ctx)->regset_clone(ctx->acts[act - 1].regs, ctx->acts[act].regs);
 }
@@ -43,7 +44,7 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
   uint32_t unwind_start, unwind_end, i;
   void* saved_loc;
 
-  ASSERT(act > 0, "Cannot set up outermost activation using this method\n");
+  ASSERT(act > 0, "Cannot set up outermost activation using this function\n");
 
   /* Get offsets into unwinding information section & unwind the frame */
   locs = ctx->handle->unwind_locs;
@@ -62,8 +63,8 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
 
   /*
    * Some ABIs map the return address to the PC register (e.g. x86-64) and some
-   * map it to another register (e.g. RA is mapped to x30 for AArch64).  Handle
-   * the latter case by explicitly setting the new PC.
+   * map it to another register (e.g. RA is mapped to x30 for AArch64 and LR on
+   * PowerPC64).  Handle the latter case by explicitly setting the new PC.
    */
   if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_pc(ctx->acts[act].regs,

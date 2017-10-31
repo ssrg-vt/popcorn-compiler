@@ -102,6 +102,18 @@ class Result:
 
 '''
 A configuration for a given piece of the application.
+
+Maintains the "best" configuration, where best is defined as a combined metric:
+
+               1
+  time * --------------
+         % HTM coverage
+
+This lets us simultaneously maximize HTM coverage and minimize runtime.
+By keeping the best configuration, we can roll back to the best available when
+exploring tuning a function doesn't improve results, e.g., trying to reduce
+capacity aborts but ultimately only adding more transactions (without reducing
+the abort rate).
 '''
 class Configuration:
     def __init__(self, name, cap = 95, start = 95, ret = 95):
@@ -109,10 +121,33 @@ class Configuration:
         self.cap = cap
         self.start = start
         self.ret = ret
+        self.bestTCR = sys.float_info.max
+        self.bestCap = self.bestStart = self.bestRet = -1
 
     def __str__(self):
         return "{}: capacity={}%, start={}%, return={}%".format(
             self.name, self.cap, self.start, self.ret)
+
+    def recordResult(self, result):
+        def calculateTCR(result):
+            ratio = result.percentTransactional() * 0.01
+            return result.time * (1 / ratio)
+
+        tcr = calculateTCR(result)
+        if tcr < self.bestTCR:
+          self.bestTCR = tcr
+          self.bestCap = self.cap
+          self.bestStart = self.start
+          self.bestRet = self.ret
+
+    def resetBest(self):
+        assert self.bestCap != -1 and \
+               self.bestStart != -1 and \
+               self.bestRet != -1, \
+               "Invalid best starting value"
+        self.cap = self.bestCap
+        self.start = self.bestStart
+        self.ret = self.bestRet
 
     def copy(self, rhs):
         self.cap = rhs.cap
@@ -130,8 +165,24 @@ class FunctionConfiguration(Configuration):
         self.iteration = 0
 
     def __str__(self):
-        return "{}, # tunings={}".format(Configuration, self.iteration)
+        return "{}, # tunings={}" \
+               .format(Configuration.__str__(self), self.iteration)
 
+'''
+An action taken by the driver class.
+'''
+class Action:
+    Initialize = 0
+    ReduceThresh = 1
+    IncreaseThresh = 2
+
+    def __init__(self, ty, config=None):
+        self.ty = ty
+        self.config = config
+
+'''
+The main driver class which analyzes results and makes decisions.
+'''
 class ConfigureHTM:
     def __init__(self, targetTime, slowdownThresh, maxIters,
                  maxFuncIters, resultsFolder):
@@ -140,8 +191,9 @@ class ConfigureHTM:
         self.maxIters = maxIters
         self.maxFuncIters = maxFuncIters
         self.targetTime = targetTime
+        self.prevAction = Action(Action.Initialize)
         self.stopRuntime = targetTime * ((float(slowdownThresh) + 100) / 100.0)
-        self.decisions = open(resultsFolder + "/decision-log.txt", 'w')
+        self.decisions = open(resultsFolder + "/decision-log.txt", 'w', 1)
         self.log("Target stopping time: {:.3f}s".format(self.stopRuntime))
 
         # There's a 1-to-1 correspondence between each of the following, i.e.,
@@ -171,32 +223,89 @@ class ConfigureHTM:
         self.decisions.write("[ Final Result ] {}\n".format(str(msg)))
 
     def getConfiguration(self):
-        # buildBinary() expects a function -> capacity threshold dictionary
-        configDict = {}
+        # Construct function-specific arguments for buildBinary()
+        funcArgs = ""
         functionConfig = self.functionConfig[-1]
         for func in functionConfig:
-            configDict[func] = functionConfig[func].cap
+            funcArgs += "-mllvm -func-cap={},{} " \
+                        .format(func, functionConfig[func].cap)
 
         globalConfig = self.globalConfig[-1]
         return globalConfig.cap, globalConfig.start, \
-               globalConfig.ret, configDict
+               globalConfig.ret, funcArgs[:-1]
+
+    def reduceAbortRate(self, result, globalConfig, funcConfig):
+        self.log("High abort rate, reducing HTM granularity")
+
+        HighAbortFuncs = result.getHighAbortFuncs(self.highAbort)
+        if len(HighAbortFuncs) > 5:
+            # A bunch of functions have high abort rates, cut down the
+            # overall capacity threshold.
+            newCap = reduceThresh(globalConfig.cap)
+            if newCap == globalConfig.cap:
+                self.keepGoing = False
+                return
+
+            self.prevAction = Action(Action.ReduceThresh, globalConfig)
+            globalConfig.cap = newCap
+            self.log("Functions {} have high abort rates, reducing " \
+                     "overall capacity threshold to {}" \
+                     .format(HighAbortFuncs, newCap))
+        else:
+            # Reduce capacity threshold for function with highest abort
+            # rates and which has not been analyzed too many times
+            CurConfig = None
+            for Func in HighAbortFuncs:
+                if Func not in funcConfig:
+                    CurConfig = FunctionConfiguration(Func)
+                    CurConfig.copy(globalConfig)
+                elif funcConfig[Func].iteration < self.maxFuncIters:
+                    CurConfig = funcConfig[Func]
+                else: continue
+
+                # See if we can reduce the capacity threshold further
+                assert CurConfig != None, "Should have picked a function"
+                newCap = reduceThresh(CurConfig.cap)
+                if newCap == CurConfig.cap:
+                    self.log("NOTE: function '{}' has many aborts but " \
+                             "we can't reduce its capacity threshold " \
+                             "any further".format(Func))
+                    CurConfig = None
+                    continue
+                CurConfig.cap = newCap
+                break
+
+            if CurConfig == None:
+                self.log("All candidates have been fully evaluated!")
+                self.keepGoing = False
+                return
+
+            self.prevAction = Action(Action.ReduceThresh, CurConfig)
+            if CurConfig.name not in funcConfig:
+                funcConfig[CurConfig.name] = CurConfig
+            CurConfig.iteration += 1
+            self.log("Reducing capacity threshold for '{}' to {}" \
+                     .format(CurConfig.name, CurConfig.cap))
 
     def analyze(self, time, counters, numSamples, symbolSamples):
         self.results.append(Result(time, counters, numSamples, symbolSamples))
         CurResult = self.results[-1]
         slowdown = CurResult.getSlowdown(self.targetTime)
-        percentTransactional = CurResult.percentTransactional()
+        percentTx = CurResult.percentTransactional()
         abortRate = CurResult.capacityAbortRate()
 
         self.log("Results from configuration: {:.3f}s ({:.2f}% slowdown), " \
                  "{:.2f}% covered, {:.2f}% abort rate" \
-                 .format(time, slowdown, percentTransactional, abortRate))
+                 .format(time, slowdown, percentTx, abortRate))
 
         # If we've exhausted our max, we can't do any further configuration.
-        if self.iteration >= self.maxIters:
+        if self.iteration > self.maxIters:
             self.log("Hit maximum number of iterations")
             self.keepGoing = False
             return
+
+        if self.prevAction.ty != Action.Initialize:
+          self.prevAction.config.recordResult(CurResult)
 
         # Set up a new configuration which will be modified according to the
         # performance results from the previous configuration.
@@ -206,65 +315,16 @@ class ConfigureHTM:
         self.globalConfig.append(newGlobalConfig)
         self.functionConfig.append(newFuncConfig)
 
-        if percentTransactional < self.minCovered or \
-           abortRate > self.maxAbortRate:
-            self.log("High abort rate, reducing HTM granularity")
+        if self.prevAction.ty == Action.ReduceThresh and \
+           self.prevAction.config.name != "Global" and \
+           self.prevAction.config.iteration == self.maxFuncIters:
+            self.prevAction.config.resetBest()
+            newFuncConfig[self.prevAction.config.name].copy(self.prevAction.config)
+            self.log("Hit max iterations, rolling back configuration -- {}" \
+                     .format(str(self.prevAction.config)))
 
-            HighAbortFuncs = CurResult.getHighAbortFuncs(self.highAbort)
-            if len(HighAbortFuncs) > 5:
-                # A bunch of functions have high abort rates, cut down the
-                # overall capacity threshold.
-                newCap = reduceThresh(newGlobalConfig.cap)
-                if prevCap == newGlobalConfig.cap:
-                    self.log("NOTE: functions {} have many aborts, but we " \
-                             "can't reduce the global capacity threshold " \
-                             "any further".format(HighAbortFuncs))
-                    self.keepGoing = False
-                    return
-
-                newGlobalConfig.cap = newCap
-                self.log("Functions {} have high abort rates, reducing " \
-                         "overall capacity threshold to {}" \
-                         .format(HighAbortFuncs, newCap))
-            else:
-                # Reduce capacity threshold for function with highest abort
-                # rates and which has not been analyzed too many times
-                FuncConfig = None
-                for Func in HighAbortFuncs:
-                    if Func not in newFuncConfig:
-                        FuncConfig = FunctionConfiguration(Func)
-                        FuncConfig.copy(newGlobalConfig)
-                    elif newFuncConfig[Func].iteration < self.maxFuncIters:
-                        FuncConfig = newFuncConfig[Func]
-                    else:
-                        self.log("NOTE: function '{}' has many aborts but " \
-                                 "we ran out of tuning iterations" \
-                                 .format(Func))
-                        continue
-
-                    # See if we can reduce the capacity threshold further
-                    assert FuncConfig != None, "Should have picked a function"
-                    newCap = reduceThresh(FuncConfig.cap)
-                    if newCap == FuncConfig.cap:
-                        self.log("NOTE: function '{}' has many aborts but " \
-                                 "we can't reduce its capacity threshold " \
-                                 "any further".format(Func))
-                        FuncConfig = None
-                        continue
-                    FuncConfig.cap = newCap
-                    break
-
-                if FuncConfig == None:
-                    self.log("All candidates have been fully evaluated!")
-                    self.keepGoing = False
-                    return
-
-                if FuncConfig.name not in newFuncConfig:
-                    newFuncConfig[FuncConfig.name] = FuncConfig
-                FuncConfig.iter += 1
-                self.log("Reducing capacity threshold for '{}' to {}".format(
-                    FuncConfig.name, FuncConfig.cap))
-
+        if percentTx < self.minCovered or abortRate > self.maxAbortRate:
+            self.reduceAbortRate(CurResult, newGlobalConfig, newFuncConfig)
         elif CurResult.time > self.stopRuntime:
             # TODO need to implement reduced instrumentation
             self.log("Over-instrumented application!")
@@ -287,7 +347,7 @@ class ConfigureHTM:
         BestResult = None
         BestTime = sys.float_info.max
         for Result in self.results:
-            if Result.percentTransactional() >= self.minCovered and \
+            if Result.percentTransactional() >= 80.0 and \
                Result.time < BestTime:
                 BestTime = Result.time
                 BestResult = Result
@@ -302,11 +362,9 @@ class ConfigureHTM:
         FuncConf = self.functionConfig[Idx]
         Slowdown = BestResult.getSlowdown(self.targetTime)
         self.logFinal("Best configuration:")
-        self.logFinal("Time: {:.3f}s, {:.2f}% slowdown" \
-                      .format(BestTime, Slowdown))
-        self.logFinal("Percent covered: {:.2f}%" \
-                      .format(BestResult.percentTransactional()))
-        self.logFinal
+        self.logFinal("Time: {:.3f}s, {:.2f}% slowdown, {:.2f}% covered" \
+                      .format(BestTime, Slowdown,
+                              BestResult.percentTransactional()))
         self.logFinal(GlobalConf)
         for Func in FuncConf:
             self.logFinal(FuncConf[Func])

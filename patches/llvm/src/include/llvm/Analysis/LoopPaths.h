@@ -123,6 +123,8 @@ public:
            bool StartsAtHeader, bool EndsAtBackedge);
 
   bool contains(BasicBlock *BB) const { return Nodes.count(PathNode(BB)); }
+  bool contains(const BasicBlock *BB) const
+  { return Nodes.count(PathNode(BB)); }
 
   /// Get the starting point of the path, guaranteed to be either the loop
   /// header or an equivalence point.

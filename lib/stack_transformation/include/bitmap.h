@@ -63,7 +63,7 @@ void bitmap_free(bitmap bitmap);
     ASSERT(num < bitmap.size, "invalid bit number\n"); \
     size_t coarse = num / STORAGE_TYPE_BITS; \
     size_t fine = num % STORAGE_TYPE_BITS; \
-    bitmap.bits[coarse] |= (1 << fine); \
+    bitmap.bits[coarse] |= (1UL << fine); \
   }
 
 /*
@@ -89,7 +89,7 @@ void bitmap_free(bitmap bitmap);
     ASSERT(num < bitmap.size, "invalid bit number\n"); \
     size_t coarse = num / STORAGE_TYPE_BITS; \
     size_t fine = num % STORAGE_TYPE_BITS; \
-    bitmap.bits &= ~(1 << fine); \
+    bitmap.bits &= ~(1UL << fine); \
   }
 
 /*
@@ -115,7 +115,7 @@ void bitmap_free(bitmap bitmap);
     ASSERT(num < bitmap.size, "invalid bit number\n"); \
     size_t coarse = num / STORAGE_TYPE_BITS; \
     size_t fine = num % STORAGE_TYPE_BITS; \
-    bool is_set = bitmap.bits[coarse] & (1 << fine); \
+    bool is_set = bitmap.bits[coarse] & (1UL << fine); \
     is_set; \
   })
 

@@ -124,7 +124,7 @@ void put_val_arch(rewrite_context ctx, const arch_live_value* val)
 
   TIMER_FG_START(put_val)
   ASSERT(val->type == SM_REGISTER || val->type == SM_INDIRECT,
-         "Invalid arch-specific value type (%u)\n", val->type);
+         "Invalid architecture-specific value type (%u)\n", val->type);
 
   ST_INFO("Putting arch-specific destination value (size=%u): ", val->size);
   dest_addr = get_val_loc(ctx, val->type, val->regnum, val->offset, ctx->act);
@@ -215,7 +215,7 @@ void* points_to_stack(const rewrite_context ctx,
     }
 
     /* Check if we're within the stack's bounds.  If not, wipe the pointer */
-    if(stack_addr <= ctx->stack || ctx->stack_base < stack_addr)
+    if(stack_addr < ctx->stack || ctx->stack_base <= stack_addr)
       stack_addr = NULL;
   }
 
@@ -283,7 +283,22 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
  */
 uint64_t* get_savedfbp_loc(rewrite_context ctx)
 {
-  return (uint64_t*)(ACT(ctx).cfa + PROPS(ctx)->savedfbp_offset);
+  const unwind_loc* locs;
+  uint32_t unwind_start, unwind_end, index;
+  void* saved_loc;
+
+  locs = ctx->handle->unwind_locs;
+  unwind_start = ACT(ctx).site.unwind_offset;
+  unwind_end = unwind_start + ACT(ctx).site.num_unwind;
+
+  // Frame pointer is likely at the very end of unwinding records
+  for(index = unwind_end - 1; index >= unwind_start; index--)
+    if(locs[index].reg == REGOPS(ctx)->fbp_regnum) break;
+
+  ASSERT(index >= unwind_start, "no saved frame base pointer information\n");
+
+  saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + locs[index].offset;
+  return (uint64_t*)saved_loc;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -459,7 +474,7 @@ static void apply_arch_operation(rewrite_context ctx,
       }
       break;
     default:
-      ST_ERR(1, "invalid live value location type (%u)\n", val->type);
+      ST_ERR(1, "invalid live value location type (%u)\n", val->operand_type);
       break;
     }
   }
@@ -492,8 +507,9 @@ static void apply_arch_operation(rewrite_context ctx,
                   val->operand_offset_or_constant,
                   val->operand_offset_or_constant,
                   val->operand_offset_or_constant);
+      break;
     default:
-      ST_ERR(1, "invalid live value location type (%u)\n", val->type);
+      ST_ERR(1, "invalid live value location type (%u)\n", val->operand_type);
       break;
     }
   }

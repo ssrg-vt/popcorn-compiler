@@ -8,6 +8,7 @@ import datetime
 
 import perfscrape
 from htmconfig import ConfigureHTM
+from cycconfig import ConfigureCycles
 
 ###############################################################################
 # Initialization
@@ -46,14 +47,14 @@ def parseArguments():
         dest="cleanCmd")
 
     tuning = parser.add_argument_group("Tuning")
+    tuning.add_argument("-type", choices=["htm", "cycles"],
+        help="Type of tuning",
+        default="htm",
+        dest="tuneType")
     tuning.add_argument("-max-iter", type=int,
         help="Maximum number of iterations to explore configuration",
         default=50,
         dest="maxIters")
-    tuning.add_argument("-max-func-iter", type=int,
-        help="Maximum number of iterations to tune a single function",
-        default=10,
-        dest="maxFuncIters")
     tuning.add_argument("-target-time", type=float, required=True,
         help="Time to run uninstrumented version of the application (used for " \
              "determining when to stop)",
@@ -63,6 +64,16 @@ def parseArguments():
              "configuration exploration",
         default=5,
         dest="slowdownThresh")
+    tuning.add_argument("-fast-tune", action="store_true",
+        help="Only run perf-stat once per configuration to gather profiling " \
+             "information rather than the normal 3 times (reduces stability)",
+        dest="fastTune")
+
+    htmTuning = parser.add_argument_group("HTM Tuning")
+    htmTuning.add_argument("-max-func-iter", type=int,
+        help="Maximum number of iterations to tune a single function",
+        default=10,
+        dest="maxFuncIters")
 
     return parser.parse_args()
 
@@ -90,17 +101,20 @@ def writeReadme(readme, args):
     readme.write("  Clean command: '{}'\n\n".format(args.cleanCmd))
 
     readme.write("Tuning configuration:\n");
+    readme.write("  Type: {}\n".format(args.tuneType))
     readme.write("  Max iterations: {}\n".format(args.maxIters))
-    readme.write("  Max iterations per function: {}\n".format(
-        args.maxFuncIters))
+    if args.tuneType == "htm":
+        readme.write("  Max iterations per function: {}\n" \
+                     .format(args.maxFuncIters))
     readme.write("  Target time: {}\n".format(args.targetTime))
     readme.write("  Stop threshold: {}%\n".format(args.slowdownThresh))
+    if(args.fastTune): readme.write("  + Fast tune")
 
 def initialize(args):
     sanityCheckArgs(args)
     now = datetime.datetime.now()
-    results = "htm-instrument-{}:{:0>2}-{}-{}-{}".format(
-        now.hour, now.minute, now.day, now.month, now.year)
+    results = "{}-instrument-{}:{:0>2}-{}-{}-{}".format(
+        args.tuneType, now.hour, now.minute, now.day, now.month, now.year)
     assert not os.path.exists(results), \
            "Tuning output folder '{}' already exists!".format(results)
     os.makedirs(results)
@@ -126,19 +140,13 @@ def cleanBuild(cleanCmd):
             sys.exit(1)
 
 # Run the build command to generate a binary with a given configuration.
-def buildBinary(buildCmd, binary, cap, start, ret, func):
-    def funcThreshArgs(funcConfig):
-        conf = ""
-        for func in funcConfig:
-            conf += " -mllvm -func-cap={},{}".format(func, funcConfig[func])
-        return conf
-
+def buildBinary(buildCmd, binary, cap, start, ret, other):
     try:
         args = buildCmd.strip().split()
         args.append("HTM_FLAGS=-mllvm -cap-threshold={} " \
                     "-mllvm -start-threshold={} " \
                     "-mllvm -ret-threshold={} " \
-                    "{}".format(cap, start, ret, funcThreshArgs(func)))
+                    "{}".format(cap, start, ret, other))
         rv = subprocess.check_call(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("Could not build the binary:\n{}".format(e))
@@ -151,14 +159,19 @@ def buildBinary(buildCmd, binary, cap, start, ret, func):
     assert os.path.isfile(binary), \
            "Binary '{}' does not exist after build!".format(binary)
 
-def runBinary(outputFolder, runCmd, perf, htmPerf, binary):
+def runBinary(outputFolder, runCmd, perf, htmPerf, binary, fast):
     try:
         args = [ htmPerf, "-p", perf, "--" ]
+        if fast: args[3:3] = [ "-r", "1" ]
         args.extend(runCmd.strip().split())
-        rv = subprocess.check_call(args, stderr=subprocess.STDOUT)
+        out = subprocess.check_output(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("Could not run the binary ({})!".format(e))
         sys.exit(1)
+
+    # Write output to file
+    outfile = outputFolder + "/{}.out".format(os.path.basename(binary))
+    with open(outfile, 'w') as fp: fp.write(out.decode("utf-8"))
 
     # The run command should have generated a counters file (*.log) and a
     # sampling file (*.data)
@@ -175,16 +188,16 @@ def runBinary(outputFolder, runCmd, perf, htmPerf, binary):
     os.rename(recordOutput, recordDest)
     return statDest, recordDest
 
-def runConfiguration(args, iteration, results, cap, start, ret, func):
+def runConfiguration(args, iteration, results, cap, start, ret, other):
     # Make an output folder for the current iteration.
     iterDir = results + "/" + str(iteration)
     os.makedirs(iterDir)
 
     # Clean/build/run the current configuration
     cleanBuild(args.cleanCmd)
-    buildBinary(args.buildCmd, args.binary, cap, start, ret, func)
+    buildBinary(args.buildCmd, args.binary, cap, start, ret, other)
     return runBinary(iterDir, args.runCmd, args.perf,
-                     args.htmPerf, args.binary)
+                     args.htmPerf, args.binary, args.fastTune)
 
 ###############################################################################
 # Driver
@@ -193,13 +206,17 @@ def runConfiguration(args, iteration, results, cap, start, ret, func):
 if __name__ == "__main__":
     args = parseArguments()
     results = initialize(args)
-    marcoPolo = ConfigureHTM(args.targetTime, args.slowdownThresh,
-                             args.maxIters, args.maxFuncIters, results)
+    if args.tuneType == "htm":
+      marcoPolo = ConfigureHTM(args.targetTime, args.slowdownThresh,
+                               args.maxIters, args.maxFuncIters, results)
+    else:
+      marcoPolo = ConfigureCycles(args.targetTime, args.slowdownThresh,
+                                  args.maxIters, results)
 
     while marcoPolo.keepGoing:
-        cap, start, ret, func = marcoPolo.getConfiguration()
+        cap, start, ret, other = marcoPolo.getConfiguration()
         stat, record = runConfiguration(args, marcoPolo.iteration, results,
-                                        cap, start, ret, func)
+                                        cap, start, ret, other)
         time, counters = perfscrape.scrapePerfStat(stat)
         numSamples, eventCount, samples = \
             perfscrape.scrapePerfReport(args.perf, record)

@@ -28,6 +28,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cmath>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -68,6 +69,22 @@ using namespace llvm;
 const static cl::opt<bool>
 MoreMigPoints("more-mig-points", cl::Hidden, cl::init(false),
   cl::desc("Add additional migration points into the body of functions"));
+
+/// By default we assume that loops will execute "enough iterations as to
+/// require instrumentation".  That's not necessarily true, so contrain N in
+/// hitting migration point every N iterations.  If analysis determines that
+/// we need to hit analysis for some number larger than N, don't instrument
+/// the loop.
+const static cl::opt<unsigned>
+MaxItersPerMigPoint("max-iters-per-migpoint", cl::Hidden, cl::init(UINT32_MAX),
+  cl::desc("Max iterations per migration point"));
+
+/// Target cycles between migration points when instrumenting applications with
+/// more migration points (but without HTM).  Allows tuning trade off between
+/// migration point response time and overhead.
+const static cl::opt<unsigned>
+MillionCyclesBetweenMigPoints("migpoint-cycles", cl::Hidden, cl::init(50),
+  cl::desc("Cycles between migration points, in millions of cycles"));
 
 /// Percent of capacity (determined by analysis type, e.g., HTM buffer size) at
 /// which point weight objects will request a new migration point be inserted.
@@ -158,6 +175,11 @@ AbortCount("abort-count", cl::Hidden, cl::init(""),
 #define HTMReadBufSize (HTMReadBufSizeArg * KB)
 #define HTMWriteBufSize (HTMWriteBufSizeArg * KB)
 
+#define MILLION 1000000
+#define CyclesBetweenMigPoints \
+  ((unsigned long)MillionCyclesBetweenMigPoints * MILLION)
+#define MEM_WEIGHT 40
+
 STATISTIC(NumMigPoints, "Number of migration points added");
 STATISTIC(NumHTMBegins, "Number of HTM begin intrinsics added");
 STATISTIC(NumHTMEnds, "Number of HTM end intrinsics added");
@@ -173,9 +195,15 @@ static int64_t getValueSize(const Value *V) {
 }
 
 /// Return a percentage of a value.
-static inline float getValuePercent(size_t V, unsigned P) {
+static inline size_t getValuePercent(size_t V, unsigned P) {
   assert(P <= 100 && "Invalid percentage");
-  return ((float)V) * (((float)P) / 100.0f);
+  return floor(((double)V) * (((double)P) / 100.0));
+}
+
+/// Return the number of cache lines accessed for a given number of
+/// (assumed contiguous) bytes.
+static inline size_t getNumCacheLines(size_t Bytes, unsigned LineSize) {
+  return ceil((double)Bytes / (double)LineSize);
 }
 
 /// Abstract weight metric.  Child classes implement for analyzing different
@@ -193,6 +221,7 @@ public:
   virtual Weight *copy() const = 0;
 
   /// Expose types of child implementations.
+  virtual bool isCycleWeight() const { return false; }
   virtual bool isHTMWeight() const { return false; }
 
   /// Analyze an instruction & update accounting.
@@ -200,7 +229,9 @@ public:
 
   /// Return whether or not we should add a migration point.  This is tuned
   /// based on the resource capacity and percentage threshold options.
-  virtual bool shouldAddMigPoint() const = 0;
+  virtual bool shouldAddMigPoint() const {
+    return !underPercentOfThreshold(CapacityThreshold);
+  }
 
   /// Reset the weight.
   virtual void reset() { Resets++; }
@@ -235,10 +266,10 @@ typedef std::unique_ptr<Weight> WeightPtr;
 /// of bytes loaded & stored.
 class HTMWeight : public Weight {
 private:
-  // The number of bytes loaded & stored, respectively
+  // The number of bytes loaded & stored, respectively.
   size_t LoadBytes, StoreBytes;
 
-  // Statistics about when the weight was reset (i.e., at HTM stop/starts)
+  // Statistics about when the weight was reset (i.e., at HTM stop/starts).
   size_t ResetLoad, ResetStore;
 
 public:
@@ -334,14 +365,6 @@ public:
     }
   }
 
-  /// Return true if we think we're going to overflow the load or store
-  /// buffer, false otherwise.
-  virtual bool shouldAddMigPoint() const {
-    // TODO more advanced analysis, e.g., register pressure heuristics?
-    if(underPercentOfThreshold(CapacityThreshold)) return false;
-    else return true;
-  }
-
   virtual void reset() {
     Weight::reset();
     ResetLoad += LoadBytes;
@@ -373,21 +396,23 @@ public:
   /// The number of times this weight's load & stores could be executed without
   /// overflowing the capacity threshold of the HTM buffers.
   virtual size_t numIters() const {
-    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX;
-    float FPHtmReadSize = getValuePercent(HTMReadBufSize, CapacityThreshold),
-          FPHtmWriteSize = getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX,
+      FPHtmReadSize = getValuePercent(HTMReadBufSize, CapacityThreshold),
+      FPHtmWriteSize = getValuePercent(HTMWriteBufSize, CapacityThreshold);
 
     if(!LoadBytes && !StoreBytes) return 1024; // Return a safe value
     else {
-      if(LoadBytes) NumLoadIters = FPHtmReadSize / (float)LoadBytes;
-      if(StoreBytes) NumStoreIters = FPHtmWriteSize / (float)StoreBytes;
-      return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
+      if(LoadBytes) NumLoadIters = FPHtmReadSize / LoadBytes;
+      if(StoreBytes) NumStoreIters = FPHtmWriteSize / StoreBytes;
+
+      if(!NumLoadIters && !NumStoreIters) return 1;
+      else return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
     }
   }
 
   virtual bool underPercentOfThreshold(unsigned percent) const {
-    if((float)LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
-       (float)StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
+    if(LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
+       StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
       return true;
     else return false;
   }
@@ -398,13 +423,162 @@ public:
   }
 };
 
+/// Weight metric for temporally-spaced migration points.
+class CycleWeight : public Weight {
+private:
+  // An estimate of the number of cycles since the last migration point.
+  size_t Cycles;
+
+  // Statistics about when the weight was reset (i.e., at migration points).
+  size_t ResetCycles;
+
+public:
+  CycleWeight(size_t Cycles = 0) : Cycles(Cycles), ResetCycles(0) {}
+  CycleWeight(const CycleWeight &C)
+    : Weight(C), Cycles(C.Cycles), ResetCycles(C.ResetCycles) {}
+  virtual CycleWeight *copy() const { return new CycleWeight(*this); }
+
+  virtual bool isCycleWeight() const { return true; }
+
+  virtual void analyze(const Instruction *I, const DataLayout *DL) {
+    Type *Ty;
+
+    // Cycles are estimated using Agner Fog's instruction latency guide at
+    // http://www.agner.org/optimize/instruction_tables.pdf for "Broadwell".
+    switch(I->getOpcode()) {
+    default: break;
+    // Terminator instructions
+    // TODO Ret, Invoke, Resume
+    case Instruction::Br: Cycles += 2; break;
+    case Instruction::Switch: Cycles += 2; break;
+    case Instruction::IndirectBr: Cycles += 2; break;
+
+    // Binary instructions
+    case Instruction::Add: Cycles++; break;
+    case Instruction::FAdd: Cycles += 3; break;
+    case Instruction::Sub: Cycles++; break;
+    case Instruction::FSub: Cycles += 3; break;
+    case Instruction::Mul: Cycles += 2; break;
+    case Instruction::FMul: Cycles += 3; break;
+    case Instruction::UDiv: Cycles += 73; break;
+    case Instruction::SDiv: Cycles += 81; break;
+    case Instruction::FDiv: Cycles += 14; break;
+    case Instruction::URem: Cycles += 73; break;
+    case Instruction::SRem: Cycles += 81; break;
+    case Instruction::FRem: Cycles += 14; break;
+
+    // Logical operators
+    case Instruction::Shl: Cycles += 2; break;
+    case Instruction::LShr: Cycles += 2; break;
+    case Instruction::AShr: Cycles += 2; break;
+    case Instruction::And: Cycles += 1; break;
+    case Instruction::Or: Cycles += 1; break;
+    case Instruction::Xor: Cycles += 1; break;
+
+    // Memory instructions
+    case Instruction::Load: {
+      const LoadInst *LI = cast<LoadInst>(I);
+      Ty = LI->getPointerOperand()->getType()->getPointerElementType();
+      Cycles += getNumCacheLines(DL->getTypeStoreSize(Ty), 64) * MEM_WEIGHT;
+      break;
+    }
+    case Instruction::Store: {
+      const StoreInst *SI = cast<StoreInst>(I);
+      Ty = SI->getValueOperand()->getType();
+      Cycles += getNumCacheLines(DL->getTypeStoreSize(Ty), 64) * MEM_WEIGHT;
+      break;
+    }
+    case Instruction::GetElementPtr: Cycles++; break;
+    case Instruction::Fence: Cycles += 33; break;
+    case Instruction::AtomicCmpXchg: Cycles += 21; break;
+    case Instruction::AtomicRMW: Cycles += 21; break;
+
+    // Cast instructions
+    case Instruction::Trunc: Cycles++; break;
+    case Instruction::ZExt: Cycles++; break;
+    case Instruction::SExt: Cycles++; break;
+    case Instruction::FPToUI: Cycles += 4; break;
+    case Instruction::FPToSI: Cycles += 4; break;
+    case Instruction::UIToFP: Cycles += 5; break;
+    case Instruction::SIToFP: Cycles += 5; break;
+    case Instruction::FPTrunc: Cycles += 4; break;
+    case Instruction::FPExt: Cycles += 2; break;
+
+    // Other instructions
+    // TODO VAArg, ExtractElement, InsertElement, ShuffleVector, ExtractValue,
+    // InsertValue, LandingPad
+    case Instruction::ICmp: Cycles++; break;
+    case Instruction::FCmp: Cycles += 3; break;
+    case Instruction::Call: {
+      const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
+      int64_t Size = 0;
+
+      if(!II) Cycles += 3;
+      else {
+        switch(II->getIntrinsicID()) {
+        default: break;
+        case Intrinsic::memcpy:
+        case Intrinsic::memmove:
+        case Intrinsic::memset:
+          // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
+          Size = getValueSize(II->getArgOperand(2));
+          break;
+        }
+
+        if(Size > 0) Cycles += getNumCacheLines(Size, 64) * MEM_WEIGHT;
+      }
+      break;
+    }
+    case Instruction::Select: Cycles += 3; break;
+    }
+  }
+
+  virtual void reset() {
+    Weight::reset();
+    ResetCycles += Cycles;
+    Cycles = 0;
+  }
+
+  virtual void max(const Weight *RHS) {
+    assert(RHS->isCycleWeight() && "Cannot mix weight types");
+    const CycleWeight *W = (const CycleWeight *)RHS;
+    if(W->Cycles > Cycles) Cycles = W->Cycles;
+  }
+
+  virtual void multiply(size_t factor) { Cycles *= factor; }
+  virtual void add(const Weight *RHS) {
+    assert(RHS->isCycleWeight() && "Cannot mix weight types");
+    const CycleWeight *W = (const CycleWeight *)RHS;
+    Cycles += W->Cycles;
+  }
+
+  virtual size_t numIters() const {
+    if(!Cycles) return 1048576; // Return a safe value
+    else {
+      size_t FPCycleCap = getValuePercent(CyclesBetweenMigPoints,
+                                          CapacityThreshold);
+      size_t Iters = FPCycleCap / Cycles;
+      return Iters ? Iters : 1;
+    }
+  }
+
+  virtual bool underPercentOfThreshold(unsigned percent) const {
+    if(Cycles <= getValuePercent(CyclesBetweenMigPoints, percent)) return true;
+    else return false;
+  }
+
+  virtual std::string toString() const {
+    return std::to_string(Cycles) + " cycles";
+  }
+};
+
 /// Get a weight object with zero-initialized weight based on the type of
 /// analysis being used to instrument the application.
 ///
 /// Note: returns a dynamically allocated object to be managed by the caller
 static Weight *getZeroWeight(bool DoHTMInst) {
   if(DoHTMInst) return new HTMWeight();
-  else llvm_unreachable("Unknown weight type");
+  else return new CycleWeight();
 }
 
 /// MigrationPoints - insert migration points into functions, optionally adding
@@ -581,7 +755,18 @@ public:
         dbgs() << "\n-> Analyzing function body to add migration points <-\n"
                << "\nCapacity threshold: " << std::to_string(CapacityThreshold)
                << "\nStart threshold: " << std::to_string(StartThreshold)
-               << "\nReturn threshold: " << std::to_string(RetThreshold) << "\n"
+               << "\nReturn threshold: " << std::to_string(RetThreshold)
+               << "\nMaximum iterations/migration point: "
+               << std::to_string(MaxItersPerMigPoint);
+
+        if(DoHTMInst)
+          dbgs() << "\nHTM read buffer size: "
+                 << std::to_string(HTMReadBufSizeArg) << "kb"
+                 << "\nHTM write buffer size: "
+                 << std::to_string(HTMWriteBufSizeArg) << "kb\n";
+        else
+          dbgs() << "\nTarget millions of cycles between migration points: "
+                 << std::to_string(MillionCyclesBetweenMigPoints) << "\n";
       );
 
       // We by default mark the function start as a migration point, but if we
@@ -1037,8 +1222,11 @@ private:
 
     // If we can't get the size assume it's a big memory operation
     if(Size < 0) return true;
-    else return Size >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
-                Size >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    else {
+      size_t USize = (size_t)Size;
+      return USize >= getValuePercent(HTMReadBufSize, CapacityThreshold) ||
+             USize >= getValuePercent(HTMWriteBufSize, CapacityThreshold);
+    }
   }
 
   /// Return whether the instruction is a libc I/O call.
@@ -1211,7 +1399,8 @@ private:
     BasicBlock *Header = L->getHeader();
     WeightPtr HeaderWeight(getInitialWeight(Header));
 
-    DEBUG(dbgs() << "       + Analyzing loop entry points, header weight: "
+    DEBUG(dbgs() << "       + Analyzing loop entry points to "
+                 << Header->getName() << ", header weight: "
                  << HeaderWeight->toString() << "\n");
 
     // See if any of the exit spanning path weights are too heavy to include
@@ -1272,8 +1461,11 @@ private:
         BBWeights[CurBB] = std::move(PredWeight);
       }
       else if(!MarkedLoops.count(BlockLoop)) {
-        // Block is in a sub-loop, analyze & mark sub-loop's entry
-        AddedMigPoint |= traverseLoopEntry(BlockLoop);
+        // Block is in a sub-loop, analyze & mark sub-loop's entry.  Only
+        // analyze direct sub-loops, as deeper-nested (2+) loops will have
+        // already been analyzed by their parents.
+        if(BlockLoop->getLoopDepth() - L->getLoopDepth() == 1)
+          AddedMigPoint |= traverseLoopEntry(BlockLoop);
         MarkedLoops.insert(BlockLoop);
       }
     }
@@ -1283,25 +1475,24 @@ private:
     return AddedMigPoint;
   }
 
-  /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
+  /// Analyze a path in a loop up until a particular end instruction and return
+  /// its weight.  Doesn't do any marking.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
-  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
-    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump(););
+  Weight *traversePathInternal(const LoopPath *LP,
+                               const Instruction *PathEnd,
+                               bool &ActuallyEqPoint) const {
     assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
+    assert(LP->contains(PathEnd->getParent()) && "Invalid end instruction");
     ActuallyEqPoint = false;
 
-    // Note: path ending instructions should either be control flow or calls,
-    // so they do not need to be analyzed.
     Loop *SubLoop;
     Weight *PathWeight = getZeroWeight(DoHTMInst);
     SetVector<PathNode>::const_iterator Node = LP->cbegin(),
                                         EndNode = LP->cend();
-    const BasicBlock *NodeBlock = Node->getBlock();
-    BasicBlock::const_iterator Inst(LP->startInst()),
-                               EndInst(NodeBlock->end()),
-                               PathEndInst(LP->endInst());
-
+    const BasicBlock *NodeBlock = Node->getBlock(),
+                     *EndBlock = PathEnd->getParent();
+    BasicBlock::const_iterator Inst, EndInst, PathEndInst(PathEnd);
 
     if(Node->isSubLoopExit()) {
       // Since the sub-loop exit block is the start of the path, it's by
@@ -1312,22 +1503,27 @@ private:
       PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
     }
     else {
-      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
+      for(Inst = LP->startInst(), EndInst = NodeBlock->end();
+          Inst != EndInst && Inst != PathEndInst; Inst++)
         PathWeight->analyze(Inst, DL);
+    }
+
+    if(NodeBlock == EndBlock) {
+      PathWeight->analyze(PathEndInst, DL);
+      return PathWeight;
     }
 
     for(Node++; Node != EndNode; Node++) {
       NodeBlock = Node->getBlock();
       if(Node->isSubLoopExit()) {
         // Since the sub-loop exit block is in the middle of the path, it's by
-        // definition exiting from a spanning path
+        // definition exiting from a spanning path.  EnumerateLoopPaths doesn't
+        // know about loops we've marked for transformation, however, so reset
+        // the path weight for loops that'll have a migration point added to
+        // their header.
         SubLoop = LI->getLoopFor(NodeBlock);
         assert(LoopWeights.count(SubLoop) && "Invalid traversal");
         const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-
-        // EnumerateLoopPaths doesn't know about loops we've marked for
-        // transformation, so explicitly reset the path weight for loops
-        // that'll have a migration point added to their header.
         if(LoopMigPoints.count(SubLoop)) {
           ActuallyEqPoint = true;
           PathWeight->reset();
@@ -1358,105 +1554,34 @@ private:
         }
       }
       else {
-        Inst = NodeBlock->begin();
-        EndInst = NodeBlock->end();
-        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
+        for(Inst = NodeBlock->begin(), EndInst = NodeBlock->end();
+            Inst != EndInst && Inst != PathEndInst; Inst++)
           PathWeight->analyze(Inst, DL);
       }
+
+      if(NodeBlock == EndBlock) break;
     }
+    PathWeight->analyze(PathEndInst, DL);
 
     return PathWeight;
   }
 
-  /// Traverse a path until a given exit block & return path's weight up until
+  /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
+  ///
+  /// Note: returns a dynamically allocated object to be managed by the caller
+  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
+    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump());
+    return traversePathInternal(LP, LP->endInst(), ActuallyEqPoint);
+  }
+
+  /// Analyze a path until a given exit block & return path's weight up until
   /// the exit point.
   ///
   /// Note: returns a dynamically allocated object to be managed by the caller
   Weight *traversePathUntilExit(const LoopPath *LP,
                                 BasicBlock *Exit,
-                                bool &ActuallyEqPoint) const {
-    assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
-    assert(LP->contains(Exit) && "Invalid path and/or exit block");
-    ActuallyEqPoint = false;
-
-    // Note: the path's end must be either the terminator of the exit block (if
-    // the exit block is also a latch) or an equivalence point/backedge branch
-    // further down the path from the exit block.
-    Loop *SubLoop;
-    Weight *PathWeight = getZeroWeight(DoHTMInst);
-    SetVector<PathNode>::const_iterator Node = LP->cbegin(),
-                                        EndNode = LP->cend();
-    const BasicBlock *NodeBlock = Node->getBlock();
-    BasicBlock::const_iterator Inst(LP->startInst()),
-                               EndInst(Node->getBlock()->end()),
-                               PathEndInst(Exit->end());
-
-    if(Node->isSubLoopExit()) {
-      // Since the sub-loop exit block is the start of the path, it's by
-      // definition exiting from an equivalence point path.
-      SubLoop = LI->getLoopFor(NodeBlock);
-      assert(LoopWeights.count(SubLoop) && "Invalid traversal");
-      const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-      PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
-    }
-    else {
-      for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-        PathWeight->analyze(Inst, DL);
-    }
-    if(Node->getBlock() == Exit) return PathWeight;
-
-    for(Node++; Node != EndNode; Node++) {
-      NodeBlock = Node->getBlock();
-      if(Node->isSubLoopExit()) {
-        // Since the sub-loop exit block is in the middle of the path, it's by
-        // definition exiting from a spanning path
-        SubLoop = LI->getLoopFor(NodeBlock);
-        assert(LoopWeights.count(SubLoop) && "Invalid traversal");
-        const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
-
-        // EnumerateLoopPaths doesn't know about loops we've marked for
-        // transformation, so explicitly reset the path weight for loops
-        // that'll have a migration point added to their header.
-        if(LoopMigPoints.count(SubLoop)) {
-          ActuallyEqPoint = true;
-          PathWeight->reset();
-        }
-
-        // TODO we need to ultimately deal with the following situation more
-        // gracefully:
-        //
-        //   loop 1: all spanning paths, contains loop 2
-        //     loop 2: all spanning paths, contains loop 3
-        //       loop 3: all spanning paths, to be instrumented
-        //
-        // Analysis determines loop 3 needs to be instrumented.  If all paths
-        // in loop 2 go through loop 3, then loop 2 no longer has spanning
-        // paths but only equivalence point paths.  The previous if statement
-        // detects this, and reports it to calculateLoopExitWeights().  However
-        // when analyzing paths through loop 1, we can't detect that loop 2
-        // only has equivalence points paths.
-
-        if(LWI.loopHasSpanningPath()) {
-          PathWeight->add(LWI.getLoopSpanningPathWeight(false));
-          PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
-        }
-        else {
-          ActuallyEqPoint = true;
-          PathWeight->reset();
-          PathWeight->add(LWI[NodeBlock]);
-        }
-      }
-      else {
-        Inst = Node->getBlock()->begin();
-        EndInst = Node->getBlock()->end();
-        for(; Inst != EndInst && Inst != PathEndInst; Inst++)
-          PathWeight->analyze(Inst, DL);
-      }
-      if(Node->getBlock() == Exit) break;
-    }
-
-    return PathWeight;
-  }
+                                bool &ActuallyEqPoint) const
+  { return traversePathInternal(LP, Exit->getTerminator(), ActuallyEqPoint); }
 
   /// Get the loop trip count if available and less than UINT32_MAX, or 0
   /// otherwise.
@@ -1509,13 +1634,19 @@ private:
     if(HasSpPath) {
       // Optimization: if the loop trip count is smaller than the number of
       // iterations between migration points, elide loop instrumentation.
-      unsigned NumIters = SpanningWeight->numIters(),
-               TripCount = getTripCount(L);
+      size_t NumIters = SpanningWeight->numIters();
+      unsigned TripCount = getTripCount(L);
       assert(NumIters > 0 && "Should have added a migration point");
       if(TripCount && TripCount < NumIters) {
         DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
                      << std::to_string(TripCount) << "\n");
         NumIters = TripCount;
+      }
+      else if(NumIters > (size_t)MaxItersPerMigPoint) {
+        DEBUG(dbgs() << "  Eliding loop instrumentation (exceeded maximum "
+                        " iterations per migration point), loop trip count: "
+                     << std::to_string(MaxItersPerMigPoint) << "\n");
+        NumIters = MaxItersPerMigPoint;
       }
       // TODO mark first insertion point in loop header as migration point,
       // propagate whether we added a migration point as return value
