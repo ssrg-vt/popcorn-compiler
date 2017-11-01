@@ -29,8 +29,9 @@ class ConfigureCycles:
         self.start = 95
         self.ret = 95
         self.cycVals = [1, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
-        self.maxIters = [2048, 8192, 32768, 1048576, 4294967295]
-        self.configs = list(itertools.product(self.cycVals, self.maxIters))
+        self.itersPerMigPoint = [2048, 8192, 32768, 1048576, 4294967295]
+        self.configs = list(itertools.product(self.cycVals,
+                                              self.itersPerMigPoint))
 
     def __del__(self):
         self.decisions.close()
@@ -53,7 +54,7 @@ class ConfigureCycles:
                     .format(curConfig[0], curConfig[1])
         return self.cap, self.start, self.ret, cyclesArg
 
-    def analyze(self, time, counters, numSamples, symbolSamples):
+    def analyze(self, time, counters, numSamples, symbolSamples, respStats):
         # TODO need to use htmconfig's Result class
         self.results.append(time)
         slowdown = percent(time, self.targetTime) - 100.0
@@ -63,7 +64,7 @@ class ConfigureCycles:
 
         def statStr(stats):
             result = ""
-            for stat in stats:
+            for stat in sorted(stats.keys()):
                 result += "{}={:.1f}, ".format(stat, stats[stat])
             return result[:-2]
         self.log("Response time statistics: {}".format(statStr(respStats)))

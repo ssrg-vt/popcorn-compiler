@@ -25,12 +25,15 @@ def parseArguments():
     config.add_argument("-signal", type=int, default=35,
         help="Migration signal number",
         dest="signal")
-    config.add_argument("-period", type=float, default=5.0,
+    config.add_argument("-period", type=float, default=0.5,
         help="Period with which to ping the application to migrate",
         dest="period")
     config.add_argument("-output", type=str, default="migration-response.txt",
         help="Output from process",
         dest="out")
+    config.add_argument("-verbose", action="store_true",
+        help="Verbose printing",
+        dest="verbose")
 
     return parser.parse_args()
 
@@ -40,7 +43,9 @@ def runProcess(args):
     cmd[0] = os.path.abspath(cmd[0])
     assert os.path.isfile(cmd[0]), "Invalid binary '{}'".format(cmd[0])
     try:
-        print("Running process '{}'...".format(cmd[0]))
+        if args.verbose:
+            print("Running process '{}'...".format(cmd[0]))
+
         process = subprocess.Popen(cmd,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
@@ -55,7 +60,9 @@ def signalProcess(args, process):
     low = args.period - delta
     high = args.period + delta
     numSignalled = 0
-    print("Signalling every {} seconds, += 10%".format(args.period))
+
+    if args.verbose:
+        print("Signalling every {} seconds, += 10%".format(args.period))
 
     # Periodically (+/- delta) signal the application
     while process.poll() is None:
@@ -63,12 +70,12 @@ def signalProcess(args, process):
         time.sleep(random.uniform(low, high))
         numSignalled += 1
 
-    print("Signalled {} times".format(numSignalled))
+    if args.verbose: print("Signalled {} times".format(numSignalled))
 
 def writeOutput(args, process):
     assert process.poll() is not None, "Process didn't finish"
     with open(args.out, 'w') as fp:
-        print("Writing output to '{}'".format(args.out))
+        if args.verbose: print("Writing output to '{}'".format(args.out))
         out, err = process.communicate()
         assert out is not None, "No output from process"
         fp.write(out.decode("utf-8"))

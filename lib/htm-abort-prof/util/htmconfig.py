@@ -301,7 +301,7 @@ class ConfigureHTM:
 
         def statStr(stats):
             result = ""
-            for stat in stats:
+            for stat in sorted(stats.keys()):
                 result += "{}={:.1f}, ".format(stat, stats[stat])
             return result[:-2]
         self.log("Response time statistics: {}".format(statStr(respStats)))
