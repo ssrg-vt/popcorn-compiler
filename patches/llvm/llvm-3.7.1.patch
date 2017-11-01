@@ -7513,7 +7513,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
-@@ -0,0 +1,2165 @@
+@@ -0,0 +1,2167 @@
 +//===- MigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8204,7 +8204,9 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +      }
 +    }
 +
-+    if(AbortCount != "" && M.getFunction(AbortCount)) {
++    const Function *CounterFunc;
++    if(AbortCount != "" && (CounterFunc = M.getFunction(AbortCount)) &&
++       !CounterFunc->isDeclaration()) {
 +      LLVMContext &C = M.getContext();
 +      IntegerType *Unsigned = Type::getInt32Ty(C);
 +      GlobalVariable *NumCtrs = cast<GlobalVariable>(

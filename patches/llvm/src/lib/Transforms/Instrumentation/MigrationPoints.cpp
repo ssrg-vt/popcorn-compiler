@@ -688,7 +688,9 @@ public:
       }
     }
 
-    if(AbortCount != "" && M.getFunction(AbortCount)) {
+    const Function *CounterFunc;
+    if(AbortCount != "" && (CounterFunc = M.getFunction(AbortCount)) &&
+       !CounterFunc->isDeclaration()) {
       LLVMContext &C = M.getContext();
       IntegerType *Unsigned = Type::getInt32Ty(C);
       GlobalVariable *NumCtrs = cast<GlobalVariable>(
