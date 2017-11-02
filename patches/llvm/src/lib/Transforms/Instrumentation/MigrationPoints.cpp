@@ -688,7 +688,9 @@ public:
       }
     }
 
-    if(AbortCount != "" && M.getFunction(AbortCount)) {
+    const Function *CounterFunc;
+    if(AbortCount != "" && (CounterFunc = M.getFunction(AbortCount)) &&
+       !CounterFunc->isDeclaration()) {
       LLVMContext &C = M.getContext();
       IntegerType *Unsigned = Type::getInt32Ty(C);
       GlobalVariable *NumCtrs = cast<GlobalVariable>(
@@ -1642,7 +1644,8 @@ private:
                      << std::to_string(TripCount) << "\n");
         NumIters = TripCount;
       }
-      else if(NumIters > (size_t)MaxItersPerMigPoint) {
+      else if(L->getLoopDepth() > 1 &&
+              NumIters > (size_t)MaxItersPerMigPoint) {
         DEBUG(dbgs() << "  Eliding loop instrumentation (exceeded maximum "
                         " iterations per migration point), loop trip count: "
                      << std::to_string(MaxItersPerMigPoint) << "\n");
@@ -1937,7 +1940,7 @@ private:
   /// Add HTM begin which avoids doing any work unless there's an abort.  In
   /// the event of an abort, the instrumentation checks if it should migrate,
   /// and if so, invokes the migration API.
-  void addHTMBeginInternal(Instruction *I, Value *Begin, Value *BeginSuccess) {
+  void addHTMBeginInternal(Instruction *I, Value *Begin, Value *Comparison) {
     LLVMContext &C = I->getContext();
     BasicBlock *CurBB = I->getParent(), *NewSuccBB, *FlagCheckBB, *MigPointBB;
 
@@ -1951,11 +1954,10 @@ private:
       BasicBlock::Create(C, "migflagcheck" + std::to_string(NumMigPoints),
                          CurBB->getParent(), MigPointBB);
 
-    // Add check & branch based on HTM begin result; if Begin == BeginSuccess,
-    // we've successfully started the transaction.
+    // Add check & branch based on HTM begin result Comparison.  The true
+    // target of the branch is when we've started the transaction.
     IRBuilder<> HTMWorker(CurBB->getTerminator());
-    Value *Cmp = HTMWorker.CreateICmpEQ(Begin, BeginSuccess);
-    HTMWorker.CreateCondBr(Cmp, NewSuccBB, FlagCheckBB);
+    HTMWorker.CreateCondBr(Comparison, NewSuccBB, FlagCheckBB);
     CurBB->getTerminator()->eraseFromParent();
 
     // Check flag to see if we should invoke migration library API.
@@ -1985,7 +1987,7 @@ private:
     }
     Value *Flag = FlagCheckWorker.CreateLoad(MigrateFlag);
     Value *NegOne = ConstantInt::get(Type::getInt32Ty(C), -1, true);
-    Cmp = FlagCheckWorker.CreateICmpEQ(Flag, NegOne);
+    Value *Cmp = FlagCheckWorker.CreateICmpEQ(Flag, NegOne);
     FlagCheckWorker.CreateCondBr(Cmp, NewSuccBB, MigPointBB);
 
     // Add call to migration library API.
@@ -2008,7 +2010,8 @@ private:
                                                    false) };
     Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl, Args);
     Value *Zero = ConstantInt::get(Type::getInt32Ty(C), 0, false);
-    addHTMBeginInternal(I, HTMBeginVal, Zero);
+    Value *Cmp = Worker.CreateICmpNE(HTMBeginVal, Zero);
+    addHTMBeginInternal(I, HTMBeginVal, Cmp);
   }
 
   /// Add a transactional execution begin intrinsice for x86.
@@ -2017,16 +2020,17 @@ private:
     IRBuilder<> Worker(I);
     Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl);
     Value *Success = ConstantInt::get(Type::getInt32Ty(C), 0xffffffff, false);
-    addHTMBeginInternal(I, HTMBeginVal, Success);
+    Value *Cmp = Worker.CreateICmpEQ(HTMBeginVal, Success);
+    addHTMBeginInternal(I, HTMBeginVal, Cmp);
   }
 
   /// Add transactional execution end intrinsic for PowerPC.
   void addPowerPCHTMEnd(Instruction *I) {
     LLVMContext &C = I->getContext();
     IRBuilder<> EndWorker(I);
-    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C),
-                                         0, false);
-    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(Zero));
+    ConstantInt *One = ConstantInt::get(IntegerType::getInt32Ty(C),
+                                        1, false);
+    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(One));
   }
 
   /// Add transactional execution check & end intrinsics for x86.
