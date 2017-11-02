@@ -25,12 +25,21 @@ def scrapeResponseTimes(filename):
             elif "migration library" in line: NumCalls = int(line.split()[0])
             else: RespTimes.append(float(line.split()[0]))
 
-    Stats = {
-      "average" : statistics.mean(RespTimes),
-      "median" : statistics.median(RespTimes),
-      "minimum" : min(RespTimes),
-      "maximum" : max(RespTimes)
-    }
+    if len(RespTimes) > 0:
+        Stats = {
+            "average" : statistics.mean(RespTimes),
+            "median" : statistics.median(RespTimes),
+            "minimum" : min(RespTimes),
+            "maximum" : max(RespTimes)
+        }
+    else:
+        Stats = {
+            "average" : 0.0,
+            "median" : 0.0,
+            "minimum" : 0.0,
+            "maximum" : 0.0
+        }
+        NumCalls = 0
 
     return Stats, RespTimes, NumCalls
 
