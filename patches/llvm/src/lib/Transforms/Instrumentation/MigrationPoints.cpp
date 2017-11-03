@@ -93,6 +93,8 @@ public:
     switch(Ty) {
     case Popcorn::HTM:
       if(HTMBegin.find(Arch) != HTMBegin.end()) {
+        DEBUG(dbgs() << "\n-> MigrationPoints: Adding HTM intrinsics for '"
+                     << TheTriple.getArchName() << "' <-\n");
         HTMBeginDecl =
           Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
         HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
@@ -101,8 +103,11 @@ public:
         addMigrationIntrinsic(M, true);
       }
       else {
-        DEBUG(dbgs() << "Selected HTM instrumentation but architecture not "
-                        "supported, falling back to normal call-outs\n");
+        DEBUG(
+          dbgs() << "\n-> MigrationPoints: Selected HTM instrumentation but '"
+                 << TheTriple.getArchName()
+                 << "' is not supported, falling back to call-outs <-\n"
+        );
         Ty = Popcorn::Cycles;
         addMigrationIntrinsic(M, false);
       }

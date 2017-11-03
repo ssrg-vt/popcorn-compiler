@@ -111,7 +111,7 @@ Index: include/clang/CodeGen/PopcornUtil.h
 ===================================================================
 --- include/clang/CodeGen/PopcornUtil.h	(nonexistent)
 +++ include/clang/CodeGen/PopcornUtil.h	(working copy)
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,39 @@
 +//===--- PopcornUtil.h - Popcorn Linux Utilities ----------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -140,6 +140,12 @@ Index: include/clang/CodeGen/PopcornUtil.h
 +/// unsupported target features when compiling the IR for multiple
 +/// architectures.
 +void StripTargetAttributes(llvm::Module &M);
++
++
++/// Add the target-features attribute specified in TargetOpts to every function
++/// in module M.
++void AddArchSpecificTargetFeatures(llvm::Module &M,
++                                   std::shared_ptr<TargetOptions> TargetOpts);
 +
 +} /* end Popcorn namespace */
 +} /* end clang namespace */
@@ -424,7 +430,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +268,73 @@
+@@ -261,6 +268,74 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -482,6 +488,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +        llvm::Module* ArchModule = CloneModule(TheModule.get());
 +        ArchModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
 +        ArchModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
++        Popcorn::AddArchSpecificTargetFeatures(*ArchModule, AsmTargetOpts[i]);
 +        CodegenBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
 +                             AsmTargetInfos[i]->getTargetDescription(),
 +                             ArchModule, Action, AsmOutStreams[i]);
@@ -498,7 +505,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +700,7 @@
+@@ -626,6 +701,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -506,7 +513,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +707,7 @@
+@@ -632,13 +708,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -521,7 +528,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +731,10 @@
+@@ -662,6 +732,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -532,7 +539,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +742,19 @@
+@@ -669,6 +743,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -552,7 +559,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +770,42 @@
+@@ -684,6 +771,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -595,7 +602,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +815,9 @@
+@@ -693,37 +816,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -634,7 +641,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +863,117 @@
+@@ -769,3 +864,118 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -736,6 +743,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      llvm::Module *ArchModule = CloneModule(TheModule.get());
 +      ArchModule->setTargetTriple(Targets[i]);
 +      ArchModule->setDataLayout(TargetInfos[i]->getTargetDescription());
++      Popcorn::AddArchSpecificTargetFeatures(*ArchModule, TargetOpts[i]);
 +      LLVMContext &Ctx = ArchModule->getContext();
 +      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
 +      CodegenBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
@@ -756,7 +764,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 ===================================================================
 --- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
 +++ lib/CodeGen/PopcornUtil.cpp	(working copy)
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,86 @@
 +//===--- PopcornUtil.cpp - LLVM Popcorn Linux Utilities -------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -773,24 +781,21 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +using namespace clang;
 +using namespace llvm;
 +
-+/// Target-specific function attributes
-+SmallVector<std::string, 2> TargetAttributes = {
-+  "target-cpu",
-+  "target-features"
-+};
++typedef std::shared_ptr<TargetOptions> TargetOptionsPtr;
 +
-+std::shared_ptr<TargetOptions>
-+Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
++TargetOptionsPtr Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
 +  Triple Triple(Triple::normalize(TripleStr));
 +  assert(!Triple.getTriple().empty() && "Invalid target triple");
 +
-+  std::shared_ptr<TargetOptions> Opts(new TargetOptions);
++  TargetOptionsPtr Opts(new TargetOptions);
 +  Opts->Triple = Triple.getTriple();
 +  Opts->ABI = "";
 +  Opts->FPMath = "";
 +  Opts->FeaturesAsWritten.clear();
 +  Opts->LinkerVersion = "";
 +  Opts->Reciprocals.clear();
++
++  // TODO need to make CPU selectable & add target features according to CPU
 +
 +  switch(Triple.getArch()) {
 +  case Triple::ArchType::aarch64:
@@ -802,6 +807,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +    Opts->CPU = "x86-64";
 +    Opts->FeaturesAsWritten.push_back("+sse");
 +    Opts->FeaturesAsWritten.push_back("+sse2");
++    Opts->FeaturesAsWritten.push_back("+rtm");
 +    break;
 +  default: llvm_unreachable("Triple not currently supported on Popcorn");
 +  }
@@ -810,12 +816,36 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +}
 +
 +void Popcorn::StripTargetAttributes(Module &M) {
++  /// Target-specific function attributes
++  static SmallVector<std::string, 2> TargetAttributes = {
++    "target-cpu",
++    "target-features"
++  };
++
 +  for(Function &F : M) {
 +    AttrBuilder AB(F.getAttributes(), AttributeSet::FunctionIndex);
 +    for(std::string &Attr : TargetAttributes) {
 +      if(F.hasFnAttribute(Attr))
 +        AB.removeAttribute(Attr);
 +    }
++    F.setAttributes(
++      AttributeSet::get(F.getContext(), AttributeSet::FunctionIndex, AB));
++  }
++}
++
++void Popcorn::AddArchSpecificTargetFeatures(Module &M,
++                                            TargetOptionsPtr TargetOpts) {
++  static const char *TF = "target-features";
++  std::string AllFeatures("");
++
++  for(auto &Feature : TargetOpts->FeaturesAsWritten)
++    AllFeatures += Feature + ",";
++  AllFeatures = AllFeatures.substr(0, AllFeatures.length() - 1);
++
++  for(Function &F : M) {
++    AttrBuilder AB(F.getAttributes(), AttributeSet::FunctionIndex);
++    assert(!F.hasFnAttribute(TF) && "Target features weren't stripped");
++    AB.addAttribute(TF, AllFeatures);
 +    F.setAttributes(
 +      AttributeSet::get(F.getContext(), AttributeSet::FunctionIndex, AB));
 +  }
