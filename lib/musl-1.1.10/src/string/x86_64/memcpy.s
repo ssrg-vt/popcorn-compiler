@@ -1,4 +1,4 @@
-.section .text.memcpyi, "ax"
+.section .text.memcpy, "ax"
 .global memcpy
 .global __memcpy_fwd
 .hidden __memcpy_fwd
