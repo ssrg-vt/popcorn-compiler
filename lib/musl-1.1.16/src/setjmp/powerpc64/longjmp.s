@@ -5,6 +5,7 @@
 	.global longjmp
 	.type   _longjmp,@function
 	.type   longjmp,@function
+.align 4
 _longjmp:
 longjmp:
 	# 0) move old return address into the link register

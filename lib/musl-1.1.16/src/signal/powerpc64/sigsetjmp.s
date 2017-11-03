@@ -13,6 +13,7 @@
 	.type sigsetjmp,%function
 	.type __sigsetjmp,%function
 	.hidden ___setjmp
+	.align 4
 sigsetjmp:
 __sigsetjmp:
 	addis 2, 12, .TOC.-__sigsetjmp@ha

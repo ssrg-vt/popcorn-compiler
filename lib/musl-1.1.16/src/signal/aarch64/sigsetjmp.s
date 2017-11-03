@@ -12,6 +12,7 @@
 .global __sigsetjmp
 .type sigsetjmp,%function
 .type __sigsetjmp,%function
+.align 4
 sigsetjmp:
 __sigsetjmp:
 	cbz x1,setjmp

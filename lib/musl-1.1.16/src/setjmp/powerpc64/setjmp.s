@@ -9,6 +9,7 @@
 	.type   __setjmp,@function
 	.type   _setjmp,@function
 	.type   setjmp,@function
+	.align 4
 ___setjmp:
 __setjmp:
 _setjmp:

@@ -24,6 +24,7 @@
 .global __syscall_cp_asm
 .hidden __syscall_cp_asm
 .type __syscall_cp_asm,%function
+.align 4
 __syscall_cp_asm:
 __cp_begin:
 	ldr w0,[x0]

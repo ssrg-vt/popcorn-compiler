@@ -19,6 +19,7 @@
 	.hidden __syscall_cp_asm
 /*	.text */
 	.type   __syscall_cp_asm,%function
+	.align 4
 __syscall_cp_asm:
 	# at enter: r3 = pointer to self->cancel, r4: syscall no, r5: first arg, r6: 2nd, r7: 3rd, r8: 4th, r9: 5th, r10: 6th
 __cp_begin:

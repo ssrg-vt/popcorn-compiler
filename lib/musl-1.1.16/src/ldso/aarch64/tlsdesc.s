@@ -6,6 +6,7 @@
 .global __tlsdesc_static
 .hidden __tlsdesc_static
 .type __tlsdesc_static,@function
+.align 4
 __tlsdesc_static:
 	ldr x0,[x0,#8]
 	ret
@@ -24,6 +25,7 @@ __tlsdesc_static:
 .global __tlsdesc_dynamic
 .hidden __tlsdesc_dynamic
 .type __tlsdesc_dynamic,@function
+.align 4
 __tlsdesc_dynamic:
 	stp x1,x2,[sp,#-32]!
 	stp x3,x4,[sp,#16]

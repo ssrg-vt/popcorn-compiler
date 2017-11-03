@@ -4,6 +4,7 @@
 	.global dlsym
 	.hidden __dlsym
 	.type   dlsym,@function
+	.align 4
 dlsym:
 	addis   2, 12, .TOC.-dlsym@ha
 	addi    2,  2, .TOC.-dlsym@l
