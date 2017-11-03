@@ -620,6 +620,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  : CodeGenAction(Backend_EmitMultiObj, _VMContext) {
 +  // TODO make Popcorn targets selectable from command line
 +  Targets.push_back("aarch64--linux-gnu");
++  Targets.push_back("powerpc64le--linux-gnu");
 +  Targets.push_back("x86_64-unknown-linux-gnu");
 +}
 +
@@ -650,8 +651,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
 +
 +    raw_pwrite_stream *OS;
-+    if(i) OS = GetOutputStream(CI, AppendArchName(OutFile, TargetInfos[i]), BA);
-+    else OS = GetOutputStream(CI, OutFile, BA);
++    OS = GetOutputStream(CI, AppendArchName(OutFile, TargetInfos[i]), BA);
 +
 +    if (!OS) return false;
 +    OutFiles.push_back(OS);
@@ -732,7 +732,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 ===================================================================
 --- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
 +++ lib/CodeGen/PopcornUtil.cpp	(working copy)
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,72 @@
 +//===--- PopcornUtil.cpp - LLVM Popcorn Linux Utilities -------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -768,7 +768,15 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +  Opts->LinkerVersion = "";
 +  Opts->Reciprocals.clear();
 +
++// features taken from .ll com[piled using popcorn clang 3.7
++// "target-cpu"="ppc64le" "target-features"="+altivec,+bpermd,+crypto,+direct-move,+extdiv,+power8-vector,+vsx,-qpx"
++// [harubyy] TODO: put only altivec for testing
 +  switch(Triple.getArch()) {
++  case Triple::ArchType::ppc64le:
++    Opts->ABI = "elfv2";
++    Opts->CPU = "ppc64le";
++    Opts->FeaturesAsWritten.push_back("+altivec");
++    break;
 +  case Triple::ArchType::aarch64:
 +    Opts->ABI = "aapcs";
 +    Opts->CPU = "generic";
