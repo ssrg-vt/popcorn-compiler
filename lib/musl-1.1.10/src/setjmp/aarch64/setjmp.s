@@ -1,3 +1,4 @@
+.section .text.setjmp, "ax"
 .global __setjmp
 .global _setjmp
 .global setjmp

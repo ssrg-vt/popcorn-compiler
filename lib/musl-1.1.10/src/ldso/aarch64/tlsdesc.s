@@ -1,3 +1,4 @@
+.section .text.__tlsdesc_static, "ax"
 // size_t __tlsdesc_static(size_t *a)
 // {
 // 	return a[1];
@@ -11,6 +12,7 @@ __tlsdesc_static:
 
 .hidden __tls_get_new
 
+.section .__tlsdesc_dynamic, "ax"
 // size_t __tlsdesc_dynamic(size_t *a)
 // {
 // 	struct {size_t modidx,off;} *p = (void*)a[1];

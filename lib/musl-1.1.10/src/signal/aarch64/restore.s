@@ -1,3 +1,5 @@
+.section .text.__restore_rt, "ax"
+.align 4
 .global __restore
 .type __restore,%function
 __restore:

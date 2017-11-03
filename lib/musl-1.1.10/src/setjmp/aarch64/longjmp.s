@@ -1,3 +1,4 @@
+.section .text.longjmp, "ax"
 .global _longjmp
 .global longjmp
 .type _longjmp,%function
