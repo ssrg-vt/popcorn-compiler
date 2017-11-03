@@ -1,0 +1,2 @@
+Move pthread_kill from signal to pthread.h
+add '__' to all funcs in thread/pthread_attr_get.c

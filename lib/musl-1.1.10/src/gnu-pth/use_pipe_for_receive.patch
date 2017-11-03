@@ -1,0 +1,350 @@
+diff --git a/pth_lib.c b/pth_lib.c
+index d3c5be2..1f63607 100644
+--- a/pth_lib.c
++++ b/pth_lib.c
+@@ -338,8 +338,8 @@ pth_t pth_spawn(pth_attr_t attr, void *(*func)(void *), void *arg)
+        the scheduler will pick it up for dispatching */
+     if (func != pth_scheduler) {
+         t->state = PTH_STATE_NEW;
+-	LSCHED->nb_threads++;
+-	total_nb_threads++;//TODO: make it a cas
++	    LSCHED->nb_threads++;
++	    total_nb_threads++;//TODO: make it a cas
+         pth_pqueue_insert(&LSCHED->pth_NQ, t->prio, t);
+     }
+ 
+diff --git a/pth_sched.c b/pth_sched.c
+index 2b9013f..a899d74 100644
+--- a/pth_sched.c
++++ b/pth_sched.c
+@@ -34,11 +34,11 @@ struct scheduler_s
+ {
+ 	/* public scheduler variables*/
+ 	/* can be modified only by the blancer_id */
+-	volatile char 	     	new;	     	/* Bool value */
+-	volatile char		stop;		/* Bool Value */
+-	volatile pth_pqueue_t 	pth_receive;   	/* queue of new threads                  */
++	volatile char  	new;	     	/* Bool value */
++	volatile char	stop;		/* Bool Value */
++	volatile int 	pth_receivepipe[2];   	/* queue of new threads                  */
+ 	/* can be read by the blancer_id */
+-	volatile float        	pth_loadval;    /* average scheduler load value          */
++	volatile float 	pth_loadval;    /* average scheduler load value          */
+ 
+ 	/* private scheduler varibles */
+ 	int 	     nb_threads;     /* Number of received threads  */
+@@ -87,6 +87,8 @@ static __thread int scheduler_id;
+ 
+ static volatile int balancer_id = 0;
+ 
++static int sched_share=0;
++
+ intern struct scheduler_s* get_local_scheduler()
+ {
+ 	return &schedulers[scheduler_id];
+@@ -98,6 +100,19 @@ static void update_scheduler_id(int id)
+     scheduler_id = id;
+ }
+ 
++static int init_receive_pipe(struct scheduler_s *sched)
++{
++	//initialise the receiveing queue
++	//pth_pqueue_init(&schedulers[0].pth_receive);
++    if (pipe(sched->pth_receivepipe) == -1)
++        return pth_error(FALSE, errno);
++	if(fcntl(sched->pth_receivepipe[0], F_SETFL, O_NONBLOCK))
++        	return pth_error(FALSE, errno);
++	if(fcntl(sched->pth_receivepipe[1], F_SETFL, O_NONBLOCK))
++        	return pth_error(FALSE, errno);
++
++}
++
+ /* initialize the scheduler ingredients */
+ static int pth_scheduler_init_id(int id)
+ {
+@@ -171,9 +186,6 @@ intern int pth_scheduler_init(void)
+ 	pth_debug3("%s: number of schedulers requested = %d\n", __func__,
+ 						nb_schedulers_requested);
+ 
+-	//initialise the receiveing queue
+-	pth_pqueue_init(&schedulers[0].pth_receive);
+-
+     if (pipe(pth_joinpipe) == -1)
+         return pth_error(FALSE, errno);
+ 	if(fcntl(pth_joinpipe[0], F_SETFL, O_NONBLOCK))
+@@ -182,6 +194,7 @@ intern int pth_scheduler_init(void)
+         	return pth_error(FALSE, errno);
+ 
+ 	/* initialise the first scheduler */
++    init_receive_pipe(&schedulers[0]);
+ 	return pth_scheduler_init_id(0);
+ }
+ 
+@@ -322,7 +335,7 @@ static void* new_scheduler_thread(void* arg)
+ 
+ 		/* if we already have threads use them. Otherwise if we are the
+ 		 * balancer, check the receving queue. */
+-		while(LSCHED->nb_threads <= 1 && balancer_id != scheduler_id)
++		while(LSCHED->nb_threads <= 1 && )//balancer_id != scheduler_id)
+ 			;//wait
+ 
+ 		if(balancer_id == scheduler_id)
+@@ -353,7 +366,8 @@ static void create_schedulers(int nb)
+ 		/* few variable to communicate with */
+ 		schedulers[id].new = 1;
+ 		schedulers[id].pth_loadval = 0; //for load balancing
+-		pth_pqueue_init(&schedulers[id].pth_receive);
++		//pth_pqueue_init(&schedulers[id].pth_receive);
++        init_receive_pipe(&schedulers[id]);
+ 
+ 		__pthread_create(&schedulers[id].pthread, NULL, new_scheduler_thread, (void*)(long)id);
+ 		nb_schedulers++;
+@@ -372,6 +386,27 @@ static void update_schedulers(int wnb)
+ 		destroy_schedulers(nb_schedulers - wnb);
+ }
+ 
++static int __move_threads_queue(pth_t t, int boost)
++{
++	int ret=0;
++	if(t->state == PTH_STATE_NEW || t->state == PTH_STATE_READY)
++	{
++		t->state=PTH_STATE_READY;
++		pth_pqueue_insert(&LSCHED->pth_RQ, t->prio, t);
++		//if(boost) ?
++			//pth_pqueue_insert(&LSCHED->pth_RQ, pth_pqueue_favorite_prio(&LSCHED->pth_RQ), t);
++	    pth_debug2("pth_scheduler: thread \"%s\" moved to ready queue", t->name);
++	}
++
++	if(t->state == PTH_STATE_WAITING)
++    {
++		pth_pqueue_insert(&LSCHED->pth_WQ, t->prio, t);
++	    pth_debug2("pth_scheduler: thread \"%s\" moved to wait queue", t->name);
++	}
++
++	return ret;
++}
++
+ static int move_threads_queue(pth_pqueue_t *from, int boost)
+ {
+ 	int ret=0;
+@@ -379,18 +414,11 @@ static int move_threads_queue(pth_pqueue_t *from, int boost)
+ 	/*
+ 	 * Move threads from the "from" queue to the LSCHED queues depending on the state
+ 	 */
+-	while ((t = pth_pqueue_tail(from)) != NULL) {
++	while ((t = pth_pqueue_tail(from)) != NULL)
++    {
+ 	    pth_pqueue_delete(from, t);
+-	    if(t->state == PTH_STATE_NEW || t->state == PTH_STATE_READY)
+-	    {
+-		t->state=PTH_STATE_READY;
+-		pth_pqueue_insert(&LSCHED->pth_RQ, t->prio, t);
+-		//if(boost) ?
+-			//pth_pqueue_insert(&LSCHED->pth_RQ, pth_pqueue_favorite_prio(&LSCHED->pth_RQ), t);
+-	    }
+-	    if(t->state == PTH_STATE_WAITING)
+-		pth_pqueue_insert(&LSCHED->pth_WQ, t->prio, t);
+-	    pth_debug2("pth_scheduler: thread \"%s\" moved to top of ready queue", t->name);
++        __move_threads_queue(t, boost);
++	    pth_debug2("pth_scheduler: thread \"%s\" moved to queue", t->name);
+ 	    ret++;
+ 	}
+ 	return ret;
+@@ -402,12 +430,24 @@ static int __balance_work(struct scheduler_s *dest, int max)
+ {
+ 	int num=0;
+ 	pth_t t;
++
++	while ((t = pth_pqueue_tail(&LSCHED->pth_NQ)) != NULL)
++	{
++		if(num>=max)
++			goto exit;
++	    pth_pqueue_delete(&LSCHED->pth_NQ, t);
++	    //pth_pqueue_insert(&dest->pth_receive, t->prio, t);
++        pth_sc(write)(dest->pth_receivepipe[1], &t, sizeof(t));
++		num++;
++	}
++
+ 	while ((t = pth_pqueue_tail(&LSCHED->pth_RQ)) != NULL)
+ 	{
+ 		if(num>=max)
+ 			goto exit;
+-	    	pth_pqueue_delete(&LSCHED->pth_RQ, t);
+-	    	pth_pqueue_insert(&dest->pth_receive, t->prio, t);
++	    pth_pqueue_delete(&LSCHED->pth_RQ, t);
++	    //pth_pqueue_insert(&dest->pth_receive, t->prio, t);
++        pth_sc(write)(dest->pth_receivepipe[1], &t, sizeof(t));
+ 		num++;
+ 	}
+ 
+@@ -415,8 +455,9 @@ static int __balance_work(struct scheduler_s *dest, int max)
+ 	{
+ 		if(num>=max)
+ 			goto exit;
+-	    	pth_pqueue_delete(&LSCHED->pth_WQ, t);
+-	    	pth_pqueue_insert(&dest->pth_receive, t->prio, t);
++	    pth_pqueue_delete(&LSCHED->pth_WQ, t);
++	    //pth_pqueue_insert(&dest->pth_receive, t->prio, t);
++        pth_sc(write)(dest->pth_receivepipe[1], &t, sizeof(t));
+ 		num++;
+ 	}
+ 
+@@ -424,34 +465,39 @@ exit:
+ 	return num;
+ }
+ 
++static void pth_scheduler_handle_received(void)
++{
++	int ret;
++	int rec;
++    pth_t t;
++
++    while(pth_sc(read)(LSCHED->pth_receivepipe[0], &t, sizeof(t))>0)
++    {
++		pth_debug4("%s: scheduler %d received a thread(s)\n",
++						__func__, scheduler_id, rec);
++		//ret = move_threads_queue(&LSCHED->pth_receive, 0);
++        __move_threads_queue(t, 0);
++		LSCHED->nb_threads += ret;
++	}
++}
++
+ static void pth_scheduler_balance(void)
+ {
++	int diff = 0;
++
+ 	int next_balancer=-1;
+ 	int next_best_balancer=-1;
+-	int diff;
+ 	int found;
+ 	int ret;
+ 	int rec;
+ 	int i;
+ 
+-	rec=pth_pqueue_elements(&LSCHED->pth_receive);
+-	pth_debug3("%s: # thread in receive %d\n", __func__, rec);
+-	if(rec>0)
+-	{
+-		pth_debug4("%s: scheduler %d received %d thread(s)\n",
+-						__func__, scheduler_id, rec);
+-		ret = move_threads_queue(&LSCHED->pth_receive, 0);
+-		LSCHED->nb_threads += ret;
+-		if(ret)
+-			goto balance;
+-	}
+-
+ 	/* create/destroy new scheduler if requested.	*
+ 	 * We do it here because the number is dynamic. */
+ 	if(nb_schedulers != nb_schedulers_requested)
+ 		update_schedulers(nb_schedulers_requested);
+ 
+-balance:
++#if 0
+ 	/* balance the work by giving some */
+ 	found=0;
+ 	for(i=0; i<MAX_SCHEDULER; i++)
+@@ -467,13 +513,15 @@ balance:
+ 			diff = LSCHED->nb_threads - schedulers[i].nb_threads;
+ 			ret = diff/2;
+ 
+-			pth_debug6("%s:%d: remote contains %d thread. Can move %d. Diff is %d\n",
++			//pth_debug6
++            printf("%s:%d: remote contains %d thread. Can move %d. Diff is %d\n",
+ 				__func__, scheduler_id, schedulers[i].nb_threads, ret, diff);
+ 
+ 			//ret = schedulers[i].pth_loadval - LSCHED->pth_loadval; TODO
+ 			if(ret>0)
+ 			{
+-				pth_debug5("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, ret, i);
++				//pth_debug5("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, ret, i);
++				printf("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, ret, i);
+ 
+ 				ret = __balance_work(&schedulers[i], ret);
+ 				LSCHED->nb_threads -= ret;
+@@ -497,8 +545,45 @@ balance:
+ 	else if(next_balancer>0)
+ 		balancer_id= next_balancer;
+ 
+-	//Write barrier!
++#else
++
++    found=0;
++    //if((LSCHED->nb_threads-1) != diff)//>= total_nb_threads)
++    if(sched_share==0)//>= total_nb_threads)
++    {
++        //sched_share = LSCHED->nb_threads/nb_schedulers;
++        sched_share = (total_nb_threads-nb_schedulers)/nb_schedulers;
++        //pth_debug4
++        printf("%s:%d: (lnbt %d) each scheduler share is %d (total %d/schedulers %d)\n",
++                    __func__,  scheduler_id, LSCHED->nb_threads, sched_share, total_nb_threads, nb_schedulers);
++        if(sched_share<=0)
++            goto exit;
++
++        for(i=0; i<MAX_SCHEDULER; i++)
++        {
++            if(i==scheduler_id)
++                continue;
++
++            if(scheduler_ids[i]>0 || scheduler_ids[i]==-2)
++            {
++                //pth_debug5("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, ret, i);
++                printf("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, sched_share, i);
++
++                ret = __balance_work(&schedulers[i], sched_share);
++                LSCHED->nb_threads -= ret;
++
++                found++;
++            }
++            /* if we visited all existing schedulers */
++            if((found-1)==nb_schedulers)
++                break;
++        }
++
++    }
++#endif
+ 
++exit:
++	//TODO: Write barrier!?
+ 	return;
+ }
+ 
+@@ -557,7 +642,10 @@ intern void *pth_scheduler(void *dummy)
+          */
+         pth_debug3("sched_id %d, balance_id %d\n", scheduler_id, balancer_id);
+         /* TODO: reduce the number of calling to this libarary */
+-	    if(scheduler_id == balancer_id)
++
++	    //if(scheduler_id == balancer_id)
++            pth_scheduler_handle_received();
++	    if(scheduler_id == 0)//balancer_id)
+ 	        pth_scheduler_balance();
+ 
+         /*
+@@ -967,6 +1055,13 @@ intern void pth_sched_eventmanager(pth_time_t *now, int dopoll)
+     }
+ #endif
+ 
++    if(!dopoll)
++    {
++        FD_SET(LSCHED->pth_receivepipe[0], &rfds);
++        if (fdmax < LSCHED->pth_receivepipe[0])
++            fdmax = LSCHED->pth_receivepipe[0];
++    }
++
+     /* clear pipe and let select() wait for the read-part of the pipe */
+     while (pth_sc(read)(LSCHED->pth_sigpipe[0], minibuf, sizeof(minibuf)) > 0) ;
+     FD_SET(LSCHED->pth_sigpipe[0], &rfds);
+@@ -1033,6 +1128,13 @@ intern void pth_sched_eventmanager(pth_time_t *now, int dopoll)
+     }
+ #endif
+ 
++    if (!dopoll && rc > 0 && FD_ISSET(LSCHED->pth_receivepipe[0], &rfds)) {
++        //void *tid;
++        //pth_sc(read)(pth_receivepipe[1], &tid, sizeof(tid));
++        FD_CLR(LSCHED->pth_receivepipe[0], &rfds);
++        rc--;
++    }
++
+     /* if an error occurred, avoid confusion in the cleanup loop */
+     if (rc <= 0) {
+         FD_ZERO(&rfds);

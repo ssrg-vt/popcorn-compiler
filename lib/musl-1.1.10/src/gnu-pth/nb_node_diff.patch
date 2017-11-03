@@ -1,0 +1,45 @@
+diff --git a/pth_sched.c b/pth_sched.c
+index ec68f9d..697dda4 100644
+--- a/pth_sched.c
++++ b/pth_sched.c
+@@ -74,6 +74,7 @@ extern volatile int total_nb_threads;
+ #endif
+ 
+ #define MAX_SCHEDULER 96
++static int nb_nodes;
+ static int nb_schedulers;
+ static int nb_schedulers_requested;
+ static struct scheduler_s schedulers[MAX_SCHEDULER];
+@@ -162,6 +163,14 @@ intern int pth_scheduler_init(void)
+ 	pth_debug3("%s: number of schedulers requested = %d\n", __func__,
+ 						nb_schedulers_requested);
+ 
++	thds_char = getenv("GNU_PTH_NB_NODES");
++	if(thds_char)
++		nb_nodes = atoi(thds_char);
++	else
++		nb_nodes = -1;
++	pth_debug3("%s: number of schedulers requested = %d\n", __func__,
++						nb_schedulers_requested);
++
+ 	//initialise the receiveing queue
+ 	pth_pqueue_init(&schedulers[0].pth_receive);
+ 
+@@ -279,6 +288,7 @@ static int get_new_thread_id()
+ 	return ret;
+ }
+ 
++void migrate(int nid, void (*callback)(void *), void *callback_data);
+ static void pth_scheduler_balance(void);
+ static void* new_scheduler_thread(void* arg)
+ {
+@@ -298,6 +308,9 @@ static void* new_scheduler_thread(void* arg)
+ 	//TODO: use passive waiting: using cond?
+ 	while(!LSCHED->stop)
+ 	{
++		if(nb_nodes > id)
++			migrate(id, NULL, NULL);
++
+ 		/* if we already have threads use them. Otherwise if we are the
+ 		 * balancer, check the receving queue. */
+ 		while(LSCHED->nb_threads <= 1 && balancer_id != scheduler_id)

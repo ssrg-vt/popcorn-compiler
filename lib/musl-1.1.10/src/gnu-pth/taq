@@ -1,0 +1,143 @@
+[1mdiff --git a/pth_sched.c b/pth_sched.c[m
+[1mindex cfe7398..e76f98e 100644[m
+[1m--- a/pth_sched.c[m
+[1m+++ b/pth_sched.c[m
+[36m@@ -26,6 +26,7 @@[m
+                                   see Recursive.''[m
+                                      -- Unknown   */[m
+ #include "pth_p.h"[m
+[32m+[m[32m#include "pthread_impl.h"[m[41m [m
+ [m
+ #if cpp[m
+ 	/* Scheduler */[m
+[36m@@ -55,7 +56,7 @@[m [mstruct scheduler_s[m
+ 	sigset_t     pth_sigcatch;   /* mask of signals we have to catch      */[m
+ 	sigset_t     pth_sigraised;  /* mask of raised signals                */[m
+ [m
+[31m-	pthread_t    pthread;     /* For all threads except the main one   */[m
+[32m+[m	[32mpthread_t    pthread_struct;     /* For all threads except the main one   */[m
+ };[m
+ [m
+ [m
+[36m@@ -70,8 +71,11 @@[m [mstatic struct scheduler_s schedulers[MAX_SCHEDULER];[m
+ [m
+ static int next_id;[m
+ static int scheduler_ids[MAX_SCHEDULER];[m
+[31m-static int *scheduler_id_ptr;[m
+[31m-#define scheduler_id (*scheduler_id_ptr)[m
+[32m+[m[32m//static __thread int *scheduler_id_ptr;[m
+[32m+[m[32m//static int *scheduler_id_ptr;[m
+[32m+[m[32m//#define scheduler_id (*scheduler_id_ptr)[m
+[32m+[m[32m//static __thread int scheduler_id;[m
+[32m+[m[32mstatic int scheduler_id=0;[m
+ [m
+ static int balancer_id = 0;[m
+ [m
+[36m@@ -83,7 +87,8 @@[m [mintern struct scheduler_s* get_local_scheduler()[m
+ static void update_scheduler_id(int id)[m
+ {[m
+     scheduler_ids[id] = id;[m
+[31m-    scheduler_id_ptr = &scheduler_ids[id];[m
+[32m+[m[32m    //scheduler_id_ptr = &scheduler_ids[id];[m
+[32m+[m[32m    scheduler_id = id;[m
+ }[m
+ [m
+ /* initialize the scheduler ingredients */[m
+[36m@@ -93,8 +98,6 @@[m [mstatic int pth_scheduler_init_id(int id)[m
+ [m
+     sched = &schedulers[id];[m
+ [m
+[31m-    update_scheduler_id(id);[m
+[31m-[m
+     /* create the internal signal pipe */[m
+     if (pipe(LSCHED->pth_sigpipe) == -1)[m
+         return pth_error(FALSE, errno);[m
+[36m@@ -125,6 +128,11 @@[m [mstatic int pth_scheduler_init_id(int id)[m
+     LSCHED->pth_loadtickgap = (pth_time_t)PTH_TIME(1,0);[m
+     pth_time_set(&LSCHED->pth_loadticknext, PTH_TIME_NOW);[m
+ [m
+[32m+[m[32m    //insert write barrier here![m
+[32m+[m
+[32m+[m[32m    //once we update the id this scheduler become visible[m
+[32m+[m[32m    update_scheduler_id(id);[m
+[32m+[m
+     return TRUE;[m
+ }[m
+ [m
+[36m@@ -251,16 +259,45 @@[m [mstatic int get_new_thread_id()[m
+ 	{[m
+ 		next_id=ret+1;[m
+ 		scheduler_ids[ret]= -2; // reserved[m
+[31m-		schedulers[ret].pth_loadval = 0; //for load balancing[m
+ 	}[m
+ 	return ret;[m
+ }[m
+ [m
+[32m+[m[32mstatic int move_threads_queue(pth_pqueue_t *from, pth_pqueue_t *to, int boost);[m
+[32m+[m
+[32m+[m[32mpthread_t __pthread_self(void);[m
+ static void* new_scheduler_thread(void* arg)[m
+ {[m
+ 	int id = (int)(long)arg;[m
+[31m-	pth_debug2("%s\n", __func__);[m
+[31m-	pth_scheduler_init_id(id);[m
+[32m+[m	[32mpth_t main;[m
+[32m+[m
+[32m+[m	[32mpth_debug3("%s:%d!\n", __func__, __pthread_self()->tid);[m
+[32m+[m	[32mpth_debug3("%s:%d!\n", __func__, __pthread_self()->tid);[m
+[32m+[m	[32mpth_debug2("%s!\n", __func__);[m
+[32m+[m
+[32m+[m[32m#if 0[m
+[32m+[m	[32m/* initialize the scheduler */[m
+[32m+[m	[32mif(!pth_scheduler_init_id(id))[m
+[32m+[m	[32m{[m
+[32m+[m[41m        [m	[32mpth_shield { pth_syscall_kill(); }[m
+[32m+[m[41m        [m	[32mreturn pth_error(FALSE, EAGAIN);[m
+[32m+[m[41m    [m	[32m}[m
+[32m+[m
+[32m+[m	[32mwhile(1);[m
+[32m+[m	[32mpth_init_always();[m
+[32m+[m
+[32m+[m	[32m//TODO; use passive waiting: using cond?[m
+[32m+[m	[32mwhile(pth_pqueue_elements(&LSCHED->pth_receive) <= 0)[m
+[32m+[m		[32m;//wait[m
+[32m+[m
+[32m+[m	[32mpth_debug3("%s: scheduler %d received some threads %d\n", __func__, id);[m
+[32m+[m
+[32m+[m	[32m/* put first thread as main */[m
+[32m+[m	[32m//main = pth_pqueue_tail(&LSCHED->pth_receive);[m
+[32m+[m	[32m//LSCHED->main = main;[m
+[32m+[m
+[32m+[m	[32mmove_threads_queue(&LSCHED->pth_receive, &LSCHED->pth_RQ, 0);[m
+[32m+[m[32m#endif[m
+ [m
+ 	return NULL;[m
+ }[m
+[36m@@ -275,8 +312,10 @@[m [mstatic void create_schedulers(int nb)[m
+ 		id = get_new_thread_id();[m
+ 		if(id==-1)[m
+ 			return;[m
+[32m+[m
+[32m+[m		[32mschedulers[id].pth_loadval = 0; //for load balancing[m
+ 		pth_pqueue_init(&schedulers[id].pth_receive);[m
+[31m-		__pthread_create(&schedulers[id].pthread, NULL, new_scheduler_thread, (void*)(long)id);[m
+[32m+[m		[32m__pthread_create(&schedulers[id].pthread_struct, NULL, new_scheduler_thread, (void*)(long)id);[m
+ 		nb_schedulers++;[m
+ 	}[m
+ }[m
+[36m@@ -338,6 +377,7 @@[m [mstatic void __balance_work(struct scheduler_s *dest, int max)[m
+ 	}[m
+ }[m
+ [m
+[32m+[m[32m/* TODO: improve the scheduling using thread load and not thread number */[m
+ static void pth_scheduler_balance(void)[m
+ {[m
+ 	int next_balancer=-1;[m
+[36m@@ -382,6 +422,7 @@[m [mbalance:[m
+ 			if(ret>0)[m
+ 			{[m
+ 				next_best_balancer = i;[m
+[32m+[m				[32mpth_debug5("%s:%d: Moving %d thread to %d\n", __func__, scheduler_id, ret, i);[m
+ 				__balance_work(&schedulers[i], ret);[m
+ 			}[m
+ 			found++;[m

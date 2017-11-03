@@ -1,0 +1,28 @@
+    23: 0000000000000000    16 OBJECT  GLOBAL DEFAULT    4 __ pth_time_zero 	:const works
+     7: 0000000000000000     4 OBJECT  GLOBAL DEFAULT    3 __ pth_errno_flag	: TOFIX
+     8: 0000000000000004     4 OBJECT  GLOBAL DEFAULT    3 __ pth_errno_storage	: TOFIX
+
+TRAMPOLINE: TODO per-thread
+    10: 0000000000000020    40 OBJECT  GLOBAL DEFAULT  COM pth_uctx_trampoline_ctx
+
+Scheduler: TODO per-thread
+    18: 0000000000000000    48 OBJECT  GLOBAL DEFAULT    3 __ pth_state_names 	: const
+    26: 0000000000000010    16 OBJECT  GLOBAL DEFAULT  COM __ pth_NQ
+    27: 0000000000000008     8 OBJECT  GLOBAL DEFAULT  COM __ pth_sched
+    28: 0000000000000008     8 OBJECT  GLOBAL DEFAULT  COM __ pth_current
+    30: 0000000000000010    16 OBJECT  GLOBAL DEFAULT  COM __ pth_RQ
+    31: 0000000000000010    16 OBJECT  GLOBAL DEFAULT  COM __ pth_WQ
+    32: 0000000000000010    16 OBJECT  GLOBAL DEFAULT  COM __ pth_SQ
+    33: 0000000000000010    16 OBJECT  GLOBAL DEFAULT  COM __ pth_DQ
+    34: 0000000000000004     4 OBJECT  GLOBAL DEFAULT  COM __ pth_favournew	: only if user explicitely ask (not with the emulator)
+    35: 0000000000000004     4 OBJECT  GLOBAL DEFAULT  COM __ pth_loadval	:
+    74: 0000000000000008     8 OBJECT  GLOBAL DEFAULT  COM __ pth_main
+
+INIT:
+    46: 0000000000000000     4 OBJECT  GLOBAL DEFAULT    4 __ pth_initialized	: Modified once at start
+
+    12: 0000000000000000     4 OBJECT  GLOBAL DEFAULT    5 pth_syscall_hard	: const
+    13: 0000000000000004     4 OBJECT  GLOBAL DEFAULT    5 pth_syscall_soft	: const
+
+?:
+     7: 0000000000000000     4 OBJECT  GLOBAL DEFAULT    3 __ pth_compat_unit
