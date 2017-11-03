@@ -202,16 +202,57 @@ class Symbol:
 					# convention for the user object files created by the
 					# popcorn compiler. Need a better way to handle that when
 					# we get to power8
-					if cmpstr1.endswith("_x86_64.o"):
-						if (cmpstr1.replace("_x86_64.o", "") ==
-							cmpstr2.replace(".o", "")):
-								res = True
-								continue
-					elif cmpstr2.endswith("_x86_64.o"):
-						if (cmpstr2.replace("_x86_64.o", "") ==
-							cmpstr1.replace(".o", "")):
-								res = True
-								continue
+					if cmpstr1.endswith("_x86_64.o"):   # s1 is x86
+                        s1_base = cmpstr1.replace("_x86_64.o", "")
+						if (s1_base == cmpstr2.replace(".o", "")): 
+                            # s2 is arm (v1)
+							res = True
+							continue
+                        elif (s1_base == cmpstr2.replace("_aarch64.o", "")):
+                            # s2 is arm (v2)
+							res = True
+							continue
+                        elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+                            # s2 is ppc
+    						res = True
+							continue
+
+                    elif cmpstr1.endswith("_aarch64.o"):   # s1 is arm (v1)
+                        s1_base = cmpstr1.replace("_aarch64.o", "")
+                    	if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+                            # s2 is x86
+						    res = True
+						    continue
+                        elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+                            # s2 is ppc
+                            res = True
+                            continue
+
+                    elif cmpstr1.endswith("_powerpc64le.o"):   # s1 is ppc
+                        s1_base = cmpstr1.replace("_powerpc64le.o", "")
+                    	if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+                            # s2 is x86
+						    res = True
+						    continue
+                        elif (s1_base == cmpstr2.replace(".o", "")): 
+                            # s2 is arm (v1)
+                            res = True
+                            continue
+                        elif (s1_base == cmpstr2.replace("_aarch64.o", "")): 
+                            # s2 is arm (v2)
+                            res = True
+                            continue
+
+                    elif cmpstr1.endswith(".o"):   # s1 is arm (v2)
+                        s1_base = cmpstr1.replace(".o", "")
+                    	if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+                            # s2 is x86
+						    res = True
+						    continue
+                        elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+                            # s2 is ppc
+                            res = True
+                            continue
 
 					if cmpstr1 != cmpstr2:
 						return False
