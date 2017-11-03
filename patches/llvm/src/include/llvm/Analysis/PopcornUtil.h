@@ -17,12 +17,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 
 namespace llvm {
 namespace Popcorn {
 
 #define POPCORN_META "popcorn"
-#define POPCORN_EQPOINT "eqpoint"
+#define POPCORN_EQPOINT "migpoint"
+#define POPCORN_HTM_BEGIN "htmbegin"
+#define POPCORN_HTM_END "htmend"
 
 /// Add named metadata node with string operand to an instruction.
 static inline void addMetadata(Instruction *I, StringRef name, StringRef op) {
@@ -75,19 +78,19 @@ hasMetadata(const Instruction *I, StringRef name, StringRef op) {
 
 /// Return whether the instruction is a "true" call site, i.e., not an LLVM
 /// IR-level intrinsic.
-bool isCallSite(const Instruction *I) {
+static inline bool isCallSite(const Instruction *I) {
   if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
     return true;
   else return false;
 }
 
 /// Add metadata to an instruction marking it as an equivalence point.
-void addEquivalencePointMetadata(Instruction *I) {
+static inline void addEquivalencePointMetadata(Instruction *I) {
   addMetadata(I, POPCORN_META, POPCORN_EQPOINT);
 }
 
 /// Remove metadata from an instruction marking it as an equivalence point.
-void removeEquivalencePointMetadata(Instruction *I) {
+static inline void removeEquivalencePointMetadata(Instruction *I) {
   removeMetadata(I, POPCORN_META, POPCORN_EQPOINT);
 }
 
@@ -96,10 +99,79 @@ void removeEquivalencePointMetadata(Instruction *I) {
 ///
 /// 1. Is a function call site (not an intrinsic function call)
 /// 2. Analysis has tagged the instruction with appropriate metadata
-bool isEquivalencePoint(const Instruction *I) {
+static inline bool isEquivalencePoint(const Instruction *I) {
   if(isCallSite(I)) return true;
-  else if(hasMetadata(I, POPCORN_META, POPCORN_EQPOINT)) return true;
-  else return false;
+  else return hasMetadata(I, POPCORN_META, POPCORN_EQPOINT);
+}
+
+/// Add metadata to an instruction marking it as an HTM begin point.
+static inline void addHTMBeginMetadata(Instruction *I) {
+  addMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
+}
+
+/// Remove metadata from an instruction marking it as an HTM begin point.
+static inline void removeHTMBeginMetadata(Instruction *I) {
+  removeMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
+}
+
+/// Return whether an instruction is an HTM begin point.
+static inline bool isHTMBeginPoint(Instruction *I) {
+  return hasMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
+}
+
+/// Add metadata to an instruction marking it as an HTM end point.
+static inline void addHTMEndMetadata(Instruction *I) {
+  addMetadata(I, POPCORN_META, POPCORN_HTM_END);
+}
+
+/// Remove metadata from an instruction marking it as an HTM end point.
+static inline void removeHTMEndMetadata(Instruction *I) {
+  removeMetadata(I, POPCORN_META, POPCORN_HTM_END);
+}
+
+/// Return whether an instruction is an HTM end point.
+static inline bool isHTMEndPoint(Instruction *I) {
+  return hasMetadata(I, POPCORN_META, POPCORN_HTM_END);
+}
+
+#define POPCORN_INST_KEY "popcorn-inst-ty"
+
+/// Type of instrumentation.
+enum InstrumentType {
+  HTM = 0,
+  Cycles,
+  None,
+  NumVals // Don't use!
+};
+
+/// Mark the module as having a certain instrumentation type.
+static inline void
+setInstrumentationType(Module &M, enum InstrumentType Ty) {
+  switch(Ty) {
+  case HTM:
+    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, HTM);
+    break;
+  case Cycles:
+    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, Cycles);
+    break;
+  case None:
+    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, None);
+    break;
+  default: llvm_unreachable("Unknown instrumentation type"); break;
+  }
+}
+
+/// Get the type of instrumentation.
+static inline enum InstrumentType getInstrumentationType(Module &M) {
+  Metadata *MD = M.getModuleFlag(POPCORN_INST_KEY);
+  if(MD) {
+    ConstantAsMetadata *Val = cast<ConstantAsMetadata>(MD);
+    ConstantInt *IntVal = cast<ConstantInt>(Val->getValue());
+    uint64_t RawVal = IntVal->getZExtValue();
+    assert(RawVal < NumVals && "Invalid instrumentation type");
+    return (enum InstrumentType)RawVal;
+  }
+  else return None;
 }
 
 }

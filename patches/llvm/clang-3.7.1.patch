@@ -163,10 +163,13 @@ Index: include/clang/Frontend/CodeGenOptions.def
 ===================================================================
 --- include/clang/Frontend/CodeGenOptions.def	(revision 277850)
 +++ include/clang/Frontend/CodeGenOptions.def	(working copy)
-@@ -158,6 +158,9 @@
+@@ -158,6 +158,12 @@
  
  CODEGENOPT(EmitLLVMUseLists, 1, 0) ///< Control whether to serialize use-lists.
  
++/// Select places inside functions to instrument with migration points
++CODEGENOPT(PopcornMigratable, 1, 0)
++
 +/// Adjust linkage of global values for symbol alignment
 +CODEGENOPT(PopcornAlignment, 1, 0)
 +
@@ -189,7 +192,15 @@ Index: lib/CodeGen/BackendUtil.cpp
 ===================================================================
 --- lib/CodeGen/BackendUtil.cpp	(revision 277850)
 +++ lib/CodeGen/BackendUtil.cpp	(working copy)
-@@ -39,6 +39,7 @@
+@@ -15,6 +15,7 @@
+ #include "clang/Frontend/FrontendDiagnostic.h"
+ #include "clang/Frontend/Utils.h"
+ #include "llvm/ADT/StringSwitch.h"
++#include "llvm/Analysis/Passes.h"
+ #include "llvm/Analysis/TargetLibraryInfo.h"
+ #include "llvm/Analysis/TargetTransformInfo.h"
+ #include "llvm/Bitcode/BitcodeWriterPass.h"
+@@ -39,6 +40,7 @@
  #include "llvm/Transforms/Instrumentation.h"
  #include "llvm/Transforms/ObjCARC.h"
  #include "llvm/Transforms/Scalar.h"
@@ -197,7 +208,7 @@ Index: lib/CodeGen/BackendUtil.cpp
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include <memory>
  using namespace clang;
-@@ -132,6 +133,16 @@
+@@ -132,6 +134,16 @@
  
    std::unique_ptr<TargetMachine> TM;
  
@@ -214,10 +225,15 @@ Index: lib/CodeGen/BackendUtil.cpp
    void EmitAssembly(BackendAction Action, raw_pwrite_stream *OS);
  };
  
-@@ -271,6 +282,12 @@
+@@ -271,6 +283,17 @@
    MPM->add(createRewriteSymbolsPass(DL));
  }
  
++static void addPopcornMigPointPasses(const PassManagerBuilder &Builder,
++                                     legacy::PassManagerBase &PM) {
++  PM.add(createSelectMigrationPointsPass());
++}
++
 +static void addPopcornAlignmentPasses(const PassManagerBuilder &Builder,
 +                                      legacy::PassManagerBase &PM) {
 +  PM.add(createNameStringLiteralsPass());
@@ -227,12 +243,20 @@ Index: lib/CodeGen/BackendUtil.cpp
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
-@@ -420,6 +437,18 @@
+@@ -420,6 +443,26 @@
      MPM->add(createInstrProfilingPass(Options));
    }
  
 +  // Popcorn Compiler Toolchain passes -- add after IR optimization passes
-+  // Passes adjust global symbol linkage for alignment.
++  // Select migration points.
++  if (CodeGenOpts.PopcornMigratable) {
++    if (OptLevel > 0)
++      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
++                             addPopcornMigPointPasses);
++    else MPM->add(createSelectMigrationPointsPass());
++  }
++
++  // Adjust global symbol linkage for alignment.
 +  if (CodeGenOpts.PopcornAlignment) {
 +    if (OptLevel > 0)
 +      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
@@ -246,7 +270,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    PMBuilder.populateModulePassManager(*MPM);
  }
  
-@@ -570,7 +599,7 @@
+@@ -570,7 +613,7 @@
    // Normal mode, emit a .s or .o file by running the code generator. Note,
    // this also adds codegenerator level optimization passes.
    TargetMachine::CodeGenFileType CGFT = TargetMachine::CGFT_AssemblyFile;
@@ -255,7 +279,7 @@ Index: lib/CodeGen/BackendUtil.cpp
      CGFT = TargetMachine::CGFT_ObjectFile;
    else if (Action == Backend_EmitMCNull)
      CGFT = TargetMachine::CGFT_Null;
-@@ -592,8 +621,8 @@
+@@ -592,8 +635,8 @@
    return true;
  }
  
@@ -266,7 +290,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    TimeRegion Region(llvm::TimePassesIsEnabled ? &CodeGenerationTime : nullptr);
  
    bool UsesCodeGen = (Action != Backend_EmitNothing &&
-@@ -629,7 +658,9 @@
+@@ -629,7 +672,9 @@
  
    // Before executing passes, print the final values of the LLVM options.
    cl::PrintOptionValues();
@@ -276,7 +300,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    // Run passes. For now we do all passes at once, but eventually we
    // would like to have the option of streaming code generation.
  
-@@ -647,7 +678,9 @@
+@@ -647,7 +692,9 @@
      PrettyStackTraceString CrashInfo("Per-module optimization passes");
      PerModulePasses->run(*TheModule);
    }
@@ -286,7 +310,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    if (CodeGenPasses) {
      PrettyStackTraceString CrashInfo("Code generation");
      CodeGenPasses->run(*TheModule);
-@@ -654,6 +687,13 @@
+@@ -654,6 +701,13 @@
    }
  }
  
@@ -300,7 +324,7 @@ Index: lib/CodeGen/BackendUtil.cpp
  void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
                                const CodeGenOptions &CGOpts,
                                const clang::TargetOptions &TOpts,
-@@ -677,3 +717,38 @@
+@@ -677,3 +731,38 @@
      }
    }
  }
@@ -801,15 +825,15 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 277850)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,35 @@
+@@ -4934,6 +4934,36 @@
        A->render(Args, CmdArgs);
    }
  
 +  // Forward Popcorn & other standard compiler flags to -cc1 to generate
 +  // multi-ISA binaries
 +  if(Args.hasArg(options::OPT_popcorn_migratable)) {
-+    // Forward Popcorn migratable flag and add -finstrument-functions to insert
-+    // migration points
++    // Full-blown Popcorn migration capabilities, including adding migration
++    // points, symbol alignment and generating stack transformation metadata
 +    CmdArgs.push_back("-ffunction-sections");
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
@@ -820,6 +844,8 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-optimize-regalloc");
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_libc)) {
++    // Symbol alignment for libc & generate stack transformation metadata for
++    // libc thread start functions
 +    CmdArgs.push_back("-ffunction-sections");
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
@@ -827,8 +853,7 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-popcorn-instrument=libc");
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_alignment)) {
-+    // Forward Popcorn alignment flag and add -f*-sections flags for symbol
-+    // alignment
++    // Only symbol alignment
 +    CmdArgs.push_back("-ffunction-sections");
 +    CmdArgs.push_back("-fdata-sections");
 +    CmdArgs.push_back("-popcorn-alignment");
@@ -841,14 +866,15 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -675,6 +675,15 @@
+@@ -675,6 +675,16 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
 +  Opts.PopcornAlignment = Args.hasArg(OPT_popcorn_alignment);
++  Opts.PopcornMigratable = Args.hasArg(OPT_popcorn_migratable);
 +
 +  // TODO: the Popcorn compiler doesn't currently support vectorization
-+  if(Args.hasArg(OPT_popcorn_migratable) || Args.hasArg(OPT_popcorn_libc)) {
++  if(Opts.PopcornMigratable || Args.hasArg(OPT_popcorn_libc)) {
 +    Opts.VectorizeBB = 0;
 +    Opts.VectorizeLoop = 0;
 +    Opts.VectorizeSLP = 0;
@@ -857,7 +883,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
    return Success;
  }
  
-@@ -856,7 +865,11 @@
+@@ -856,7 +866,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -870,7 +896,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1816,7 @@
+@@ -1803,6 +1817,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:
