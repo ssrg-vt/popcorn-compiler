@@ -11,3 +11,4 @@ lib/sys_elf.h
 lib/libelf.a
 lib/*.o
 *.swp
+po/de.mo

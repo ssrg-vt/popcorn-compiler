@@ -480,6 +480,16 @@ def install_musl(base_path, install_path, num_threads):
                 print('Make failed.')
                 sys.exit(1)
 
+        try:
+            rv = subprocess.check_call(['make', 'distclean'])
+        except Exception as e:
+            print('ERROR running distclean!')
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make distclean failed.')
+                sys.exit(1)
+
         print("Configuring musl (powerpc64)...")
         try:
             rv = subprocess.check_call(" ".join(['./configure',
@@ -559,7 +569,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         print("Configuring libelf (aarch64)...")
         try:
             cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-                     '-specs {}"'.format(os.path.join(aarch64_install_path,
+        '-specs {}" LDFLAGS="-static"'.format(os.path.join(aarch64_install_path,
                                                      'lib/musl-gcc.specs'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
@@ -605,7 +615,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         print("Configuring libelf (powerpc64)...")
         try:
             cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
-                     '-specs {}"'.format(os.path.join(powerpc64le_install_path,
+                     '-specs {}" LDFLAGS="-static"'.format(os.path.join(powerpc64le_install_path,
                                                      'lib/musl-gcc.specs'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
