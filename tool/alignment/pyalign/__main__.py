@@ -52,14 +52,13 @@ def buildArgParser():
 	return res
 
 def parseAndCheckArgs(parser):
-	""" Parse command line arguments and perform some sanity checks """
-	args = parser.parse_args()
+    """ Parse command line arguments and perform some sanity checks """
+    args = parser.parse_args()
     
     # For now we only support 2 nodes setups so the combinations are:
     # x86-arm, x86-ppc, arm-ppc
 
-    if (args.x86_bin and args.arm_bin and args.power_bin) or \
-            (args.x86_map and args.arm_map and args.ppc_map):
+    if (args.x86_bin and args.arm_bin and args.power_bin) or (args.x86_map and args.arm_map and args.ppc_map):
         er("Only 2-nodes setups are supported, so bin & maps parameters " +
             "should only be x86-arm or x86-ppc or arm-ppc")
         os.exit(-1)
@@ -79,7 +78,7 @@ def parseAndCheckArgs(parser):
             er("Mapfile parameter missing for some/all archs")
             os.exit(-1)
 
-	return args
+    return args
 
 def setConsideredArchs(args):
     """ Set the considered arch pair from the command line argument"""
@@ -96,19 +95,21 @@ def setConsideredArchs(args):
         considered_archs = [archs[Arch.X86], archs[Arch.POWER]]
 
 def setInputOutputs(args):
-	""" Fill internal data structures with info about input and ouput files """
+    """ Fill internal data structures with info about input and ouput files """
     
     bins = {Arch.X86 : args.x86_bin, Arch.ARM : args.arm_bin, 
             Arch.POWER : args.ppc_bin}
     maps = {Arch.X86 : args.x86_map, Arch.ARM : args.arm_map, 
             Arch.POWER : args.ppc_map}
-    lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : output_arm_ls, 
+    lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : args.output_arm_ls, 
             Arch.POWER : args.output_ppc_ls}
 
-    for k, arch in considered_archs.iteritem():
-        arch.setExecutable(os.path.abspath(bins[k]))
-        arch.setMapFile(os.path.abspath(maps[k]))
-        arch.setLinkerScript(os.path.abspath(lss[k]))
+    # TODO chck that this is working fine
+    for k, arch in archs.iteritems():
+        if arch in considered_archs:
+            arch.setExecutable(os.path.abspath(bins[k]))
+            arch.setMapFile(os.path.abspath(maps[k]))
+            arch.setLinkerScript(os.path.abspath(lss[k]))
 
     # TODO is the above stuff working ^^
 
@@ -213,8 +214,8 @@ if __name__ == "__main__":
 	args = parseAndCheckArgs(parser)
 
 	# Set the considered architectures then grab input/output files from the 
-    # command line arguments
-    setConsideredArchs(args)
+         # command line arguments
+        setConsideredArchs(args)
 	setInputOutputs(args)
 
 	# List of per-section symbols that we are going to fill and manipulate
