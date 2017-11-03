@@ -1,2 +1,0 @@
-./internal/x86_64/syscall.s
-./internal/aarch64/syscall.s
