@@ -1,3 +1,4 @@
+.section .text.log2l, "ax"
 .global log2l
 .type log2l,@function
 log2l:

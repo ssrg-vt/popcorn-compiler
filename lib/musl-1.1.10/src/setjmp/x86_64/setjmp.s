@@ -1,4 +1,5 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
+.section .text.setjmp, "ax"
 .global __setjmp
 .global _setjmp
 .global setjmp

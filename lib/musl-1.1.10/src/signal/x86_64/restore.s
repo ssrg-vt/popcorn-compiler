@@ -1,3 +1,5 @@
+.section .text.__restore_rt, "ax"
+
 .global __restore_rt
 .global __restore
 .type __restore_rt,@function

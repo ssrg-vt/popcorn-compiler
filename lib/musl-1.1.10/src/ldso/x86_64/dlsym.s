@@ -1,4 +1,5 @@
-.text
+//.text
+.section .text.dlsym, "ax"
 .global dlsym
 .hidden __dlsym
 .type dlsym,@function

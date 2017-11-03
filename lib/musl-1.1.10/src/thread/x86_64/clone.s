@@ -1,5 +1,5 @@
 /* .text */
-.section .text.__clone
+.section .text.__clone, "ax"
 .global __clone
 .type   __clone,@function
 __clone:

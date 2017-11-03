@@ -1,3 +1,4 @@
+.section .text.feclearexcept, "ax"
 .global feclearexcept
 .type feclearexcept,@function
 feclearexcept:
@@ -19,6 +20,7 @@ feclearexcept:
 1:	xor %eax,%eax
 	ret
 
+.section .text.feraiseexcept, "ax"
 .global feraiseexcept
 .type feraiseexcept,@function
 feraiseexcept:
@@ -29,6 +31,7 @@ feraiseexcept:
 	xor %eax,%eax
 	ret
 
+.section .text.__fesetround, "ax"
 .global __fesetround
 .type __fesetround,@function
 __fesetround:
@@ -47,6 +50,7 @@ __fesetround:
 	pop %rcx
 	ret
 
+.section .text.fegetround, "ax"
 .global fegetround
 .type fegetround,@function
 fegetround:
@@ -57,6 +61,7 @@ fegetround:
 	and $0xc00,%eax
 	ret
 
+.section .text.fegetenv, "ax"
 .global fegetenv
 .type fegetenv,@function
 fegetenv:
@@ -65,6 +70,7 @@ fegetenv:
 	stmxcsr 28(%rdi)
 	ret
 
+.section .text.fesetenv, "ax"
 .global fesetenv
 .type fesetenv,@function
 fesetenv:
@@ -84,6 +90,7 @@ fesetenv:
 	add $40,%rsp
 	ret
 
+.section .text.fetestexcept, "ax"
 .global fetestexcept
 .type fetestexcept,@function
 fetestexcept:

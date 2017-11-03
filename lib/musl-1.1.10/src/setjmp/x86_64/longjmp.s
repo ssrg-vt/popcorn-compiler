@@ -1,4 +1,5 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
+.section .text.longjmp, "ax"
 .global _longjmp
 .global longjmp
 .type _longjmp,@function

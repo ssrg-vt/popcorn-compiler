@@ -1,3 +1,4 @@
+.section .text.expm1l, "ax"
 .global expm1l
 .type expm1l,@function
 expm1l:
@@ -27,6 +28,7 @@ expm1l:
 	fsubrp
 	ret
 
+.section .text.exp2l, "ax"
 .global exp2l
 .type exp2l,@function
 exp2l:

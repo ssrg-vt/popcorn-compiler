@@ -1,3 +1,4 @@
+.section .text.floorl, "ax"
 .global floorl
 .type floorl,@function
 floorl:
@@ -12,6 +13,7 @@ floorl:
 	fldcw 8(%rsp)
 	ret
 
+.section ".text.ceill", "ax"
 .global ceill
 .type ceill,@function
 ceill:
@@ -19,6 +21,7 @@ ceill:
 	mov $0xb,%al
 	jmp 1b
 
+.section ".text.truncl", "ax"
 .global truncl
 .type truncl,@function
 truncl:

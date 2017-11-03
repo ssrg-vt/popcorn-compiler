@@ -1,3 +1,4 @@
+.section .text.sigsetjmp, "ax"
 .global sigsetjmp
 .global __sigsetjmp
 .type sigsetjmp,@function

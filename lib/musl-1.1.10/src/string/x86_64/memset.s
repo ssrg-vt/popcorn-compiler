@@ -1,6 +1,6 @@
+.section .text.memset, "ax"
 .global memset
 .type memset,@function
-.section .text.memset
 memset:
 	movzbq %sil,%rax
 	mov $0x101010101010101,%r8
