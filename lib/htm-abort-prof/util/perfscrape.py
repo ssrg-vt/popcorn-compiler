@@ -11,7 +11,7 @@ arch = platform.machine()
 # Total cycles
 Cycles = {
     "x86_64" : "cycles",
-    "powerpc64le" : "cycles"
+    "ppc64le" : "cycles"
 }
 
 def getCycles(counters):
@@ -20,7 +20,8 @@ def getCycles(counters):
 
 # Cycles spent in transactional execution
 TransactCycles = {
-    "x86_64" : "cycles-t"
+    "x86_64" : "cycles-t",
+    "ppc64le" : "pm_tm_trans_run_cyc"
 }
 
 def getTransactCycles(counters):
@@ -29,7 +30,8 @@ def getTransactCycles(counters):
 
 # Cycles spent in committed transactions
 CommittedCycles = {
-    "x86_64" : "cycles-ct"
+    "x86_64" : "cycles-ct",
+    "ppc64le" : "pm_tm_tx_pass_run_cyc"
 }
 
 def getCommittedCycles(counters):
@@ -38,7 +40,8 @@ def getCommittedCycles(counters):
 
 # Number of transactions started.
 HTMBegins = {
-    "x86_64" : "tx-start"
+    "x86_64" : "tx-start",
+    "ppc64le" : "pm_tm_begin_all"
 }
 
 def getHTMBegins(counters):
@@ -47,7 +50,8 @@ def getHTMBegins(counters):
 
 # Number of committed transactions.
 HTMEnds = {
-    "x86_64" : "tx-commit"
+    "x86_64" : "tx-commit",
+    "ppc64le" : "pm_tm_end_all"
 }
 
 def getHTMEnds(counters):
@@ -56,16 +60,25 @@ def getHTMEnds(counters):
 
 # Number of aborted transactions.
 HTMAborts = {
-    "x86_64" : "tx-abort"
+    "x86_64" : "tx-abort",
+    "ppc64le" : [ "pm_tm_fail_con_tm", "pm_tm_fail_conf_non_tm",
+                  "pm_tm_fail_disallow", "pm_tm_fail_footprint_overflow",
+                  "pm_tm_fail_non_tx_conflict", "pm_tm_fail_self",
+                  "pm_tm_fail_tlbie", "pm_tm_fail_tx_conflict"]
 }
 
 def getHTMAborts(counters):
     global arch
-    return counters[HTMAborts[arch]]
+    if counters[HTMAborts[arch]] is list:
+        num = 0
+        for event in counters[HTMAborts[arch]]: num += event
+        return num
+    else: return counters[HTMAborts[arch]]
 
 # HTM abort locations.
 HTMAbortLocs = {
-    "x86_64" : "cpu/tx-abort/pp"
+    "x86_64" : "cpu/tx-abort/pp",
+    "ppc64le" : "pm_tm_fail_footprint_overflow"
 }
 
 def getHTMAbortLocs(samples):
@@ -74,7 +87,8 @@ def getHTMAbortLocs(samples):
 
 # Number of transactions aborted due to HTM buffer capacity constraints.
 HTMCapacityAborts = {
-    "x86_64" : "tx-capacity"
+    "x86_64" : "tx-capacity",
+    "ppc64le" : "pm_tm_fail_footprint_overflow"
 }
 
 def getHTMCapacityAborts(counters):
@@ -83,12 +97,18 @@ def getHTMCapacityAborts(counters):
 
 # Number of transactions aborted due to memory conflicts.
 HTMConflictAborts = {
-    "x86_64" : "tx-conflict"
+    "x86_64" : "tx-conflict",
+    "ppc64le" : [ "pm_tm_fail_con_tm", "pm_tm_fail_conf_non_tm",
+                  "pm_tm_non_tx_conflict", "pm_tm_fail_tx_conflict" ]
 }
 
 def getConflictAborts(counters):
     global arch
-    return counters[ConflictAborts[arch]]
+    if counters[ConflictAborts[arch]] is list:
+        num = 0
+        for event in counters[ConflictAborts[arch]]: num += event
+        return num
+    else: return counters[ConflictAborts[arch]]
 
 ###############################################################################
 # Parsing functionality

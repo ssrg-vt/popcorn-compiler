@@ -74,7 +74,7 @@ class ConfigureCycles:
             self.keepGoing = False
             return
 
-        if self.iteration >= len(self.cycVals):
+        if self.iteration >= len(self.configs):
             self.log("No more cycle targets to test")
             self.keepGoing = False
             return
@@ -87,7 +87,7 @@ class ConfigureCycles:
     application in transactional execution.
     '''
     def writeBest(self):
-        pairs = zip(self.cycVals, self.results)
+        pairs = zip(self.configs, self.results)
         best = None
         for pair in pairs:
             if best == None: best = pair

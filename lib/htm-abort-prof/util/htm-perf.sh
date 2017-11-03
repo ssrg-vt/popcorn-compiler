@@ -24,7 +24,7 @@ DO_RECORD=1
 #   tx-abort: transactions aborted
 #   tx-capacity: transactions aborted due to capacity overflow
 #   tx-conflict: transactions aborted due to access conflict
-X86_RECORD_EVENTS="cycles cpu/tx-abort/pp"
+X86_RECORD_EVENTS="cycles:pp cpu/tx-abort/pp"
 X86_STAT_EVENTS="cycles cycles-t cycles-ct tx-start tx-commit tx-abort
                  tx-capacity tx-conflict"
 
@@ -32,7 +32,30 @@ X86_STAT_EVENTS="cycles cycles-t cycles-ct tx-start tx-commit tx-abort
 # POWER8 events
 ###############################################################################
 
-# TODO
+# Event descriptions gathered from perf output.
+#   pm_tm_trans_run_cyc: cycles in transactions (committed & aborted)
+#   pm_tm_tx_pass_run_cyc: cycles in committed transactions
+#   pm_tm_begin_all: transactions started
+#   pm_tm_end_all: transactions ended TODO does this include aborted transactions?
+#   pm_tm_fail_con_tm: TEXAS fail reason -- conflict with transactional thread
+#   pm_tm_fail_con_non_tm: " -- conflict with non-transactional thread
+#   pm_tm_fail_disallow: transactions aborted due to disallowed instruction
+#   pm_tm_fail_footprint_overflow: transactions aborted due to capacity overflow
+#   pm_tm_fail_non_tx_conflict: non-transactional conflict indicated by LSU (whatever gets reported to TEXAS)
+#   pm_tm_fail_self: self-induced failures
+#   pm_tm_fail_tlbie: TLBIE instruction hit in the TLB
+#   pm_tm_fail_tx_conflict: transactional conflict indicated by LSU (whatever gets reported to TEXAS)
+PPC_RECORD_EVENTS="cycles:pp pm_tm_fail_footprint_overflow"
+PPC_STAT_EVENTS="cycles
+                 pm_tm_trans_run_cyc
+                 pm_tm_tx_pass_run_cyc
+                 pm_tm_begin_all
+                 pm_tm_end_all
+                 pm_tm_fail_con_tm
+                 pm_tm_fail_conf_non_tm
+                 pm_tm_fail_footprint_overflow
+                 pm_tm_fail_non_tx_conflict
+                 pm_tm_fail_tx_conflict"
 
 ###############################################################################
 # Helper functions
@@ -100,7 +123,7 @@ case $ARCH in
     exit 1 ;;
 esac
 
-if [ ! -f "$PERF" ]; then
+if [ $(which $PERF) == "" ]; then
   echo "ERROR: could not find perf '$PERF'"
   exit 1
 fi
@@ -110,7 +133,7 @@ echo "Running '$@'"
 PERF_RECORD_FN="${1}.data"
 PERF_STAT_FN="${1}.log"
 
-PERF_RECORD="$(build_cmd "$PERF" "record -o $PERF_RECORD_FN" "$PERF_RECORD_EVENTS") $@"
+PERF_RECORD="$(build_cmd "$PERF" "record -o $PERF_RECORD_FN -F 100" "$PERF_RECORD_EVENTS") $@"
 PERF_STAT="$(build_cmd "$PERF" "stat -o $PERF_STAT_FN -r $PERF_STAT_REPEAT" "$PERF_STAT_EVENTS") $@"
 
 if [ $DO_STAT -eq 1 ]; then
