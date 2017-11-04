@@ -592,7 +592,7 @@ intern void *pth_scheduler(void *dummy)
          * Find next thread in ready queue
          */
         pth_current = pth_pqueue_delmax(&LSCHED->pth_RQ);
-        pth_assert(pth_current->state == PTH_STATE_READY);
+        pth_assert(!pth_current || pth_current->state == PTH_STATE_READY);
 /*
         if(pth_current->state != PTH_STATE_READY && pth_current->state != PTH_STATE_SCHEDULER)
         {

@@ -134,7 +134,6 @@ int nanosleep(const struct timespec *rqtp, struct timespec *rmtp)
 /* NOTICE: internally fully emulated, so still no
    internal exit point pth_sc_nanosleep necessary! */
 
-#if 0
 /* ==== Pth hard syscall wrapper for usleep(3) ==== */
 int usleep(unsigned int);
 int usleep(unsigned int sec)
@@ -168,8 +167,8 @@ int system(const char *cmd)
 /* NOTICE: internally fully emulated, so still no
    internal exit point pth_sc_system necessary! */
 
+#if 0
 /* ==== Pth hard syscall wrapper for sigprocmask(2) ==== */
-int sigprocmask(int, const sigset_t *, sigset_t *);
 int sigprocmask(int how, const sigset_t *set, sigset_t *oset)
 {
     /* external entry point for application */
@@ -177,9 +176,10 @@ int sigprocmask(int how, const sigset_t *set, sigset_t *oset)
     return pth_sigmask(how, set, oset);
 }
 #endif
+int sigprocmask(int, const sigset_t *, sigset_t *);
 intern int pth_sc_sigprocmask(int how, const sigset_t *set, sigset_t *oset)
 {
-    return -1;
+    return sigprocmask(how, set, oset);
 }
 
 #if 0
@@ -252,7 +252,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds,
 intern int pth_sc_select(int nfds, fd_set *readfds, fd_set *writefds,
                          fd_set *exceptfds, struct timeval *timeout)
 {
-    return -1;
+    select(nfds, readfds, writefds, exceptfds, timeout);
 }
 
 /* ==== Pth hard syscall wrapper for pselect(2) ==== */
@@ -280,14 +280,17 @@ int poll(struct pollfd *pfd, nfds_t nfd, int timeout)
 
 /* ==== Pth hard syscall wrapper for recv(2) ==== */
 ssize_t recv(int, void *, size_t, int);
+#if 0
 ssize_t recv(int fd, void *buf, size_t nbytes, int flags)
 {
     /* external entry point for application */
     pth_implicit_init();
     return pth_recv(fd, buf, nbytes, flags);
 }
+#endif
 intern ssize_t pth_sc_recv(int fd, void *buf, size_t nbytes, int flags)
 {
+    recv(fd, buf, nbytes, flags);
 }
 
 /* ==== Pth hard syscall wrapper for send(2) ==== */
@@ -302,6 +305,7 @@ ssize_t send(int fd, void *buf, size_t nbytes, int flags)
 #endif
 intern ssize_t pth_sc_send(int fd, void *buf, size_t nbytes, int flags)
 {
+    send(fd, buf, nbytes, flags);
 }
 
 #if 0
@@ -340,7 +344,6 @@ ssize_t read(int fd, void *buf, size_t nbytes)
 {
     /* external entry point for application */
     pth_implicit_init();
-    printf("read uses pth_read\n");
     return pth_read(fd, buf, nbytes);
 }
 intern ssize_t pth_sc_read(int fd, void *buf, size_t nbytes)

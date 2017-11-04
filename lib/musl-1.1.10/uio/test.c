@@ -2,7 +2,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #else
-#include <uio-private.h>
+#include <stdio.h>
+#include "uio.h"
 #endif
 
 

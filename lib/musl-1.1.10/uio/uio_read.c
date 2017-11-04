@@ -1,4 +1,5 @@
 #include "uio-private.h"
+#include <string.h>
 
 ssize_t uio_read(int fd, void *buf, size_t count)
 {
@@ -8,7 +9,7 @@ ssize_t uio_read(int fd, void *buf, size_t count)
 
 	count = get_size(file, count);
 
-	memcpy(buf, file->buff.buff, count);
+	memcpy(buf, file->buff->buff, count);
 
 	return count;
 }

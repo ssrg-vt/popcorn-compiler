@@ -128,6 +128,7 @@ int pth_mutex_release(pth_mutex_t *mutex)
         mutex->mx_owner = NULL;
         mutex->mx_count = 0;
         pth_ring_delete(&(pth_current->mutexring), &(mutex->mx_node));
+	/* Does this suffice on ARM (non-TSO)? */
 	__asm__ volatile("" : : : "memory");//barrier
         mutex->mx_state &= ~(PTH_MUTEX_LOCKED);
     }
