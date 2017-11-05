@@ -7,7 +7,7 @@ SEARCH_DIR("=/usr/local/lib/powerpc64le-linux-gnu"); SEARCH_DIR("=/lib/powerpc64
 SECTIONS
 {
   /* Read-only sections, merged into text segment: */
-  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0)); . = SEGMENT_START("text-segment", 0) + SIZEOF_HEADERS;
+  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0x400000)); . = SEGMENT_START("text-segment", 0x400000) + SIZEOF_HEADERS;
   .interp         : { *(.interp) }
   .note.gnu.build-id : { *(.note.gnu.build-id) }
   .hash           : { *(.hash) }
@@ -49,14 +49,17 @@ SECTIONS
     }
   .init           :
   {
-    KEEP (*(SORT_NONE(.init)))
+   /* KEEP (*(SORT_NONE(.init))) */
   } =0x00000060
+
+  .plt            : { *(.plt) }
+  .iplt           : { *(.iplt) }
 
 __TEXT__		/* Marker for the TEXT section insertion */
 
 .fini           :
   {
-    KEEP (*(SORT_NONE(.fini)))
+   /* KEEP (*(SORT_NONE(.fini))) */
   } =0x00000060
   PROVIDE (__etext = .);
   PROVIDE (_etext = .);
@@ -65,13 +68,28 @@ __TEXT__		/* Marker for the TEXT section insertion */
 __RODATA__		/* Marker for the RODATA section insertion */  
   
   .rodata1        : { *(.rodata1) }
+
+__DATA__		/* marker for the DATA section insertion */
+
+  .data1          : { *(.data1) }
+  _edata = .; PROVIDE (edata = .);
+ 
+  . = .; 
+
   .sdata2         :
   {
     *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
   }
   .sbss2          : { *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*) }
+
   .eh_frame_hdr : { *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) *(.eh_frame.*) }
+
+ .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
+__bss_start = .;
+  
+__BSS__			/* Marker for the BSS section insertion */  
+
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table
   .gcc_except_table.*) }
   .gnu_extab   : ONLY_IF_RO { *(.gnu_extab*) }
@@ -141,6 +159,7 @@ __TBSS__		/* Maker for the TBSS section insertion */
     KEEP (*(SORT(.dtors.*)))
     KEEP (*(.dtors))
   }
+
   .jcr            : { KEEP (*(.jcr)) }
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }
   .dynamic        : { *(.dynamic) }
@@ -164,18 +183,7 @@ __TBSS__		/* Maker for the TBSS section insertion */
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
   }
-  .plt            : { *(.plt) }
-  .iplt           : { *(.iplt) }
 
-__DATA__		/* marker for the DATA section insertion */
-
-  .data1          : { *(.data1) }
-  _edata = .; PROVIDE (edata = .);
-  . = .;
-  __bss_start = .;
-  
-__BSS__			/* Marker for the BSS section insertion */  
-  
   . = ALIGN(64 / 8);
   . = SEGMENT_START("ldata-segment", .);
   . = ALIGN(64 / 8);

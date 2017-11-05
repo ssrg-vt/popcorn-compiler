@@ -70,7 +70,9 @@ __DATA__		/* maker for data section insertion */
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
   /*. = ALIGN(0x100); . = .;*/
-  __bss_start = .;
+ .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
+ 
+ __bss_start = .;
 
 __BSS__			/* marker for BSS section insertion */
 
@@ -93,8 +95,6 @@ __BSS__			/* marker for BSS section insertion */
   }
   .eh_frame_hdr : { *(.eh_frame_hdr) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }
-  
- .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
 
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table
   .gcc_except_table.*) }

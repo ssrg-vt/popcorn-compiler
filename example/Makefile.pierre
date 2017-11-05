@@ -71,7 +71,7 @@ ARM64_BUILD   := build_aarch64
 # Generated files
 ARM64_ALIGNED     := $(BIN)_aarch64
 ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
-ARM64_OBJ         := $(SRC:.c=.o)
+#ARM64_OBJ         := $(SRC:.c=.o)
 ARM64_MAP         := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
 ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
@@ -94,7 +94,7 @@ POWERPC64_BUILD   := build_powerpc64
 # Generated files
 POWERPC64_ALIGNED   := $(BIN)_powerpc64
 POWERPC64_VANILLA   := $(POWERPC64_BUILD)/$(POWERPC64_ALIGNED)
-POWERPC64_OBJ       := $(SRC:.c=.o)
+#POWERPC64_OBJ       := $(SRC:.c=.o)
 POWERPC64_MAP         := $(POWERPC64_BUILD)/map.txt
 POWERPC64_LD_SCRIPT   := $(POWERPC64_BUILD)/aligned_linker_script_powerpc.x
 POWERPC64_ALIGNED_MAP := $(POWERPC64_BUILD)/aligned_map.txt
@@ -119,7 +119,7 @@ X86_64_SD_BUILD := sd_x86-64
 # Generated files
 X86_64_ALIGNED     := $(BIN)_x86-64
 X86_64_VANILLA     := $(X86_64_BUILD)/$(X86_64_ALIGNED)
-X86_64_OBJ         := $(SRC:.c=.o)
+#X86_64_OBJ         := $(SRC:.c=.o)
 X86_64_MAP         := $(X86_64_BUILD)/map.txt
 X86_64_SD          := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
 X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
@@ -198,7 +198,7 @@ clean:
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir
 	@echo " [CC] $<"
-	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -c $(ARM64_INC) -o $(ARM64_OBJ) $(SRC)
+	@$(CC) -target $(ARM64_TARGET) $(HET_CFLAGS) -c $(ARM64_INC) -o $(ARM64_OBJ_TARGET) $(SRC)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(ARM64_OBJ_TARGET) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
 
@@ -210,7 +210,7 @@ $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(ARM64_OBJ_TARGET) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
+	$(LD) -o $@ $(ARM64_OBJ_TARGET) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
 		$(ARM64_ALIGNED_MAP) -T $<
 
 #############
@@ -219,7 +219,7 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 
 $(POWERPC64_VANILLA): $(POWERPC64_BUILD)/.dir
 	@echo " [CC] $<"
-	@$(CC) -target $(POWERPC64_TARGET) $(HET_CFLAGS) -c $(POWERPC64_INC) -o $(POWERPC64_OBJ) $(SRC)
+	@$(CC) -target $(POWERPC64_TARGET) $(HET_CFLAGS) -c $(POWERPC64_INC) -o $(POWERPC64_OBJ_TARGET) $(SRC)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(POWERPC64_OBJ_TARGET) $(LDFLAGS) $(POWERPC64_LDFLAGS) -Map $(POWERPC64_MAP)
 
@@ -240,12 +240,12 @@ $(POWERPC64_ALIGNED): $(POWERPC64_LD_SCRIPT)
 
 $(X86_64_VANILLA): $(X86_64_BUILD)/.dir
 	@echo " [CC] $<"
-	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) -c $(X86_64_INC) -o $(X86_64_OBJ) $(SRC)
+	@$(CC) -target $(X86_64_TARGET) $(HET_CFLAGS) -c $(X86_64_INC) -o $(X86_64_OBJ_TARGET) $(SRC)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(X86_64_OBJ_TARGET) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
 
 #[harubyy] TODO: $(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
-$(X86_64_LD_SCRIPT): $(POWERPC64_LD_SCRIPT)
+$(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT) # $(POWERPC64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
 
 $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
