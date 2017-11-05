@@ -5,6 +5,9 @@
 #                                                                             #
 ###############################################################################
 
+# Mode: ppc for x86-ppc and arm for x86-arm
+MODE ?= arm
+
 # FIXME directory of Popcorn compiler installation
 POPCORN := /usr/local/popcorn
 
@@ -139,8 +142,18 @@ X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
 #                                 Recipes                                     #
 ###############################################################################
 
-all: post_process_ppc64
-#all: post_process_arm64
+ALL_DEP := ""
+ifeq ($(MODE),arm)
+	ALL_DEP := post_process_arm64
+else 
+ifeq ($(MODE),ppc)
+	ALL_DEP := post_process_ppc64
+else
+$(error MODE variable invalid (should be 'arm' or 'ppc'))
+endif
+endif
+
+all: $(ALL_DEP)
 
 ir: $(IR)
 
@@ -245,8 +258,17 @@ $(X86_64_VANILLA): $(X86_64_BUILD)/.dir
 	@$(LD) -o $@ $(X86_64_OBJ_TARGET) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
 
 #[harubyy] TODO: $(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
+ifeq ($(MODE), ppc)
 $(X86_64_LD_SCRIPT): $(POWERPC64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
+else
+ifeq ($(MODE), arm)
+$(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
+	@echo " [ALIGN] $@"
+else
+$(error MODE variable invalid (should be 'arm' or 'ppc'))
+endif
+endif
 
 $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"

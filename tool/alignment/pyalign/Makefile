@@ -5,6 +5,9 @@ BOOTSTRAP   := align.script
 TEMPLATES   := templates/*
 PYTHON_MAIN := "__main__.py"
 
+TEST_DIR=tests
+CHECK_ALIGN=../../../util/scripts/check-align.py
+
 all: bin
 
 .PHONY: tags
@@ -23,6 +26,14 @@ install: bin
 
 check_dead_code:
 	vulture .
+
+tests: bin
+	make -C $(TEST_DIR) clean
+	make -C $(TEST_DIR) MODE=ppc
+	$(CHECK_ALIGN) $(TEST_DIR)/test_x86-64 $(TEST_DIR)/test_powerpc64
+	make -C $(TEST_DIR) clean
+	make -C $(TEST_DIR) MODE=arm
+	$(CHECK_ALIGN) $(TEST_DIR)/test_x86-64 $(TEST_DIR)/test_aarch64
 
 clean:
 	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)
