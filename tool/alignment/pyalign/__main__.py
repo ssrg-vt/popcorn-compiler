@@ -63,35 +63,33 @@ def parseAndCheckArgs(parser):
     """ Parse command line arguments and perform some sanity checks """
     args = parser.parse_args()
     
-    # For now we only support 2 nodes setups so the combinations are:
-    # x86-arm, x86-ppc, arm-ppc
-
-    if (args.x86_bin and args.arm_bin and args.ppc_bin) or \
-            (args.x86_map and args.arm_map and args.ppc_map):
-        er("Only 2-nodes setups are supported, so bins, maps & ls parameters " +
-            "should only be x86-arm, x86-ppc or arm-ppc\n")
-        sys.exit(-1)
-
-    if args.x86_bin and args.arm_bin:
+    if args.x86_bin and args.arm_bin and not args.ppc_bin:
         if (not args.x86_map) or (not args.arm_map):
             er("Mapfile parameter missing for some/all archs\n")
             sys.exit(-1)
         filesToCheck = [args.x86_bin, args.x86_map, args.arm_bin, args.arm_map]
 
-    elif args.x86_bin and args.ppc_bin:
+    elif args.x86_bin and args.ppc_bin and not args.arm_bin:
         if (not args.x86_map) or (not args.ppc_map):
             er("Mapfile parameter missing for some/all archs\n")
             sys.exit(-1)
         filesToCheck = [args.x86_bin, args.x86_map, args.ppc_bin, args.ppc_map]
 
-    elif args.arm_bin and args.ppc_bin:
+    elif args.arm_bin and args.ppc_bin and not args.x86_bin:
         if (not args.arm_map) or (not args.ppc_map):
             er("Mapfile parameter missing for some/all archs\n")
             sys.exit(-1)
         filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map]
 
+    elif args.arm_bin and args.ppc_bin and args.x86_bin:
+        if (not args.arm_map) or (not args.ppc_map) or (not args.x86_map):
+            er("Mapfile parameter missing for some/all archs\n")
+            sys.exit(-1)
+        filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map,
+                args.x86_bin, args.x86_map]
+
     else:
-        er("Please provide 2 of --x86-bin/--arm-bin/--ppc-bin\n")
+        er("Please provide at least 2 of --x86-bin/--arm-bin/--ppc-bin\n")
         exit(-1)
     
     checkFilesExistence(filesToCheck)
@@ -102,15 +100,15 @@ def setConsideredArchs(args):
     # No need to perform sanity checks as this function is supposed to be called
     # after parseAndCheckArgs
 
-    if args.x86_bin and args.arm_bin:
-        considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
+    if args.x86_bin:
+        considered_archs.append(archs[Arch.X86])
 
-    if args.x86_bin and args.ppc_bin:
-        considered_archs = [archs[Arch.X86], archs[Arch.POWER]]
+    if args.arm_bin:
+        considered_archs.append(archs[Arch.ARM])
 
-    if args.arm_bin and args.ppc_bin:
-        considered_archs = [archs[Arch.ARM], archs[Arch.POWER]]
-        
+    if args.ppc_bin:
+        considered_archs.append(archs[Arch.POWER])
+
     return considered_archs
 
 def setInputOutputs(args):

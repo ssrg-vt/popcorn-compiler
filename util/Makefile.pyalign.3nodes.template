@@ -5,9 +5,6 @@
 #                                                                             #
 ###############################################################################
 
-# Mode: ppc for x86-ppc and arm for x86-arm
-MODE ?= arm
-
 # FIXME directory of Popcorn compiler installation
 POPCORN := /usr/local/popcorn
 
@@ -142,45 +139,31 @@ X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
 #                                 Recipes                                     #
 ###############################################################################
 
-ALL_DEP := ""
-ifeq ($(MODE),arm)
-	ALL_DEP := post_process_arm64
-else 
-ifeq ($(MODE),ppc)
-	ALL_DEP := post_process_ppc64
-else
-$(error MODE variable invalid (should be 'arm' or 'ppc'))
-endif
-endif
-
-all: $(ALL_DEP)
+all: post_process
 
 ir: $(IR)
 
-ifeq ($(MODE),arm)
-check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+# TODO check everything in one pass
+check_arm64: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-else 
-ifeq ($(MODE),ppc)
-check: $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
+
+check_ppc64: $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
-else
-$(error MODE variable invalid (should be 'arm' or 'ppc'))
-endif
-endif
 
+post_process: post_process_arm64 post_process_ppc64 post_process_x86-64
 
-
-post_process_arm64: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+post_process_arm64: $(ARM64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(ARM64_ALIGNED)
-	@$(POST_PROCESS) -f $(X86_64_ALIGNED)
 
-post_process_ppc64: $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
+post_process_ppc64: $(POWERPC64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(POWERPC64_ALIGNED)
+
+post_process_x86-64: $(X86_64_ALIGNED)
+	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(X86_64_ALIGNED)
 
 stack-depth: $(X86_64_SD)
@@ -223,11 +206,8 @@ $(ARM64_VANILLA): $(ARM64_BUILD)/.dir
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(ARM64_OBJ_TARGET) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
 
-$(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
+$(ARM64_LD_SCRIPT): $(POWERPC64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
-	@$(ALIGN) --x86-bin $(X86_64_VANILLA) --arm-bin $(ARM64_VANILLA) \
-		--x86-map $(X86_64_MAP) --arm-map $(ARM64_MAP) \
-		--output-x86-ls $(X86_64_LD_SCRIPT) --output-arm-ls $(ARM64_LD_SCRIPT)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
@@ -244,11 +224,14 @@ $(POWERPC64_VANILLA): $(POWERPC64_BUILD)/.dir
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(POWERPC64_OBJ_TARGET) $(LDFLAGS) $(POWERPC64_LDFLAGS) -Map $(POWERPC64_MAP)
 
-$(POWERPC64_LD_SCRIPT): $(POWERPC64_VANILLA) $(X86_64_VANILLA) 
+$(POWERPC64_LD_SCRIPT): $(POWERPC64_VANILLA) $(X86_64_VANILLA) $(ARM64_VANILLA)
 	@echo " [ALIGN] $@"
 	@$(ALIGN) --x86-bin $(X86_64_VANILLA) --ppc-bin $(POWERPC64_VANILLA) \
-		--x86-map $(X86_64_MAP) --ppc-map $(POWERPC64_MAP) \
-		--output-x86-ls $(X86_64_LD_SCRIPT) --output-ppc-ls $(POWERPC64_LD_SCRIPT)
+		--arm-bin $(ARM64_VANILLA) --x86-map $(X86_64_MAP) \
+		--ppc-map $(POWERPC64_MAP) --arm-map $(ARM64_MAP) \
+		--output-x86-ls $(X86_64_LD_SCRIPT) \
+		--output-ppc-ls $(POWERPC64_LD_SCRIPT) \
+		--output-arm-ls $(ARM64_LD_SCRIPT)
 
 $(POWERPC64_ALIGNED): $(POWERPC64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
@@ -266,17 +249,8 @@ $(X86_64_VANILLA): $(X86_64_BUILD)/.dir
 	@$(LD) -o $@ $(X86_64_OBJ_TARGET) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
 
 #[harubyy] TODO: $(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
-ifeq ($(MODE), ppc)
 $(X86_64_LD_SCRIPT): $(POWERPC64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
-else
-ifeq ($(MODE), arm)
-$(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
-	@echo " [ALIGN] $@"
-else
-$(error MODE variable invalid (should be 'arm' or 'ppc'))
-endif
-endif
 
 $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
@@ -297,5 +271,6 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
         aligned_ppc64 aligned-powerpc64 aligned-x86-64 \
         aligned_arm64 aligned-aarch64 aligned-x86-64 \
         vanilla_arm64 vanilla-aarch64 vanilla-x86-64 \
-        vanilla_ppc64 vanilla-powerpc64 vanilla-x86-64
+        vanilla_ppc64 vanilla-powerpc64 vanilla-x86-64 \
+		post_process_arm64 post_process_x86-64 post_process
 

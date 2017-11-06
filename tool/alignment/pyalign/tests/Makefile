@@ -1,1 +1,0 @@
-../../../../util/Makefile.pyalign.template

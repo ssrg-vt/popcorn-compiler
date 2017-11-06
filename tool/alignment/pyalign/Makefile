@@ -5,8 +5,8 @@ BOOTSTRAP   := align.script
 TEMPLATES   := templates/*
 PYTHON_MAIN := "__main__.py"
 
-TEST_DIR=tests
-CHECK_ALIGN=../../../util/scripts/check-align.py
+TEST_2_NODES=tests/2-nodes
+TEST_3_NODES=tests/3-nodes
 
 all: bin
 
@@ -28,12 +28,13 @@ check_dead_code:
 	vulture .
 
 tests: bin
-	make -C $(TEST_DIR) clean
-	make -C $(TEST_DIR) MODE=ppc
-	$(CHECK_ALIGN) $(TEST_DIR)/test_x86-64 $(TEST_DIR)/test_powerpc64
-	make -C $(TEST_DIR) clean
-	make -C $(TEST_DIR) MODE=arm
-	$(CHECK_ALIGN) $(TEST_DIR)/test_x86-64 $(TEST_DIR)/test_aarch64
+	# 2 nodes: x86-ppc
+	make -C $(TEST_2_NODES) clean
+	make -C $(TEST_2_NODES) MODE=ppc check
+	# 2 nodes: x86-arm
+	make -C $(TEST_2_NODES) clean
+	make -C $(TEST_2_NODES) MODE=arm check
+	# TODO 3 nodes test
 
 clean:
 	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)

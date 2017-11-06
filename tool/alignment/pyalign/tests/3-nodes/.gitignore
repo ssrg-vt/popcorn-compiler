@@ -1,0 +1,7 @@
+*.o
+build_aarch64
+build_powerpc64
+build_x86-64
+test_x86-64
+test_powerpc64
+test_aarch64
