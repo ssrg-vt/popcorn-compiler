@@ -34,7 +34,9 @@ tests: bin
 	# 2 nodes: x86-arm
 	make -C $(TEST_2_NODES) clean
 	make -C $(TEST_2_NODES) MODE=arm check
-	# TODO 3 nodes test
+	# 3 nodes
+	make -C $(TEST_3_NODES) clean
+	make -C $(TEST_3_NODES) check
 
 clean:
 	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)

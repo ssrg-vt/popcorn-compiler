@@ -1,0 +1,13 @@
+Template makefile usage
+-----------------------
+
+- The default template to use is Makefile.pyalign.template, it should be copied
+  it in your sources folder and renamed as 'Makefile'
+- The MODE variable is defining the target architectures pair, it can take the
+  following values:
+	- arm (for x86-64/aarch64 migration)
+	- ppc (for x86-64/powerpc64 migration)
+
+Example:
+
+make MODE=ppc 

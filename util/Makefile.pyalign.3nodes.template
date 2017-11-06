@@ -143,14 +143,9 @@ all: post_process
 
 ir: $(IR)
 
-# TODO check everything in one pass
-check_arm64: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+check: $(ARM64_ALIGNED) $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
-	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-
-check_ppc64: $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
-	@echo " [CHECK] Checking alignment for $^"
-	@$(ALIGN_CHECK) $(POWERPC64_ALIGNED) $(X86_64_ALIGNED)
+	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED) $(POWERPC64_ALIGNED)
 
 post_process: post_process_arm64 post_process_ppc64 post_process_x86-64
 
