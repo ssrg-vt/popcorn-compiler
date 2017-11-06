@@ -274,7 +274,7 @@ private:
   void findInstrumentationPoints(Function &F) {
     for(Function::iterator BB = F.begin(), BBE = F.end(); BB != BBE; BB++) {
       for(BasicBlock::iterator I = BB->begin(), IE = BB->end(); I != IE; I++) {
-        if(Popcorn::isEquivalencePoint(I)) MigPointInsts.insert(I);
+        if(Popcorn::hasEquivalencePointMetadata(I)) MigPointInsts.insert(I);
         if(Popcorn::isHTMBeginPoint(I)) HTMBeginInsts.insert(I);
         if(Popcorn::isHTMEndPoint(I)) HTMEndInsts.insert(I);
       }

@@ -23,7 +23,7 @@ namespace llvm {
 namespace Popcorn {
 
 #define POPCORN_META "popcorn"
-#define POPCORN_EQPOINT "migpoint"
+#define POPCORN_MIGPOINT "migpoint"
 #define POPCORN_HTM_BEGIN "htmbegin"
 #define POPCORN_HTM_END "htmend"
 
@@ -86,12 +86,16 @@ static inline bool isCallSite(const Instruction *I) {
 
 /// Add metadata to an instruction marking it as an equivalence point.
 static inline void addEquivalencePointMetadata(Instruction *I) {
-  addMetadata(I, POPCORN_META, POPCORN_EQPOINT);
+  addMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
 }
 
 /// Remove metadata from an instruction marking it as an equivalence point.
 static inline void removeEquivalencePointMetadata(Instruction *I) {
-  removeMetadata(I, POPCORN_META, POPCORN_EQPOINT);
+  removeMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
+}
+
+static inline bool hasEquivalencePointMetadata(Instruction *I) {
+  return hasMetadata(I , POPCORN_META, POPCORN_MIGPOINT);
 }
 
 /// Return whether an instruction is an equivalence point.  The instruction must
@@ -101,7 +105,7 @@ static inline void removeEquivalencePointMetadata(Instruction *I) {
 /// 2. Analysis has tagged the instruction with appropriate metadata
 static inline bool isEquivalencePoint(const Instruction *I) {
   if(isCallSite(I)) return true;
-  else return hasMetadata(I, POPCORN_META, POPCORN_EQPOINT);
+  else return hasMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
 }
 
 /// Add metadata to an instruction marking it as an HTM begin point.

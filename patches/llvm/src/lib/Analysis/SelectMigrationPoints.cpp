@@ -1082,6 +1082,7 @@ private:
 
     DEBUG(dbgs() << "\n-> Wrapping " << Desc << " with HTM stop/start <-\n");
     for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
+      if(LI->getLoopFor(BB)) continue; // Don't do this in loops!
       for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
         if(Matcher(I, CurCapThresh)) {
           markAsHTMEnd(I);
@@ -1171,7 +1172,8 @@ private:
       // Check if there is or there should be a migration point before the
       // instruction, and if so, reset the weight.  Note: markAsMigPoint()
       // internally avoids tampering with existing instrumentation.
-      if(isMigrationPoint(I) || CurWeight->shouldAddMigPoint(CurCapThresh)) {
+      if(isMigrationPoint(I)) CurWeight->reset();
+      else if(CurWeight->shouldAddMigPoint(CurCapThresh)) {
         AddedMigPoint |= markAsMigPoint(I, true, true);
         CurWeight->reset();
       }

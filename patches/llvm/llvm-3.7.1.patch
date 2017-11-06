@@ -766,7 +766,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 ===================================================================
 --- include/llvm/Analysis/PopcornUtil.h	(nonexistent)
 +++ include/llvm/Analysis/PopcornUtil.h	(working copy)
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,185 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -792,7 +792,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +namespace Popcorn {
 +
 +#define POPCORN_META "popcorn"
-+#define POPCORN_EQPOINT "migpoint"
++#define POPCORN_MIGPOINT "migpoint"
 +#define POPCORN_HTM_BEGIN "htmbegin"
 +#define POPCORN_HTM_END "htmend"
 +
@@ -855,12 +855,16 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +
 +/// Add metadata to an instruction marking it as an equivalence point.
 +static inline void addEquivalencePointMetadata(Instruction *I) {
-+  addMetadata(I, POPCORN_META, POPCORN_EQPOINT);
++  addMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
 +}
 +
 +/// Remove metadata from an instruction marking it as an equivalence point.
 +static inline void removeEquivalencePointMetadata(Instruction *I) {
-+  removeMetadata(I, POPCORN_META, POPCORN_EQPOINT);
++  removeMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
++}
++
++static inline bool hasEquivalencePointMetadata(Instruction *I) {
++  return hasMetadata(I , POPCORN_META, POPCORN_MIGPOINT);
 +}
 +
 +/// Return whether an instruction is an equivalence point.  The instruction must
@@ -870,7 +874,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +/// 2. Analysis has tagged the instruction with appropriate metadata
 +static inline bool isEquivalencePoint(const Instruction *I) {
 +  if(isCallSite(I)) return true;
-+  else return hasMetadata(I, POPCORN_META, POPCORN_EQPOINT);
++  else return hasMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
 +}
 +
 +/// Add metadata to an instruction marking it as an HTM begin point.
@@ -3438,7 +3442,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 ===================================================================
 --- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
 +++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1805 @@
+@@ -0,0 +1,1807 @@
 +//===- SelectMigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4523,6 +4527,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +
 +    DEBUG(dbgs() << "\n-> Wrapping " << Desc << " with HTM stop/start <-\n");
 +    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
++      if(LI->getLoopFor(BB)) continue; // Don't do this in loops!
 +      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
 +        if(Matcher(I, CurCapThresh)) {
 +          markAsHTMEnd(I);
@@ -4612,7 +4617,8 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      // Check if there is or there should be a migration point before the
 +      // instruction, and if so, reset the weight.  Note: markAsMigPoint()
 +      // internally avoids tampering with existing instrumentation.
-+      if(isMigrationPoint(I) || CurWeight->shouldAddMigPoint(CurCapThresh)) {
++      if(isMigrationPoint(I)) CurWeight->reset();
++      else if(CurWeight->shouldAddMigPoint(CurCapThresh)) {
 +        AddedMigPoint |= markAsMigPoint(I, true, true);
 +        CurWeight->reset();
 +      }
@@ -5584,7 +5590,46 @@ Index: lib/CodeGen/Passes.cpp
  
    Impl = new PassConfigImpl();
  
-@@ -459,6 +461,23 @@
+@@ -391,7 +393,9 @@
+     addPass(createVerifierPass());
+ 
+   // Run loop strength reduction before anything else.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableLSR) {
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableLSR) {
+     addPass(createLoopStrengthReducePass());
+     if (PrintLSR)
+       addPass(createPrintFunctionPass(dbgs(), "\n\n*** Code after LSR ***\n"));
+@@ -406,10 +410,14 @@
+   addPass(createUnreachableBlockEliminationPass());
+ 
+   // Prepare expensive constants for SelectionDAG.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableConstantHoisting)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableConstantHoisting)
+     addPass(createConstantHoistingPass());
+ 
+-  if (getOptLevel() != CodeGenOpt::None && !DisablePartialLibcallInlining)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisablePartialLibcallInlining)
+     addPass(createPartiallyInlineLibCallsPass());
+ }
+ 
+@@ -449,7 +457,9 @@
+ /// Add pass to prepare the LLVM IR for code generation. This should be done
+ /// before exception handling preparation passes.
+ void TargetPassConfig::addCodeGenPrepare() {
+-  if (getOptLevel() != CodeGenOpt::None && !DisableCGP)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableCGP)
+     addPass(createCodeGenPreparePass(TM));
+   addPass(createRewriteSymbolsPass());
+ }
+@@ -459,6 +469,23 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
@@ -5608,7 +5653,7 @@ Index: lib/CodeGen/Passes.cpp
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +773,10 @@
+@@ -754,6 +781,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -9708,7 +9753,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +  void findInstrumentationPoints(Function &F) {
 +    for(Function::iterator BB = F.begin(), BBE = F.end(); BB != BBE; BB++) {
 +      for(BasicBlock::iterator I = BB->begin(), IE = BB->end(); I != IE; I++) {
-+        if(Popcorn::isEquivalencePoint(I)) MigPointInsts.insert(I);
++        if(Popcorn::hasEquivalencePointMetadata(I)) MigPointInsts.insert(I);
 +        if(Popcorn::isHTMBeginPoint(I)) HTMBeginInsts.insert(I);
 +        if(Popcorn::isHTMEndPoint(I)) HTMEndInsts.insert(I);
 +      }
