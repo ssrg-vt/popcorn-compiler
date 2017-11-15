@@ -33,7 +33,7 @@ void *private_end = &__tbss_end;
 void *sdata = 0;//&_sdata;
 void *edata = 0;//&_edata;
 
-#define ERR_CHECK(func) if(func) perror(__LINE__);
+#define ERR_CHECK(func) if(func) perror(__func__);
 int
 dsm_protect(void *addr, unsigned long length)
 {
@@ -132,14 +132,11 @@ int dsm_protect_all_write_sections()
 
 }
 
-int dsm_init()
+int dsm_init(int remote_start)
 {
-	int sec;
-        char *start_remote = getenv("POPCORN_START_REMOTE");
-	if(second_start)
-                sec = atoi(second_start);
-        else
-                sec = 0;
-	if(sec)
-                dsm_protect_all_write_sections(argc, argv);
+	printf("%s: remote start = %d\n", __func__, remote_start);
+	if(remote_start)
+                dsm_protect_all_write_sections();
+	else
+		;
 }

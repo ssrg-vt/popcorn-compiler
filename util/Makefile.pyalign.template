@@ -69,6 +69,7 @@ ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
 ARM64_OBJ         := $(SRC:.c=.o)
 ARM64_MAP         := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
+ARM64_LD_SCRIPT_VANILLA   := $(POPCORN)//share/ld-scripts-vanilla/aarch64linux.x
 ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
 
 # Flags
@@ -94,6 +95,7 @@ X86_64_MAP         := $(X86_64_BUILD)/map.txt
 X86_64_SD          := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
 X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
 X86_64_LD_SCRIPT   := $(X86_64_BUILD)/aligned_linker_script_x86.x
+X86_64_LD_SCRIPT_VANILLA   := $(POPCORN)//share/ld-scripts-vanilla/elf_x86_64.x
 X86_64_ALIGNED_MAP := $(X86_64_BUILD)/aligned_map.txt
 
 # Flags
@@ -162,7 +164,7 @@ clean:
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
+	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP) -T $(ARM64_LD_SCRIPT_VANILLA)
 
 $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
 	@echo " [ALIGN] $@"
@@ -181,7 +183,7 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 
 $(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"
-	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
+	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP) -T $(X86_64_LD_SCRIPT_VANILLA)
 
 $(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
 	@echo " [ALIGN] $@"

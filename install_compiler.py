@@ -167,6 +167,9 @@ def check_for_prerequisites():
 
     return success
 
+def install_libclang(base_path, install_path, num_threads, make_all_targets):
+    libclang_path = os.path.join(base_path, 'util/scripts/libclang')
+
 def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
 
     llvm_download_path = os.path.join(install_path, 'src/llvm')
@@ -405,7 +408,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
+                                'CC={}/bin/libclang'.format(install_path),
                                 'CFLAGS="-target aarch64-linux-gnu ' + 
 									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
@@ -811,6 +814,12 @@ def main(args):
         install_clang_llvm(args.base_path, args.install_path, cpus,
                            args.make_all_targets)
 
+    #needed to compile library (needs libclang script)
+    if not args.skip_utils_install:
+        install_utils(args.base_path, args.install_path, cpus)
+    #install_libclang(args.base_path, args.install_path, cpus,
+    #                       args.make_all_targets)
+
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, cpus)
 
@@ -826,9 +835,6 @@ def main(args):
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
                                   cpus)
-
-    if not args.skip_utils_install:
-        install_utils(args.base_path, args.install_path, cpus)
 
     if not args.skip_namespace:
         build_namespace(args.base_path)
