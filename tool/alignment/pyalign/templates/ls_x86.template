@@ -108,19 +108,6 @@ __BSS__			/* marker for BSS section insertion */
   .eh_frame       : ONLY_IF_RW { KEEP (*(.eh_frame)) }
   .gcc_except_table   : ONLY_IF_RW { *(.gcc_except_table .gcc_except_table.*) }
   .exception_ranges   : ONLY_IF_RW { *(.exception_ranges .exception_ranges*) }
-  /* Thread Local Storage sections  */
-
-  . = ALIGN(0x1000);
-  . = SEGMENT_START("tdata-segment", .); 
-  __tdata_start = .;
-__TDATA__ 		/* marker for TDATA section insertion */
-  . = ALIGN(0x1000);
-  __tdata_end = .;
-
-  __tbss_start = .;
-__TBSS__		/* marker for TBSS section insertion */
-  . = ALIGN(0x1000);
-  __tbss_end = .;
 
 .preinit_array     :
   {
@@ -179,6 +166,20 @@ __TBSS__		/* marker for TBSS section insertion */
   }
   .dynamic        : { *(.dynamic) }
   .got            : { *(.got) *(.igot) }
+  /* Thread Local Storage sections  */
+
+  . = ALIGN(0x1000);
+  . = SEGMENT_START("tdata-segment", .); 
+  __tdata_start = .;
+__TDATA__ 		/* marker for TDATA section insertion */
+  . = ALIGN(0x1000);
+  __tdata_end = .;
+
+  __tbss_start = .;
+__TBSS__		/* marker for TBSS section insertion */
+  . = ALIGN(0x1000);
+  __tbss_end = .;
+
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
   . = ALIGN(64 / 8);
