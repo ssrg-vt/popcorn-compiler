@@ -91,9 +91,16 @@ __BSS__		/* marker for the BSS section insertion */
   .exception_ranges   : ONLY_IF_RW { *(.exception_ranges .exception_ranges*) }
   /* Thread Local Storage sections  */
   
+  . = ALIGN(0x1000);
+  . = SEGMENT_START("tdata-segment", .); 
+  __tdata_start = .;
 __TDATA__		/* marker for the TDATA section insertion */  
-  
+  . = ALIGN(0x1000);
+  __tdata_end = .;
+  __tbss_start = .; 
 __TBSS__		/* maker for the TBSS section insertion */
+  . = ALIGN(0x1000);
+  __tbss_end = .;
 
   .preinit_array     :
   {

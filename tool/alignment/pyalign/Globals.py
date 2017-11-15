@@ -44,5 +44,7 @@ def erStack(string):
 # certain circumstences
 SYMBOLS_BLACKLIST={	".text" : [".text"],
 					".data" : [".data"],
+					".tdata" : [".tdata"],
+					".tbss" : [".tbss"],
 					".bss" : [".bss"],
 					".rodata" :[".rodata"] }

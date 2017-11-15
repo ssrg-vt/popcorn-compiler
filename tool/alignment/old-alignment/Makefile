@@ -1,4 +1,4 @@
-POPCORN := /usr/local/popcorn
+POPCORN := /usr/local/popcorn-rack
 
 BIN    := align
 JAR    := src/align.jar
