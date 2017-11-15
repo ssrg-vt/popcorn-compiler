@@ -71,7 +71,7 @@ int catch_signal()
 	return 0;
 }
 
-int dsm_init()
+int dsm_protect_all_write_sections()
 {
 	int ret;
 	procmap_t* map=NULL;
@@ -81,7 +81,7 @@ int dsm_init()
 	printf("dsm_init private start %p, end %p\n", private_start, private_end);
 	catch_signal();
 	printf("dsm_init data start %p, end %p\n", sdata, edata);
-	
+
 	pmparser_init();
 
 	ret = pmparser_parse(-1);
@@ -90,12 +90,11 @@ int dsm_init()
 		return -1;
 	}
 
-	
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
 	while((map=pmparser_next())!=NULL){
 		pmparser_print(map,0);
-		printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n"); 
+		printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		//if(map->addr_start<=sdata && map->addr_end>=edata)
 		if(map->addr_start>=private_start && map->addr_end<=private_end)
@@ -126,8 +125,21 @@ int dsm_init()
 		if(!map->prot.is_p)
 			printf("Not prrivate region are not supported?\n");
 	}
-	
+
 	printf("dsm_init done\n");
 
 	return 0;
+
+}
+
+int dsm_init()
+{
+	int sec;
+        char *start_remote = getenv("POPCORN_START_REMOTE");
+	if(second_start)
+                sec = atoi(second_start);
+        else
+                sec = 0;
+	if(sec)
+                dsm_protect_all_write_sections(argc, argv);
 }
