@@ -9,15 +9,15 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-//#include "linux/limits.h"
+#include "config.h"
 #include "communicate.h"
 
 #define PATH_MAX 4096
 
-char* nodes[] = {"127.0.0.1", "127.0.0.1"};
 
-int server_sock_fd = 0;
-int ori_to_remote_sock = 0;
+static int server_sock_fd = 0;
+static int ori_to_remote_sock = 0;
+
 #define MAX_NUM_CHAR_SIZE 32
 typedef int (*cmd_func_t) (char* arg, int size);
 

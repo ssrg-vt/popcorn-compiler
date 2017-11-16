@@ -16,6 +16,10 @@
 #include <assert.h>
 #include <signal.h>
 #include "pmparser.h"
+#include "communicate.h"
+
+#define ALIGN(_arg, _size) ((((long)_arg)/_size)*_size)
+#define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
 #if 0
 extern int _private_start, _private_end;
@@ -39,17 +43,45 @@ dsm_protect(void *addr, unsigned long length)
 {
 	if(mprotect(addr, length, PROT_NONE))
 			perror(__func__);
+	return 0;
 }
 
+int dsm_get_page(void* addr, void* buffer, int page_size)
+{
+	char ca[NUM_LINE_SIZE_BUF+1];
+	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);
+	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
+}
+
+//#define PAGE_SIZE 4096
+//char page[PAGE_SIZE];
 void fault_handler(int sig, siginfo_t *info, void *ucontext)
 {
-	//printf("%s: address %p\n", __func__, info->si_addr);
 	procmap_t* map=NULL;
 	void *addr=info->si_addr;
-	pmparser_get(addr, &map, NULL);
+
 	printf("%s: address %p\n", __func__, info->si_addr);
+
+	//if(PAGE_SIZE != page_size)
+	//	printf("%s, wrong page size!!!!\n", __func__);
+
+	addr = PAGE_ALIGN(addr);
+
+	pmparser_get(addr, &map, NULL);
+
+	printf("%s: aligned address %p\n", __func__, addr);
+
+	if(mprotect(addr, page_size, PROT_READ | PROT_WRITE))
+			perror(__func__);
+
+	/* Copy content from remote into the temporary page */
+	dsm_get_page(addr, addr, page_size);
+
+	/*
+	//Whole region!
 	if(mprotect(map->addr_start, map->length, PROT_READ| PROT_WRITE))
 			perror(__func__);
+	*/
 
 }
 

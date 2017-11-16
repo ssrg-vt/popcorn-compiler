@@ -73,18 +73,17 @@ void __init_libc(char **envp, char *pn)
  */
 void *__popcorn_stack_base = NULL;
 
-int upopcorn_init();
+void upopcorn_init();
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
 	char **envp = argv+argc+1;
 	__popcorn_stack_base = (void *)(argv - 1);
 
-	if(upopcorn_init())
-		perror("dsm_init");
 
 #ifndef SHARED
 	__init_libc(envp, argv[0]);
 	_init();
+	upopcorn_init();
 	uintptr_t a = (uintptr_t)&__init_array_start;
 	for (; a<(uintptr_t)&__init_array_end; a+=sizeof(void(*)()))
 		(*(void (**)())a)();
