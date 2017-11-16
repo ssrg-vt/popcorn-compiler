@@ -1,0 +1,121 @@
+ordered.lo: ordered.c libgomp.h config.h gstdint.h \
+  /usr/local/popcorn/x86_64/include/sys/types.h \
+  /usr/local/popcorn/x86_64/include/features.h \
+  /usr/local/popcorn/x86_64/include/bits/alltypes.h \
+  /usr/local/popcorn/x86_64/include/endian.h \
+  /usr/local/popcorn/x86_64/include/stdint.h \
+  /usr/local/popcorn/x86_64/include/bits/stdint.h \
+  /usr/local/popcorn/x86_64/include/sys/select.h \
+  /usr/local/popcorn/x86_64/include/sys/sysmacros.h libgomp-plugin.h \
+  /usr/local/popcorn/x86_64/include/stdbool.h \
+  /usr/local/popcorn/x86_64/include/stddef.h \
+  /usr/local/popcorn/x86_64/include/pthread.h \
+  /usr/local/popcorn/x86_64/include/sched.h \
+  /usr/local/popcorn/x86_64/include/time.h \
+  /usr/local/popcorn/x86_64/include/stdlib.h \
+  /usr/local/popcorn/x86_64/include/alloca.h \
+  /usr/local/popcorn/x86_64/include/stdio.h \
+  /usr/local/popcorn/x86_64/include/stdarg.h priority_queue.h \
+  splay-tree.h config/linux/sem.h \
+  /usr/local/popcorn/x86_64/include/limits.h \
+  /usr/local/popcorn/x86_64/include/bits/limits.h config/linux/mutex.h \
+  config/linux/bar.h config/posix/simple-bar.h config/posix/bar.h \
+  config/linux/ptrlock.h libgomp_g.h config/linux/omp-lock.h omp.h.in \
+  /usr/local/popcorn/x86_64/include/string.h \
+  /usr/local/popcorn/x86_64/include/strings.h config/linux/doacross.h \
+  /usr/local/popcorn/x86_64/include/errno.h \
+  /usr/local/popcorn/x86_64/include/bits/errno.h config/linux/wait.h \
+  config/linux/futex.h /usr/local/popcorn/x86_64/include/unistd.h \
+  /usr/local/popcorn/x86_64/include/bits/posix.h \
+  /usr/local/popcorn/x86_64/include/sys/syscall.h \
+  /usr/local/popcorn/x86_64/include/bits/syscall.h
+
+libgomp.h:
+
+config.h:
+
+gstdint.h:
+
+/usr/local/popcorn/x86_64/include/sys/types.h:
+
+/usr/local/popcorn/x86_64/include/features.h:
+
+/usr/local/popcorn/x86_64/include/bits/alltypes.h:
+
+/usr/local/popcorn/x86_64/include/endian.h:
+
+/usr/local/popcorn/x86_64/include/stdint.h:
+
+/usr/local/popcorn/x86_64/include/bits/stdint.h:
+
+/usr/local/popcorn/x86_64/include/sys/select.h:
+
+/usr/local/popcorn/x86_64/include/sys/sysmacros.h:
+
+libgomp-plugin.h:
+
+/usr/local/popcorn/x86_64/include/stdbool.h:
+
+/usr/local/popcorn/x86_64/include/stddef.h:
+
+/usr/local/popcorn/x86_64/include/pthread.h:
+
+/usr/local/popcorn/x86_64/include/sched.h:
+
+/usr/local/popcorn/x86_64/include/time.h:
+
+/usr/local/popcorn/x86_64/include/stdlib.h:
+
+/usr/local/popcorn/x86_64/include/alloca.h:
+
+/usr/local/popcorn/x86_64/include/stdio.h:
+
+/usr/local/popcorn/x86_64/include/stdarg.h:
+
+priority_queue.h:
+
+splay-tree.h:
+
+config/linux/sem.h:
+
+/usr/local/popcorn/x86_64/include/limits.h:
+
+/usr/local/popcorn/x86_64/include/bits/limits.h:
+
+config/linux/mutex.h:
+
+config/linux/bar.h:
+
+config/posix/simple-bar.h:
+
+config/posix/bar.h:
+
+config/linux/ptrlock.h:
+
+libgomp_g.h:
+
+config/linux/omp-lock.h:
+
+omp.h.in:
+
+/usr/local/popcorn/x86_64/include/string.h:
+
+/usr/local/popcorn/x86_64/include/strings.h:
+
+config/linux/doacross.h:
+
+/usr/local/popcorn/x86_64/include/errno.h:
+
+/usr/local/popcorn/x86_64/include/bits/errno.h:
+
+config/linux/wait.h:
+
+config/linux/futex.h:
+
+/usr/local/popcorn/x86_64/include/unistd.h:
+
+/usr/local/popcorn/x86_64/include/bits/posix.h:
+
+/usr/local/popcorn/x86_64/include/sys/syscall.h:
+
+/usr/local/popcorn/x86_64/include/bits/syscall.h:

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+POPCORN=/usr/local/popcorn
+POPCORN_ARM64=$POPCORN/aarch64
+export CC=$POPCORN/bin/popcorn-clang
+export AR=$POPCORN/bin/popcorn-ar
+export TARGET="--host=aarch64-linux-gnu"
+export CFLAGS="-Wno-error"
+#Other CFLAGS are set in Makefile.in so that configure execute without problem
+#export LDFLAGS="-target aarch64-linux-gnu"
+./configure --disable-error $TARGET --enable-static  --disable-shared --prefix=$POPCORN_ARM64

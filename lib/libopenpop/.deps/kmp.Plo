@@ -1,0 +1,44 @@
+kmp.lo: kmp.c /usr/local/popcorn/x86_64/include/stdlib.h \
+  /usr/local/popcorn/x86_64/include/features.h \
+  /usr/local/popcorn/x86_64/include/bits/alltypes.h \
+  /usr/local/popcorn/x86_64/include/alloca.h \
+  /usr/local/popcorn/x86_64/include/stdarg.h \
+  /usr/local/popcorn/x86_64/include/string.h \
+  /usr/local/popcorn/x86_64/include/strings.h \
+  /usr/local/popcorn/x86_64/include/assert.h config.h omp.h libgomp_g.h \
+  /usr/local/popcorn/x86_64/include/stdbool.h \
+  /usr/local/popcorn/x86_64/include/stddef.h kmp.h \
+  /usr/local/popcorn/x86_64/include/stdint.h \
+  /usr/local/popcorn/x86_64/include/bits/stdint.h
+
+/usr/local/popcorn/x86_64/include/stdlib.h:
+
+/usr/local/popcorn/x86_64/include/features.h:
+
+/usr/local/popcorn/x86_64/include/bits/alltypes.h:
+
+/usr/local/popcorn/x86_64/include/alloca.h:
+
+/usr/local/popcorn/x86_64/include/stdarg.h:
+
+/usr/local/popcorn/x86_64/include/string.h:
+
+/usr/local/popcorn/x86_64/include/strings.h:
+
+/usr/local/popcorn/x86_64/include/assert.h:
+
+config.h:
+
+omp.h:
+
+libgomp_g.h:
+
+/usr/local/popcorn/x86_64/include/stdbool.h:
+
+/usr/local/popcorn/x86_64/include/stddef.h:
+
+kmp.h:
+
+/usr/local/popcorn/x86_64/include/stdint.h:
+
+/usr/local/popcorn/x86_64/include/bits/stdint.h:

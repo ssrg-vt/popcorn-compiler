@@ -1,0 +1,7 @@
+libtool: link: rm -fr  .libs/libopenpop.a .libs/libopenpop.la .libs/libopenpop.lai
+libtool: link: /usr/local/popcorn/bin/popcorn-ar cru .libs/libopenpop.a  alloc.o atomic.o barrier.o critical.o env.o error.o icv.o icv-device.o iter.o iter_ull.o kmp.o loop.o loop_ull.o ordered.o parallel.o sections.o single.o task.o team.o work.o lock.o mutex.o proc.o sem.o bar.o ptrlock.o time.o fortran.o affinity.o target.o splay-tree.o libgomp-plugin.o oacc-parallel.o oacc-host.o oacc-init.o oacc-mem.o oacc-async.o oacc-plugin.o oacc-cuda.o priority_queue.o
+/usr/local/popcorn/bin/popcorn-ar: called with cru .libs/libopenpop.a alloc.o atomic.o barrier.o critical.o env.o error.o icv.o icv-device.o iter.o iter_ull.o kmp.o loop.o loop_ull.o ordered.o parallel.o sections.o single.o task.o team.o work.o lock.o mutex.o proc.o sem.o bar.o ptrlock.o time.o fortran.o affinity.o target.o splay-tree.o libgomp-plugin.o oacc-parallel.o oacc-host.o oacc-init.o oacc-mem.o oacc-async.o oacc-plugin.o oacc-cuda.o priority_queue.o
+OPTIONS: cru
+OBJS: alloc.o barrier.o env.o icv.o iter.o kmp.o loop_ull.o parallel.o single.o team.o lock.o proc.o bar.o time.o affinity.o splay-tree.o oacc-parallel.o oacc-init.o oacc-async.o oacc-cuda.o
+libtool: link: ranlib .libs/libopenpop.a
+libtool: link: ( cd ".libs" && rm -f "libopenpop.la" && ln -s "../libopenpop.la" "libopenpop.la" )

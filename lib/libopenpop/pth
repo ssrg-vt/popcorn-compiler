@@ -1,0 +1,14 @@
+diff --git a/lib/libopenpop/kmp.c b/lib/libopenpop/kmp.c
+index 5a31030..34e6091 100644
+--- a/lib/libopenpop/kmp.c
++++ b/lib/libopenpop/kmp.c
+@@ -89,6 +89,9 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
+   }
+   else shared_data = va_arg(vl, void *);
+   va_end(vl);
++  
++  printf("__kmp_fork_call: %s calling %p with %d args (first is %p)\n", 
++				loc->psource, microtask, argc, shared_data);
+ 
+   wrapper_data.task = microtask;
+   wrapper_data.mtid = &mtid;
