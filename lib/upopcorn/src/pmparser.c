@@ -13,6 +13,7 @@ implied warranty.
 
 //#include "config.h"
 #include "pmparser.h"
+#include <malloc.h>
 
 /**
  * gobal variables
@@ -67,7 +68,7 @@ int pmparser_parse(int pid){
 		fgets(buf+1,259,file);
 		buf[0]=c;
 		//allocate a node
-		tmp=(procmap_t*)malloc(sizeof(procmap_t));
+		tmp=(procmap_t*)pmalloc(sizeof(procmap_t));
 		//fill the node
 		_pmparser_split_line(buf,addr1,addr2,perm,offset, dev,inode,pathname);
 		//printf("#%s",buf);

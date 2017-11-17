@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <malloc.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "config.h"
@@ -20,7 +21,7 @@ static int server_sock_fd = 0;
 static int ori_to_remote_sock = 0;
 
 #define MAX_NUM_CHAR_SIZE 32
-typedef int (*cmd_func_t) (char* arg, int size);
+typedef int (*cmd_func_t) (char* arg, int size); /* Note arg is freed after the function call */
 
 
 static ssize_t						 /* Write "n" bytes to a descriptor. */
@@ -130,7 +131,7 @@ int __handle_commands(int sockfd)
 	char* arg;
 	if(size !=0)
 	{
-		arg = malloc(size+1);
+		arg = pmalloc(size+1);
 		n = readn(sockfd, arg, size);
 		if(n<0)
 			perror("arg_size");
@@ -141,6 +142,7 @@ int __handle_commands(int sockfd)
 		arg=NULL;
 
 	cmd_funcs[cmd](arg, size);
+	pfree(arg);
 
 	return 0;
 }
@@ -239,8 +241,9 @@ int comm_migrate(int nid)
 	/* get the path to the binary. TODO: consider the arch extension */
 	/* should we use __progname?	*/
 	int ps;
-	char *path = calloc(PATH_MAX, 1);
+	char *path = pcalloc(PATH_MAX, 1);
 	ps = readlink("/proc/self/exe", path, PATH_MAX);
+	path[ps++] = '\0';
 	printf("path is %s, size %ld\n", path, strlen(path));
 
 	/* add arch suffix */

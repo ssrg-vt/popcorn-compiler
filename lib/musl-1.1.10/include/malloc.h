@@ -16,6 +16,11 @@ void free (void *);
 void *valloc (size_t);
 void *memalign(size_t, size_t);
 
+void *pmalloc (size_t);
+void *pcalloc (size_t, size_t);
+void *prealloc (void *, size_t);
+void pfree (void *);
+
 size_t malloc_usable_size(void *);
 
 #ifdef __cplusplus

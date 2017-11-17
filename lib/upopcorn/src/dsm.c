@@ -26,6 +26,8 @@
 #define ALIGN(_arg, _size) ((((long)_arg)/_size)*_size)
 #define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
+extern unsigned long pmalloc_start;
+
 extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
 void *private_end = &__tbss_end;
@@ -140,9 +142,13 @@ int dsm_protect_all_write_sections()
 
 		if(map->addr_start>=private_start && map->addr_end<=private_end)
 		{
-			printf("pdata section found ans skipped!\n");
+			printf("pdata section found and skipped!\n");
 			continue;
 
+		}
+		if(map->addr_start == pmalloc_start) {
+			printf("pmalloc section found and skipped!\n");
+			continue;
 		}
 		if(strstr(map->pathname, "stack") != NULL) {
 			printf("stack section found and skipped!\n");
@@ -152,8 +158,10 @@ int dsm_protect_all_write_sections()
 			printf("heap section found and skipped!\n");
 			continue;
 		}
+
 		if(map->prot.is_w)
 			dsm_protect(map->addr_start, map->length);
+
 		if(!map->prot.is_p)
 			printf("Not prrivate region are not supported?\n");
 	}
