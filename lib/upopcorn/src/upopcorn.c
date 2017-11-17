@@ -3,14 +3,18 @@
 
 int dsm_init(int);
 int comm_init(int);
+int migrate_init(int);
 
-void upopcorn_init()
+//static void __attribute__((constructor)) __upopcorn_init(void);
+
+//static void __attribute__((constructor)) 
+void __upopcorn_init(void)
 {
         int ret;
 	int remote;
-        char *cfd = getenv("POPCORN_SOCK_FD");
         char *start_remote = getenv("POPCORN_REMOTE_START");
 
+	printf("%s start\n", __func__);
 	if(start_remote)
                 remote = atoi(start_remote);
         else
@@ -22,5 +26,7 @@ void upopcorn_init()
 	comm_init(remote);
 	if(ret)
 		perror("comm_init");
-
+	migrate_init(remote);
+	if(ret)
+		perror("comm_init");
 }

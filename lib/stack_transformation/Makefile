@@ -25,7 +25,9 @@ LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
                 $(shell ls $(SRC)/arch/x86_64/*.c)
 
 ifeq ($(type),debug)
-CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
+CFLAGS += -O0 -D_DEBUG -D_CHECKS 
+#-mllvm -optimize-regalloc
+#-D_LOG
 else
 CFLAGS += -O3
 endif

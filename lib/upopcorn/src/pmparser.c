@@ -13,15 +13,14 @@ implied warranty.
 
 //#include "config.h"
 #include "pmparser.h"
-#define PRIVATE /**///__attribute__((section (".tdata.private")))
 
 /**
  * gobal variables
  */
-procmap_t* g_last_head PRIVATE =NULL;
-procmap_t* g_current PRIVATE =NULL;
+procmap_t* g_last_head =NULL;
+procmap_t* g_current =NULL;
 
-int page_size PRIVATE;
+int page_size=0;
 
 static void _pmparser_split_line(
 		char*buf,char*addr1,char*addr2,
@@ -64,7 +63,7 @@ int pmparser_parse(int pid){
 	procmap_t* current_node=list_maps;
 	char addr1[20],addr2[20], perm[8], offset[20], dev[10],inode[30],pathname[600];
 	while(1){
-		if( (c=fgetc(file))==EOF ) break;
+		if( (int)(c=fgetc(file))==EOF ) break;
 		fgets(buf+1,259,file);
 		buf[0]=c;
 		//allocate a node
@@ -74,7 +73,7 @@ int pmparser_parse(int pid){
 		//printf("#%s",buf);
 		//printf("%s-%s %s %s %s %s\t%s\n",addr1,addr2,perm,offset,dev,inode,pathname);
 		//addr_start & addr_end
-		unsigned long l_addr_start;
+		//unsigned long l_addr_start;
 		sscanf(addr1,"%lx",(long unsigned *)&tmp->addr_start );
 		sscanf(addr2,"%lx",(long unsigned *)&tmp->addr_end );
 		//size
@@ -124,7 +123,7 @@ procmap_t* pmparser_next(){
 }
 
 int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
-	int pg_num;
+	//int pg_num;
 	procmap_t *iter;
 
 	*map = NULL;

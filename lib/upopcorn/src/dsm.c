@@ -46,11 +46,32 @@ dsm_protect(void *addr, unsigned long length)
 	return 0;
 }
 
-int dsm_get_page(void* addr, void* buffer, int page_size)
+int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
 	char ca[NUM_LINE_SIZE_BUF+1];
-	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);
+	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
+	printf("%s: %p == %s\n", raddr, ca);
 	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
+}
+
+int dsm_copy_stack(void* addr)
+{
+	printf("%s: address %p\n", __func__, addr);
+
+	addr = PAGE_ALIGN(addr);
+
+	printf("%s: aligned address %p\n", __func__, addr);
+
+	if((mmap(addr, page_size, PROT_READ | PROT_WRITE,
+		MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED|MAP_GROWSDOWN,
+		-1, 0) == MAP_FAILED))
+			perror(__func__);
+
+	/* Copy content from remote into the temporary page */
+	dsm_get_page(addr, addr, page_size);
+
+	printf("%s: done %p\n", __func__, addr);
+	return 0;
 }
 
 //#define PAGE_SIZE 4096
@@ -62,8 +83,8 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 
 	printf("%s: address %p\n", __func__, info->si_addr);
 
-	//if(PAGE_SIZE != page_size)
-	//	printf("%s, wrong page size!!!!\n", __func__);
+	/*if(PAGE_SIZE != page_size)
+		printf("%s, wrong page size!!!!\n", __func__);*/
 
 	addr = PAGE_ALIGN(addr);
 
@@ -171,4 +192,5 @@ int dsm_init(int remote_start)
                 dsm_protect_all_write_sections();
 	else
 		;
+	return 0;
 }

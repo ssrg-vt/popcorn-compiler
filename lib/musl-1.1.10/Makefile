@@ -27,10 +27,11 @@ LDFLAGS =
 LIBCC = -lgcc
 CPPFLAGS =
 CFLAGS = -Os -pipe -g
-CFLAGS_C99FSE = -std=c99 -ffreestanding -nostdinc 
+CFLAGS_C99FSE =  -ffreestanding -nostdinc 
+#-std=c99
 
 CFLAGS_ALL = $(CFLAGS_C99FSE)
-CFLAGS_ALL += -D_XOPEN_SOURCE=700 -I./arch/$(ARCH) -I./src/internal -I./include
+CFLAGS_ALL += -D_XOPEN_SOURCE=700 -I./arch/$(ARCH) -I./src/internal -I./include  -I$(prefix)/include #last is for stack_trans lib
 CFLAGS_ALL += $(CPPFLAGS) $(CFLAGS)
 CFLAGS_ALL_STATIC = $(CFLAGS_ALL)
 CFLAGS_ALL_SHARED = $(CFLAGS_ALL) -fPIC -DSHARED

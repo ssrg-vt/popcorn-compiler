@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include "config.h"
 #include "communicate.h"
+#include "migrate.h"
 
 #define PATH_MAX 4096
 
@@ -75,6 +76,7 @@ static int send_page(char* arg, int size)
 {
 	void *addr = (void*) atol(arg);	
 	/*TODO: make sure it is the same page size on both arch!? */
+	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
 	writen(server_sock_fd, addr, sysconf(_SC_PAGE_SIZE));
 	return 0;
 }
@@ -85,9 +87,22 @@ static int print_text(char* arg, int size)
 	return 0;
 }
 
+static int get_ctxt(char* arg, int size)
+{
+	void *ptr;
+	int sz;
+
+	ptr = NULL;
+	sz=0;
+	get_context(&ptr, &sz);
+	printf("%s: ptr = %p , size %d\n", __func__, ptr, size);
+	writen(server_sock_fd, ptr, sz);
+	return 0;
+}
+
 
 /* commands table */
-cmd_func_t cmd_funcs[]  = {send_page, print_text};
+cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt};
 
 int __handle_commands(int sockfd)
 {
@@ -112,12 +127,19 @@ int __handle_commands(int sockfd)
 	size = atoi(buff);
 	printf("%s: size read %d, %s\n", __func__, (int)size, buff);
 
-	char* arg = malloc(size+1);
-	n = readn(sockfd, arg, size);
-	if(n<0)
-		perror("arg_size");
+	char* arg;
+	if(size !=0)
+	{
+		arg = malloc(size+1);
+		n = readn(sockfd, arg, size);
+		if(n<0)
+			perror("arg_size");
+		arg[n]='\0';
+		printf("%s: arg read is %s\n", __func__, arg);
+	}
+	else
+		arg=NULL;
 
-	arg[n]='\0';
 	cmd_funcs[cmd](arg, size);
 
 	return 0;
@@ -150,9 +172,14 @@ int send_cmd(enum comm_cmd cmd, char *arg, int size)
 	if(n<0)
 		perror("arg_size  write");
 
-	n = writen(ori_to_remote_sock, arg, size);
-	if(n<0)
-		perror("arg_size write");
+	printf("size written %s\n", buff);
+
+	if(size)
+	{
+		n = writen(ori_to_remote_sock, arg, size);
+		if(n<0)
+			perror("arg_size write");
+	}
 
 	return 0;
 }
@@ -188,7 +215,7 @@ int comm_migrate(int nid)
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(DEFAULT_PORT);
 
-	if(inet_pton(AF_INET, nodes[nid], &serv_addr.sin_addr)<=0)
+	if(inet_pton(AF_INET, arch_nodes[nid], &serv_addr.sin_addr)<=0)
 	{
 		printf("\n inet_pton error occured\n");
 		return 1;

@@ -18,7 +18,7 @@
 
 #define str(s) #s
 #define NUM_LINE_SIZE_BUF_STRING str(NUM_LINE_SIZE_BUF)
-#define NUM_LINE_SIZE_BUF 8
+#define NUM_LINE_SIZE_BUF 20
 #define DEFAULT_PORT 9999
 
 static ssize_t						 /* Write "n" bytes to a descriptor. */

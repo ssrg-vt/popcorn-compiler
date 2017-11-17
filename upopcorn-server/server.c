@@ -51,7 +51,7 @@ void __process(int fd, struct sockaddr_in *clientaddr){
 	exec_path = get_path(fd, path_size);
 
 	//log_access(status, clientaddr, &req);
-	printf("%s\n", exec_path);
+	printf("exec path is %s\n", exec_path);
 
 	char cfd [4];
 	sprintf(cfd, "%d", fd);
