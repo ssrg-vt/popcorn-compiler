@@ -220,7 +220,7 @@ static rewrite_context init_src_context(st_handle handle,
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &src_ctx;
 #else
-  ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
+  ctx = (rewrite_context)pmalloc(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
   ctx->num_acts = 0;
@@ -262,7 +262,7 @@ static rewrite_context init_dest_context(st_handle handle,
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &dest_ctx;
 #else
-  ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
+  ctx = (rewrite_context)pmalloc(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
   ctx->num_acts = 0;
@@ -288,8 +288,8 @@ static rewrite_context init_dest_context(st_handle handle,
 static void init_data_pools(rewrite_context ctx)
 {
   size_t num_regs = REGOPS(ctx)->num_regs;
-  ctx->callee_saved_pool = malloc(bitmap_size(num_regs) * MAX_FRAMES);
-  ctx->regset_pool = malloc(REGOPS(ctx)->regset_size * MAX_FRAMES);
+  ctx->callee_saved_pool = pmalloc(bitmap_size(num_regs) * MAX_FRAMES);
+  ctx->regset_pool = pmalloc(REGOPS(ctx)->regset_size * MAX_FRAMES);
   ASSERT(ctx->callee_saved_pool && ctx->regset_pool,
          "could not initialize data pools");
 }

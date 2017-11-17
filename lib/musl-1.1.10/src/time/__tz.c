@@ -140,7 +140,7 @@ static void do_tzset()
 		old_tz_size *= 2;
 		if (i >= old_tz_size) old_tz_size = i+1;
 		if (old_tz_size > PATH_MAX+2) old_tz_size = PATH_MAX+2;
-		old_tz = malloc(old_tz_size);
+		old_tz = pmalloc(old_tz_size);
 	}
 	if (old_tz) memcpy(old_tz, s, i+1);
 

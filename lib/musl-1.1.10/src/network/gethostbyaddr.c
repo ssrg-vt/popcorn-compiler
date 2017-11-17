@@ -12,7 +12,7 @@ struct hostent *gethostbyaddr(const void *a, socklen_t l, int af)
 	int err;
 	do {
 		free(h);
-		h = malloc(size+=size+1);
+		h = pmalloc(size+=size+1);
 		if (!h) {
 			h_errno = NO_RECOVERY;
 			return 0;

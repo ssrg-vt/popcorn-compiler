@@ -4720,8 +4720,8 @@ else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 $ac_includes_default
-/* malloc might have been renamed as rpl_malloc. */
-#undef malloc
+/* pmalloc might have been renamed as rpl_malloc. */
+#undef pmalloc
 
 /* Thanks to Mike Haertel and Jim Avera for this test.
    Here is a matrix of mmap possibilities:
@@ -4749,7 +4749,7 @@ $ac_includes_default
 #include <sys/mman.h>
 
 #if !defined STDC_HEADERS && !defined HAVE_STDLIB_H
-char *malloc ();
+char *pmalloc ();
 #endif
 
 /* This mess was copied from the GNU getpagesize.h.  */
@@ -4795,7 +4795,7 @@ main ()
   pagesize = getpagesize ();
 
   /* First, make a file with some known garbage in it. */
-  data = (char *) malloc (pagesize);
+  data = (char *) pmalloc (pagesize);
   if (!data)
     return 1;
   for (i = 0; i < pagesize; ++i)
@@ -4844,7 +4844,7 @@ main ()
      some variants of i386 svr4.0.)  */
   for (i = 0; i < pagesize; ++i)
     *(data2 + i) = *(data2 + i) + 1;
-  data3 = (char *) malloc (pagesize);
+  data3 = (char *) pmalloc (pagesize);
   if (!data3)
     return 12;
   if (read (fd, data3, pagesize) != pagesize)

@@ -29,7 +29,7 @@ int getgrouplist(const char *user, gid_t gid, gid_t *groups, int *ngroups)
 	f = __nscd_query(GETINITGR, user, resp, sizeof resp, &swap);
 	if (!f) goto cleanup;
 	if (resp[INITGRFOUND]) {
-		nscdbuf = calloc(resp[INITGRNGRPS], sizeof(uint32_t));
+		nscdbuf = pcalloc(resp[INITGRNGRPS], sizeof(uint32_t));
 		if (!nscdbuf) goto cleanup;
 		if (!fread(nscdbuf, sizeof(*nscdbuf)*resp[INITGRNGRPS], 1, f)) {
 			if (!ferror(f)) errno = EIO;

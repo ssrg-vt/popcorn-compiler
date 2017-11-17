@@ -62,7 +62,7 @@ static int netlink_msg_to_nameindex(void *pctx, struct nlmsghdr *h)
 		if (ctx->num >= ctx->allocated) {
 			size_t a = ctx->allocated ? ctx->allocated * 2 + 1 : 8;
 			if (a > SIZE_MAX/sizeof *map) return -1;
-			map = realloc(ctx->list, a * sizeof *map);
+			map = prealloc(ctx->list, a * sizeof *map);
 			if (!map) return -1;
 			ctx->list = map;
 			ctx->allocated = a;
@@ -93,7 +93,7 @@ struct if_nameindex *if_nameindex()
 	memset(ctx, 0, sizeof(*ctx));
 	if (__rtnetlink_enumerate(AF_UNSPEC, AF_INET, netlink_msg_to_nameindex, ctx) < 0) goto err;
 
-	ifs = malloc(sizeof(struct if_nameindex[ctx->num+1]) + ctx->str_bytes);
+	ifs = pmalloc(sizeof(struct if_nameindex[ctx->num+1]) + ctx->str_bytes);
 	if (!ifs) goto err;
 
 	p = (char*)(ifs + ctx->num + 1);

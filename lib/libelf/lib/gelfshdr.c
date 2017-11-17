@@ -75,7 +75,7 @@ gelf_getshdr(Elf_Scn *scn, GElf_Shdr *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Shdr*)malloc(sizeof(GElf_Shdr));
+	dst = (GElf_Shdr*)pmalloc(sizeof(GElf_Shdr));
 	if (!dst) {
 	    seterr(ERROR_MEM_SHDR);
 	    return NULL;

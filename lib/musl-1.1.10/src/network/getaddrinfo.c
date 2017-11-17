@@ -49,7 +49,7 @@ int getaddrinfo(const char *restrict host, const char *restrict serv, const stru
 
 	nais = nservs * naddrs;
 	canon_len = strlen(canon);
-	out = calloc(1, nais * sizeof(*out) + canon_len + 1);
+	out = pcalloc(1, nais * sizeof(*out) + canon_len + 1);
 	if (!out) return EAI_MEMORY;
 
 	if (canon_len) {

@@ -169,7 +169,7 @@ _elf_arhdr(Elf *arf) {
     }
     */
 
-    if (!(arhdr = (Elf_Arhdr*)malloc(sizeof(*arhdr) +
+    if (!(arhdr = (Elf_Arhdr*)pmalloc(sizeof(*arhdr) +
 		     sizeof(hdr->ar_name) + namelen + 2))) {
 	seterr(ERROR_MEM_ARHDR);
 	return NULL;
@@ -274,7 +274,7 @@ elf_begin(int fd, Elf_Cmd cmd, Elf *ref) {
 	return NULL;
     }
 
-    if (!(elf = (Elf*)malloc(sizeof(Elf)))) {
+    if (!(elf = (Elf*)pmalloc(sizeof(Elf)))) {
 	seterr(ERROR_MEM_ELF);
 	return NULL;
     }
@@ -401,7 +401,7 @@ elf_memory(char *image, size_t size) {
 	return NULL;
     }
 
-    if (!(elf = (Elf*)malloc(sizeof(Elf)))) {
+    if (!(elf = (Elf*)pmalloc(sizeof(Elf)))) {
 	seterr(ERROR_MEM_ELF);
 	return NULL;
     }

@@ -96,7 +96,7 @@ int __getgr_a(const char *name, gid_t gid, struct group *gr, char **buf, size_t 
 		}
 
 		if (len > *size || !*buf) {
-			char *tmp = realloc(*buf, len);
+			char *tmp = prealloc(*buf, len);
 			if (!tmp) {
 				rv = errno;
 				goto cleanup_f;
@@ -115,7 +115,7 @@ int __getgr_a(const char *name, gid_t gid, struct group *gr, char **buf, size_t 
 				rv = ENOMEM;
 				goto cleanup_f;
 			}
-			char **tmp = realloc(*mem, (groupbuf[GRMEMCNT]+1)*sizeof(char*));
+			char **tmp = prealloc(*mem, (groupbuf[GRMEMCNT]+1)*sizeof(char*));
 			if (!tmp) {
 				rv = errno;
 				goto cleanup_f;

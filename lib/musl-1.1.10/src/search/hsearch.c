@@ -49,7 +49,7 @@ static int resize(size_t nel, struct hsearch_data *htab)
 	if (nel > MAXSIZE)
 		nel = MAXSIZE;
 	for (newsize = MINSIZE; newsize < nel; newsize *= 2);
-	htab->__tab->entries = calloc(newsize, sizeof *htab->__tab->entries);
+	htab->__tab->entries = pcalloc(newsize, sizeof *htab->__tab->entries);
 	if (!htab->__tab->entries) {
 		htab->__tab->entries = oldtab;
 		return 0;
@@ -105,7 +105,7 @@ int __hcreate_r(size_t nel, struct hsearch_data *htab)
 {
 	int r;
 
-	htab->__tab = calloc(1, sizeof *htab->__tab);
+	htab->__tab = pcalloc(1, sizeof *htab->__tab);
 	if (!htab->__tab)
 		return 0;
 	r = resize(nel, htab);

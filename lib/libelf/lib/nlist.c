@@ -174,7 +174,7 @@ _elf_nlist(Elf *elf, struct nlist *nl) {
     /*
      * Build a simple hash table.
      */
-    if (!(table = (struct hash*)malloc(nsymbols * sizeof(*table)))) {
+    if (!(table = (struct hash*)pmalloc(nsymbols * sizeof(*table)))) {
 	return -1;
     }
     for (i = 0; i < PRIME; i++) {

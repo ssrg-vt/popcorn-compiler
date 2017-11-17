@@ -17,12 +17,12 @@ int __putenv(char *s, int a)
 	for (; __environ[i] && memcmp(s, __environ[i], z-s+1); i++);
 	if (a) {
 		if (!__env_map) {
-			__env_map = calloc(2, sizeof(char *));
+			__env_map = pcalloc(2, sizeof(char *));
 			if (__env_map) __env_map[0] = s;
 		} else {
 			for (; __env_map[j] && __env_map[j] != __environ[i]; j++);
 			if (!__env_map[j]) {
-				newmap = realloc(__env_map, sizeof(char *)*(j+2));
+				newmap = prealloc(__env_map, sizeof(char *)*(j+2));
 				if (newmap) {
 					__env_map = newmap;
 					__env_map[j] = s;
@@ -34,7 +34,7 @@ int __putenv(char *s, int a)
 		}
 	}
 	if (!__environ[i]) {
-		newenv = malloc(sizeof(char *)*(i+2));
+		newenv = pmalloc(sizeof(char *)*(i+2));
 		if (!newenv) {
 			if (a && __env_map) __env_map[j] = 0;
 			return -1;

@@ -55,7 +55,7 @@ elf_getarsym(Elf *elf, size_t *ptr) {
 	    seterr(ERROR_SIZE_ARSYMTAB);
 	    return NULL;
 	}
-	if (!(syms = (Elf_Arsym*)malloc((count + 1) * sizeof(*syms)))) {
+	if (!(syms = (Elf_Arsym*)pmalloc((count + 1) * sizeof(*syms)))) {
 	    seterr(ERROR_MEM_ARSYMTAB);
 	    return NULL;
 	}

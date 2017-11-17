@@ -124,7 +124,7 @@ static int netlink_msg_to_ifaddr(void *pctx, struct nlmsghdr *h)
 		if (!ifs0) return 0;
 	}
 
-	ifs = calloc(1, sizeof(struct ifaddrs_storage) + stats_len);
+	ifs = pcalloc(1, sizeof(struct ifaddrs_storage) + stats_len);
 	if (ifs == 0) return -1;
 
 	if (h->nlmsg_type == RTM_NEWLINK) {

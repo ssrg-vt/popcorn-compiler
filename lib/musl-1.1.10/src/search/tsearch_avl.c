@@ -84,7 +84,7 @@ static struct node *insert(struct node **n, const void *k,
 	int c;
 
 	if (!r) {
-		*n = r = malloc(sizeof **n);
+		*n = r = pmalloc(sizeof **n);
 		if (r) {
 			r->key = k;
 			r->left = r->right = 0;

@@ -41,6 +41,12 @@ void *realloc (void *, size_t);
 void free (void *);
 void *aligned_alloc(size_t alignment, size_t size);
 
+/* private malloc: for libraries */
+void *pmalloc (size_t);
+void *pcalloc (size_t, size_t);
+void *prealloc (void *, size_t);
+void pfree (void *);
+
 _Noreturn void abort (void);
 int atexit (void (*) (void));
 _Noreturn void exit (int);

@@ -32,7 +32,7 @@ void __fork_handler(int who)
 
 int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void))
 {
-	struct atfork_funcs *new = malloc(sizeof *new);
+	struct atfork_funcs *new = pmalloc(sizeof *new);
 	if (!new) return -1;
 
 	LOCK(lock);

@@ -56,7 +56,7 @@ elf_rawdata(Elf_Scn *scn, Elf_Data *data) {
 	    && scn->s_offset + scn->s_size > elf->e_size) {
 	seterr(ERROR_TRUNC_SCN);
     }
-    else if (!(sd = (Scn_Data*)malloc(sizeof(*sd)))) {
+    else if (!(sd = (Scn_Data*)pmalloc(sizeof(*sd)))) {
 	seterr(ERROR_MEM_SCNDATA);
     }
     else {
@@ -66,7 +66,7 @@ elf_rawdata(Elf_Scn *scn, Elf_Data *data) {
 	sd->sd_data.d_size = scn->s_size;
 	sd->sd_data.d_version = _elf_version;
 	if (scn->s_type != SHT_NOBITS && scn->s_size) {
-	    if (!(sd->sd_memdata = (char*)malloc(scn->s_size))) {
+	    if (!(sd->sd_memdata = (char*)pmalloc(scn->s_size))) {
 		seterr(ERROR_IO_2BIG);
 		free(sd);
 		return NULL;

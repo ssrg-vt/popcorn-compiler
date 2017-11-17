@@ -354,7 +354,7 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 		case REL_TLSDESC:
 			if (stride<3) addend = reloc_addr[1];
 			if (runtime && def.dso->tls_id >= static_tls_cnt) {
-				struct td_index *new = malloc(sizeof *new);
+				struct td_index *new = pmalloc(sizeof *new);
 				if (!new) {
 					error(
 					"Error relocating %s: cannot allocate TLSDESC for %s",
@@ -390,7 +390,7 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 /* A huge hack: to make up for the wastefulness of shared libraries
  * needing at least a page of dirty memory even if they have no global
  * data, we reclaim the gaps at the beginning and end of writable maps
- * and "donate" them to the heap by setting up minimal malloc
+ * and "donate" them to the heap by setting up minimal pmalloc
  * structures and then freeing them. */
 
 static void reclaim(struct dso *dso, size_t start, size_t end)
@@ -446,7 +446,7 @@ static void *map_library(int fd, struct dso *dso)
 		goto noexec;
 	phsize = eh->e_phentsize * eh->e_phnum;
 	if (phsize > sizeof buf - sizeof *eh) {
-		allocated_buf = malloc(phsize);
+		allocated_buf = pmalloc(phsize);
 		if (!allocated_buf) return 0;
 		l = pread(fd, allocated_buf, phsize, eh->e_phoff);
 		if (l < 0) goto error;
@@ -629,7 +629,7 @@ static int fixup_rpath(struct dso *p, char *buf, size_t buf_size)
 	}
 	t = strrchr(origin, '/');
 	l = t ? t-origin : 0;
-	p->rpath = malloc(strlen(p->rpath_orig) + n*l + 1);
+	p->rpath = pmalloc(strlen(p->rpath_orig) + n*l + 1);
 	if (!p->rpath) return -1;
 
 	d = p->rpath;
@@ -807,7 +807,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 		if (n_th > SSIZE_MAX / per_th) alloc_size = SIZE_MAX;
 		else alloc_size += n_th * per_th;
 	}
-	p = calloc(1, alloc_size);
+	p = pcalloc(1, alloc_size);
 	if (!p) {
 		munmap(map, temp_dso.map_len);
 		return 0;
@@ -864,7 +864,7 @@ static void load_deps(struct dso *p)
 				continue;
 			}
 			if (runtime) {
-				tmp = realloc(*deps, sizeof(*tmp)*(ndeps+2));
+				tmp = prealloc(*deps, sizeof(*tmp)*(ndeps+2));
 				if (!tmp) longjmp(*rtld_fail, 1);
 				tmp[ndeps++] = dep;
 				tmp[ndeps] = 0;
@@ -1353,7 +1353,7 @@ _Noreturn void __dls3(size_t *sp)
 	/* Initial dso chain consists only of the app. */
 	head = tail = &app;
 
-	/* Donate unused parts of app and library mapping to malloc */
+	/* Donate unused parts of app and library mapping to pmalloc */
 	reclaim_gaps(&app);
 	reclaim_gaps(&ldso);
 
@@ -1376,7 +1376,7 @@ _Noreturn void __dls3(size_t *sp)
 
 	update_tls_size();
 	if (libc.tls_size > sizeof builtin_tls || tls_align > MIN_TLS_ALIGN) {
-		void *initial_tls = calloc(libc.tls_size, 1);
+		void *initial_tls = pcalloc(libc.tls_size, 1);
 		if (!initial_tls) {
 			dprintf(2, "%s: Error getting %zu bytes thread-local storage: %m\n",
 				argv[0], libc.tls_size);
@@ -1741,7 +1741,7 @@ static void error(const char *fmt, ...)
 		free(self->dlerror_buf);
 	size_t len = vsnprintf(0, 0, fmt, ap);
 	va_end(ap);
-	char *buf = malloc(len+1);
+	char *buf = pmalloc(len+1);
 	if (buf) {
 		va_start(ap, fmt);
 		vsnprintf(buf, len+1, fmt, ap);

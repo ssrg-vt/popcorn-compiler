@@ -84,7 +84,7 @@ tre_mem_destroy(tre_mem_t mem)
 
 
 /* Allocates a block of `size' bytes from `mem'.  Returns a pointer to the
-   allocated block or NULL if an underlying malloc() failed. */
+   allocated block or NULL if an underlying pmalloc() failed. */
 void *
 tre_mem_alloc_impl(tre_mem_t mem, int provided, void *provided_block,
 		   int zero, size_t size)

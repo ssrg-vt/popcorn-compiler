@@ -80,16 +80,16 @@ static struct aio_queue *__aio_get_queue(int fd, int need)
 	if ((!map || !map[a] || !map[a][b] || !map[a][b][c] || !(q=map[a][b][c][d])) && need) {
 		pthread_rwlock_unlock(&maplock);
 		pthread_rwlock_wrlock(&maplock);
-		if (!map) map = calloc(sizeof *map, (-1U/2+1)>>24);
+		if (!map) map = pcalloc(sizeof *map, (-1U/2+1)>>24);
 		if (!map) goto out;
-		if (!map[a]) map[a] = calloc(sizeof **map, 256);
+		if (!map[a]) map[a] = pcalloc(sizeof **map, 256);
 		if (!map[a]) goto out;
-		if (!map[a][b]) map[a][b] = calloc(sizeof ***map, 256);
+		if (!map[a][b]) map[a][b] = pcalloc(sizeof ***map, 256);
 		if (!map[a][b]) goto out;
-		if (!map[a][b][c]) map[a][b][c] = calloc(sizeof ****map, 256);
+		if (!map[a][b][c]) map[a][b][c] = pcalloc(sizeof ****map, 256);
 		if (!map[a][b][c]) goto out;
 		if (!(q = map[a][b][c][d])) {
-			map[a][b][c][d] = q = calloc(sizeof *****map, 1);
+			map[a][b][c][d] = q = pcalloc(sizeof *****map, 1);
 			if (q) {
 				q->fd = fd;
 				pthread_mutex_init(&q->lock, 0);

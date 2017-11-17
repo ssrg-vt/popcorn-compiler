@@ -141,7 +141,7 @@ static int do_wordexp(const char *s, wordexp_t *we, int flags)
 	while ((w = getword(f))) {
 		if (i+1 >= l) {
 			l += l/2+10;
-			tmp = realloc(wv, l*sizeof(char *));
+			tmp = prealloc(wv, l*sizeof(char *));
 			if (!tmp) break;
 			wv = tmp;
 		}
@@ -153,7 +153,7 @@ static int do_wordexp(const char *s, wordexp_t *we, int flags)
 	fclose(f);
 	reap(pid);
 
-	if (!wv) wv = calloc(i+1, sizeof *wv);
+	if (!wv) wv = pcalloc(i+1, sizeof *wv);
 
 	we->we_wordv = wv;
 	we->we_wordc = i;

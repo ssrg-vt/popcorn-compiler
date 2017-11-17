@@ -78,7 +78,7 @@ int lio_listio(int mode, struct aiocb *restrict const *restrict cbs, int cnt, st
 	}
 
 	if (mode == LIO_WAIT || (sev && sev->sigev_notify != SIGEV_NONE)) {
-		if (!(st = malloc(sizeof *st + cnt*sizeof *cbs))) {
+		if (!(st = pmalloc(sizeof *st + cnt*sizeof *cbs))) {
 			errno = EAGAIN;
 			return -1;
 		}

@@ -207,7 +207,7 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string,
   /* Allocate memory for temporary data required for matching.	This needs to
      be done for every matching operation to be thread safe.  This allocates
      everything in a single large block from the stack frame using alloca()
-     or with malloc() if alloca is unavailable. */
+     or with pmalloc() if alloca is unavailable. */
   {
     int tbytes, rbytes, pbytes, xbytes, total_bytes;
     char *tmp_buf;

@@ -90,7 +90,7 @@ int __getpw_a(const char *name, uid_t uid, struct passwd *pw, char **buf, size_t
 		    + passwdbuf[PWSHELLLEN];
 
 		if (len > *size || !*buf) {
-			char *tmp = realloc(*buf, len);
+			char *tmp = prealloc(*buf, len);
 			if (!tmp) {
 				rv = errno;
 				goto cleanup_f;

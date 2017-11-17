@@ -86,7 +86,7 @@ gelf_getphdr(Elf *elf, int ndx, GElf_Phdr *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Phdr*)malloc(sizeof(GElf_Phdr));
+	dst = (GElf_Phdr*)pmalloc(sizeof(GElf_Phdr));
 	if (!dst) {
 	    seterr(ERROR_MEM_PHDR);
 	    return NULL;

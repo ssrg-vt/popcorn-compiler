@@ -67,7 +67,7 @@ _elf_read(Elf *elf, void *buffer, size_t off, size_t len) {
 	if (lseek(elf->e_fd, (off_t)off, SEEK_SET) != (off_t)off) {
 	    seterr(ERROR_IO_SEEK);
 	}
-	else if (!(tmp = buffer) && !(tmp = malloc(len))) {
+	else if (!(tmp = buffer) && !(tmp = pmalloc(len))) {
 	    seterr(ERROR_IO_2BIG);
 	}
 	else if (xread(elf->e_fd, tmp, len)) {

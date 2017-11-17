@@ -50,7 +50,7 @@ _elf_newphdr(Elf *elf, size_t count, unsigned cls) {
 	    return NULL;
 	}
 	if (count) {
-	    if (!(phdr = (char*)malloc(count * size))) {
+	    if (!(phdr = (char*)pmalloc(count * size))) {
 		seterr(ERROR_MEM_PHDR);
 		return NULL;
 	    }

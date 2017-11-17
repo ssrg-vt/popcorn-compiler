@@ -199,17 +199,17 @@ void *tre_mem_alloc_impl(tre_mem_t mem, int provided, void *provided_block,
 #define tre_mem_new()  tre_mem_new_impl(0, NULL)
 
 /* Allocates a block of `size' bytes from `mem'.  Returns a pointer to the
-   allocated block or NULL if an underlying malloc() failed. */
+   allocated block or NULL if an underlying pmalloc() failed. */
 #define tre_mem_alloc(mem, size) tre_mem_alloc_impl(mem, 0, NULL, 0, size)
 
 /* Allocates a block of `size' bytes from `mem'.  Returns a pointer to the
-   allocated block or NULL if an underlying malloc() failed.  The memory
+   allocated block or NULL if an underlying pmalloc() failed.  The memory
    is set to zero. */
 #define tre_mem_calloc(mem, size) tre_mem_alloc_impl(mem, 0, NULL, 1, size)
 
 #ifdef TRE_USE_ALLOCA
 /* alloca() versions.  Like above, but memory is allocated with alloca()
-   instead of malloc(). */
+   instead of pmalloc(). */
 
 #define tre_mem_newa() \
   tre_mem_new_impl(1, alloca(sizeof(struct tre_mem_struct)))
@@ -224,8 +224,8 @@ void *tre_mem_alloc_impl(tre_mem_t mem, int provided, void *provided_block,
 /* Frees the memory allocator and all memory allocated with it. */
 void tre_mem_destroy(tre_mem_t mem);
 
-#define xmalloc malloc
-#define xcalloc calloc
+#define xmalloc pmalloc
+#define xcalloc pcalloc
 #define xfree free
-#define xrealloc realloc
+#define xrealloc prealloc
 

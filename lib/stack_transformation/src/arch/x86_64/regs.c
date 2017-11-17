@@ -83,7 +83,7 @@ const struct regops_t regs_x86_64 = {
 
 static regset_t regset_default_x86_64()
 {
-  regset_obj_x86_64* new = calloc(1, sizeof(regset_obj_x86_64));
+  regset_obj_x86_64* new = pcalloc(1, sizeof(regset_obj_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
   new->common.initialized = true;
   return (regset_t)new;
@@ -91,7 +91,7 @@ static regset_t regset_default_x86_64()
 
 static regset_t regset_init_x86_64(const void* regs)
 {
-  regset_obj_x86_64* new = malloc(sizeof(regset_obj_x86_64));
+  regset_obj_x86_64* new = pmalloc(sizeof(regset_obj_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
   new->common.initialized = true;
   new->regs = *(struct regset_x86_64*)regs;

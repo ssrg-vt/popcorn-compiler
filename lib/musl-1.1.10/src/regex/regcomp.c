@@ -229,7 +229,7 @@ typedef struct tre_stack_rec tre_stack_t;
 
 /* Creates a new stack object.	`size' is initial size in bytes, `max_size'
    is maximum size, and `increment' specifies how much more space will be
-   allocated with realloc() if all space gets used up.	Returns the stack
+   allocated with prealloc() if all space gets used up.	Returns the stack
    object or NULL if out of memory. */
 static tre_stack_t *
 tre_stack_new(int size, int max_size, int increment);
@@ -244,7 +244,7 @@ tre_stack_num_objects(tre_stack_t *s);
 
 /* Each tre_stack_push_*(tre_stack_t *s, <type> value) function pushes
    `value' on top of stack `s'.  Returns REG_ESPACE if out of memory.
-   This tries to realloc() more space before failing if maximum size
+   This tries to prealloc() more space before failing if maximum size
    has not yet been reached.  Returns REG_OK if successful. */
 #define declare_pushf(typetag, type)					      \
   static reg_errcode_t tre_stack_push_ ## typetag(tre_stack_t *s, type value)

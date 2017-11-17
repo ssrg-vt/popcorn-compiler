@@ -37,7 +37,7 @@ static size_t wms_write(FILE *f, const unsigned char *buf, size_t len)
 	if (len + c->pos >= c->space) {
 		len2 = 2*c->space+1 | c->pos+len+1;
 		if (len2 > SSIZE_MAX/4) return 0;
-		newbuf = realloc(c->buf, len2*4);
+		newbuf = prealloc(c->buf, len2*4);
 		if (!newbuf) return 0;
 		*c->bufp = c->buf = newbuf;
 		memset(c->buf + c->space, 0, 4*(len2 - c->space));
@@ -61,7 +61,7 @@ FILE *open_wmemstream(wchar_t **bufp, size_t *sizep)
 {
 	FILE *f;
 	struct cookie *c;
-	if (!(f=malloc(sizeof *f + sizeof *c))) return 0;
+	if (!(f=pmalloc(sizeof *f + sizeof *c))) return 0;
 	memset(f, 0, sizeof *f + sizeof *c);
 	f->cookie = c = (void *)(f+1);
 

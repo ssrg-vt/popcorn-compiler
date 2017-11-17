@@ -86,7 +86,7 @@ FILE *fmemopen(void *restrict buf, size_t size, const char *restrict mode)
 		return 0;
 	}
 
-	f = calloc(sizeof *f + sizeof *c + UNGET + BUFSIZ + (buf?0:size), 1);
+	f = pcalloc(sizeof *f + sizeof *c + UNGET + BUFSIZ + (buf?0:size), 1);
 	if (!f) return 0;
 	f->cookie = c = (void *)(f+1);
 	f->fd = -1;

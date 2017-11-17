@@ -68,7 +68,7 @@ _elf_cook_scn(Elf *elf, Elf_Scn *scn, Scn_Data *sd) {
     if (elf->e_rawdata != elf->e_data && dst.d_size <= src.d_size) {
 	dst.d_buf = elf->e_data + scn->s_offset;
     }
-    else if (!(dst.d_buf = malloc(dst.d_size))) {
+    else if (!(dst.d_buf = pmalloc(dst.d_size))) {
 	seterr(ERROR_MEM_SCNDATA);
 	return NULL;
     }

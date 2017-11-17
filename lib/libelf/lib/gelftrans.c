@@ -135,7 +135,7 @@ gelf_getsym(Elf_Data *src, int ndx, GElf_Sym *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Sym*)malloc(sizeof(GElf_Sym));
+	dst = (GElf_Sym*)pmalloc(sizeof(GElf_Sym));
 	if (!dst) {
 	    seterr(ERROR_MEM_SYM);
 	    return NULL;
@@ -201,7 +201,7 @@ gelf_getdyn(Elf_Data *src, int ndx, GElf_Dyn *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Dyn*)malloc(sizeof(GElf_Dyn));
+	dst = (GElf_Dyn*)pmalloc(sizeof(GElf_Dyn));
 	if (!dst) {
 	    seterr(ERROR_MEM_DYN);
 	    return NULL;
@@ -265,7 +265,7 @@ gelf_getrela(Elf_Data *src, int ndx, GElf_Rela *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Rela*)malloc(sizeof(GElf_Rela));
+	dst = (GElf_Rela*)pmalloc(sizeof(GElf_Rela));
 	if (!dst) {
 	    seterr(ERROR_MEM_RELA);
 	    return NULL;
@@ -335,7 +335,7 @@ gelf_getrel(Elf_Data *src, int ndx, GElf_Rel *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Rel*)malloc(sizeof(GElf_Rel));
+	dst = (GElf_Rel*)pmalloc(sizeof(GElf_Rel));
 	if (!dst) {
 	    seterr(ERROR_MEM_REL);
 	    return NULL;

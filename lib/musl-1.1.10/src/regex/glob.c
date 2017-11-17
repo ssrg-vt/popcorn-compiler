@@ -38,7 +38,7 @@ static int is_literal(const char *p, int useesc)
 
 static int append(struct match **tail, const char *name, size_t len, int mark)
 {
-	struct match *new = malloc(sizeof(struct match) + len + 1);
+	struct match *new = pmalloc(sizeof(struct match) + len + 1);
 	if (!new) return -1;
 	(*tail)->next = new;
 	new->next = NULL;
@@ -197,7 +197,7 @@ int glob(const char *restrict pat, int flags, int (*errfunc)(const char *path, i
 	}
 
 	if (flags & GLOB_APPEND) {
-		char **pathv = realloc(g->gl_pathv, (offs + g->gl_pathc + cnt + 1) * sizeof(char *));
+		char **pathv = prealloc(g->gl_pathv, (offs + g->gl_pathc + cnt + 1) * sizeof(char *));
 		if (!pathv) {
 			freelist(&head);
 			return GLOB_NOSPACE;
@@ -205,7 +205,7 @@ int glob(const char *restrict pat, int flags, int (*errfunc)(const char *path, i
 		g->gl_pathv = pathv;
 		offs += g->gl_pathc;
 	} else {
-		g->gl_pathv = malloc((offs + cnt + 1) * sizeof(char *));
+		g->gl_pathv = pmalloc((offs + cnt + 1) * sizeof(char *));
 		if (!g->gl_pathv) {
 			freelist(&head);
 			return GLOB_NOSPACE;

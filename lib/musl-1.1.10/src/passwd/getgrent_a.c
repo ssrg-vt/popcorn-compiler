@@ -43,7 +43,7 @@ int __getgrent_a(FILE *f, struct group *gr, char **line, size_t *size, char ***m
 	for (*nmem=!!*s; *s; s++)
 		if (*s==',') ++*nmem;
 	free(*mem);
-	*mem = calloc(sizeof(char *), *nmem+1);
+	*mem = pcalloc(sizeof(char *), *nmem+1);
 	if (!*mem) {
 		rv = errno;
 		free(*line);

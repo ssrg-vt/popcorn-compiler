@@ -5,7 +5,7 @@
 
 int posix_spawn_file_actions_addclose(posix_spawn_file_actions_t *fa, int fd)
 {
-	struct fdop *op = malloc(sizeof *op);
+	struct fdop *op = pmalloc(sizeof *op);
 	if (!op) return ENOMEM;
 	op->cmd = FDOP_CLOSE;
 	op->fd = fd;

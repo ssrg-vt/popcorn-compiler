@@ -17,7 +17,7 @@ int setenv(const char *var, const char *value, int overwrite)
 
 	l1 = strlen(var);
 	l2 = strlen(value);
-	s = malloc(l1+l2+2);
+	s = pmalloc(l1+l2+2);
 	if (s) {
 		memcpy(s, var, l1);
 		s[l1] = '=';

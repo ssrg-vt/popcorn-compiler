@@ -17,7 +17,7 @@ DIR *fdopendir(int fd)
 		errno = ENOTDIR;
 		return 0;
 	}
-	if (!(dir = calloc(1, sizeof *dir))) {
+	if (!(dir = pcalloc(1, sizeof *dir))) {
 		return 0;
 	}
 

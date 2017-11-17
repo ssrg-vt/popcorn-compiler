@@ -82,7 +82,7 @@ gelf_getehdr(Elf *elf, GElf_Ehdr *dst) {
 	return NULL;
     }
     if (dst == &buf) {
-	dst = (GElf_Ehdr*)malloc(sizeof(GElf_Ehdr));
+	dst = (GElf_Ehdr*)pmalloc(sizeof(GElf_Ehdr));
 	if (!dst) {
 	    seterr(ERROR_MEM_EHDR);
 	    return NULL;

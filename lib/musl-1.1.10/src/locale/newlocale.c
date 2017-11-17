@@ -48,7 +48,7 @@ locale_t __newlocale(int mask, const char *name, locale_t loc)
 	if (j==1 && tmp.cat[LC_CTYPE]==c_dot_utf8_locale.cat[LC_CTYPE])
 		return (locale_t)&c_dot_utf8_locale;
 
-	if ((loc = malloc(sizeof *loc))) *loc = tmp;
+	if ((loc = pmalloc(sizeof *loc))) *loc = tmp;
 
 	return loc;
 }

@@ -31,10 +31,10 @@ ssize_t getdelim(char **restrict s, size_t *restrict n, int delim, FILE *restric
 			if (k >= SIZE_MAX/2-i) goto oom;
 			*n = i+k+2;
 			if (*n < SIZE_MAX/4) *n *= 2;
-			tmp = realloc(*s, *n);
+			tmp = prealloc(*s, *n);
 			if (!tmp) {
 				*n = i+k+2;
-				tmp = realloc(*s, *n);
+				tmp = prealloc(*s, *n);
 				if (!tmp) goto oom;
 			}
 			*s = tmp;

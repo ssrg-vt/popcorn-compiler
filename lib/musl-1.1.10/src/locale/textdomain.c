@@ -24,7 +24,7 @@ char *textdomain(const char *domainname)
 	}
 
 	if (!current_domain) {
-		current_domain = malloc(NAME_MAX+1);
+		current_domain = pmalloc(NAME_MAX+1);
 		if (!current_domain) return 0;
 	}
 

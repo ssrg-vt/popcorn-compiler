@@ -41,7 +41,7 @@
 # include <stdlib.h>
 # include <string.h>
 #else /* STDC_HEADERS */
-extern void *malloc(), *realloc();
+extern void *pmalloc(), *prealloc();
 extern void free(), bcopy(), abort();
 extern int strcmp(), strncmp(), memcmp();
 extern void *memcpy(), *memmove(), *memset();
@@ -172,7 +172,7 @@ struct Elf {
     unsigned	e_writable : 1;		/* file is writable */
     unsigned	e_disabled : 1;		/* e_fd has been disabled */
     unsigned	e_cooked : 1;		/* e_data was modified */
-    unsigned	e_free_syms : 1;	/* e_symtab is malloc'ed */
+    unsigned	e_free_syms : 1;	/* e_symtab is pmalloc'ed */
     unsigned	e_unmap_data : 1;	/* e_data is mmap'ed */
     unsigned	e_memory : 1;		/* created by elf_memory() */
     /* magic number for debugging */
@@ -239,7 +239,7 @@ struct Elf_Scn {
     size_t	s_offset;		/* section offset */
     size_t	s_size;			/* section size */
     /* misc flags */
-    unsigned	s_freeme : 1;		/* this Elf_Scn was malloc'ed */
+    unsigned	s_freeme : 1;		/* this Elf_Scn was pmalloc'ed */
     /* section header */
     union {
 #if __LIBELF64
@@ -282,8 +282,8 @@ struct Scn_Data {
     char*	sd_memdata;		/* memory image of section */
     unsigned	sd_data_flags;		/* data flags (ELF_F_*) */
     /* misc flags */
-    unsigned	sd_freeme : 1;		/* this Scn_Data was malloc'ed */
-    unsigned	sd_free_data : 1;	/* sd_memdata is malloc'ed */
+    unsigned	sd_freeme : 1;		/* this Scn_Data was pmalloc'ed */
+    unsigned	sd_free_data : 1;	/* sd_memdata is pmalloc'ed */
     /* magic number for debugging */
     long	sd_magic;
 };

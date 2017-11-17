@@ -22,11 +22,11 @@ int scandir(const char *path, struct dirent ***res,
 		if (cnt >= len) {
 			len = 2*len+1;
 			if (len > SIZE_MAX/sizeof *names) break;
-			tmp = realloc(names, len * sizeof *names);
+			tmp = prealloc(names, len * sizeof *names);
 			if (!tmp) break;
 			names = tmp;
 		}
-		names[cnt] = malloc(de->d_reclen);
+		names[cnt] = pmalloc(de->d_reclen);
 		if (!names[cnt]) break;
 		memcpy(names[cnt++], de, de->d_reclen);
 	}

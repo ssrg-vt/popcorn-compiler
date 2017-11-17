@@ -87,7 +87,7 @@ const struct __locale_map *__get_locale(int cat, const char *val)
 		size_t map_size;
 		const void *map = __map_file(buf, &map_size);
 		if (map) {
-			new = malloc(sizeof *new);
+			new = pmalloc(sizeof *new);
 			if (!new) {
 				__munmap((void *)map, map_size);
 				break;
@@ -106,7 +106,7 @@ const struct __locale_map *__get_locale(int cat, const char *val)
 	 * object anyway to store the name, which is kept for the
 	 * sake of being able to do message translations at the
 	 * application level. */
-	if (!new && (new = malloc(sizeof *new))) {
+	if (!new && (new = pmalloc(sizeof *new))) {
 		new->map = empty_mo;
 		new->map_size = sizeof empty_mo;
 		memcpy(new->name, val, n);

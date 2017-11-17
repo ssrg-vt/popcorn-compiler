@@ -34,7 +34,7 @@ elf_newdata(Elf_Scn *scn) {
     if (scn->s_index == SHN_UNDEF) {
 	seterr(ERROR_NULLSCN);
     }
-    else if (!(sd = (Scn_Data*)malloc(sizeof(*sd)))) {
+    else if (!(sd = (Scn_Data*)pmalloc(sizeof(*sd)))) {
 	seterr(ERROR_MEM_SCNDATA);
     }
     else {

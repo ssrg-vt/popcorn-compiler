@@ -100,7 +100,7 @@ _elf_item(void *buf, Elf *elf, Elf_Type type, size_t off) {
     dst.d_size = _msize(elf->e_class, dst.d_version, type);
     elf_assert(dst.d_size);
 
-    if (!(dst.d_buf = buf) && !(dst.d_buf = malloc(dst.d_size))) {
+    if (!(dst.d_buf = buf) && !(dst.d_buf = pmalloc(dst.d_size))) {
 	seterr(memerr(type));
 	return NULL;
     }
@@ -192,7 +192,7 @@ _elf_cook_phdr(Elf *elf) {
 	}
 	size = _msize(elf->e_class, _elf_version, ELF_T_PHDR);
 	elf_assert(size);
-	if (!(p = malloc(num * size))) {
+	if (!(p = pmalloc(num * size))) {
 	    seterr(memerr(ELF_T_PHDR));
 	    return 0;
 	}
@@ -315,7 +315,7 @@ _elf_cook_shdr(Elf *elf) {
 	    return 0;
 	}
 
-	if (!(head = (struct tmp*)malloc(num * sizeof(struct tmp)))) {
+	if (!(head = (struct tmp*)pmalloc(num * sizeof(struct tmp)))) {
 	    seterr(ERROR_MEM_SCN);
 	    return 0;
 	}

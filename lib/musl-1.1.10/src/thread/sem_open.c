@@ -42,7 +42,7 @@ sem_t *sem_open(const char *name, int flags, ...)
 
 	LOCK(lock);
 	/* Allocate table if we don't have one yet */
-	if (!semtab && !(semtab = calloc(sizeof *semtab, SEM_NSEMS_MAX))) {
+	if (!semtab && !(semtab = pcalloc(sizeof *semtab, SEM_NSEMS_MAX))) {
 		UNLOCK(lock);
 		return SEM_FAILED;
 	}

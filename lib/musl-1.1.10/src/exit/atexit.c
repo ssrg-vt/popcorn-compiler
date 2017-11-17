@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "libc.h"
 
-/* Ensure that at least 32 atexit handlers can be registered without malloc */
+/* Ensure that at least 32 atexit handlers can be registered without pmalloc */
 #define COUNT 32
 
 static struct fl
@@ -45,7 +45,7 @@ int __cxa_atexit(void (*func)(void *), void *arg, void *dso)
 
 	/* If the current function list is full, add a new one */
 	if (head->f[COUNT-1]) {
-		struct fl *new_fl = calloc(sizeof(struct fl), 1);
+		struct fl *new_fl = pcalloc(sizeof(struct fl), 1);
 		if (!new_fl) {
 			UNLOCK(lock);
 			return -1;

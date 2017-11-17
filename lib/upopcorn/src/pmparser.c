@@ -161,7 +161,7 @@ void pmparser_free(){
 	procmap_t* act=maps_list;
 	procmap_t* nxt=act->next;
 	while(act!=NULL){
-		free(act);
+		pfree(act);
 		act=nxt;
 		if(nxt!=NULL)
 			nxt=nxt->next;

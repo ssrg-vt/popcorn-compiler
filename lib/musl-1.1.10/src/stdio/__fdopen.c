@@ -17,7 +17,7 @@ FILE *__fdopen(int fd, const char *mode)
 	}
 
 	/* Allocate FILE+buffer or fail */
-	if (!(f=malloc(sizeof *f + UNGET + BUFSIZ))) return 0;
+	if (!(f=pmalloc(sizeof *f + UNGET + BUFSIZ))) return 0;
 
 	/* Zero-fill only the struct, not the buffer */
 	memset(f, 0, sizeof *f);

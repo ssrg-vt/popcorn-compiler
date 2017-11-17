@@ -69,7 +69,7 @@ _makescn(Elf *elf, size_t index) {
     elf_assert(elf->e_magic == ELF_MAGIC);
     elf_assert(elf->e_ehdr);
     elf_assert(_elf_scn_init.s_magic == SCN_MAGIC);
-    if (!(scn = (Elf_Scn*)malloc(sizeof(*scn)))) {
+    if (!(scn = (Elf_Scn*)pmalloc(sizeof(*scn)))) {
 	seterr(ERROR_MEM_SCN);
 	return NULL;
     }
