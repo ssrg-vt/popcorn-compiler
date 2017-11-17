@@ -18,24 +18,17 @@
 #include "pmparser.h"
 #include "communicate.h"
 
+/* Just a security to make sure that both architecture has the same page size.
+ * We should be able to support other page sizes if we send the page size to the
+ * send_page function rather than the size of the address. TODO */
+#define PAGE_SIZE 4096
+
 #define ALIGN(_arg, _size) ((((long)_arg)/_size)*_size)
 #define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
-#if 0
-extern int _private_start, _private_end;
-void *private_start = &_private_start;
-void *private_end = &_private_end;
-elif 1
-
-#else
 extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
 void *private_end = &__tbss_end;
-#endif
-
-//extern int _sdata, _edata;
-void *sdata = 0;//&_sdata;
-void *edata = 0;//&_edata;
 
 #define ERR_CHECK(func) if(func) perror(__func__);
 int
@@ -50,7 +43,7 @@ int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
 	char ca[NUM_LINE_SIZE_BUF+1];
 	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
-	printf("%s: %p == %s\n", raddr, ca);
+	printf("%s: %p == %s\n", __func__, raddr, ca);
 	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
 }
 
@@ -74,8 +67,6 @@ int dsm_copy_stack(void* addr)
 	return 0;
 }
 
-//#define PAGE_SIZE 4096
-//char page[PAGE_SIZE];
 void fault_handler(int sig, siginfo_t *info, void *ucontext)
 {
 	procmap_t* map=NULL;
@@ -83,8 +74,7 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 
 	printf("%s: address %p\n", __func__, info->si_addr);
 
-	/*if(PAGE_SIZE != page_size)
-		printf("%s, wrong page size!!!!\n", __func__);*/
+	assert(PAGE_SIZE == page_size);
 
 	addr = PAGE_ALIGN(addr);
 
@@ -133,7 +123,6 @@ int dsm_protect_all_write_sections()
 
 	printf("dsm_init private start %p, end %p\n", private_start, private_end);
 	catch_signal();
-	printf("dsm_init data start %p, end %p\n", sdata, edata);
 
 	pmparser_init();
 
@@ -149,28 +138,18 @@ int dsm_protect_all_write_sections()
 		pmparser_print(map,0);
 		printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
-		//if(map->addr_start<=sdata && map->addr_end>=edata)
 		if(map->addr_start>=private_start && map->addr_end<=private_end)
 		{
-			/*
-			if(map->addr_start == private_start)
-				map->addr_start= private_end;//start the addr at the end of addr
-			else if(map->addr_end == private_end)
-				map->length-= private_end-private_start;//reduce the size
-			else
-				printf("error dsm private region\n");
-			//assert(map->prot.is_w);
-			*/
 			printf("pdata section found ans skipped!\n");
 			continue;
 
 		}
 		if(strstr(map->pathname, "stack") != NULL) {
-			printf("stack section found ans skipped!\n");
+			printf("stack section found and skipped!\n");
 			continue;
 		}
 		if(strstr(map->pathname, "heap") != NULL) {
-			printf("heap section found ans skipped!\n");
+			printf("heap section found and skipped!\n");
 			continue;
 		}
 		if(map->prot.is_w)

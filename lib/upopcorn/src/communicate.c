@@ -197,6 +197,15 @@ int send_cmd_rsp(enum comm_cmd cmd, char *arg, int size, void* resp, int resp_si
 	return 0;
 }
 
+int print_arch_suffix(char* buff, int max)
+{
+#ifdef __x86_64__
+    	return snprintf(buff, max, "_%s", "x86-64");
+#elif defined(__aarch64__)
+    	return snprintf(buff, max, "_%s", "aarch64");
+#endif
+}
+
 //TODO: don't always open a link see if one already exist?
 // or do it in the origine_init funciton below
 int comm_migrate(int nid)
@@ -228,20 +237,25 @@ int comm_migrate(int nid)
 	}
 
 	/* get the path to the binary. TODO: consider the arch extension */
+	/* should we use __progname?	*/
 	int ps;
-	char *path = calloc(PATH_MAX, 1);//TODO: private malloc!
+	char *path = calloc(PATH_MAX, 1);
 	ps = readlink("/proc/self/exe", path, PATH_MAX);
+	printf("path is %s, size %ld\n", path, strlen(path));
+
+	/* add arch suffix */
+	ps += print_arch_suffix(&path[ps], PATH_MAX - ps);
+	ps++;//+1 for '\0
 	if(ps==PATH_MAX)
 		perror("path max");
 	else
-		printf("path is %s, size %ld\n", path, strlen(path));
-	ps++;
+		printf("suffixed path is %s, size with null %ld\n", path, ps);
 
 	/* Write path size */
 	char path_size[NUM_LINE_SIZE_BUF+1];
 	//snprintf(path_size, NUM_LINE_SIZE_BUF, "%."NUM_LINE_SIZE_BUF_STRING"d",ps);
 	snprintf(path_size, NUM_LINE_SIZE_BUF+1, "%.8d",ps);
-	printf("pthsize ori %d %.9s\n", ps, path_size);
+	printf("path size ori %d %.9s\n", ps, path_size);
 	n = writen(sockfd, path_size, NUM_LINE_SIZE_BUF);
 	printf("\n %d bytes written\n", n);
 	/* Write the path */
