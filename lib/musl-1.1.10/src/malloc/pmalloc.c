@@ -154,7 +154,7 @@ void __dump_heap(int x)
 }
 #endif
 
-uintptr_t pmalloc_start = 0;
+uintptr_t __pmalloc_start = 0;
 
 #define INIT_SIZE (PAGE_SIZE << 4)
 static struct chunk *expand_heap(size_t n)
@@ -176,7 +176,8 @@ static struct chunk *expand_heap(size_t n)
 
 		mal.brk = mal.brk_init;
 
-		pmalloc_start = mal.brk;
+		__pmalloc_start = mal.brk;
+		printf("--> pmalloc start %p\n", (void*)__pmalloc_start);
 #ifdef SHARED
 		mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
 #endif

@@ -26,7 +26,7 @@
 #define ALIGN(_arg, _size) ((((long)_arg)/_size)*_size)
 #define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
-extern unsigned long pmalloc_start;
+extern unsigned long __pmalloc_start;
 
 extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
@@ -134,6 +134,8 @@ int dsm_protect_all_write_sections()
 		return -1;
 	}
 
+	printf("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
+
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
 	while((map=pmparser_next())!=NULL){
@@ -146,7 +148,7 @@ int dsm_protect_all_write_sections()
 			continue;
 
 		}
-		if(map->addr_start == pmalloc_start) {
+		if((unsigned long)map->addr_start == __pmalloc_start) {
 			printf("pmalloc section found and skipped!\n");
 			continue;
 		}
@@ -154,10 +156,11 @@ int dsm_protect_all_write_sections()
 			printf("stack section found and skipped!\n");
 			continue;
 		}
+		/*
 		if(strstr(map->pathname, "heap") != NULL) {
 			printf("heap section found and skipped!\n");
 			continue;
-		}
+		}*/
 
 		if(map->prot.is_w)
 			dsm_protect(map->addr_start, map->length);
