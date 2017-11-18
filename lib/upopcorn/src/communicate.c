@@ -14,8 +14,6 @@
 #include "communicate.h"
 #include "migrate.h"
 
-#define PATH_MAX 4096
-
 
 static int server_sock_fd = 0;
 static int ori_to_remote_sock = 0;
