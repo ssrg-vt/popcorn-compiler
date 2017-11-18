@@ -32,6 +32,8 @@ struct bin {
 
 static struct {
 	uintptr_t brk;
+	uintptr_t brk_size;
+	uintptr_t brk_init;
 	size_t *heap;
 	volatile uint64_t binmap;
 	struct bin bins[64];
@@ -152,29 +154,68 @@ void __dump_heap(int x)
 }
 #endif
 
+uintptr_t __malloc_start = 0;
+extern uintptr_t __pmalloc_start;
+#define INIT_SIZE (PAGE_SIZE << 4)
+
+static int init;
+int malloc_init(void* start)
+{
+	if(init)
+	{
+		printf("%s: malloc already initialized!!!\n", __func__);
+	}
+
+	printf("%s: malloc start %p, pmalloc start %ld\n",
+			__func__, start, __pmalloc_start);
+	mal.brk_init = (uintptr_t)__mmap(start, INIT_SIZE, PROT_READ|PROT_WRITE,
+		MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+	if(mal.brk_init == (uintptr_t)MAP_FAILED)
+		goto fail;
+
+	mal.brk_size = INIT_SIZE;
+
+	mal.brk = mal.brk_init;
+
+	__malloc_start = mal.brk;
+	printf("--> malloc start %p\n", (void*)__malloc_start);
+#ifdef SHARED
+	mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
+#endif
+	mal.brk = mal.brk + 2*SIZE_ALIGN-1 & -SIZE_ALIGN;
+	mal.heap = (void *)mal.brk;
+	init = 1;
+
+	return 0;
+fail:
+	return -1;
+}
+
 static struct chunk *expand_heap(size_t n)
 {
-	static int init;
 	struct chunk *w;
 	uintptr_t new;
 
 	lock(mal.brk_lock);
 
-	if (!init) {
-		mal.brk = __brk(0);
-#ifdef SHARED
-		mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
-#endif
-		mal.brk = mal.brk + 2*SIZE_ALIGN-1 & -SIZE_ALIGN;
-		mal.heap = (void *)mal.brk;
-		init = 1;
+	if (!init)
+	{
+		perror("WARNING: automaitic malloc initialization!!!");
+		malloc_init(NULL);
 	}
 
 	if (n > SIZE_MAX - mal.brk - 2*PAGE_SIZE) goto fail;
 	new = mal.brk + n + SIZE_ALIGN + PAGE_SIZE - 1 & -PAGE_SIZE;
 	n = new - mal.brk;
 
-	if (__brk(new) != new) {
+	uintptr_t end =  mal.brk_init + mal.brk_size;
+	if(new <= end)
+		goto use_avail;
+
+	void *ret = __mremap((void*)mal.brk_init, 
+			mal.brk_size, mal.brk_size+new-end,0);
+	if (ret == MAP_FAILED) {
 		size_t min = (size_t)PAGE_SIZE << mal.mmap_step/2;
 		n += -n & PAGE_SIZE-1;
 		if (n < min) n = min;
@@ -195,8 +236,10 @@ static struct chunk *expand_heap(size_t n)
 		unlock(mal.brk_lock);
 
 		return area;
-	}
+	}else
+		mal.brk_size +=new-end;
 
+use_avail:
 	w = MEM_TO_CHUNK(mal.heap);
 	w->psize = 0 | C_INUSE;
 
@@ -207,7 +250,7 @@ static struct chunk *expand_heap(size_t n)
 	w = MEM_TO_CHUNK(mal.brk);
 	w->csize = n | C_INUSE;
 	mal.brk = new;
-	
+
 	unlock(mal.brk_lock);
 
 	return w;
@@ -530,3 +573,4 @@ void free(void *p)
 
 	unlock_bin(i);
 }
+

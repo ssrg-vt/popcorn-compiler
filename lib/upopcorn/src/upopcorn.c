@@ -3,6 +3,7 @@
 #include <config.h>
 #include <string.h>
 
+int upopcorn_node_id;
 int dsm_init(int);
 int comm_init(int);
 int migrate_init(int);
@@ -51,6 +52,32 @@ static void read_config()
 
 }
 
+/* TODO: support more than two id. Using the config file is not an option if
+ * we want to support multiple upopcorn instance on the same machine. */
+void upopcorn_set_node_id(int remote)
+{
+	if(remote)
+		upopcorn_node_id = 1;
+	else
+		upopcorn_node_id = 0;
+
+}
+
+/* Each instance should have its own slice of the virtual @ space: 10 GB */
+#define MALLOC_SIZE (10UL<<30) /* 10 GB */
+/* We start the slicing  the space a little (2 GB) after the end of bss */
+#define MALLOC_OFFSET_SIZE (2UL<<30)	/* 2 GB */
+
+extern char end;
+void malloc_init(void* start);
+void upopcorn_start_malloc()
+{
+	unsigned long slicing_start = (unsigned long)&end;
+	unsigned long malloc_start = slicing_start + MALLOC_OFFSET_SIZE +
+				(MALLOC_SIZE*upopcorn_node_id);
+	malloc_init((void*)malloc_start);
+}
+
 //static void __attribute__((constructor)) __upopcorn_init(void);
 
 //static void __attribute__((constructor)) 
@@ -66,7 +93,11 @@ void __upopcorn_init(void)
         else
                 remote = 0;
 
+	upopcorn_set_node_id(remote);
+
 	read_config();
+
+	upopcorn_start_malloc();
 
         ret = dsm_init(remote);
 	if(ret)
