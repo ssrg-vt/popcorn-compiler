@@ -16,3 +16,13 @@ enum arch {
 #define ARCH_FIELD 12
 extern char arch_nodes[POPCORN_NODE_MAX][IP_FIELD]; //= {"127.0.0.1", "127.0.0.1"};
 extern int arch_type[POPCORN_NODE_MAX]; //= { X86_64, X86_64, AARCH64, AARCH64};
+
+extern unsigned long page_size;
+
+/* Just a security to make sure that both architecture has the same page size.
+ * We should be able to support other page sizes if we send the page size to the
+ * send_page function rather than the size of the address. TODO */
+#define PAGE_SIZE 4096
+
+#define ALIGN(_arg, _size) ((((unsigned long)_arg)/_size)*_size)
+#define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)

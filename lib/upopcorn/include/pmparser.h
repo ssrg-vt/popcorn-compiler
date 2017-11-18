@@ -24,8 +24,6 @@ implied warranty.
 #include <errno.h>
 
 
-extern int page_size;
-
 //TODO: use it in struct procmap_s
 struct protection_s{
 	char is_r:1;			//< rewrote of perm with short flags
@@ -69,6 +67,7 @@ typedef struct procmap_s{
  */
 int pmparser_parse(int pid);
 void pmparser_init();//TODO: Merge with previous
+procmap_t* pmparser_new();
 
 /**
  * pmparser_next

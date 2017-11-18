@@ -16,15 +16,9 @@
 #include <assert.h>
 #include <signal.h>
 #include "pmparser.h"
+#include "config.h"
 #include "communicate.h"
 
-/* Just a security to make sure that both architecture has the same page size.
- * We should be able to support other page sizes if we send the page size to the
- * send_page function rather than the size of the address. TODO */
-#define PAGE_SIZE 4096
-
-#define ALIGN(_arg, _size) ((((long)_arg)/_size)*_size)
-#define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
 extern unsigned long __pmalloc_start;
 
@@ -69,6 +63,33 @@ int dsm_copy_stack(void* addr)
 	return 0;
 }
 
+#define CHECK_ERR(err) if(err) printf("%s:%d error!!!", __func__, __LINE__);
+
+int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
+{
+	int err;
+	procmap_t *new_map;
+	err = pmparser_get(addr, map, NULL);
+	if(!err)
+		return 0;
+
+	new_map = pmparser_new();
+
+	char ca[NUM_LINE_SIZE_BUF+1];
+	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);
+	printf("%s: %p == %s, map %p map size %d\n", __func__, addr, ca, new_map, sizeof(*new_map));
+	err= send_cmd_rsp(GET_PMAP, ca, sizeof(ca),
+				new_map, sizeof(*new_map));
+	CHECK_ERR(err);
+	pmparser_insert(new_map);
+
+	printf("printing received pmap\n");
+	pmparser_print(new_map, 0);
+
+	mmap(new_map->addr_start, new_map->length, PROT_NONE,
+				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+}
+
 void fault_handler(int sig, siginfo_t *info, void *ucontext)
 {
 	procmap_t* map=NULL;
@@ -80,10 +101,11 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 
 	addr = PAGE_ALIGN(addr);
 
-	pmparser_get(addr, &map, NULL);
+	dsm_get_map(addr, &map, NULL);
 
 	printf("%s: aligned address %p\n", __func__, addr);
 
+	/*TODO: make the next two function atomic */
 	if(mprotect(addr, page_size, PROT_READ | PROT_WRITE))
 			perror(__func__);
 
@@ -116,7 +138,20 @@ int catch_signal()
 	return 0;
 }
 
-int dsm_protect_all_write_sections()
+int dsm_init_pmap()
+{
+	int ret;
+
+	pmparser_init();
+
+	ret = pmparser_parse(-1);
+	if(ret){
+		printf ("[map]: cannot parse the memory map of %d\n", getpid());
+		return -1;
+	}
+}
+
+int dsm_init_remote()
 {
 	int ret;
 	procmap_t* map=NULL;
@@ -126,13 +161,7 @@ int dsm_protect_all_write_sections()
 	printf("dsm_init private start %p, end %p\n", private_start, private_end);
 	catch_signal();
 
-	pmparser_init();
-
-	ret = pmparser_parse(-1);
-	if(ret){
-		printf ("[map]: cannot parse the memory map of %d\n", getpid());
-		return -1;
-	}
+	dsm_init_pmap();
 
 	printf("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
 
@@ -175,12 +204,21 @@ int dsm_protect_all_write_sections()
 
 }
 
+void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
+void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
+{
+	void* ret;
+	ret = __mmap(start, len,prot, flags, fd, off);
+	dsm_init_pmap();
+	return ret;
+}
+
 int dsm_init(int remote_start)
 {
 	printf("%s: remote start = %d\n", __func__, remote_start);
 	if(remote_start)
-                dsm_protect_all_write_sections();
+                dsm_init_remote();
 	else
-		;
+		dsm_init_pmap();
 	return 0;
 }

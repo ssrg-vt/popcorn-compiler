@@ -13,6 +13,7 @@
 #include "config.h"
 #include "communicate.h"
 #include "migrate.h"
+#include "pmparser.h"
 
 
 static int server_sock_fd = 0;
@@ -74,8 +75,9 @@ readn(int fd, void *vptr, size_t n)
 static int send_page(char* arg, int size)
 {
 	void *addr = (void*) atol(arg);	
-	/*TODO: make sure it is the same page size on both arch!? */
+	/*size is not page size but addr size in char */
 	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
+	/*TODO: make sure it is the same page size on both arch!? */
 	writen(server_sock_fd, addr, sysconf(_SC_PAGE_SIZE));
 	return 0;
 }
@@ -99,9 +101,19 @@ static int get_ctxt(char* arg, int size)
 	return 0;
 }
 
+static int get_pmap(char* arg, int size)
+{
+	void *pmap;
+	void *addr = (void*) atol(arg);
+	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
+	pmparser_get(addr, (procmap_t**)&pmap, NULL);
+	printf("%s: map = %p , size %d\n", __func__, pmap, sizeof(procmap_t));
+	writen(server_sock_fd, pmap, sizeof(procmap_t));
+}
+
 
 /* commands table */
-cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt};
+cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, get_pmap};
 
 int __handle_commands(int sockfd)
 {

@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <config.h>
 #include <string.h>
 
@@ -8,6 +9,7 @@ int dsm_init(int);
 int comm_init(int);
 int migrate_init(int);
 
+unsigned long page_size=0;//Why do we need to init this variable for here to get in the lib sections?
 char arch_nodes[POPCORN_NODE_MAX][IP_FIELD]; //= {"127.0.0.1", "127.0.0.1"};
 int arch_type[POPCORN_NODE_MAX]; //= { X86_64, X86_64, AARCH64, AARCH64};
 
@@ -72,7 +74,7 @@ extern char end;
 void malloc_init(void* start);
 void upopcorn_start_malloc()
 {
-	unsigned long slicing_start = (unsigned long)&end;
+	unsigned long slicing_start = (unsigned long)PAGE_ALIGN(&end);
 	unsigned long malloc_start = slicing_start + MALLOC_OFFSET_SIZE +
 				(MALLOC_SIZE*upopcorn_node_id);
 	malloc_init((void*)malloc_start);
@@ -86,6 +88,8 @@ void __upopcorn_init(void)
         int ret;
 	int remote;
         char *start_remote = getenv("POPCORN_REMOTE_START");
+
+	page_size = sysconf(_SC_PAGE_SIZE);
 
 	printf("%s start\n", __func__);
 	if(start_remote)

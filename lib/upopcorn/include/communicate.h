@@ -19,13 +19,15 @@
 enum comm_cmd{
 	GET_PAGE = 0,
 	PRINT_ST,
-	GET_CTXT
+	GET_CTXT,
+	GET_PMAP
 };
 
 static char *comm_cmd_char[] = {
 	"GET_PAGE",
 	"PRINT_ST"
 	"GET_CTXT",
+	"GET_PMAP",
 };
 
 int comm_migrate(int nid);

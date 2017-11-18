@@ -21,16 +21,14 @@ implied warranty.
 procmap_t* g_last_head =NULL;
 procmap_t* g_current =NULL;
 
-int page_size=0;
 
 static void _pmparser_split_line(
 		char*buf,char*addr1,char*addr2,
 		char*perm,char* offset,char* device,char*inode,
 		char* pathname);
-	
+
 void pmparser_init()
 {
-	page_size = sysconf(_SC_PAGE_SIZE);
 }
 
 #define MAX_REGIONS 64
@@ -38,8 +36,11 @@ static procmap_t free_list[MAX_REGIONS];
 
 procmap_t* pmparser_new()
 {
-	static int free_index=0;
-	return &free_list[free_index++];
+	void* ret;
+	ret = (procmap_t*)pmalloc(sizeof(procmap_t));
+	if(!ret)
+		printf("%s: error!!!\n", __func__);
+	return ret;
 }
 
 int pmparser_parse(int pid){
@@ -68,13 +69,9 @@ int pmparser_parse(int pid){
 		fgets(buf+1,259,file);
 		buf[0]=c;
 		//allocate a node
-		tmp=(procmap_t*)pmalloc(sizeof(procmap_t));
+		tmp=pmparser_new();
 		//fill the node
 		_pmparser_split_line(buf,addr1,addr2,perm,offset, dev,inode,pathname);
-		//printf("#%s",buf);
-		//printf("%s-%s %s %s %s %s\t%s\n",addr1,addr2,perm,offset,dev,inode,pathname);
-		//addr_start & addr_end
-		//unsigned long l_addr_start;
 		sscanf(addr1,"%lx",(long unsigned *)&tmp->addr_start );
 		sscanf(addr2,"%lx",(long unsigned *)&tmp->addr_end );
 		//size
@@ -94,6 +91,7 @@ int pmparser_parse(int pid){
 		tmp->inode=atoi(inode);
 		//pathname
 		strcpy(tmp->pathname,pathname);
+
 		tmp->next=NULL;
 		//attach the node
 		if(ind==0){
@@ -109,6 +107,7 @@ int pmparser_parse(int pid){
 
 
 	g_last_head=list_maps;
+	g_current=NULL;
 	return 0;
 }
 
@@ -123,6 +122,12 @@ procmap_t* pmparser_next(){
 	return g_current;
 }
 
+void pmparser_insert(procmap_t* tmp)
+{
+	tmp->next=g_last_head;
+	g_last_head=tmp;
+}
+
 int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 	//int pg_num;
 	procmap_t *iter;
@@ -132,6 +137,8 @@ int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 	g_current = NULL;
 	while((iter = pmparser_next()))
 	{
+		/* TODO: Quicker search: ordered list/ hashtable ?	*
+		 * and modify insertion accordingly			*/
 		if(addr < iter->addr_end && addr >= iter->addr_start)
 		{
 			*map = iter;
@@ -144,7 +151,10 @@ int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 			break;
 		}
 	}
-	return 0;
+	if(*map)
+		return 0;
+	else
+		return -1;
 }
 
 int pmparser_alloc_pages(procmap_t *map)
