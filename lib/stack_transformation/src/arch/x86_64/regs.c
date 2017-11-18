@@ -100,7 +100,7 @@ static regset_t regset_init_x86_64(const void* regs)
 
 static void regset_free_x86_64(regset_t regset)
 {
-  free(regset);
+  pfree(regset);
 }
 
 static void regset_clone_x86_64(const_regset_t src, regset_t dest)

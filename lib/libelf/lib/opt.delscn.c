@@ -155,25 +155,25 @@ elf_delscn(Elf *elf, Elf_Scn *scn) {
 	elf_assert(sd->sd_scn == scn);
 	tmp = sd->sd_link;
 	if (sd->sd_free_data && sd->sd_memdata) {
-	    free(sd->sd_memdata);
+	    pfree(sd->sd_memdata);
 	}
 	if (sd->sd_freeme) {
-	    free(sd);
+	    pfree(sd);
 	}
     }
     if ((sd = scn->s_rawdata)) {
 	elf_assert(sd->sd_magic == DATA_MAGIC);
 	elf_assert(sd->sd_scn == scn);
 	if (sd->sd_free_data && sd->sd_memdata) {
-	    free(sd->sd_memdata);
+	    pfree(sd->sd_memdata);
 	}
 	if (sd->sd_freeme) {
-	    free(sd);
+	    pfree(sd);
 	}
     }
     if (scn->s_freeme) {
 	elf_assert(scn->s_index > 0);
-	free(scn);
+	pfree(scn);
     }
     /*
      * Adjust section indices.

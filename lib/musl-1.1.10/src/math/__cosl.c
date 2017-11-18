@@ -40,7 +40,7 @@
  *
  * In fact, coefficients above the x^4 one only need to have 53-bit
  * precision, and this is more efficient.  We get this optimization
- * almost for free from the complications needed to search for the best
+ * almost for pfree from the complications needed to search for the best
  * higher coefficients.
  */
 static const long double

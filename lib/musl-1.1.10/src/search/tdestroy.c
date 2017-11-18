@@ -17,5 +17,5 @@ void tdestroy(void *root, void (*freekey)(void *))
 	tdestroy(r->left, freekey);
 	tdestroy(r->right, freekey);
 	if (freekey) freekey(r->key);
-	free(r);
+	pfree(r);
 }

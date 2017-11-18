@@ -316,7 +316,7 @@ static void free_context(rewrite_context ctx)
     free_activation(ctx->handle, &ctx->acts[i]);
   free_data_pools(ctx);
 #if _TLS_IMPL != COMPILER_TLS
-  free(ctx);
+  pfree(ctx);
 #endif
 
   TIMER_STOP(free_context);
@@ -327,8 +327,8 @@ static void free_context(rewrite_context ctx)
  */
 static void free_data_pools(rewrite_context ctx)
 {
-  free(ctx->callee_saved_pool);
-  free(ctx->regset_pool);
+  pfree(ctx->callee_saved_pool);
+  pfree(ctx->regset_pool);
 }
 
 /*

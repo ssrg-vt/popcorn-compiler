@@ -34,8 +34,8 @@ int scandir(const char *path, struct dirent ***res,
 	closedir(d);
 
 	if (errno) {
-		if (names) while (cnt-->0) free(names[cnt]);
-		free(names);
+		if (names) while (cnt-->0) pfree(names[cnt]);
+		pfree(names);
 		return -1;
 	}
 	errno = old_errno;

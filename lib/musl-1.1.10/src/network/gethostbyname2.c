@@ -12,7 +12,7 @@ struct hostent *gethostbyname2(const char *name, int af)
 	struct hostent *res;
 	int err;
 	do {
-		free(h);
+		pfree(h);
 		h = pmalloc(size+=size+1);
 		if (!h) {
 			h_errno = NO_RECOVERY;

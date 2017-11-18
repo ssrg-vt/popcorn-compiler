@@ -73,8 +73,8 @@ int getgrouplist(const char *user, gid_t gid, gid_t *groups, int *ngroups)
 
 cleanup:
 	if (f) fclose(f);
-	free(nscdbuf);
-	free(buf);
-	free(mem);
+	pfree(nscdbuf);
+	pfree(buf);
+	pfree(mem);
 	return ret;
 }

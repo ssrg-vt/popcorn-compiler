@@ -2514,7 +2514,7 @@ tre_make_trans(tre_pos_and_tags_t *p1, tre_pos_and_tags_t *p2,
 	      while(p2->tags[j] >= 0)
 		j++;
 
-	    /* If we are overwriting a transition, free the old tag array. */
+	    /* If we are overwriting a transition, pfree the old tag array. */
 	    if (trans->tags != NULL)
 	      xfree(trans->tags);
 	    trans->tags = NULL;

@@ -19,7 +19,7 @@ int __getgrent_a(FILE *f, struct group *gr, char **line, size_t *size, char ***m
 	for (;;) {
 		if ((l=getline(line, size, f)) < 0) {
 			rv = ferror(f) ? errno : 0;
-			free(*line);
+			pfree(*line);
 			*line = 0;
 			gr = 0;
 			goto end;
@@ -42,11 +42,11 @@ int __getgrent_a(FILE *f, struct group *gr, char **line, size_t *size, char ***m
 
 	for (*nmem=!!*s; *s; s++)
 		if (*s==',') ++*nmem;
-	free(*mem);
+	pfree(*mem);
 	*mem = pcalloc(sizeof(char *), *nmem+1);
 	if (!*mem) {
 		rv = errno;
-		free(*line);
+		pfree(*line);
 		*line = 0;
 		gr = 0;
 		goto end;

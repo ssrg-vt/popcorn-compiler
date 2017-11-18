@@ -68,15 +68,15 @@ elf_rawdata(Elf_Scn *scn, Elf_Data *data) {
 	if (scn->s_type != SHT_NOBITS && scn->s_size) {
 	    if (!(sd->sd_memdata = (char*)pmalloc(scn->s_size))) {
 		seterr(ERROR_IO_2BIG);
-		free(sd);
+		pfree(sd);
 		return NULL;
 	    }
 	    else if (elf->e_rawdata) {
 		memcpy(sd->sd_memdata, elf->e_rawdata + scn->s_offset, scn->s_size);
 	    }
 	    else if (!_elf_read(elf, sd->sd_memdata, scn->s_offset, scn->s_size)) {
-		free(sd->sd_memdata);
-		free(sd);
+		pfree(sd->sd_memdata);
+		pfree(sd);
 		return NULL;
 	    }
 	    sd->sd_data.d_buf = sd->sd_memdata;

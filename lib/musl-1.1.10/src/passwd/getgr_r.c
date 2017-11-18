@@ -31,8 +31,8 @@ static int getgr_r(const char *name, gid_t gid, struct group *gr, char *buf, siz
 			gr->gr_mem[i] = mem[i]-line+buf;
 		gr->gr_mem[i] = 0;
 	}
- 	free(mem);
- 	free(line);
+ 	pfree(mem);
+ 	pfree(line);
 	pthread_setcancelstate(cs, 0);
 	return rv;
 }

@@ -25,7 +25,7 @@ static int getpw_r(const char *name, uid_t uid, struct passwd *pw, char *buf, si
 		FIX(dir);
 		FIX(shell);
 	}
- 	free(line);
+ 	pfree(line);
 	pthread_setcancelstate(cs, 0);
 	return rv;
 }

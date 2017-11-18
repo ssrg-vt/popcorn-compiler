@@ -317,8 +317,8 @@ input_fail:
 		if (!matches) matches--;
 match_fail:
 		if (alloc) {
-			free(s);
-			free(wcs);
+			pfree(s);
+			pfree(wcs);
 		}
 	}
 	FUNLOCK(f);

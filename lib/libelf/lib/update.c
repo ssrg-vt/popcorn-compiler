@@ -961,7 +961,7 @@ _elf_output(Elf *elf, int fd, size_t len, off_t (*_elf_write)(Elf*, char*, size_
 	    err = -1;
 	}
     }
-    free(buf);
+    pfree(buf);
     return err;
 }
 

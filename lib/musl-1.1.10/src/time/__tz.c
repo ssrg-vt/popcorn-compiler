@@ -132,8 +132,8 @@ static void do_tzset()
 	if (zi) __munmap((void *)zi, map_size);
 
 	/* Cache the old value of TZ to check if it has changed. Avoid
-	 * free so as not to pull it into static programs. Growth
-	 * strategy makes it so free would have minimal benefit anyway. */
+	 * pfree so as not to pull it into static programs. Growth
+	 * strategy makes it so pfree would have minimal benefit anyway. */
 	i = strlen(s);
 	if (i > PATH_MAX+1) s = __gmt, i = 3;
 	if (i >= old_tz_size) {

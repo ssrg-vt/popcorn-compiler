@@ -25,6 +25,6 @@ int setenv(const char *var, const char *value, int overwrite)
 		s[l1+l2+1] = 0;
 		if (!__putenv(s, 1)) return 0;
 	}
-	free(s);
+	pfree(s);
 	return -1;
 }

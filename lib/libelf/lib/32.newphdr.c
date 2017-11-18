@@ -78,12 +78,12 @@ _elf_newphdr(Elf *elf, size_t count, unsigned cls) {
 	else {
 	    seterr(ERROR_UNIMPLEMENTED);
 	    if (phdr) {
-		free(phdr);
+		pfree(phdr);
 	    }
 	    return NULL;
 	}
 	if (elf->e_phdr) {
-	    free(elf->e_phdr);
+	    pfree(elf->e_phdr);
 	}
 	elf->e_phdr = phdr;
 	elf->e_phdr_flags |= ELF_F_DIRTY;

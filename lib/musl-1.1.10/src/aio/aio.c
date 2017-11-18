@@ -113,7 +113,7 @@ static void __aio_unref_queue(struct aio_queue *q)
 	}
 
 	/* This is potentially the last reference, but a new reference
-	 * may arrive since we cannot free the queue object without first
+	 * may arrive since we cannot pfree the queue object without first
 	 * taking the maplock, which requires releasing the queue lock. */
 	pthread_mutex_unlock(&q->lock);
 	pthread_rwlock_wrlock(&maplock);
@@ -126,7 +126,7 @@ static void __aio_unref_queue(struct aio_queue *q)
 		a_dec(&aio_fd_cnt);
 		pthread_rwlock_unlock(&maplock);
 		pthread_mutex_unlock(&q->lock);
-		free(q);
+		pfree(q);
 	} else {
 		q->ref--;
 		pthread_rwlock_unlock(&maplock);

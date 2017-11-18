@@ -49,7 +49,7 @@ void freeifaddrs(struct ifaddrs *ifp)
 	struct ifaddrs *n;
 	while (ifp) {
 		n = ifp->ifa_next;
-		free(ifp);
+		pfree(ifp);
 		ifp = n;
 	}
 }
@@ -186,7 +186,7 @@ static int netlink_msg_to_ifaddr(void *pctx, struct nlmsghdr *h)
 		if (ctx->last) ctx->last->ifa.ifa_next = &ifs->ifa;
 		ctx->last = ifs;
 	} else {
-		free(ifs);
+		pfree(ifs);
 	}
 	return 0;
 }

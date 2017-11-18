@@ -66,7 +66,7 @@ static int resize(size_t nel, struct hsearch_data *htab)
 			}
 			*newe = *e;
 		}
-	free(oldtab);
+	pfree(oldtab);
 	return 1;
 }
 
@@ -110,7 +110,7 @@ int __hcreate_r(size_t nel, struct hsearch_data *htab)
 		return 0;
 	r = resize(nel, htab);
 	if (r == 0) {
-		free(htab->__tab);
+		pfree(htab->__tab);
 		htab->__tab = 0;
 	}
 	return r;
@@ -119,8 +119,8 @@ weak_alias(__hcreate_r, hcreate_r);
 
 void __hdestroy_r(struct hsearch_data *htab)
 {
-	if (htab->__tab) free(htab->__tab->entries);
-	free(htab->__tab);
+	if (htab->__tab) pfree(htab->__tab->entries);
+	pfree(htab->__tab);
 	htab->__tab = 0;
 }
 weak_alias(__hdestroy_r, hdestroy_r);

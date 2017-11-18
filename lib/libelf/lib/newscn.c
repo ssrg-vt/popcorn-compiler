@@ -94,7 +94,7 @@ _elf_first_scn(Elf *elf) {
     if ((scn = _makescn(elf, 0))) {
 	elf->e_scn_1 = elf->e_scn_n = scn;
 	if (_elf_update_shnum(elf, 1)) {
-	    free(scn);
+	    pfree(scn);
 	    elf->e_scn_1 = elf->e_scn_n = scn = NULL;
 	}
     }
@@ -114,7 +114,7 @@ _buildscn(Elf *elf) {
 	return NULL;
     }
     if (_elf_update_shnum(elf, scn->s_index + 1)) {
-	free(scn);
+	pfree(scn);
 	return NULL;
     }
     elf->e_scn_n = elf->e_scn_n->s_link = scn;

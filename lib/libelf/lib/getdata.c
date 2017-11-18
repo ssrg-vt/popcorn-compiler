@@ -89,7 +89,7 @@ _elf_cook_scn(Elf *elf, Elf_Scn *scn, Scn_Data *sd) {
     }
 
     if (flag) {
-	free(dst.d_buf);
+	pfree(dst.d_buf);
     }
     return NULL;
 }

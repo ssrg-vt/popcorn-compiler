@@ -176,7 +176,7 @@ close_elf:
 close_file:
   close(handle->fd);
 free_handle:
-  free(handle);
+  pfree(handle);
 return_null:
   return NULL;
 }
@@ -194,7 +194,7 @@ void st_destroy(st_handle handle)
 
   elf_end(handle->elf);
   close(handle->fd);
-  free(handle);
+  pfree(handle);
 
   TIMER_STOP(st_destroy);
 }

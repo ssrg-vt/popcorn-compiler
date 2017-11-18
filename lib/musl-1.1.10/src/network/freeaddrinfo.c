@@ -3,5 +3,5 @@
 
 void freeaddrinfo(struct addrinfo *p)
 {
-	free(p);
+	pfree(p);
 }

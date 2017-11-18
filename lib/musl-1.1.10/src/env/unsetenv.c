@@ -19,7 +19,7 @@ again:
 	if (__environ[i]) {
 		if (__env_map) {
 			for (j=0; __env_map[j] && __env_map[j] != __environ[i]; j++);
-			free (__env_map[j]);
+			pfree (__env_map[j]);
 			for (; __env_map[j]; j++)
 				__env_map[j] = __env_map[j+1];
 		}

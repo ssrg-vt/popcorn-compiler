@@ -18,7 +18,7 @@ int __getpwent_a(FILE *f, struct passwd *pw, char **line, size_t *size, struct p
 	for (;;) {
 		if ((l=getline(line, size, f)) < 0) {
 			rv = ferror(f) ? errno : 0;
-			free(*line);
+			pfree(*line);
 			*line = 0;
 			pw = 0;
 			break;

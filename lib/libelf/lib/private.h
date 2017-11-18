@@ -42,7 +42,7 @@
 # include <string.h>
 #else /* STDC_HEADERS */
 extern void *pmalloc(), *prealloc();
-extern void free(), bcopy(), abort();
+extern void pfree(), bcopy(), abort();
 extern int strcmp(), strncmp(), memcmp();
 extern void *memcpy(), *memmove(), *memset();
 #endif /* STDC_HEADERS */

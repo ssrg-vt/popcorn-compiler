@@ -131,7 +131,7 @@ static int do_wordexp(const char *s, wordexp_t *we, int flags)
 
 	l = wv ? i+1 : 0;
 
-	free(getword(f));
+	pfree(getword(f));
 	if (feof(f)) {
 		fclose(f);
 		reap(pid);
@@ -186,8 +186,8 @@ void wordfree(wordexp_t *we)
 {
 	size_t i;
 	if (!we->we_wordv) return;
-	for (i=0; i<we->we_wordc; i++) free(we->we_wordv[we->we_offs+i]);
-	free(we->we_wordv);
+	for (i=0; i<we->we_wordc; i++) pfree(we->we_wordv[we->we_offs+i]);
+	pfree(we->we_wordv);
 	we->we_wordv = 0;
 	we->we_wordc = 0;
 }

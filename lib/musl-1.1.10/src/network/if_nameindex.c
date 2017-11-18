@@ -108,7 +108,7 @@ struct if_nameindex *if_nameindex()
 	d->if_name = 0;
 err:
 	pthread_setcancelstate(cs, 0);
-	free(ctx->list);
+	pfree(ctx->list);
 	errno = ENOBUFS;
 	return ifs;
 }

@@ -55,7 +55,7 @@ static void *wait_thread(void *p)
 	struct lio_state *st = p;
 	struct sigevent *sev = st->sev;
 	lio_wait(st);
-	free(st);
+	pfree(st);
 	switch (sev->sigev_notify) {
 	case SIGEV_SIGNAL:
 		notify_signal(sev);
@@ -100,7 +100,7 @@ int lio_listio(int mode, struct aiocb *restrict const *restrict cbs, int cnt, st
 			continue;
 		}
 		if (ret) {
-			free(st);
+			pfree(st);
 			errno = EAGAIN;
 			return -1;
 		}
@@ -108,7 +108,7 @@ int lio_listio(int mode, struct aiocb *restrict const *restrict cbs, int cnt, st
 
 	if (mode == LIO_WAIT) {
 		ret = lio_wait(st);
-		free(st);
+		pfree(st);
 		return ret;
 	}
 
@@ -131,7 +131,7 @@ int lio_listio(int mode, struct aiocb *restrict const *restrict cbs, int cnt, st
 		sigfillset(&set);
 		pthread_sigmask(SIG_BLOCK, &set, &set);
 		if (pthread_create(&td, &a, wait_thread, st)) {
-			free(st);
+			pfree(st);
 			errno = EAGAIN;
 			return -1;
 		}

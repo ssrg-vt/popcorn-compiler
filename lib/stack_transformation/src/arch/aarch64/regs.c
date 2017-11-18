@@ -105,7 +105,7 @@ static regset_t regset_init_aarch64(const void* regs)
 
 static void regset_free_aarch64(regset_t regset)
 {
-  free(regset);
+  pfree(regset);
 }
 
 static void regset_clone_aarch64(const_regset_t src, regset_t dest)

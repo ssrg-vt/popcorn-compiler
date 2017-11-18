@@ -406,7 +406,7 @@ static void reclaim(struct dso *dso, size_t start, size_t end)
 	a[-2] = 1;
 	a[-1] = z[0] = end-start + 2*sizeof(size_t) | 1;
 	z[1] = 1;
-	free(a);
+	pfree(a);
 }
 
 static void reclaim_gaps(struct dso *dso)
@@ -546,13 +546,13 @@ static void *map_library(int fd, struct dso *dso)
 	dso->dynv = (void *)(base+dyn);
 	if (dso->tls_size) dso->tls_image = (void *)(base+tls_image);
 	if (!runtime) reclaim_gaps(dso);
-	free(allocated_buf);
+	pfree(allocated_buf);
 	return map;
 noexec:
 	errno = ENOEXEC;
 error:
 	if (map!=MAP_FAILED) munmap(map, map_len);
-	free(allocated_buf);
+	pfree(allocated_buf);
 	return 0;
 }
 
@@ -760,7 +760,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 				FILE *f = fopen(etc_ldso_path, "rbe");
 				if (f) {
 					if (getdelim(&sys_path, (size_t[1]){0}, 0, f) <= 0) {
-						free(sys_path);
+						pfree(sys_path);
 						sys_path = "";
 					}
 					fclose(f);
@@ -1453,13 +1453,13 @@ void *dlopen(const char *file, int mode)
 			munmap(p->map, p->map_len);
 			while (p->td_index) {
 				void *tmp = p->td_index->next;
-				free(p->td_index);
+				pfree(p->td_index);
 				p->td_index = tmp;
 			}
 			if (p->rpath != p->rpath_orig)
-				free(p->rpath);
-			free(p->deps);
-			free(p);
+				pfree(p->rpath);
+			pfree(p->deps);
+			pfree(p);
 		}
 		tls_cnt = orig_tls_cnt;
 		tls_offset = orig_tls_offset;
@@ -1720,7 +1720,7 @@ void __dl_thread_cleanup(void)
 {
 	pthread_t self = __pthread_self();
 	if (self->dlerror_buf != (void *)-1)
-		free(self->dlerror_buf);
+		pfree(self->dlerror_buf);
 }
 
 static void error(const char *fmt, ...)
@@ -1738,7 +1738,7 @@ static void error(const char *fmt, ...)
 #endif
 	pthread_t self = __pthread_self();
 	if (self->dlerror_buf != (void *)-1)
-		free(self->dlerror_buf);
+		pfree(self->dlerror_buf);
 	size_t len = vsnprintf(0, 0, fmt, ap);
 	va_end(ap);
 	char *buf = pmalloc(len+1);

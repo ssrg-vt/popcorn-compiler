@@ -226,6 +226,6 @@ void tre_mem_destroy(tre_mem_t mem);
 
 #define xmalloc pmalloc
 #define xcalloc pcalloc
-#define xfree free
+#define xfree pfree
 #define xrealloc prealloc
 

@@ -147,13 +147,13 @@ void __st_userspace_dtor(void)
   if(aarch64_handle)
   {
     st_destroy(aarch64_handle);
-    if(alloc_aarch64_fn) free(aarch64_fn);
+    if(alloc_aarch64_fn) pfree(aarch64_fn);
   }
 
   if(x86_64_handle)
   {
     st_destroy(x86_64_handle);
-    if(alloc_x86_64_fn) free(x86_64_fn);
+    if(alloc_x86_64_fn) pfree(x86_64_fn);
   }
 }
 
@@ -320,7 +320,7 @@ static bool prep_stack(void)
 
   bounds_ptr = (stack_bounds*)pmalloc(sizeof(stack_bounds));
   ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-  ret = pthread_key_create(&stack_bounds_key, free);
+  ret = pthread_key_create(&stack_bounds_key, pfree);
   ret |= pthread_setspecific(stack_bounds_key, bounds_ptr);
   ASSERT(!ret, "could not allocate TLS data for main thread\n");
 #endif
@@ -409,7 +409,7 @@ static bool get_main_stack(stack_bounds* bounds)
       break;
     }
   }
-  free(lineptr);
+  pfree(lineptr);
   fclose(proc_fp);
 #endif
 

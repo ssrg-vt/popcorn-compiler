@@ -29,7 +29,7 @@ int __putenv(char *s, int a)
 					__env_map[j+1] = NULL;
 				}
 			} else {
-				free(__env_map[j]);
+				pfree(__env_map[j]);
 			}
 		}
 	}
@@ -43,7 +43,7 @@ int __putenv(char *s, int a)
 		newenv[i] = s;
 		newenv[i+1] = 0;
 		__environ = newenv;
-		free(oldenv);
+		pfree(oldenv);
 		oldenv = __environ;
 	}
 

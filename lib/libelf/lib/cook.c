@@ -117,7 +117,7 @@ _elf_item(void *buf, Elf *elf, Elf_Type type, size_t off) {
 	return (char*)dst.d_buf;
     }
     if (dst.d_buf != buf) {
-	free(dst.d_buf);
+	pfree(dst.d_buf);
     }
     return NULL;
 }
@@ -198,7 +198,7 @@ _elf_cook_phdr(Elf *elf) {
 	}
 	for (i = 0; i < num; i++) {
 	    if (!_elf_item(p + i * size, elf, ELF_T_PHDR, off + i * entsz)) {
-		free(p);
+		pfree(p);
 		return 0;
 	    }
 	}
@@ -339,7 +339,7 @@ _elf_cook_shdr(Elf *elf) {
 	    dst.d_size = sizeof(scn->s_uhdr);
 	    if (!_elf_xlatetom(elf, &dst, &src)) {
 		elf->e_scn_n = NULL;
-		free(head);
+		pfree(head);
 		return 0;
 	    }
 	    elf_assert(dst.d_size == _msize(elf->e_class, EV_CURRENT, ELF_T_SHDR));

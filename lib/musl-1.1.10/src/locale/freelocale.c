@@ -6,7 +6,7 @@ int __loc_is_allocated(locale_t);
 
 void freelocale(locale_t l)
 {
-	if (__loc_is_allocated(l)) free(l);
+	if (__loc_is_allocated(l)) pfree(l);
 }
 
 weak_alias(freelocale, __freelocale);

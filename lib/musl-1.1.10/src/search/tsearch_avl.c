@@ -123,7 +123,7 @@ static struct node *remove(struct node **n, const void *k,
 	if (c == 0) {
 		struct node *r = *n;
 		*n = movr(r->left, r->right);
-		free(r);
+		pfree(r);
 		return parent;
 	}
 	if (c < 0)

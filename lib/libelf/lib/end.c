@@ -30,7 +30,7 @@ static const char rcsid[] = "@(#) $Id: end.c,v 1.12 2008/05/23 08:15:34 michael 
 static void
 _elf_free(void *ptr) {
     if (ptr) {
-	free(ptr);
+	pfree(ptr);
     }
 }
 
@@ -50,7 +50,7 @@ _elf_free_scns(Elf *elf, Elf_Scn *scn) {
 		_elf_free(sd->sd_memdata);
 	    }
 	    if (sd->sd_freeme) {
-		free(sd);
+		pfree(sd);
 	    }
 	}
 	if ((sd = scn->s_rawdata)) {
@@ -60,7 +60,7 @@ _elf_free_scns(Elf *elf, Elf_Scn *scn) {
 		_elf_free(sd->sd_memdata);
 	    }
 	    if (sd->sd_freeme) {
-		free(sd);
+		pfree(sd);
 	    }
 	}
 	if (scn->s_freeme) {
@@ -113,6 +113,6 @@ elf_end(Elf *elf) {
     }
     _elf_free(elf->e_ehdr);
     _elf_free(elf->e_phdr);
-    free(elf);
+    pfree(elf);
     return 0;
 }

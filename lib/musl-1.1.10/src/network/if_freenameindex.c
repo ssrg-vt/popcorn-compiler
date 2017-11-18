@@ -3,5 +3,5 @@
 
 void if_freenameindex(struct if_nameindex *idx)
 {
-	free(idx);
+	pfree(idx);
 }

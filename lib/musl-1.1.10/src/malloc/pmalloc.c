@@ -350,7 +350,7 @@ static void trim(struct chunk *self, size_t n)
 	next->psize = n1-n | C_INUSE;
 	self->csize = n | C_INUSE;
 
-	free(CHUNK_TO_MEM(split));
+	pfree(CHUNK_TO_MEM(split));
 }
 
 void *pmalloc(size_t n)
@@ -408,7 +408,7 @@ void *prealloc(void *p, size_t n)
 	size_t n0, n1;
 	void *new;
 
-	if (!p) return malloc(n);
+	if (!p) return pmalloc(n);
 
 	if (adjust_size(&n) < 0) return 0;
 
@@ -422,9 +422,9 @@ void *prealloc(void *p, size_t n)
 		size_t newlen = n + extra;
 		/* Crash on realloc of freed chunk */
 		if (extra & 1) a_crash();
-		if (newlen < PAGE_SIZE && (new = malloc(n))) {
+		if (newlen < PAGE_SIZE && (new = pmalloc(n))) {
 			memcpy(new, p, n-OVERHEAD);
-			free(p);
+			pfree(p);
 			return new;
 		}
 		newlen = (newlen + PAGE_SIZE-1) & -PAGE_SIZE;
@@ -444,7 +444,7 @@ void *prealloc(void *p, size_t n)
 
 	/* Merge adjacent chunks if we need more space. This is not
 	 * a waste of time even if we fail to get enough space, because our
-	 * subsequent call to free would otherwise have to do the merge. */
+	 * subsequent call to pfree would otherwise have to do the merge. */
 	if (n > n1 && alloc_fwd(next)) {
 		n1 += CHUNK_SIZE(next);
 		next = NEXT_CHUNK(next);
@@ -465,10 +465,10 @@ void *prealloc(void *p, size_t n)
 	}
 
 	/* As a last resort, allocate a new chunk and copy to it. */
-	new = malloc(n-OVERHEAD);
+	new = pmalloc(n-OVERHEAD);
 	if (!new) return 0;
 	memcpy(new, p, n0-OVERHEAD);
-	free(CHUNK_TO_MEM(self));
+	pfree(CHUNK_TO_MEM(self));
 	return new;
 }
 
@@ -486,7 +486,7 @@ void pfree(void *p)
 		size_t extra = self->psize;
 		char *base = (char *)self - extra;
 		size_t len = CHUNK_SIZE(self) + extra;
-		/* Crash on double free */
+		/* Crash on double pfree */
 		if (extra & 1) a_crash();
 		__munmap(base, len);
 		return;
