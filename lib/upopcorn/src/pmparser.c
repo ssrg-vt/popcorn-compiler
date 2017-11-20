@@ -19,10 +19,14 @@ implied warranty.
 /**
  * gobal variables
  */
-procmap_t* g_last_head =NULL;
-procmap_t* g_current =NULL;
+procmap_t* pmp_head =NULL;
+procmap_t* pmp_curr =NULL;
 
-
+void pmparser_insert(procmap_t* node)
+{
+	node->next = pmp_head;
+	pmp_head=node;	
+}
 
 void pmparser_init()
 {
@@ -58,9 +62,7 @@ int pmparser_parse(int pid){
 	char *lineptr;
 	int fields;
 	char c;
-	struct procmap_s* list_maps=NULL;
 	struct procmap_s* tmp;
-	struct procmap_s* current_node=list_maps;
 
 	if(!(lineptr = (char*)pmalloc(BUF_SIZE * sizeof(char)))) 
 			return -1;
@@ -69,6 +71,9 @@ int pmparser_parse(int pid){
         {
 		//printf("line read: %s", lineptr);
 		tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
+		if(!tmp)
+			perror(__func__);
+
                 fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
                        (unsigned long*)&tmp->addr_start,  (unsigned long*)&tmp->addr_end, 
 			tmp->perm, &tmp->offset, tmp->dev, &tmp->inode, tmp->pathname);
@@ -90,41 +95,31 @@ int pmparser_parse(int pid){
 			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
 #endif
 		//attach the node
-		if(ind==0){
-			list_maps=tmp;
-			list_maps->next=NULL;
-			current_node=list_maps;
-		}
-		current_node->next=tmp;
-		current_node=tmp;
-		ind++;
+		pmparser_insert(tmp);
 	}
-
 
 	pfree(lineptr);
 	fclose(file);
 
-	g_last_head=list_maps;
-	g_current=NULL;
+	pmp_curr=NULL;
+
 	return 0;
 }
 
 
-procmap_t* pmparser_next(){
-	if(g_last_head==NULL) return NULL;
-	if(g_current==NULL){
-		g_current=g_last_head;
-	}else
-		g_current=g_current->next;
-
-	return g_current;
-}
-
-void pmparser_insert(procmap_t* tmp)
+procmap_t* pmparser_next()
 {
-	tmp->next=g_last_head;
-	g_last_head=tmp;
+	if(pmp_head==NULL) 
+		return NULL;
+
+	if(pmp_curr==NULL)
+		pmp_curr=pmp_head;
+	else
+		pmp_curr=pmp_curr->next;
+
+	return pmp_curr;
 }
+
 
 int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 	//int pg_num;
@@ -132,7 +127,8 @@ int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 
 	*map = NULL;
 	//if(page) = *page = NULL;
-	g_current = NULL;
+
+	pmp_curr = NULL;//rei-init the walk 
 	while((iter = pmparser_next()))
 	{
 		/* TODO: Quicker search: ordered list/ hashtable ?	*
@@ -163,19 +159,21 @@ int pmparser_alloc_pages(procmap_t *map)
 
 
 void pmparser_free(){
-	/*
-	procmap_t* maps_list = g_last_head;
-	if(maps_list==NULL) return ;
-	procmap_t* act=maps_list;
+	if(pmp_head==NULL) 
+		return;
+
+	procmap_t* act=pmp_head;
 	procmap_t* nxt=act->next;
+
 	while(act!=NULL){
 		pfree(act);
 		act=nxt;
 		if(nxt!=NULL)
 			nxt=nxt->next;
 	}
-	*/
 
+	pmp_head = NULL;
+	pmp_curr = NULL;
 }
 
 void pmparser_print(procmap_t* map, int order){
