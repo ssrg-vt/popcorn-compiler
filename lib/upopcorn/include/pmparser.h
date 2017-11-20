@@ -51,7 +51,7 @@ typedef struct procmap_s{
 
 	long offset;	//< offset
 	char dev[12];	//< dev major:minor
-	int inode;		//< inode of the file that backs the area
+	unsigned long inode;		//< inode of the file that backs the area
 
 	char pathname[600];		//< the path of the file that backs the area
 	//chained list
@@ -68,6 +68,7 @@ typedef struct procmap_s{
 int pmparser_parse(int pid);
 void pmparser_init();//TODO: Merge with previous
 procmap_t* pmparser_new();
+void pmparser_insert(procmap_t* tmp);
 
 /**
  * pmparser_next

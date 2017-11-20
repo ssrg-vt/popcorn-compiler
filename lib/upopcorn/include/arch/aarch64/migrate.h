@@ -6,10 +6,10 @@
 #ifndef _MIGRATE_AARCH64_H
 #define _MIGRATE_AARCH64_H
 
-#define REGS_AARCH64(_regs) (*((struct regset_aarch64*)&_regs))
+#define REGS_AARCH64(_regs) ((_regs).aarch)
 
-#define SET_REGS(_regs) \
-	SET_REGS_AARCH64(REGS_AARCH64(_regs));
+#define SET_REGS_PTR(_regs) \
+	SET_REGS_AARCH64(REGS_AARCH64(*_regs));
 
 #define SET_FRAME(bp,sp) \
 	SET_FRAME_AARCH64(bp, sp)
@@ -60,8 +60,8 @@
 	ret; \
   })
 
-#define SET_FP_REGS(_regs) \
-  SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)_regs)
+#define SET_FP_REGS_PTR(_regset) \
+  SET_FP_REGS_NOCLOBBER_AARCH64(REGS_AARCH64(*_regset))
 
 #endif
 

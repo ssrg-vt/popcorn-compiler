@@ -13,6 +13,9 @@ unsigned long page_size=0;//Why do we need to init this variable for here to get
 char arch_nodes[POPCORN_NODE_MAX][IP_FIELD]; //= {"127.0.0.1", "127.0.0.1"};
 int arch_type[POPCORN_NODE_MAX]; //= { X86_64, X86_64, AARCH64, AARCH64};
 
+void __cyg_profile_func_enter(){}
+void __cyg_profile_func_exit(){}
+
 static void read_config()
 {
 	int i;
@@ -82,8 +85,9 @@ void upopcorn_start_malloc()
 
 //static void __attribute__((constructor)) __upopcorn_init(void);
 
-//static void __attribute__((constructor)) 
-void __upopcorn_init(void)
+static void __attribute__((constructor)) 
+//void 
+__upopcorn_init(void)
 {
         int ret;
 	int remote;

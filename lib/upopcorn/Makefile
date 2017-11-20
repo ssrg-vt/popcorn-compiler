@@ -24,7 +24,7 @@ endif
 CFLAGS_ARM := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_X86 := $(CFLAGS) -target x86_64-linux-gnu
 
-INC     := -I./include
+INC     := -I./include -I../stack_transformation/include/
 INC_ARM := $(INC) -I$(POPCORN_ARM)/include
 INC_X86 := $(INC) -I$(POPCORN_X86)/include
 

@@ -14,7 +14,7 @@ ARM64_LIBGCC := $(shell dirname \
                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
-BIN := test
+BIN := bcr
 
 # FIXME specify source files
 SRC := $(shell ls *.c)
@@ -39,7 +39,6 @@ LD      := $(POPCORN)/bin/ld.gold
 LDFLAGS := -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/libc.a \
-           /lib/libmigrate.a \
            /lib/libupopcorn.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
@@ -71,7 +70,7 @@ ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
 ARM64_OBJ         := $(SRC:.c=.o)
 ARM64_MAP         := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
-ARM64_LD_SCRIPT_VANILLA   := $(POPCORN)//share/ld-script-vanilla/aarch64linux.x
+ARM64_LD_SCRIPT_VANILLA   := $(POPCORN)/share/ld-script-vanilla/aarch64linux.x
 ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
 
 # Flags
@@ -111,7 +110,7 @@ X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
 #                                 Recipes                                     #
 ###############################################################################
 
-all: post_process
+all: post_process install
 
 ir: $(IR)
 
@@ -141,7 +140,7 @@ clean:
 		$(X86_64_BUILD) $(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) \
 		$(ARM64_LD_SCRIPT) $(ALIGN_WORKDIR) *.ll *.o"
 	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) \
-		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) *.ll *.o
+		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) *.ll *.o $(BIN)
 
 %.dir:
 	@echo " [MKDIR] $*"
@@ -204,10 +203,15 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"
 	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
 
-run_x86:
+install:
 	cp $(X86_64_ALIGNED) $(BIN)
-	./$(BIN)
+	cp $(BIN)* ~/bins
+	scp $(BIN)_* 10.1.1.51:~/bins
+	scp $(ARM64_ALIGNED) 10.1.1.51:~/bins/$(BIN)
+
+run_x86: install
+	cd ~/bins; ./$(BIN)
 
 .PHONY: all post_process stack-depth clean \
         aligned aligned-aarch64 aligned-x86-64 \
-        vanilla vanilla-aarch64 vanilla-x86-64
+        vanilla vanilla-aarch64 vanilla-x86-64 install

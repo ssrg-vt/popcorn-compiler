@@ -382,10 +382,13 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
     with open(os.devnull, 'wb') as FNULL:
 
+	"""
         #=====================================================
         # CONFIGURE & INSTALL MUSL
         #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
+        #subprocess.call(["cp", "-as", os.path.join(base_path, 
+	#			'lib/musl-1.1.10'), "lib/musl-arm"])
+       	os.chdir(os.path.join(base_path, 'lib/musl-arm'))
 
         if os.path.isfile('Makefile'):
             try:
@@ -408,12 +411,13 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC={}/bin/libclang'.format(install_path),
+                                'CC={}/bin/libclang-arm'.format(install_path),
                                 'CFLAGS="-target aarch64-linux-gnu ' + 
 									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
+             pass
         except Exception as e:
             print('Could not configure musl({})!'.format(e))
             sys.exit(1)
@@ -445,6 +449,9 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                 print('Make distclean failed.')
                 sys.exit(1)
 
+        os.chdir(cur_dir)
+
+        os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
         print("Configuring musl (x86-64)...")
         try:
             rv = subprocess.check_call(" ".join(['./configure',
@@ -454,7 +461,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
+                                'CC={}/bin/libclang'.format(install_path),
                                 'CFLAGS="-target x86_64-linux-gnu ' + 
 									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
@@ -582,6 +589,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
+        """
         #=====================================================
         # CONFIGURE & INSTALL LIBBOMP
         #=====================================================

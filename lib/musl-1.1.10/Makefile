@@ -26,7 +26,7 @@ IMPH = src/internal/stdio_impl.h src/internal/pthread_impl.h src/internal/libc.h
 LDFLAGS = 
 LIBCC = -lgcc
 CPPFLAGS =
-CFLAGS = -Os -pipe -g
+CFLAGS = -O0 -pipe -g
 CFLAGS_C99FSE =  -ffreestanding -nostdinc 
 #-std=c99
 

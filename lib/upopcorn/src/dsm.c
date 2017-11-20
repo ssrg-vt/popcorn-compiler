@@ -77,7 +77,7 @@ int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 
 	char ca[NUM_LINE_SIZE_BUF+1];
 	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);
-	printf("%s: %p == %s, map %p map size %d\n", __func__, addr, ca, new_map, sizeof(*new_map));
+	printf("%s: %p == %s, map %p map size %ld\n", __func__, addr, ca, new_map, sizeof(*new_map));
 	err= send_cmd_rsp(GET_PMAP, ca, sizeof(ca),
 				new_map, sizeof(*new_map));
 	CHECK_ERR(err);
@@ -88,14 +88,20 @@ int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 
 	mmap(new_map->addr_start, new_map->length, PROT_NONE,
 				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	return 0;
 }
 
+volatile int hold_real_fault=1;
 void fault_handler(int sig, siginfo_t *info, void *ucontext)
 {
 	procmap_t* map=NULL;
 	void *addr=info->si_addr;
 
 	printf("%s: address %p\n", __func__, info->si_addr);
+	if(addr == NULL)
+	{
+		while(hold_real_fault);
+	}
 
 	assert(PAGE_SIZE == page_size);
 
@@ -149,6 +155,7 @@ int dsm_init_pmap()
 		printf ("[map]: cannot parse the memory map of %d\n", getpid());
 		return -1;
 	}
+	return 0;
 }
 
 int dsm_init_remote()

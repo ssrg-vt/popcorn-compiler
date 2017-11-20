@@ -107,8 +107,9 @@ static int get_pmap(char* arg, int size)
 	void *addr = (void*) atol(arg);
 	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
 	pmparser_get(addr, (procmap_t**)&pmap, NULL);
-	printf("%s: map = %p , size %d\n", __func__, pmap, sizeof(procmap_t));
+	printf("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
 	writen(server_sock_fd, pmap, sizeof(procmap_t));
+	return 0;
 }
 
 
@@ -262,7 +263,7 @@ int comm_migrate(int nid)
 	if(ps==PATH_MAX)
 		perror("path max");
 	else
-		printf("suffixed path is %s, size with null %ld\n", path, ps);
+		printf("suffixed path is %s, size with null %d\n", path, ps);
 
 	/* Write path size */
 	char path_size[NUM_LINE_SIZE_BUF+1];

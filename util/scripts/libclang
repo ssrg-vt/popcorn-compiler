@@ -2,6 +2,9 @@
 
 all="$*"
 
+#TODO: use an env var or search/replace
+BASE=/usr/local/popcorn/
+
 while [ "$#" -gt 0 ]
 do
         case "$1" in
@@ -19,9 +22,14 @@ do
         shift
 done
 
-echo "CMD: /home/mohamed/research/popcorn/popcorn-compiler-ori/install-rack/bin/clang $all"
-/home/mohamed/research/popcorn/popcorn-compiler-ori/install-rack/bin/clang $all
+echo "CMD: $BASE/bin/clang $all"
+$BASE/bin/clang $all
+
 echo object: $object
+if [ "$object" == "/dev/null" ]; then                                            
+        exit 0;                                                                  
+fi  
+
 objdump -h -w $object | awk '{print $2}' | grep "\..*" > $object.sec
 while read p; do
         lp="${p/.bss/.tbss}"

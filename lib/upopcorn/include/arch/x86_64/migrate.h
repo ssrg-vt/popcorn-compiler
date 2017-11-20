@@ -6,10 +6,10 @@
 #ifndef _MIGRATE_X86_64_H
 #define _MIGRATE_X86_64_H
 
-#define REGS_X86(_regs) (*((struct regset_x86_64*)&_regs))
+#define REGS_X86(_regs) ((_regs).x86)
 
-#define SET_REGS(_regs) \
-	SET_REGS_X86_64(REGS_X86(_regs));
+#define SET_REGS_PTR(_regs) \
+	SET_REGS_X86_64(REGS_X86(*_regs));
 
 #define SET_FRAME(bp,sp) \
 	SET_FRAME_X86_64(bp, sp)
@@ -61,8 +61,8 @@
 	ret; \
   })
 
-#define SET_FP_REGS(_regset) \
-  SET_FP_REGS_NOCLOBBER_X86_64(*(struct regset_x86_64 *)_regset)
+#define SET_FP_REGS_PTR(_regset) \
+  SET_FP_REGS_NOCLOBBER_X86_64(REGS_X86(*_regset))
 
 #endif
 

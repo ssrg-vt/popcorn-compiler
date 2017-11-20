@@ -13,7 +13,8 @@ implied warranty.
 
 //#include "config.h"
 #include "pmparser.h"
-#include <malloc.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /**
  * gobal variables
@@ -22,17 +23,11 @@ procmap_t* g_last_head =NULL;
 procmap_t* g_current =NULL;
 
 
-static void _pmparser_split_line(
-		char*buf,char*addr1,char*addr2,
-		char*perm,char* offset,char* device,char*inode,
-		char* pathname);
 
 void pmparser_init()
 {
 }
 
-#define MAX_REGIONS 64
-static procmap_t free_list[MAX_REGIONS];
 
 procmap_t* pmparser_new()
 {
@@ -43,6 +38,7 @@ procmap_t* pmparser_new()
 	return ret;
 }
 
+#define BUF_SIZE 512
 int pmparser_parse(int pid){
 	char maps_path[500];
 
@@ -57,42 +53,42 @@ int pmparser_parse(int pid){
 		fprintf(stderr,"pmparser : cannot open the memory maps, %s\n",strerror(errno));
 		return -1;
 	}
-
-	int ind=0;char buf[3000];
+	int ind=0;
+	size_t linesz=BUF_SIZE;
+	char *lineptr;
+	int fields;
 	char c;
-	procmap_t* list_maps=NULL;
-	procmap_t* tmp;
-	procmap_t* current_node=list_maps;
-	char addr1[20],addr2[20], perm[8], offset[20], dev[10],inode[30],pathname[600];
-	while(1){
-		if( (int)(c=fgetc(file))==EOF ) break;
-		fgets(buf+1,259,file);
-		buf[0]=c;
-		//allocate a node
-		tmp=pmparser_new();
-		//fill the node
-		_pmparser_split_line(buf,addr1,addr2,perm,offset, dev,inode,pathname);
-		sscanf(addr1,"%lx",(long unsigned *)&tmp->addr_start );
-		sscanf(addr2,"%lx",(long unsigned *)&tmp->addr_end );
-		//size
-		tmp->length=(unsigned long)((long*)tmp->addr_end-(long*)tmp->addr_start);
-		//perm
-		strcpy(tmp->perm,perm);
-		tmp->prot.is_r=(perm[0]=='r');
-		tmp->prot.is_w=(perm[1]=='w');
-		tmp->prot.is_x=(perm[2]=='x');
-		tmp->prot.is_p=(perm[3]=='p');
+	struct procmap_s* list_maps=NULL;
+	struct procmap_s* tmp;
+	struct procmap_s* current_node=list_maps;
 
-		//offset
-		sscanf(offset,"%lx",&tmp->offset );
-		//device
-		strcpy(tmp->dev,dev);
-		//inode
-		tmp->inode=atoi(inode);
-		//pathname
-		strcpy(tmp->pathname,pathname);
+	if(!(lineptr = (char*)pmalloc(BUF_SIZE * sizeof(char)))) 
+			return -1;
 
+	while(getline(&lineptr, &linesz, file) >= 0)
+        {
+		//printf("line read: %s", lineptr);
+		tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
+                fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
+                       (unsigned long*)&tmp->addr_start,  (unsigned long*)&tmp->addr_end, 
+			tmp->perm, &tmp->offset, tmp->dev, &tmp->inode, tmp->pathname);
+
+                if(fields < 6)
+			printf("maps: less fields (%d) than expected (6 or 7)", fields);
+
+		tmp->length = (unsigned long)tmp->addr_end - 
+				(unsigned long)tmp->addr_start;
+		tmp->prot.is_r=(tmp->perm[0]=='r');
+		tmp->prot.is_w=(tmp->perm[1]=='w');
+		tmp->prot.is_x=(tmp->perm[2]=='x');
+		tmp->prot.is_p=(tmp->perm[3]=='p');
 		tmp->next=NULL;
+
+#if 0
+                printf("%lx-%lx %s %lx %s %lu %s;\n",
+                       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
+			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
+#endif
 		//attach the node
 		if(ind==0){
 			list_maps=tmp;
@@ -102,9 +98,11 @@ int pmparser_parse(int pid){
 		current_node->next=tmp;
 		current_node=tmp;
 		ind++;
-		//printf("%s",buf);
 	}
 
+
+	pfree(lineptr);
+	fclose(file);
 
 	g_last_head=list_maps;
 	g_current=NULL;
@@ -180,78 +178,6 @@ void pmparser_free(){
 
 }
 
-
-static void _pmparser_split_line(
-		char*buf,char*addr1,char*addr2,
-		char*perm,char* offset,char* device,char*inode,
-		char* pathname){
-	//
-	int orig=0;
-	int i=0;
-	//addr1
-	while(buf[i]!='-'){
-		addr1[i-orig]=buf[i];
-		i++;
-	}
-	addr1[i]='\0';
-	i++;
-	//addr2
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' '){
-		addr2[i-orig]=buf[i];
-		i++;
-	}
-	addr2[i-orig]='\0';
-
-	//perm
-	while(buf[i]=='\t' || buf[i]==' ')
-		i++;
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' '){
-		perm[i-orig]=buf[i];
-		i++;
-	}
-	perm[i-orig]='\0';
-	//offset
-	while(buf[i]=='\t' || buf[i]==' ')
-		i++;
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' '){
-		offset[i-orig]=buf[i];
-		i++;
-	}
-	offset[i-orig]='\0';
-	//dev
-	while(buf[i]=='\t' || buf[i]==' ')
-		i++;
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' '){
-		device[i-orig]=buf[i];
-		i++;
-	}
-	device[i-orig]='\0';
-	//inode
-	while(buf[i]=='\t' || buf[i]==' ')
-		i++;
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' '){
-		inode[i-orig]=buf[i];
-		i++;
-	}
-	inode[i-orig]='\0';
-	//pathname
-	pathname[0]='\0';
-	while(buf[i]=='\t' || buf[i]==' ')
-		i++;
-	orig=i;
-	while(buf[i]!='\t' && buf[i]!=' ' && buf[i]!='\n'){
-		pathname[i-orig]=buf[i];
-		i++;
-	}
-	pathname[i-orig]='\0';
-
-}
-
 void pmparser_print(procmap_t* map, int order){
 
 	procmap_t* tmp=map;
@@ -265,7 +191,7 @@ void pmparser_print(procmap_t* map, int order){
 			printf("Length:\t\t%ld\n",tmp->length);
 			printf("Offset:\t\t%ld\n",tmp->offset);
 			printf("Permissions:\t%s\n",tmp->perm);
-			printf("Inode:\t\t%d\n",tmp->inode);
+			printf("Inode:\t\t%lu\n",tmp->inode);
 			printf("Device:\t\t%s\n",tmp->dev);
 		}
 		if(order!=-1 && id>order)

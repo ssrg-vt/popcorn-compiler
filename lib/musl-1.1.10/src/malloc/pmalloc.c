@@ -399,6 +399,7 @@ void *pmalloc(size_t n)
 	/* Now patch up in case we over-allocated */
 	trim(c, n);
 
+
 	return CHUNK_TO_MEM(c);
 }
 
