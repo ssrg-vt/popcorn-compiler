@@ -65,6 +65,8 @@ $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	export OBJDUMP=aarch64-linux-gnu-objdump
 	export OBJCOPY=aarch64-linux-gnu-objcopy
 	@echo " [CC] $< (aarch64)"
+	#gcc -E $(INC_ARM) -o $@.cpp $<
+	@$(CCARM) -E $(CFLAGS_ARM) $(INC_ARM) -o $@.cpp $<
 	@$(CCARM) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CCARM) $(CFLAGS_ARM) -o $@ $@.bc

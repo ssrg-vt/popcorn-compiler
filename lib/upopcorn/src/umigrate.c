@@ -86,32 +86,11 @@ void new_migrate(int nid)
 	__new_migrate(nid);
 }
 
+/*
 static void __load_context(regs_t *regs)
 {
-	unsigned long sp = 0, bp = 0;
-	#ifdef __x86_64__
-		sp = (unsigned long)regs->x86.rsp;
-		bp = (unsigned long)regs->x86.rbp;
-	#elif defined(__aarch64__)
-		sp = (unsigned long)regs->aarch.sp;
-		bp = (unsigned long)regs->aarch.x[29];
-		int i;
-		for(i=0; i<32;i++)
-			printf("x[%d]=%lx\n", i, regs->aarch.x[i]);
-	#endif
-
-
-	printf("%s: copiying stack... %p\n", __func__,(void*)sp);
-	dsm_copy_stack((void*)sp);
-	printf("%s: stack received\n", __func__);
-
-	loading =1;
-	printf("%s: setting the frame received\n", __func__);
-	SET_REGS_PTR(regs);
-    	SET_FP_REGS_PTR(regs);
-	SET_FRAME(bp, sp);
-    	SET_IP_IMM(__new_migrate);
 }
+*/
 
 volatile int __hold=1;
 static void load_context()
@@ -126,7 +105,78 @@ static void load_context()
 	if(ret)
 		perror(__func__);
 	printf("%s: response received\n", __func__);
-	__load_context(&regs);
+	//__load_context(&regs);
+
+	unsigned long sp = 0, bp = 0;
+	#ifdef __x86_64__
+		sp = (unsigned long)regs.x86.rsp;
+		bp = (unsigned long)regs.x86.rbp;
+	#elif defined(__aarch64__)
+		sp = (unsigned long)regs.aarch.sp;
+		bp = (unsigned long)regs.aarch.x[29];
+		int i;
+		for(i=0; i<32;i++)
+			printf("x[%d]=%lx\n", i, regs.aarch.x[i]);
+	#endif
+
+
+	printf("%s: copiying stack... %p\n", __func__,(void*)sp);
+	dsm_copy_stack((void*)sp);
+	printf("%s: stack received\n", __func__);
+
+	loading =1;
+	printf("%s: setting the frame received\n", __func__);
+
+#ifdef __x86_64__
+	SET_REGS_X86_64(regs.x86);
+	SET_FRAME(bp, sp);
+    	SET_IP_IMM(__new_migrate);
+#elif defined(__aarch64__)
+	//SET_FP_REGS_NOCLOBBER(regs);
+	asm volatile(	"ldr x9, [%0]\n" 
+			"ldr x10, [%2]\n" //pc
+			"ldr x11, [%1]; mov sp, x11\n" //sp
+
+			"ldr x0 , [x9, 0 *8]\n" 
+			"ldr x1 , [x9, 1 *8]\n" 
+			"ldr x2 , [x9, 2 *8]\n" 
+			"ldr x3 , [x9, 3 *8]\n" 
+			"ldr x4 , [x9, 4 *8]\n" 
+			"ldr x5 , [x9, 5 *8]\n" 
+			"ldr x6 , [x9, 6 *8]\n" 
+			"ldr x7 , [x9, 7 *8]\n" 
+			"ldr x8 , [x9, 8 *8]\n" 
+			/*"ldr x9 , [x9, 9 *8]\n" used as temp register*/
+			/*"ldr x10, [x9, 10*8]\n" */
+			"ldr x11, [x9, 11*8]\n" 
+			"ldr x12, [x9, 12*8]\n" 
+			"ldr x13, [x9, 13*8]\n" 
+			"ldr x14, [x9, 14*8]\n" 
+			"ldr x15, [x9, 15*8]\n" 
+			"ldr x16, [x9, 16*8]\n" 
+			"ldr x17, [x9, 17*8]\n" 
+			"ldr x18, [x9, 18*8]\n" 
+			"ldr x19, [x9, 19*8]\n" 
+			"ldr x20, [x9, 20*8]\n" 
+			"ldr x21, [x9, 21*8]\n" 
+			"ldr x22, [x9, 22*8]\n" 
+			"ldr x23, [x9, 23*8]\n" 
+			"ldr x24, [x9, 24*8]\n" 
+			"ldr x25, [x9, 25*8]\n" 
+			"ldr x26, [x9, 26*8]\n" 
+			"ldr x27, [x9, 27*8]\n" 
+			"ldr x28, [x9, 28*8]\n" 
+			"ldr x29, [x9, 29*8]\n" 
+			"ldr x30, [x9, 30*8]\n" 
+			"mov x9 , 0\n" /*no need no more: temp register*/
+			"br x10\n" 
+			: : "r" (&regs.aarch.x), "r" (&regs.aarch.sp), "r" (&regs.aarch.pc));
+/*
+    	SET_REGS_AARCH64(regs.aarch);
+	SET_FRAME(regs.aarch.x[29], regs.aarch.sp);
+    	SET_IP_IMM(__new_migrate);
+*/
+#endif
 	return;
 }
 
@@ -144,7 +194,7 @@ int migrate_init(int remote)
 	return 0;
 }
 
-#if 1
+#if 0
 int main(int argc, char* argv[])
 {
 	regs_t regs_src;

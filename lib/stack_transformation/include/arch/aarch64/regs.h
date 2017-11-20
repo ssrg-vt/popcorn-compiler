@@ -123,6 +123,11 @@ struct regset_aarch64
 #define SET_REG32( var, reg ) SET_REG( var, reg, "h" )
 #define SET_REG64( var, reg ) SET_REG( var, reg, "" )
 
+/* no clobber */
+#define SET_REG_NC( var, reg, size ) asm volatile("ldr"size" "reg", %0" : : "m" (var) )
+#define SET_REG_NC32( var, reg ) SET_REG_NC( var, reg, "h" )
+#define SET_REG_NC64( var, reg ) SET_REG_NC( var, reg, "" )
+
 /* General-purpose aarch64 registers */
 #define GET_X0( var ) GET_REG64( var, "x0" )
 #define GET_X1( var ) GET_REG64( var, "x1" )
@@ -187,6 +192,38 @@ struct regset_aarch64
 #define SET_X28( var ) SET_REG64( var, "x28" )
 #define SET_X29( var ) SET_REG64( var, "x29" )
 #define SET_X30( var ) SET_REG64( var, "x30" )
+
+#define SET_X0_NC( var ) SET_REG_NC64( var, "x0" )
+#define SET_X1_NC( var ) SET_REG_NC64( var, "x1" )
+#define SET_X2_NC( var ) SET_REG_NC64( var, "x2" )
+#define SET_X3_NC( var ) SET_REG_NC64( var, "x3" )
+#define SET_X4_NC( var ) SET_REG_NC64( var, "x4" )
+#define SET_X5_NC( var ) SET_REG_NC64( var, "x5" )
+#define SET_X6_NC( var ) SET_REG_NC64( var, "x6" )
+#define SET_X7_NC( var ) SET_REG_NC64( var, "x7" )
+#define SET_X8_NC( var ) SET_REG_NC64( var, "x8" )
+#define SET_X9_NC( var ) SET_REG_NC64( var, "x9" )
+#define SET_X10_NC( var ) SET_REG_NC64( var, "x10" )
+#define SET_X11_NC( var ) SET_REG_NC64( var, "x11" )
+#define SET_X12_NC( var ) SET_REG_NC64( var, "x12" )
+#define SET_X13_NC( var ) SET_REG_NC64( var, "x13" )
+#define SET_X14_NC( var ) SET_REG_NC64( var, "x14" )
+#define SET_X15_NC( var ) SET_REG_NC64( var, "x15" )
+#define SET_X16_NC( var ) SET_REG_NC64( var, "x16" )
+#define SET_X17_NC( var ) SET_REG_NC64( var, "x17" )
+#define SET_X18_NC( var ) SET_REG_NC64( var, "x18" )
+#define SET_X19_NC( var ) SET_REG_NC64( var, "x19" )
+#define SET_X20_NC( var ) SET_REG_NC64( var, "x20" )
+#define SET_X21_NC( var ) SET_REG_NC64( var, "x21" )
+#define SET_X22_NC( var ) SET_REG_NC64( var, "x22" )
+#define SET_X23_NC( var ) SET_REG_NC64( var, "x23" )
+#define SET_X24_NC( var ) SET_REG_NC64( var, "x24" )
+#define SET_X25_NC( var ) SET_REG_NC64( var, "x25" )
+#define SET_X26_NC( var ) SET_REG_NC64( var, "x26" )
+#define SET_X27_NC( var ) SET_REG_NC64( var, "x27" )
+#define SET_X28_NC( var ) SET_REG_NC64( var, "x28" )
+#define SET_X29_NC( var ) SET_REG_NC64( var, "x29" )
+#define SET_X30_NC( var ) SET_REG_NC64( var, "x30" )
 
 /*
  * The stack pointer is a little weird because you can't read it directly into/
@@ -499,6 +536,41 @@ struct regset_aarch64
   SET_X28((regset_aarch64).x[28]); \
   SET_X30((regset_aarch64).x[30]); \
   SET_FP_REGS_AARCH64(regset_aarch64); \
+}
+
+#define SET_REGS_NC_AARCH64( regset_aarch64 ) \
+{ \
+  SET_X0_NC((regset_aarch64).x[0]); \
+  SET_X1_NC((regset_aarch64).x[1]); \
+  SET_X2_NC((regset_aarch64).x[2]); \
+  SET_X3_NC((regset_aarch64).x[3]); \
+  SET_X4_NC((regset_aarch64).x[4]); \
+  SET_X5_NC((regset_aarch64).x[5]); \
+  SET_X6_NC((regset_aarch64).x[6]); \
+  SET_X7_NC((regset_aarch64).x[7]); \
+  SET_X8_NC((regset_aarch64).x[8]); \
+  SET_X9_NC((regset_aarch64).x[9]); \
+  SET_X10_NC((regset_aarch64).x[10]); \
+  SET_X11_NC((regset_aarch64).x[11]); \
+  SET_X12_NC((regset_aarch64).x[12]); \
+  SET_X13_NC((regset_aarch64).x[13]); \
+  SET_X14_NC((regset_aarch64).x[14]); \
+  SET_X15_NC((regset_aarch64).x[15]); \
+  SET_X16_NC((regset_aarch64).x[16]); \
+  SET_X17_NC((regset_aarch64).x[17]); \
+  SET_X18_NC((regset_aarch64).x[18]); \
+  SET_X19_NC((regset_aarch64).x[19]); \
+  SET_X20_NC((regset_aarch64).x[20]); \
+  SET_X21_NC((regset_aarch64).x[21]); \
+  SET_X22_NC((regset_aarch64).x[22]); \
+  SET_X23_NC((regset_aarch64).x[23]); \
+  SET_X24_NC((regset_aarch64).x[24]); \
+  SET_X25_NC((regset_aarch64).x[25]); \
+  SET_X26_NC((regset_aarch64).x[26]); \
+  SET_X27_NC((regset_aarch64).x[27]); \
+  SET_X28_NC((regset_aarch64).x[28]); \
+  SET_X30_NC((regset_aarch64).x[30]); \
+  SET_FP_REGS_NOCLOBBER_AARCH64(regset_aarch64); \
 }
 
 /* Get frame information. */
