@@ -85,6 +85,7 @@ void upopcorn_start_malloc()
 
 //static void __attribute__((constructor)) __upopcorn_init(void);
 
+volatile static int __hold_upop=1;
 static void __attribute__((constructor)) 
 //void 
 __upopcorn_init(void)
@@ -100,6 +101,9 @@ __upopcorn_init(void)
                 remote = atoi(start_remote);
         else
                 remote = 0;
+
+	if(remote)
+		while(__hold_upop);
 
 	upopcorn_set_node_id(remote);
 

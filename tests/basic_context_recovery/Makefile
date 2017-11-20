@@ -203,7 +203,7 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"
 	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
 
-install:
+install: post_process
 	cp $(X86_64_ALIGNED) $(BIN)
 	cp $(BIN)* ~/bins
 	scp $(BIN)_* 10.1.1.51:~/bins
