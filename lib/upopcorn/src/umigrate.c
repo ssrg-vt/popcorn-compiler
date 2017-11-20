@@ -128,11 +128,11 @@ static void load_context()
 	printf("%s: setting the frame received\n", __func__);
 
 #ifdef __x86_64__
-	SET_REGS_X86_64(regs.x86);
+	SET_REGS_X86_64(regs.x86);//gp and fp registers
 	SET_FRAME(bp, sp);
     	SET_IP_IMM(__new_migrate);
 #elif defined(__aarch64__)
-	//SET_FP_REGS_NOCLOBBER(regs);
+	SET_FP_REGS_NOCLOBBER_AARCH64(regs.aarch);
 	register unsigned long arm_regs asm("x9");
 	register unsigned long arm_pc asm("x10");
 	register unsigned long arm_sp asm("x11");
