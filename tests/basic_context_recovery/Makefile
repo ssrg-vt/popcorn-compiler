@@ -165,7 +165,7 @@ clean:
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP) -T $(ARM64_LD_SCRIPT_VANILLA)
+	$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP) -T $(ARM64_LD_SCRIPT_VANILLA)
 
 $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
 	@echo " [ALIGN] $@"
@@ -175,7 +175,7 @@ $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
+	$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
 		$(ARM64_ALIGNED_MAP) -T $<
 
 ##########

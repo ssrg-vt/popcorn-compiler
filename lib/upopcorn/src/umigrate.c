@@ -143,3 +143,16 @@ int migrate_init(int remote)
 		origin_init();
 	return 0;
 }
+
+#if 1
+int main(int argc, char* argv[])
+{
+	regs_t regs_src;
+	register int test=0xdacadac;
+
+	printf("%s: before test %x\n", __func__, test);
+	GET_LOCAL_REGSET(regs_src);
+	SET_REGS_PTR(&regs_src);
+	printf("%s: after test %x\n", __func__, test);
+}
+#endif
