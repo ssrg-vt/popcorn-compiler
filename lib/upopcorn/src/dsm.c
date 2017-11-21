@@ -183,6 +183,21 @@ int dsm_init_remote()
 			printf("pdata section found and skipped!\n");
 			continue;
 
+		}else
+		{
+			if(map->addr_start>=private_start && map->addr_start<=private_end)
+			{
+				printf("section start lie in the boundary of the private data!\n");
+				printf("section skipped!\n");
+				continue;
+			}
+			if(map->addr_end>=private_start && map->addr_end<=private_end)
+			{
+				printf("section end lie in the boundary of the private data!\n");
+				printf("section skipped!\n");
+				continue;
+			}
+
 		}
 		if((unsigned long)map->addr_start == __pmalloc_start) {
 			printf("pmalloc section found and skipped!\n");
@@ -216,6 +231,7 @@ void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 {
 	void* ret;
 	ret = __mmap(start, len,prot, flags, fd, off);
+	pmparser_free();
 	dsm_init_pmap();
 	return ret;
 }

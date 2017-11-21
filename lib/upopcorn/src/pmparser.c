@@ -81,6 +81,8 @@ int pmparser_parse(int pid){
                 if(fields < 6)
 			printf("maps: less fields (%d) than expected (6 or 7)", fields);
 
+		tmp->pathname[PMPARSER_PATHNAME_MAX-1] = '\0';
+
 		tmp->length = (unsigned long)tmp->addr_end - 
 				(unsigned long)tmp->addr_start;
 		tmp->prot.is_r=(tmp->perm[0]=='r');
@@ -89,8 +91,8 @@ int pmparser_parse(int pid){
 		tmp->prot.is_p=(tmp->perm[3]=='p');
 		tmp->next=NULL;
 
-#if 0
-                printf("%lx-%lx %s %lx %s %lu %s;\n",
+#if 1
+                printf("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
                        (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
 			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
 #endif
@@ -184,6 +186,7 @@ void pmparser_print(procmap_t* map, int order){
 	while(tmp!=NULL){
 		//(unsigned long) tmp->addr_start;
 		if(order==id || order==-1){
+			printf("Node address :\t%p\n", tmp);
 			printf("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
 			printf("Range:\t\t%p-%p\n",tmp->addr_start,tmp->addr_end);
 			printf("Length:\t\t%ld\n",tmp->length);

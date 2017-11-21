@@ -53,7 +53,8 @@ typedef struct procmap_s{
 	char dev[12];	//< dev major:minor
 	unsigned long inode;		//< inode of the file that backs the area
 
-	char pathname[600];		//< the path of the file that backs the area
+	#define PMPARSER_PATHNAME_MAX	512
+	char pathname[PMPARSER_PATHNAME_MAX];		//< the path of the file that backs the area
 	//chained list
 	struct procmap_s* next;		//<handler of the chinaed list
 	
