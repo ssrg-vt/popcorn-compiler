@@ -22,14 +22,11 @@ implied warranty.
 procmap_t* pmp_head =NULL;
 procmap_t* pmp_curr =NULL;
 
-void pmparser_insert(procmap_t* node)
-{
-	node->next = pmp_head;
-	pmp_head=node;	
-}
+static int pmparser_parse();
 
-void pmparser_init()
+int pmparser_init()
 {
+	return pmparser_parse(0);
 }
 
 
@@ -42,27 +39,27 @@ procmap_t* pmparser_new()
 	return ret;
 }
 
+void pmparser_insert(procmap_t* node)
+{
+	node->next = pmp_head;
+	pmp_head=node;	
+}
+
+
 #define BUF_SIZE 512
-int pmparser_parse(int pid){
-	char maps_path[500];
+static int pmparser_parse(int update)
+{
+	FILE* file;
+	size_t linesz=BUF_SIZE;
+	char *lineptr;
+	int fields;
+	struct procmap_s* tmp;
 
-	if(pid>=0 ){
-		sprintf(maps_path,"/proc/%d/maps",pid);
-	}else{
-		sprintf(maps_path,"/proc/self/maps");
-	}
-
-	FILE* file=fopen(maps_path,"r");
+	file=fopen("/proc/self/maps","r");
 	if(!file){
 		fprintf(stderr,"pmparser : cannot open the memory maps, %s\n",strerror(errno));
 		return -1;
 	}
-	int ind=0;
-	size_t linesz=BUF_SIZE;
-	char *lineptr;
-	int fields;
-	char c;
-	struct procmap_s* tmp;
 
 	if(!(lineptr = (char*)pmalloc(BUF_SIZE * sizeof(char)))) 
 			return -1;
@@ -97,6 +94,12 @@ int pmparser_parse(int pid){
 			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
 #endif
 		//attach the node
+		if(update && (pmparser_get(tmp->addr_start, NULL, NULL)==0))
+		{
+			pfree(tmp);//updating requested and the node already exist
+			continue;
+		}
+
 		pmparser_insert(tmp);
 	}
 
@@ -107,7 +110,6 @@ int pmparser_parse(int pid){
 
 	return 0;
 }
-
 
 procmap_t* pmparser_next()
 {
@@ -122,14 +124,23 @@ procmap_t* pmparser_next()
 	return pmp_curr;
 }
 
+int pmparser_update()
+{
+	//should simply ask for more info and create a region and insert it?!
+	printf("updating pmparser...\n");
+	return pmparser_parse(1);
+}
+
 
 int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
+	int found;
 	//int pg_num;
 	procmap_t *iter;
 
-	*map = NULL;
+	if(map) *map = NULL;
 	//if(page) = *page = NULL;
 
+	found = 0;
 	pmp_curr = NULL;//rei-init the walk 
 	while((iter = pmparser_next()))
 	{
@@ -137,17 +148,19 @@ int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 		 * and modify insertion accordingly			*/
 		if(addr < iter->addr_end && addr >= iter->addr_start)
 		{
-			*map = iter;
+			found = 1;
+			if(map) *map = iter;
 			/*
 			assert(iter->page);
 			if(page){
-			pg_num = addr-map->addr_start/page_size;
-			page = &iter->page[pg_num];}
+				pg_num = addr-map->addr_start/page_size;
+				page = &iter->page[pg_num];
+			}
 			*/
 			break;
 		}
 	}
-	if(*map)
+	if(found)
 		return 0;
 	else
 		return -1;

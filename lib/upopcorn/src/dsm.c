@@ -21,17 +21,17 @@
 
 
 extern unsigned long __pmalloc_start;
+void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
 
 extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
 void *private_end = &__tbss_end;
 
-#define ERR_CHECK(func) if(func) perror(__func__);
+#define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)
 int
 dsm_protect(void *addr, unsigned long length)
 {
-	if(mprotect(addr, length, PROT_NONE))
-			perror(__func__);
+	ERR_CHECK(mprotect(addr, length, PROT_NONE));
 	return 0;
 }
 
@@ -43,35 +43,13 @@ int dsm_get_page(void* raddr, void* buffer, int page_size)
 	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
 }
 
-int dsm_copy_stack(void* addr)
-{
-	printf("%s: address %p\n", __func__, addr);
-
-	addr = PAGE_ALIGN(addr);
-
-	printf("%s: aligned address %p\n", __func__, addr);
-
-	if((mmap(addr, page_size, PROT_READ | PROT_WRITE,
-		MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED|MAP_GROWSDOWN,
-		-1, 0) == MAP_FAILED))
-			perror(__func__);
-
-	/* Copy content from remote into the temporary page */
-	dsm_get_page(addr, addr, page_size);
-
-	printf("%s: done %p\n", __func__, addr);
-	return 0;
-}
 
 #define CHECK_ERR(err) if(err) printf("%s:%d error!!!", __func__, __LINE__);
 
-int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
+int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 {
 	int err;
 	procmap_t *new_map;
-	err = pmparser_get(addr, map, NULL);
-	if(!err)
-		return 0;
 
 	new_map = pmparser_new();
 
@@ -86,8 +64,52 @@ int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 	printf("printing received pmap\n");
 	pmparser_print(new_map, 0);
 
-	mmap(new_map->addr_start, new_map->length, PROT_NONE,
-				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	ERR_CHECK((__mmap(new_map->addr_start, new_map->length, PROT_NONE,
+				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)==MAP_FAILED));
+	if(map)
+		*map = new_map;
+	return 0;
+}
+
+
+int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
+{
+	int err;
+	err = pmparser_get(addr, map, NULL);
+	if(!err)
+		return 0;
+
+	return dsm_get_remote_map(addr, map, page);
+}
+
+static void unprotect_and_load_page(void* addr)
+{
+	/*TODO: make the next two function atomic */
+	ERR_CHECK(mprotect(addr, page_size, PROT_READ | PROT_WRITE));
+
+	/* Copy content from remote into the temporary page */
+	dsm_get_page(addr, addr, page_size);
+
+	printf("%s: done %p\n", __func__, addr);
+}
+
+int dsm_copy_stack(void* addr)
+{
+	procmap_t* map=NULL;
+
+	printf("%s: address %p\n", __func__, addr);
+
+	addr = PAGE_ALIGN(addr);
+
+	printf("%s: aligned address %p\n", __func__, addr);
+
+	dsm_get_remote_map(addr, &map, NULL);
+
+	/* Copy content from remote into the temporary page */
+	//for(addr=map->addr_start; addr<map->addr_end; addr+=page_size)
+	unprotect_and_load_page(addr);
+
+	printf("%s: done %p\n", __func__, addr);
 	return 0;
 }
 
@@ -111,19 +133,7 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 
 	printf("%s: aligned address %p\n", __func__, addr);
 
-	/*TODO: make the next two function atomic */
-	if(mprotect(addr, page_size, PROT_READ | PROT_WRITE))
-			perror(__func__);
-
-	/* Copy content from remote into the temporary page */
-	dsm_get_page(addr, addr, page_size);
-
-	/*
-	//Whole region!
-	if(mprotect(map->addr_start, map->length, PROT_READ| PROT_WRITE))
-			perror(__func__);
-	*/
-
+	unprotect_and_load_page(addr);
 }
 
 
@@ -148,9 +158,8 @@ int dsm_init_pmap()
 {
 	int ret;
 
-	pmparser_init();
+	ret = pmparser_init();
 
-	ret = pmparser_parse(-1);
 	if(ret){
 		printf ("[map]: cannot parse the memory map of %d\n", getpid());
 		return -1;
@@ -163,9 +172,8 @@ int dsm_init_remote()
 	int ret;
 	procmap_t* map=NULL;
 
-	//while(__hold) usleep(1000);
-
 	printf("dsm_init private start %p, end %p\n", private_start, private_end);
+
 	catch_signal();
 
 	dsm_init_pmap();
@@ -226,13 +234,11 @@ int dsm_init_remote()
 
 }
 
-void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
 void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 {
 	void* ret;
 	ret = __mmap(start, len,prot, flags, fd, off);
-	pmparser_free();
-	dsm_init_pmap();
+	pmparser_update();
 	return ret;
 }
 

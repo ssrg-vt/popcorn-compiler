@@ -61,15 +61,10 @@ typedef struct procmap_s{
 	struct page_s* pages;		// page descriptors of this region
 } procmap_t;
 
-/**
- * pmparser_parse
- * @param pid the process id whose memory map to be parser. the current process if pid<0
- * @return list of procmap_t structers
- */
-int pmparser_parse(int pid);
-void pmparser_init();//TODO: Merge with previous
+int pmparser_init();
 procmap_t* pmparser_new();
 void pmparser_insert(procmap_t* tmp);
+int pmparser_update();
 
 /**
  * pmparser_next

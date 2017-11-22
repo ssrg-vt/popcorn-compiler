@@ -106,7 +106,16 @@ static int get_pmap(char* arg, int size)
 	void *pmap;
 	void *addr = (void*) atol(arg);
 	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
-	pmparser_get(addr, (procmap_t**)&pmap, NULL);
+	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+	{
+		/* To avoid this redirection, we should update at each region creation:
+		 * mmap (done in dsm), malloc, pmalloc (?), thread creation, ? */ 
+		pmparser_update();
+		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+		{
+			printf("map not found!!!");
+		}
+	}
 	printf("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
 	writen(server_sock_fd, pmap, sizeof(procmap_t));
 	return 0;
