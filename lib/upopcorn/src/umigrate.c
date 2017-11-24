@@ -36,10 +36,10 @@ int get_context(void **ctx, int *size)
 int loading=0;//to distinguish between migrate and load
 static void inline __new_migrate(int nid)
 {
-	printf("%s: entering\n", __func__);
+	up_log("%s: entering\n", __func__);
 	if(loading) // Post-migration
 	{
-		printf("%s: loading context\n", __func__);
+		up_log("%s: loading context\n", __func__);
 		loading=0;
 		return;
 	}
@@ -70,7 +70,7 @@ static void inline __new_migrate(int nid)
 		bp = (unsigned long)regs_dst.aarch.x[29];
 		int i;
 		for(i=0; i<32;i++)
-			printf("x[%d]=%lx\n", i, regs_dst.aarch.x[i]);
+			up_log("x[%d]=%lx\n", i, regs_dst.aarch.x[i]);
 	} else {
 		assert(0 && "Unsupported architecture!");
 	}
@@ -100,11 +100,11 @@ static void load_context()
 	
 	while(__hold);
 
-	printf("%s: sending cmd...\n", __func__);
+	up_log("%s: sending cmd...\n", __func__);
 	ret = send_cmd_rsp(GET_CTXT, NULL, 0, &regs, sizeof(regs));
 	if(ret)
 		perror(__func__);
-	printf("%s: response received\n", __func__);
+	up_log("%s: response received\n", __func__);
 	//__load_context(&regs);
 
 	unsigned long sp = 0, bp = 0;
@@ -116,16 +116,16 @@ static void load_context()
 		bp = (unsigned long)regs.aarch.x[29];
 		int i;
 		for(i=0; i<32;i++)
-			printf("x[%d]=%lx\n", i, regs.aarch.x[i]);
+			up_log("x[%d]=%lx\n", i, regs.aarch.x[i]);
 	#endif
 
 
-	printf("%s: copiying stack... %p\n", __func__,(void*)sp);
+	up_log("%s: copiying stack... %p\n", __func__,(void*)sp);
 	dsm_copy_stack((void*)sp);
-	printf("%s: stack received\n", __func__);
+	up_log("%s: stack received\n", __func__);
 
 	loading =1;
-	printf("%s: setting the frame received\n", __func__);
+	up_log("%s: setting the frame received\n", __func__);
 
 #ifdef __x86_64__
 	SET_REGS_X86_64(regs.x86);//gp and fp registers

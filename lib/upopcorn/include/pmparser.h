@@ -55,15 +55,16 @@ typedef struct procmap_s{
 
 	#define PMPARSER_PATHNAME_MAX	512
 	char pathname[PMPARSER_PATHNAME_MAX];		//< the path of the file that backs the area
-	//chained list
+
+	/* private data */
 	struct procmap_s* next;		//<handler of the chinaed list
-	
+	int nid;			// nid of manager
 	struct page_s* pages;		// page descriptors of this region
 } procmap_t;
 
 int pmparser_init();
 procmap_t* pmparser_new();
-void pmparser_insert(procmap_t* tmp);
+void pmparser_insert(procmap_t* tmp, int nid);
 int pmparser_update();
 
 /**

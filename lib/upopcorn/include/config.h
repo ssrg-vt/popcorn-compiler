@@ -26,3 +26,6 @@ extern unsigned long page_size;
 
 #define ALIGN(_arg, _size) ((((unsigned long)_arg)/_size)*_size)
 #define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
+
+
+#define up_log(...) /**/

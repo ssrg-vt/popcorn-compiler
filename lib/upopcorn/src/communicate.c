@@ -76,7 +76,7 @@ static int send_page(char* arg, int size)
 {
 	void *addr = (void*) atol(arg);	
 	/*size is not page size but addr size in char */
-	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
+	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
 	/*TODO: make sure it is the same page size on both arch!? */
 	writen(server_sock_fd, addr, sysconf(_SC_PAGE_SIZE));
 	return 0;
@@ -96,7 +96,7 @@ static int get_ctxt(char* arg, int size)
 	ptr = NULL;
 	sz=0;
 	get_context(&ptr, &sz);
-	printf("%s: ptr = %p , size %d\n", __func__, ptr, size);
+	up_log("%s: ptr = %p , size %d\n", __func__, ptr, size);
 	writen(server_sock_fd, ptr, sz);
 	return 0;
 }
@@ -105,7 +105,7 @@ static int get_pmap(char* arg, int size)
 {
 	void *pmap;
 	void *addr = (void*) atol(arg);
-	printf("%s: ptr = %p , size %d\n", __func__, addr, size);
+	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
 	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
 	{
 		/* To avoid this redirection, we should update at each region creation:
@@ -113,10 +113,10 @@ static int get_pmap(char* arg, int size)
 		pmparser_update();
 		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
 		{
-			printf("map not found!!!");
+			up_log("map not found!!!");
 		}
 	}
-	printf("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
+	up_log("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
 	writen(server_sock_fd, pmap, sizeof(procmap_t));
 	return 0;
 }
@@ -132,21 +132,21 @@ int __handle_commands(int sockfd)
 	enum comm_cmd cmd;
 	char buff[MAX_NUM_CHAR_SIZE+1];
 
-	printf("Entering function %s\n", __func__);
+	up_log("Entering function %s\n", __func__);
 
 	n = readn(sockfd, buff, CMD_SIZE);
 	if(n<0)
 		perror("cmd_read");
 	buff[n]='\0';
 	cmd = (enum comm_cmd) atoi(buff);
-	printf("%s: cmd read %d, %s\n", __func__, (int)cmd, buff);
+	up_log("%s: cmd read %d, %s\n", __func__, (int)cmd, buff);
 
 	n = readn(sockfd, buff, ARG_SIZE_SIZE);
 	if(n<0)
 		perror("arg_size");
 	buff[n]='\0';
 	size = atoi(buff);
-	printf("%s: size read %d, %s\n", __func__, (int)size, buff);
+	up_log("%s: size read %d, %s\n", __func__, (int)size, buff);
 
 	char* arg;
 	if(size !=0)
@@ -156,7 +156,7 @@ int __handle_commands(int sockfd)
 		if(n<0)
 			perror("arg_size");
 		arg[n]='\0';
-		printf("%s: arg read is %s\n", __func__, arg);
+		up_log("%s: arg read is %s\n", __func__, arg);
 	}
 	else
 		arg=NULL;
@@ -169,7 +169,7 @@ int __handle_commands(int sockfd)
 
 int handle_commands(int sockfd)
 {
-	printf("Entering function %s\n", __func__);
+	up_log("Entering function %s\n", __func__);
 	server_sock_fd = sockfd;
 	while(1){
 		__handle_commands(sockfd);
@@ -181,20 +181,20 @@ int send_cmd(enum comm_cmd cmd, char *arg, int size)
 	int n;
 	char buff[MAX_NUM_CHAR_SIZE+1];
 
-	printf("sending a command\n");
+	up_log("sending a command\n");
 
 	snprintf(buff, CMD_SIZE+1, "%d", (int) cmd);
 	n = writen(ori_to_remote_sock, buff, CMD_SIZE);
 	if(n<0)
 		perror("cmd_write");
-	printf("cmd written %s\n", buff);
+	up_log("cmd written %s\n", buff);
 
 	snprintf(buff, ARG_SIZE_SIZE+1, "%d", (int) size);
 	n = writen(ori_to_remote_sock, buff, ARG_SIZE_SIZE);
 	if(n<0)
 		perror("arg_size  write");
 
-	printf("size written %s\n", buff);
+	up_log("size written %s\n", buff);
 
 	if(size)
 	{
@@ -237,7 +237,7 @@ int comm_migrate(int nid)
 
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
-		printf("\n Error : Could not create socket \n");
+		up_log("\n Error : Could not create socket \n");
 		return 1;
 	}
 
@@ -248,13 +248,13 @@ int comm_migrate(int nid)
 
 	if(inet_pton(AF_INET, arch_nodes[nid], &serv_addr.sin_addr)<=0)
 	{
-		printf("\n inet_pton error occured\n");
+		up_log("\n inet_pton error occured\n");
 		return 1;
 	}
 
 	if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 	{
-	   printf("\n Error : Connect Failed \n");
+	   up_log("\n Error : Connect Failed \n");
 	   return 1;
 	}
 
@@ -264,7 +264,7 @@ int comm_migrate(int nid)
 	char *path = pcalloc(PATH_MAX, 1);
 	ps = readlink("/proc/self/exe", path, PATH_MAX);
 	path[ps++] = '\0';
-	printf("path is %s, size %ld\n", path, strlen(path));
+	up_log("path is %s, size %ld\n", path, strlen(path));
 
 	/* add arch suffix */
 	ps += print_arch_suffix(&path[ps], PATH_MAX - ps);
@@ -272,18 +272,18 @@ int comm_migrate(int nid)
 	if(ps==PATH_MAX)
 		perror("path max");
 	else
-		printf("suffixed path is %s, size with null %d\n", path, ps);
+		up_log("suffixed path is %s, size with null %d\n", path, ps);
 
 	/* Write path size */
 	char path_size[NUM_LINE_SIZE_BUF+1];
 	//snprintf(path_size, NUM_LINE_SIZE_BUF, "%."NUM_LINE_SIZE_BUF_STRING"d",ps);
 	snprintf(path_size, NUM_LINE_SIZE_BUF+1, "%.8d",ps);
-	printf("path size ori %d %.9s\n", ps, path_size);
+	up_log("path size ori %d %.9s\n", ps, path_size);
 	n = writen(sockfd, path_size, NUM_LINE_SIZE_BUF);
-	printf("\n %d bytes written\n", n);
+	up_log("\n %d bytes written\n", n);
 	/* Write the path */
 	n = writen(sockfd, path, ps);
-	printf("\n %d bytes written\n", n);
+	up_log("\n %d bytes written\n", n);
 
 	handle_commands(sockfd);
 
@@ -307,12 +307,12 @@ static int remote_init()
 
         ori_to_remote_sock = atoi(cfd);
 
-        printf("%s: %d\n", __func__, ori_to_remote_sock);
+        up_log("%s: %d\n", __func__, ori_to_remote_sock);
 
 	test();
         //close(fd);
 
-        printf("%s: end\n", __func__);
+        up_log("%s: end\n", __func__);
 
 	return 0;
 }

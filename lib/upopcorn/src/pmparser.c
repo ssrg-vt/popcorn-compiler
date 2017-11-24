@@ -13,6 +13,7 @@ implied warranty.
 
 //#include "config.h"
 #include "pmparser.h"
+#include "config.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -35,13 +36,27 @@ procmap_t* pmparser_new()
 	void* ret;
 	ret = (procmap_t*)pmalloc(sizeof(procmap_t));
 	if(!ret)
-		printf("%s: error!!!\n", __func__);
+		up_log("%s: error!!!\n", __func__);
 	return ret;
 }
 
-void pmparser_insert(procmap_t* node)
+static void pmp_update(procmap_t* dest, procmap_t* src)
+{
+	dest->addr_start=src->addr_start;
+	dest->addr_end=src->addr_end;
+	dest->length=src->length;
+	strncpy(dest->perm, src->perm, 5);
+	dest->prot=src->prot;
+	dest->offset=src->offset;
+	//dest->dev=src->dev;
+	dest->inode=src->inode;
+	//strcpydest->pathname=src->pathname;
+}
+
+void pmparser_insert(procmap_t* node, int nid)
 {
 	node->next = pmp_head;
+	node->nid = nid;
 	pmp_head=node;	
 }
 
@@ -53,7 +68,7 @@ static int pmparser_parse(int update)
 	size_t linesz=BUF_SIZE;
 	char *lineptr;
 	int fields;
-	struct procmap_s* tmp;
+	struct procmap_s *tmp, *tmp2;
 
 	file=fopen("/proc/self/maps","r");
 	if(!file){
@@ -66,7 +81,7 @@ static int pmparser_parse(int update)
 
 	while(getline(&lineptr, &linesz, file) >= 0)
         {
-		//printf("line read: %s", lineptr);
+		//up_log("line read: %s", lineptr);
 		tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
 		if(!tmp)
 			perror(__func__);
@@ -76,7 +91,7 @@ static int pmparser_parse(int update)
 			tmp->perm, &tmp->offset, tmp->dev, &tmp->inode, tmp->pathname);
 
                 if(fields < 6)
-			printf("maps: less fields (%d) than expected (6 or 7)", fields);
+			up_log("maps: less fields (%d) than expected (6 or 7)", fields);
 
 		tmp->pathname[PMPARSER_PATHNAME_MAX-1] = '\0';
 
@@ -89,18 +104,23 @@ static int pmparser_parse(int update)
 		tmp->next=NULL;
 
 #if 1
-                printf("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
+                up_log("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
                        (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
 			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
 #endif
-		//attach the node
-		if(update && (pmparser_get(tmp->addr_start, NULL, NULL)==0))
+		if(update && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
 		{
+			up_log("region exist: updating content\n");
+			/*revising the updating of regions since its complexe: local/remote regions, 
+			 * extended regions, new/deleted!!! regions, what else? */
+			pmp_update(tmp2, tmp);//In case the region has beed extended (like for malloced ones), this a temp fix
+			pmparser_print(tmp,0);
 			pfree(tmp);//updating requested and the node already exist
 			continue;
 		}
 
-		pmparser_insert(tmp);
+		//attach the node
+		pmparser_insert(tmp, -1);
 	}
 
 	pfree(lineptr);
@@ -127,7 +147,7 @@ procmap_t* pmparser_next()
 int pmparser_update()
 {
 	//should simply ask for more info and create a region and insert it?!
-	printf("updating pmparser...\n");
+	up_log("updating pmparser...\n");
 	return pmparser_parse(1);
 }
 
@@ -199,19 +219,19 @@ void pmparser_print(procmap_t* map, int order){
 	while(tmp!=NULL){
 		//(unsigned long) tmp->addr_start;
 		if(order==id || order==-1){
-			printf("Node address :\t%p\n", tmp);
-			printf("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
-			printf("Range:\t\t%p-%p\n",tmp->addr_start,tmp->addr_end);
-			printf("Length:\t\t%ld\n",tmp->length);
-			printf("Offset:\t\t%ld\n",tmp->offset);
-			printf("Permissions:\t%s\n",tmp->perm);
-			printf("Inode:\t\t%lu\n",tmp->inode);
-			printf("Device:\t\t%s\n",tmp->dev);
+			up_log("Node address :\t%p\n", tmp);
+			up_log("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
+			up_log("Range:\t\t%p-%p\n",tmp->addr_start,tmp->addr_end);
+			up_log("Length:\t\t%ld\n",tmp->length);
+			up_log("Offset:\t\t%ld\n",tmp->offset);
+			up_log("Permissions:\t%s\n",tmp->perm);
+			up_log("Inode:\t\t%lu\n",tmp->inode);
+			up_log("Device:\t\t%s\n",tmp->dev);
 		}
 		if(order!=-1 && id>order)
 			tmp=NULL;
 		else if(order==-1){
-			printf("#################################\n");
+			up_log("#################################\n");
 			tmp=tmp->next;
 		}else tmp=tmp->next;
 

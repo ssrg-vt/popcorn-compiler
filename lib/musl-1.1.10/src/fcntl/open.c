@@ -3,7 +3,16 @@
 #include "syscall.h"
 #include "libc.h"
 
-int open(const char *filename, int flags, ...)
+int __open_(const char *filename, int flags, mode_t mode)
+{
+	int fd = __sys_open_cp(filename, flags, mode);
+	if (fd>=0 && (flags & O_CLOEXEC))
+		__syscall(SYS_fcntl, fd, F_SETFD, FD_CLOEXEC);
+
+	return __syscall_ret(fd);
+}
+
+int __open(const char *filename, int flags, ...)
 {
 	mode_t mode = 0;
 
@@ -13,12 +22,9 @@ int open(const char *filename, int flags, ...)
 		mode = va_arg(ap, mode_t);
 		va_end(ap);
 	}
-
-	int fd = __sys_open_cp(filename, flags, mode);
-	if (fd>=0 && (flags & O_CLOEXEC))
-		__syscall(SYS_fcntl, fd, F_SETFD, FD_CLOEXEC);
-
-	return __syscall_ret(fd);
+	return __open_(filename, flags, mode);
 }
 
-LFS64(open);
+weak_alias(__open, open);
+
+LFS64(__open);

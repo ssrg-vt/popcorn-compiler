@@ -3,7 +3,7 @@
 #include <string.h>
 #include <errno.h>
 
-FILE *fopen(const char *restrict filename, const char *restrict mode)
+FILE *__fopen(const char *restrict filename, const char *restrict mode)
 {
 	FILE *f;
 	int fd;
@@ -30,4 +30,19 @@ FILE *fopen(const char *restrict filename, const char *restrict mode)
 	return 0;
 }
 
-LFS64(fopen);
+//weak_alias(__fopen, fopen);
+FILE *fopen(const char *restrict filename, const char *restrict mode)
+{
+	int ret;
+	FILE* fr;
+	fr=__fopen(filename, mode);
+	//printf("%s return %p, errno %d\n", __func__, fr, errno);
+	if((fr==NULL) && (errno==EFAULT))
+	{
+		ret = strlen(filename);//touch the path. Can be done more efficiently: per-page or just ask dsm?
+		//printf("%s touching the filename and retrying %d\n", __func__, ret);
+		fr = __fopen(filename, mode);	
+	}
+	return fr;
+}
+LFS64(__fopen);

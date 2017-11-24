@@ -39,12 +39,12 @@ int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
 	char ca[NUM_LINE_SIZE_BUF+1];
 	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
-	printf("%s: %p == %s\n", __func__, raddr, ca);
+	up_log("%s: %p == %s\n", __func__, raddr, ca);
 	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
 }
 
 
-#define CHECK_ERR(err) if(err) printf("%s:%d error!!!", __func__, __LINE__);
+#define CHECK_ERR(err) if(err) up_log("%s:%d error!!!", __func__, __LINE__);
 
 int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 {
@@ -54,14 +54,14 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 	new_map = pmparser_new();
 
 	char ca[NUM_LINE_SIZE_BUF+1];
-	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);
-	printf("%s: %p == %s, map %p map size %ld\n", __func__, addr, ca, new_map, sizeof(*new_map));
+	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);//conflict with vfprintf?
+	up_log("%s: %p == %s, map %p map size %ld\n", __func__, addr, ca, new_map, sizeof(*new_map));
 	err= send_cmd_rsp(GET_PMAP, ca, sizeof(ca),
 				new_map, sizeof(*new_map));
 	CHECK_ERR(err);
-	pmparser_insert(new_map);
+	pmparser_insert(new_map, 0);//FIXME: should put node id
 
-	printf("printing received pmap\n");
+	up_log("printing received pmap\n");
 	pmparser_print(new_map, 0);
 
 	ERR_CHECK((__mmap(new_map->addr_start, new_map->length, PROT_NONE,
@@ -90,18 +90,18 @@ static void unprotect_and_load_page(void* addr)
 	/* Copy content from remote into the temporary page */
 	dsm_get_page(addr, addr, page_size);
 
-	printf("%s: done %p\n", __func__, addr);
+	//up_log("%s: done %p\n", __func__, addr);
 }
 
 int dsm_copy_stack(void* addr)
 {
 	procmap_t* map=NULL;
 
-	printf("%s: address %p\n", __func__, addr);
+	up_log("%s: address %p\n", __func__, addr);
 
 	addr = PAGE_ALIGN(addr);
 
-	printf("%s: aligned address %p\n", __func__, addr);
+	up_log("%s: aligned address %p\n", __func__, addr);
 
 	dsm_get_remote_map(addr, &map, NULL);
 
@@ -109,7 +109,13 @@ int dsm_copy_stack(void* addr)
 	//for(addr=map->addr_start; addr<map->addr_end; addr+=page_size)
 	unprotect_and_load_page(addr);
 
-	printf("%s: done %p\n", __func__, addr);
+	/*unprotect lower addresses of the stack: new pages are allocated locally
+	 * These page are important for the fault handler to execute correctly */
+	/* Does the stack transf. lib use part of the stack? lower part maybe ?*/ 
+	ERR_CHECK(mprotect(map->addr_start, addr-map->addr_start, 
+						PROT_READ | PROT_WRITE));
+
+	up_log("%s: done %p\n", __func__, addr);
 	return 0;
 }
 
@@ -119,7 +125,7 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 	procmap_t* map=NULL;
 	void *addr=info->si_addr;
 
-	printf("%s: address %p\n", __func__, info->si_addr);
+	//up_log("%s: address %p\n", __func__, info->si_addr);
 	if(addr == NULL)
 	{
 		while(hold_real_fault);
@@ -131,7 +137,7 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 
 	dsm_get_map(addr, &map, NULL);
 
-	printf("%s: aligned address %p\n", __func__, addr);
+	//up_log("%s: aligned address %p\n", __func__, addr);
 
 	unprotect_and_load_page(addr);
 }
@@ -161,7 +167,7 @@ int dsm_init_pmap()
 	ret = pmparser_init();
 
 	if(ret){
-		printf ("[map]: cannot parse the memory map of %d\n", getpid());
+		up_log ("[map]: cannot parse the memory map of %d\n", getpid());
 		return -1;
 	}
 	return 0;
@@ -172,52 +178,52 @@ int dsm_init_remote()
 	int ret;
 	procmap_t* map=NULL;
 
-	printf("dsm_init private start %p, end %p\n", private_start, private_end);
+	up_log("dsm_init private start %p, end %p\n", private_start, private_end);
 
 	catch_signal();
 
 	dsm_init_pmap();
 
-	printf("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
+	up_log("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
 
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
 	while((map=pmparser_next())!=NULL){
 		pmparser_print(map,0);
-		printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		if(map->addr_start>=private_start && map->addr_end<=private_end)
 		{
-			printf("pdata section found and skipped!\n");
+			up_log("pdata section found and skipped!\n");
 			continue;
 
 		}else
 		{
-			if(map->addr_start>=private_start && map->addr_start<=private_end)
+			if(map->addr_start>=private_start && map->addr_start<private_end)
 			{
-				printf("section start lie in the boundary of the private data!\n");
-				printf("section skipped!\n");
+				up_log("section start lie in the boundary of the private data!\n");
+				up_log("section skipped!\n");
 				continue;
 			}
-			if(map->addr_end>=private_start && map->addr_end<=private_end)
+			if(map->addr_end>private_start && map->addr_end<=private_end)
 			{
-				printf("section end lie in the boundary of the private data!\n");
-				printf("section skipped!\n");
+				up_log("section end lie in the boundary of the private data!\n");
+				up_log("section skipped!\n");
 				continue;
 			}
 
 		}
 		if((unsigned long)map->addr_start == __pmalloc_start) {
-			printf("pmalloc section found and skipped!\n");
+			up_log("pmalloc section found and skipped!\n");
 			continue;
 		}
 		if(strstr(map->pathname, "stack") != NULL) {
-			printf("stack section found and skipped!\n");
+			up_log("stack section found and skipped!\n");
 			continue;
 		}
 		/*
 		if(strstr(map->pathname, "heap") != NULL) {
-			printf("heap section found and skipped!\n");
+			up_log("heap section found and skipped!\n");
 			continue;
 		}*/
 
@@ -225,10 +231,10 @@ int dsm_init_remote()
 			dsm_protect(map->addr_start, map->length);
 
 		if(!map->prot.is_p)
-			printf("Not prrivate region are not supported?\n");
+			up_log("Not prrivate region are not supported?\n");
 	}
 
-	printf("dsm_init done\n");
+	up_log("dsm_init done\n");
 
 	return 0;
 
@@ -244,7 +250,7 @@ void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 
 int dsm_init(int remote_start)
 {
-	printf("%s: remote start = %d\n", __func__, remote_start);
+	up_log("%s: remote start = %d\n", __func__, remote_start);
 	if(remote_start)
                 dsm_init_remote();
 	else
