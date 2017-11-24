@@ -89,6 +89,19 @@ __BSS__		/* marker for the BSS section insertion */
   .eh_frame       : ONLY_IF_RW { KEEP (*(.eh_frame)) }
   .gcc_except_table   : ONLY_IF_RW { *(.gcc_except_table .gcc_except_table.*) }
   .exception_ranges   : ONLY_IF_RW { *(.exception_ranges .exception_ranges*) }
+  .jcr            : { KEEP (*(.jcr)) }
+  .data.rel.ro : 
+   {
+	*(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*)
+	*(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) 
+   }
+  .dynamic        : { *(.dynamic) }
+  .got            : { *(.got) *(.igot) }
+  /* Thread Local Storage sections  */
+  
+  . = ALIGN(0x1000);
+  . = SEGMENT_START("tdata-segment", .); 
+  __tdata_start = .;
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -138,19 +151,6 @@ __BSS__		/* marker for the BSS section insertion */
     KEEP (*(SORT(.dtors.*)))
     KEEP (*(.dtors))
   }
-  .jcr            : { KEEP (*(.jcr)) }
-  .data.rel.ro : 
-   {
-	*(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*)
-	*(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) 
-   }
-  .dynamic        : { *(.dynamic) }
-  .got            : { *(.got) *(.igot) }
-  /* Thread Local Storage sections  */
-  
-  . = ALIGN(0x1000);
-  . = SEGMENT_START("tdata-segment", .); 
-  __tdata_start = .;
 __TDATA__		/* marker for the TDATA section insertion */  
   . = ALIGN(0x1000);
   __tdata_end = .;

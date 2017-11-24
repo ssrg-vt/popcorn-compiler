@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <config.h>
 #include <string.h>
+#include "communicate.h"
 
 int upopcorn_node_id;
 int dsm_init(int);
@@ -86,12 +87,13 @@ void upopcorn_start_malloc()
 //static void __attribute__((constructor)) __upopcorn_init(void);
 
 volatile static int __hold_upop=0;
+static int remote;
+//void __upopcorn_destroy(void);
 static void __attribute__((constructor)) 
 //void 
 __upopcorn_init(void)
 {
         int ret;
-	int remote;
         char *start_remote = getenv("POPCORN_REMOTE_START");
 
 	page_size = sysconf(_SC_PAGE_SIZE);
@@ -120,4 +122,17 @@ __upopcorn_init(void)
 	migrate_init(remote);
 	if(ret)
 		perror("comm_init");
+
+	//atexit(__upopcorn_destroy);
+}
+
+static void __attribute__((destructor)) 
+//void 
+__upopcorn_destroy(void)
+{
+	if(remote)
+	{
+		printf("sending exit...");
+		send_cmd(SND_EXIT, NULL, 0);
+	}
 }

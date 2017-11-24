@@ -121,9 +121,15 @@ static int get_pmap(char* arg, int size)
 	return 0;
 }
 
+int hdl_exit(char* arg, int size)
+{
+	printf("Remote Exit\n");
+	exit(0);
+}
+
 
 /* commands table */
-cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, get_pmap};
+cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, get_pmap, hdl_exit};
 
 int __handle_commands(int sockfd)
 {

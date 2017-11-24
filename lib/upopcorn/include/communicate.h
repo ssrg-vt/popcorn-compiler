@@ -20,7 +20,8 @@ enum comm_cmd{
 	GET_PAGE = 0,
 	PRINT_ST,
 	GET_CTXT,
-	GET_PMAP
+	GET_PMAP,
+	SND_EXIT,
 };
 
 static char *comm_cmd_char[] = {
@@ -28,6 +29,7 @@ static char *comm_cmd_char[] = {
 	"PRINT_ST"
 	"GET_CTXT",
 	"GET_PMAP",
+	"SND_EXIT",
 };
 
 int comm_migrate(int nid);
