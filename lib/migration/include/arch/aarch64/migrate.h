@@ -1,7 +1,7 @@
 /*
- *  * Assembly to prepare stack for migration & to migrate between architectures
- *   * on aarch64.
- *    */
+ * Assembly to prepare stack for migration & to migrate between architectures
+ * on aarch64.
+ */
 
 #ifndef _MIGRATE_AARCH64_H
 #define _MIGRATE_AARCH64_H

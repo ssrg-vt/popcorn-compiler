@@ -118,7 +118,7 @@ def writeReadme(readme, args):
                      .format(args.maxFuncIters))
     readme.write("  Target time: {}\n".format(args.targetTime))
     readme.write("  Stop threshold: {}%\n".format(args.slowdownThresh))
-    if(args.fastTune): readme.write("  + Fast tune")
+    if(args.fastTune): readme.write("  + Fast tune\n")
 
 def initialize(args):
     sanityCheckArgs(args)

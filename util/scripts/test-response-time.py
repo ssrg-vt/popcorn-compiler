@@ -62,9 +62,10 @@ def signalProcess(args, process):
     numSignalled = 0
 
     if args.verbose:
-        print("Signalling every {} seconds, += 10%".format(args.period))
+        print("Signalling every {} seconds, += {}".format(args.period, delta))
 
     # Periodically (+/- delta) signal the application
+    time.sleep(random.uniform(low, high))
     while process.poll() is None:
         process.send_signal(args.signal)
         time.sleep(random.uniform(low, high))

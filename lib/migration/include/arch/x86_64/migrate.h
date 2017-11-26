@@ -1,7 +1,7 @@
 /*
- *  * Assembly to prepare stack for migration & to migrate between architectures
- *   * on x86-64.
- *    */
+ * Assembly to prepare stack for migration & to migrate between architectures
+ * on x86-64.
+ */
 
 #ifndef _MIGRATE_X86_64_H
 #define _MIGRATE_X86_64_H

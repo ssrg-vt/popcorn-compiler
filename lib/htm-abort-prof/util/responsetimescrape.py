@@ -13,7 +13,7 @@ Return values:
            Min: float, minimum sampled response time
            Max: float, maximum sampled response time
     RespTimes: list<float>, list of response time samples
-    NuMCalls: int, number of calls into the migration library
+    NumCalls: int, number of calls into the migration library
 '''
 def scrapeResponseTimes(filename):
     with open(filename, 'r') as fp:

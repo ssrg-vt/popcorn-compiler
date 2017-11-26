@@ -1,7 +1,7 @@
 /*
- *  * Assembly to prepare stack for migration & to migrate between architectures
- *   * on powerpc64.
- *    */
+ * Assembly to prepare stack for migration & to migrate between architectures
+ * on powerpc64.
+ */
 
 #ifndef _MIGRATE_powerpc64_H
 #define _MIGRATE_powerpc64_H
