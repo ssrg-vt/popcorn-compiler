@@ -1,12 +1,4 @@
-clean_lib
-_config.yml
-git.log
-install_compiler.py.harubyy
-jun.11.1
-may.21
 README.md
-regset_copyin
-setup_fbp_powerpc64
 tags
 *.swp
 cscope.out
