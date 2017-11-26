@@ -125,10 +125,15 @@ def setup_argument_parsing():
 
     return parser
 
-def parse_targets(args):
+def postprocess_args(args):
     global supported_targets
     global llvm_targets
 
+    # Clean up paths
+    args.base_path = os.path.abspath(args.base_path)
+    args.install_path = os.path.abspath(args.install_path)
+
+    # Sanity check targets requested & generate LLVM-equivalent names
     user_targets = args.targets.split(',')
     args.install_targets = []
     for target in user_targets:
@@ -422,8 +427,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         #=====================================================
         # CONFIGURE & INSTALL MUSL
         #=====================================================
-        # TODO needs to be musl 1.18
-        os.chdir(os.path.join(base_path, 'lib/musl-1.1.16'))
+        os.chdir(os.path.join(base_path, 'lib/musl-1.1.18'))
 
         if os.path.isfile('Makefile'):
             try:
@@ -744,7 +748,7 @@ def main(args):
 if __name__ == '__main__':
     parser = setup_argument_parsing()
     args = parser.parse_args()
-    parse_targets(args)
+    postprocess_args(args)
     warn_stupid(args)
 
     if not args.skip_prereq_check:
