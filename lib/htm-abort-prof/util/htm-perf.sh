@@ -45,7 +45,7 @@ X86_STAT_EVENTS="cycles cycles-t cycles-ct tx-start tx-commit tx-abort
 #   pm_tm_fail_self: self-induced failures
 #   pm_tm_fail_tlbie: TLBIE instruction hit in the TLB
 #   pm_tm_fail_tx_conflict: transactional conflict indicated by LSU (whatever gets reported to TEXAS)
-PPC_RECORD_EVENTS="cycles:pp pm_tm_fail_footprint_overflow"
+PPC_RECORD_EVENTS="cycles:pp pm_tm_fail_footprint_overflow:pp"
 PPC_STAT_EVENTS="cycles
                  pm_tm_trans_run_cyc
                  pm_tm_tx_pass_run_cyc
@@ -53,8 +53,11 @@ PPC_STAT_EVENTS="cycles
                  pm_tm_end_all
                  pm_tm_fail_con_tm
                  pm_tm_fail_conf_non_tm
+                 pm_tm_fail_disallow
                  pm_tm_fail_footprint_overflow
                  pm_tm_fail_non_tx_conflict
+                 pm_tm_fail_self
+                 pm_tm_fail_tlbie
                  pm_tm_fail_tx_conflict"
 
 ###############################################################################
