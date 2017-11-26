@@ -61,7 +61,8 @@ LIB_ARM     := $(BUILD_ARM)/$(LIB)
 LIB_POWERPC := $(BUILD_POWERPC)/$(LIB)
 LIB_X86     := $(BUILD_X86)/$(LIB)
 
-all: $(LIB_ARM) $(LIB_POWERPC) $(LIB_X86)
+# $(LIB_POWERPC)
+all: $(LIB_ARM) $(LIB_X86)
 
 %/.dir:
 	@echo " [MKDIR] $*"
@@ -101,13 +102,14 @@ $(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
 	@rm -f $(LIB_X86)
 	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
 
-install: $(LIB_ARM) $(LIB_POWERPC) $(LIB_X86)
+# $(LIB_POWERPC)
+install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
 	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
 	@cp $(HDR) $(POPCORN_ARM)/include
-	@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
-	@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
-	@cp $(HDR) $(POPCORN_POWERPC)/include
+	#@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
+	#@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
+	#@cp $(HDR) $(POPCORN_POWERPC)/include
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
 	@cp $(LIB_X86) $(POPCORN_X86)/lib
 	@cp $(HDR) $(POPCORN_X86)/include
