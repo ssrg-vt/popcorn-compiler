@@ -66,7 +66,8 @@ def setup_argument_parsing():
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",
                         type=int,
-                        default=multiprocessing.cpu_count())
+                        default=multiprocessing.cpu_count(),
+                        dest="threads")
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
                         help="Skip checking for prerequisites (see README)",
@@ -716,31 +717,29 @@ def build_namespace(base_path):
 
 def main(args):
 
-    cpus = multiprocessing.cpu_count()
-
     if not args.skip_llvm_clang_install:
-        install_clang_llvm(args.base_path, args.install_path, cpus,
+        install_clang_llvm(args.base_path, args.install_path, args.threads,
                            args.llvm_targets)
 
     if not args.skip_binutils_install:
-        install_binutils(args.base_path, args.install_path, cpus)
+        install_binutils(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
-                          args.install_targets, cpus,
+                          args.install_targets, args.threads,
                           args.debug_stack_transformation,
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
     if not args.skip_tools_install:
-        install_tools(args.base_path, args.install_path, cpus)
+        install_tools(args.base_path, args.install_path, args.threads)
 
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
-                                  cpus)
+                                  args.threads)
 
     if not args.skip_utils_install:
-        install_utils(args.base_path, args.install_path, cpus)
+        install_utils(args.base_path, args.install_path, args.threads)
 
     if not args.skip_namespace:
         build_namespace(args.base_path)
