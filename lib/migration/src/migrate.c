@@ -33,6 +33,13 @@
  * - archs
  */
 
+struct popcorn_thread_status {
+	int current_nid;
+	int proposed_nid;
+	int peer_nid;
+	int peer_pid;
+} status;
+
 #ifdef _ENV_SELECT_MIGRATE
 
 /*
@@ -113,11 +120,59 @@ static inline int do_migrate(void *addr)
 
 static inline int do_migrate(void *fn)
 {
-	int ret = syscall(SYSCALL_MIGRATION_PROPOSED);
-	return ret >= 0 ? ret : -1;
+	struct popcorn_thread_status status;
+	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
+
+	return status.proposed_nid;
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
+
+int origin_nid = -1;
+
+int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
+
+static void __attribute__((constructor)) __init_nodes_info(void)
+{
+	int ret;
+	struct node_info {
+		unsigned int status;
+		int arch;
+		int distance;
+	} ni[MAX_POPCORN_NODES];
+
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		archs[i] = ARCH_UNKNOWN;
+	}
+
+	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
+	if (ret) {
+		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
+		return;
+	}
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		if (ni[i].status == 1) {
+			archs[i] = ni[i].arch;	
+		}
+	}
+}
+
+int current_nid(void)
+{
+	struct popcorn_thread_status status;
+	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
+
+	return status.current_nid;
+}
+
+enum arch current_arch(void)
+{
+	int nid = current_nid();
+	if (nid < 0) return ARCH_UNKNOWN;
+
+	return archs[nid];
+}
+
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -133,28 +188,6 @@ struct shim_data {
  */
 static volatile int __hold = 1;
 #endif
-
-#define MAX_POPCORN_NODES 32
-int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
-
-static void __attribute__((constructor)) __init_nodes_info(void)
-{
-	int i;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni;
-
-	for (i = 0; i < MAX_POPCORN_NODES; i++) {
-		if (syscall(SYSCALL_GET_NODE_INFO, i, &ni) == 0
-				&& ni.status == 1) {
-			archs[i] = ni.arch;
-		} else {
-			archs[i] = NUM_ARCHES;
-		}
-	}
-}
 
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
@@ -215,11 +248,11 @@ static void inline __migrate_shim_internal(int nid,
 	data.regset = &regs_dst;
     *pthread_migrate_args() = &data;
 
-	if (dst_arch == X86_64) {
+	if (dst_arch == ARCH_X86_64) {
 		regs_dst.x86.rip = __migrate_shim_internal;
 		sp = (unsigned long)regs_dst.x86.rsp;
 		bp = (unsigned long)regs_dst.x86.rbp;
-	} else if (dst_arch == AARCH64) {
+	} else if (dst_arch == ARCH_AARCH64) {
 		regs_dst.aarch.pc = __migrate_shim_internal;
 		sp = (unsigned long)regs_dst.aarch.sp;
 		bp = (unsigned long)regs_dst.aarch.x[29];

@@ -8,7 +8,7 @@
 
 #define SYSCALL_SCHED_MIGRATE 285
 #define SYSCALL_PROPOSE_MIGRATION 286
-#define SYSCALL_MIGRATION_PROPOSED 287
+#define SYSCALL_GET_THREAD_STATUS 287
 #define SYSCALL_GET_NODE_INFO 288
 
 #define GET_LOCAL_REGSET \
@@ -46,10 +46,10 @@
 #define REWRITE_STACK \
   ({ \
 	int ret = 1; \
-	if (dst_arch == X86_64) { \
+	if (dst_arch == ARCH_X86_64) { \
 		ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
 				&regs_src, &regs_dst.x86); \
-    } else if (dst_arch == AARCH64) { \
+    } else if (dst_arch == ARCH_AARCH64) { \
 		ret = st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, \
 				&regs_src, &regs_dst.aarch); \
 	} \

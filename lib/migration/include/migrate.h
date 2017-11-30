@@ -14,33 +14,28 @@ extern "C" {
 #endif
 #include <sched.h>
 
+#define MAX_POPCORN_NODES 32
+
 /* Supported architectures */
 enum arch {
-  AARCH64 = 0,
-  X86_64,
-  NUM_ARCHES
+  ARCH_UNKNOWN = -1,
+  ARCH_AARCH64 = 0,
+  ARCH_X86_64,
+  NUM_ARCHES,
 };
-
-#if 0
-/**
- * Get the CPUs associated with a given architecture in the system.
- * @param ar the architecture
- * @return the CPUs for the architecture
- */
-cpu_set_t arch_to_cpus(enum arch ar);
 
 /**
  * Get the current architecture.
  * @return the architecture on which we're executing
  */
-cpu_set_t current_arch();
+enum arch current_arch(void);
 
 /**
- * Select a destination architecture for migration.
- * @return the architecture on which to migrate
+ * Get the current node id.
+ * @return the node id on which this thread is running
  */
-cpu_set_t select_arch();
-#endif
+int current_nid(void);
+
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional
