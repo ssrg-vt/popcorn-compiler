@@ -1,0 +1,956 @@
+Computing live-in reg-units in ABI blocks.
+0B	BB#0 DIL#0
+Created 1 new intervals.
+********** INTERVALS **********
+DIL [0B,16r:0)[96r,128r:5)[672r,688r:2)[896r,912r:3)[1136r,1152r:4)[1440r,1472r:1)  0@0B-phi 1@1440r 2@672r 3@896r 4@1136r 5@96r
+%vreg0 [320r,1264r:0)  0@320r
+%vreg4 [16r,32r:0)  0@16r
+%vreg5 [32r,1344B:0)  0@32r
+%vreg6 [48r,64r:0)  0@48r
+%vreg7 [64r,112r:0)  0@64r
+%vreg8 [256r,272r:0)  0@256r
+%vreg11 [560r,576r:0)[576r,592r:1)  0@560r 1@576r
+%vreg12 [544r,624B:0)[800B,848B:0)[1024B,1040r:0)  0@544r
+%vreg14 [336r,496r:0)  0@336r
+%vreg15 [464r,480r:0)  0@464r
+%vreg16 [512r,560r:0)  0@512r
+%vreg18 [352r,416r:0)  0@352r
+%vreg19 [384r,400r:0)  0@384r
+%vreg20 [432r,624B:0)[800B,816r:0)  0@432r
+%vreg21 [1104r,1136r:0)  0@1104r
+%vreg22 [1184r,1184d:0)  0@1184r
+%vreg23 [864r,896r:0)  0@864r
+%vreg24 [944r,944d:0)  0@944r
+%vreg25 [640r,672r:0)  0@640r
+%vreg26 [720r,720d:0)  0@720r
+%vreg27 [1264r,1280r:0)[1280r,1312r:1)  0@1264r 1@1280r
+%vreg28 [1392r,1408r:0)  0@1392r
+%vreg29 [1408r,1456r:0)  0@1408r
+%vreg30 [272r,304B:0)[304B,320r:2)[1312r,1344B:1)  0@272r 1@1312r 2@304B-phi
+RegMasks: 128r 688r 912r 1152r 1472r
+********** MACHINEINSTRS **********
+# Machine code for function fizzbuzz: Post SSA
+Function Live Ins: %EDI in %vreg4
+
+0B	BB#0: derived from LLVM BB %entry
+	    Live Ins: %EDI
+16B		%vreg4<def> = COPY %EDI; GR32:%vreg4
+32B		%vreg5<def> = COPY %vreg4; GR32:%vreg5,%vreg4
+48B		%vreg6<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg6
+64B		%vreg7<def> = SUBREG_TO_REG 0, %vreg6, 4; GR64:%vreg7 GR32:%vreg6
+80B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+96B		%RDI<def> = COPY %vreg7; GR64:%vreg7
+112B		%RSI<def> = COPY %vreg7; GR64:%vreg7
+128B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+144B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+160B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+176B		STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+192B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+208B		CMP32ri8 %vreg5, 0, %EFLAGS<imp-def>; GR32:%vreg5
+224B		JE_1 <BB#10>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#10 BB#1
+
+240B	BB#1: derived from LLVM BB %for.body.preheader
+	    Predecessors according to CFG: BB#0
+256B		%vreg8<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg8
+272B		%vreg30<def> = COPY %vreg8; GR32:%vreg30,%vreg8
+288B		JMP_1 <BB#2>
+	    Successors according to CFG: BB#2
+
+304B	BB#2: derived from LLVM BB %for.body
+	    Predecessors according to CFG: BB#1 BB#8
+320B		%vreg0<def> = COPY %vreg30; GR32:%vreg0,%vreg30
+336B		%vreg14<def> = MOV32ri 3; GR32:%vreg14
+352B		%vreg18<def> = MOV32ri 5; GR32:%vreg18
+368B		%EAX<def> = COPY %vreg0; GR32:%vreg0
+384B		%vreg19<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg19
+400B		%EDX<def> = COPY %vreg19; GR32:%vreg19
+416B		DIV32r %vreg18, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use,kill>, %EDX<imp-use,kill>; GR32:%vreg18
+432B		%vreg20<def> = COPY %EDX<kill>; GR32:%vreg20
+448B		%EAX<def> = COPY %vreg0; GR32:%vreg0
+464B		%vreg15<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg15
+480B		%EDX<def> = COPY %vreg15; GR32:%vreg15
+496B		DIV32r %vreg14, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use,kill>, %EDX<imp-use,kill>; GR32:%vreg14
+512B		%vreg16<def> = COPY %EDX<kill>; GR32:%vreg16
+528B		CMP32ri8 %vreg16, 0, %EFLAGS<imp-def>; GR32:%vreg16
+544B		%vreg12<def> = SETEr %EFLAGS<imp-use,kill>; GR8:%vreg12
+560B		%vreg11<def> = COPY %vreg16; GR32:%vreg11,%vreg16
+576B		%vreg11<def,tied1> = OR32rr %vreg11<tied0>, %vreg20, %EFLAGS<imp-def,dead>; GR32:%vreg11,%vreg20
+592B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+608B		JNE_1 <BB#4>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#4 BB#3
+
+624B	BB#3: derived from LLVM BB %if.then
+	    Predecessors according to CFG: BB#2
+640B		%vreg25<def> = MOV64ri <ga:@str.4>; GR64:%vreg25
+656B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+672B		%RDI<def> = COPY %vreg25; GR64:%vreg25
+688B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+704B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+720B		%vreg26<def,dead> = COPY %EAX<kill>; GR32:%vreg26
+736B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+752B		STACKMAP 1, 0, %vreg0, %vreg5, ...; GR32:%vreg0,%vreg5
+768B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+784B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+800B	BB#4: derived from LLVM BB %if.else
+	    Predecessors according to CFG: BB#2
+816B		CMP32ri8 %vreg20, 0, %EFLAGS<imp-def>; GR32:%vreg20
+832B		JNE_1 <BB#6>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#6 BB#5
+
+848B	BB#5: derived from LLVM BB %if.then.6
+	    Predecessors according to CFG: BB#4
+864B		%vreg23<def> = MOV64ri <ga:@str.3>; GR64:%vreg23
+880B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+896B		%RDI<def> = COPY %vreg23; GR64:%vreg23
+912B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+928B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+944B		%vreg24<def,dead> = COPY %EAX<kill>; GR32:%vreg24
+960B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+976B		STACKMAP 2, 0, %vreg0, %vreg5, ...; GR32:%vreg0,%vreg5
+992B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1008B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+1024B	BB#6: derived from LLVM BB %if.else.8
+	    Predecessors according to CFG: BB#4
+1040B		TEST8ri %vreg12, 1, %EFLAGS<imp-def>; GR8:%vreg12
+1056B		JNE_1 <BB#7>, %EFLAGS<imp-use,kill>
+1072B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8 BB#7
+
+1088B	BB#7: derived from LLVM BB %if.then.11
+	    Predecessors according to CFG: BB#6
+1104B		%vreg21<def> = MOV64ri <ga:@str>; GR64:%vreg21
+1120B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1136B		%RDI<def> = COPY %vreg21; GR64:%vreg21
+1152B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+1168B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1184B		%vreg22<def,dead> = COPY %EAX<kill>; GR32:%vreg22
+1200B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1216B		STACKMAP 3, 0, %vreg0, %vreg5, ...; GR32:%vreg0,%vreg5
+1232B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+	    Successors according to CFG: BB#8
+
+1248B	BB#8: derived from LLVM BB %for.inc
+	    Predecessors according to CFG: BB#6 BB#7 BB#5 BB#3
+1264B		%vreg27<def> = COPY %vreg0; GR32:%vreg27,%vreg0
+1280B		%vreg27<def,tied1> = ADD32ri8 %vreg27<tied0>, 1, %EFLAGS<imp-def,dead>; GR32:%vreg27
+1296B		CMP32rr %vreg27, %vreg5, %EFLAGS<imp-def>; GR32:%vreg27,%vreg5
+1312B		%vreg30<def> = COPY %vreg27; GR32:%vreg30,%vreg27
+1328B		JNE_1 <BB#2>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#2 BB#9
+
+1344B	BB#9: derived from LLVM BB %for.end.loopexit
+	    Predecessors according to CFG: BB#8
+1360B		JMP_1 <BB#10>
+	    Successors according to CFG: BB#10
+
+1376B	BB#10: derived from LLVM BB %for.end
+	    Predecessors according to CFG: BB#0 BB#9
+1392B		%vreg28<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg28
+1408B		%vreg29<def> = SUBREG_TO_REG 0, %vreg28, 4; GR64:%vreg29 GR32:%vreg28
+1424B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1440B		%RDI<def> = COPY %vreg29; GR64:%vreg29
+1456B		%RSI<def> = COPY %vreg29; GR64:%vreg29
+1472B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+1488B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1504B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1520B		STACKMAP 4, 0, ...
+1536B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1552B		RETQ
+
+# End machine code for function fizzbuzz.
+
+********** SIMPLE REGISTER COALESCING **********
+********** Function: fizzbuzz
+********** JOINING INTERVALS ***********
+for.inc:
+for.body:
+320B	%vreg0<def> = COPY %vreg30; GR32:%vreg0,%vreg30
+	Considering merging to GR32 with %vreg0 in %vreg30
+		RHS = %vreg0 [320r,1264r:0)  0@320r
+		LHS = %vreg30 [272r,304B:0)[304B,320r:2)[1312r,1344B:1)  0@272r 1@1312r 2@304B-phi
+		merge %vreg0:0@320r into %vreg30:2@304B --> @304B
+		erased:	320r	%vreg0<def> = COPY %vreg30; GR32:%vreg0,%vreg30
+AllocationOrder(GR32) = [ %EAX %ECX %EDX %ESI %EDI %R8D %R9D %R10D %R11D %EBX %R14D %R15D %R12D %R13D ]
+		updated: 448B	%EAX<def> = COPY %vreg30; GR32:%vreg30
+		updated: 368B	%EAX<def> = COPY %vreg30; GR32:%vreg30
+		updated: 1216B	STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+		updated: 976B	STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+		updated: 752B	STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+		updated: 1264B	%vreg27<def> = COPY %vreg30; GR32:%vreg27,%vreg30
+	Success: %vreg0 -> %vreg30
+	Result = %vreg30 [272r,304B:0)[304B,1264r:2)[1312r,1344B:1)  0@272r 1@1312r 2@304B-phi
+368B	%EAX<def> = COPY %vreg30; GR32:%vreg30
+	Considering merging %vreg30 with %EAX
+	Can only merge into reserved registers.
+400B	%EDX<def> = COPY %vreg19; GR32:%vreg19
+	Considering merging %vreg19 with %EDX
+	Can only merge into reserved registers.
+Remat: %EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+Shrink: %vreg19 [384r,400r:0)  0@384r
+All defs dead: 384r	%vreg19<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg19
+Shrunk: %vreg19 [384r,384d:0)  0@384r
+Deleting dead def 384r	%vreg19<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg19
+432B	%vreg20<def> = COPY %EDX<kill>; GR32:%vreg20
+	Considering merging %vreg20 with %EDX
+	Can only merge into reserved registers.
+448B	%EAX<def> = COPY %vreg30; GR32:%vreg30
+	Considering merging %vreg30 with %EAX
+	Can only merge into reserved registers.
+480B	%EDX<def> = COPY %vreg15; GR32:%vreg15
+	Considering merging %vreg15 with %EDX
+	Can only merge into reserved registers.
+Remat: %EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+Shrink: %vreg15 [464r,480r:0)  0@464r
+All defs dead: 464r	%vreg15<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg15
+Shrunk: %vreg15 [464r,464d:0)  0@464r
+Deleting dead def 464r	%vreg15<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg15
+512B	%vreg16<def> = COPY %EDX<kill>; GR32:%vreg16
+	Considering merging %vreg16 with %EDX
+	Can only merge into reserved registers.
+if.else:
+if.else.8:
+if.then:
+672B	%RDI<def> = COPY %vreg25; GR64:%vreg25
+	Considering merging %vreg25 with %RDI
+	Can only merge into reserved registers.
+720B	%vreg26<def,dead> = COPY %EAX<kill>; GR32:%vreg26
+	Considering merging %vreg26 with %EAX
+	Can only merge into reserved registers.
+if.then.6:
+896B	%RDI<def> = COPY %vreg23; GR64:%vreg23
+	Considering merging %vreg23 with %RDI
+	Can only merge into reserved registers.
+944B	%vreg24<def,dead> = COPY %EAX<kill>; GR32:%vreg24
+	Considering merging %vreg24 with %EAX
+	Can only merge into reserved registers.
+if.then.11:
+1136B	%RDI<def> = COPY %vreg21; GR64:%vreg21
+	Considering merging %vreg21 with %RDI
+	Can only merge into reserved registers.
+1184B	%vreg22<def,dead> = COPY %EAX<kill>; GR32:%vreg22
+	Considering merging %vreg22 with %EAX
+	Can only merge into reserved registers.
+1264B	%vreg27<def> = COPY %vreg30; GR32:%vreg27,%vreg30
+	Considering merging to GR32 with %vreg27 in %vreg30
+		RHS = %vreg27 [1264r,1280r:0)[1280r,1312r:1)  0@1264r 1@1280r
+		LHS = %vreg30 [272r,304B:0)[304B,1264r:2)[1312r,1344B:1)  0@272r 1@1312r 2@304B-phi
+		merge %vreg30:1@1312r into %vreg27:1@1280r --> @1280r
+		merge %vreg27:0@1264r into %vreg30:2@304B --> @304B
+		erased:	1312r	%vreg30<def> = COPY %vreg27; GR32:%vreg30,%vreg27
+		erased:	1264r	%vreg27<def> = COPY %vreg30; GR32:%vreg27,%vreg30
+		updated: 1280B	%vreg30<def,tied1> = ADD32ri8 %vreg30<tied0>, 1, %EFLAGS<imp-def,dead>; GR32:%vreg30
+		updated: 1296B	CMP32rr %vreg30, %vreg5, %EFLAGS<imp-def>; GR32:%vreg30,%vreg5
+	Success: %vreg27 -> %vreg30
+	Result = %vreg30 [272r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@272r 1@1280r 2@304B-phi
+560B	%vreg11<def> = COPY %vreg16; GR32:%vreg11,%vreg16
+	Considering merging to GR32 with %vreg16 in %vreg11
+		RHS = %vreg16 [512r,560r:0)  0@512r
+		LHS = %vreg11 [560r,576r:0)[576r,592r:1)  0@560r 1@576r
+		merge %vreg11:0@560r into %vreg16:0@512r --> @512r
+		erased:	560r	%vreg11<def> = COPY %vreg16; GR32:%vreg11,%vreg16
+		updated: 512B	%vreg11<def> = COPY %EDX<kill>; GR32:%vreg11
+		updated: 528B	CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+	Success: %vreg16 -> %vreg11
+	Result = %vreg11 [512r,576r:0)[576r,592r:1)  0@512r 1@576r
+entry:
+16B	%vreg4<def> = COPY %EDI; GR32:%vreg4
+	Considering merging %vreg4 with %EDI
+	Can only merge into reserved registers.
+64B	%vreg7<def> = SUBREG_TO_REG 0, %vreg6, 4; GR64:%vreg7 GR32:%vreg6
+	Considering merging to GR64_with_sub_8bit with %vreg6 in %vreg7:sub_32bit
+		RHS = %vreg6 [48r,64r:0)  0@48r
+		LHS = %vreg7 [64r,112r:0)  0@64r
+		merge %vreg7:0@64r into %vreg6:0@48r --> @48r
+		erased:	64r	%vreg7<def> = SUBREG_TO_REG 0, %vreg6, 4; GR64:%vreg7 GR32:%vreg6
+AllocationOrder(GR64) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R10 %R11 %RBX %R14 %R15 %R12 %R13 ]
+AllocationOrder(GR64_with_sub_8bit) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R10 %R11 %RBX %R14 %R15 %R12 %R13 ]
+		updated: 48B	%vreg7:sub_32bit<def,read-undef> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg7
+	Success: %vreg6:sub_32bit -> %vreg7
+	Result = %vreg7 [48r,112r:0)  0@48r
+96B	%RDI<def> = COPY %vreg7; GR64_with_sub_8bit:%vreg7
+	Considering merging %vreg7 with %RDI
+	Can only merge into reserved registers.
+Remat: %EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+Shrink: %vreg7 [48r,112r:0)  0@48r
+Shrunk: %vreg7 [48r,112r:0)  0@48r
+112B	%RSI<def> = COPY %vreg7; GR64_with_sub_8bit:%vreg7
+	Considering merging %vreg7 with %RSI
+	Can only merge into reserved registers.
+Remat: %ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+Shrink: %vreg7 [48r,112r:0)  0@48r
+All defs dead: 48r	%vreg7:sub_32bit<def,read-undef,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg7
+Shrunk: %vreg7 [48r,48d:0)  0@48r
+Deleting dead def 48r	%vreg7:sub_32bit<def,read-undef,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg7
+for.body.preheader:
+for.end.loopexit:
+for.end:
+1408B	%vreg29<def> = SUBREG_TO_REG 0, %vreg28, 4; GR64:%vreg29 GR32:%vreg28
+	Considering merging to GR64_with_sub_8bit with %vreg28 in %vreg29:sub_32bit
+		RHS = %vreg28 [1392r,1408r:0)  0@1392r
+		LHS = %vreg29 [1408r,1456r:0)  0@1408r
+		merge %vreg29:0@1408r into %vreg28:0@1392r --> @1392r
+		erased:	1408r	%vreg29<def> = SUBREG_TO_REG 0, %vreg28, 4; GR64:%vreg29 GR32:%vreg28
+		updated: 1392B	%vreg29:sub_32bit<def,read-undef> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg29
+	Success: %vreg28:sub_32bit -> %vreg29
+	Result = %vreg29 [1392r,1456r:0)  0@1392r
+1440B	%RDI<def> = COPY %vreg29; GR64_with_sub_8bit:%vreg29
+	Considering merging %vreg29 with %RDI
+	Can only merge into reserved registers.
+Remat: %EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+Shrink: %vreg29 [1392r,1456r:0)  0@1392r
+Shrunk: %vreg29 [1392r,1456r:0)  0@1392r
+1456B	%RSI<def> = COPY %vreg29; GR64_with_sub_8bit:%vreg29
+	Considering merging %vreg29 with %RSI
+	Can only merge into reserved registers.
+Remat: %ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+Shrink: %vreg29 [1392r,1456r:0)  0@1392r
+All defs dead: 1392r	%vreg29:sub_32bit<def,read-undef,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg29
+Shrunk: %vreg29 [1392r,1392d:0)  0@1392r
+Deleting dead def 1392r	%vreg29:sub_32bit<def,read-undef,dead> = MOV32r0 %EFLAGS<imp-def,dead>; GR64_with_sub_8bit:%vreg29
+32B	%vreg5<def> = COPY %vreg4; GR32:%vreg5,%vreg4
+	Considering merging to GR32 with %vreg4 in %vreg5
+		RHS = %vreg4 [16r,32r:0)  0@16r
+		LHS = %vreg5 [32r,1344B:0)  0@32r
+		merge %vreg5:0@32r into %vreg4:0@16r --> @16r
+		erased:	32r	%vreg5<def> = COPY %vreg4; GR32:%vreg5,%vreg4
+		updated: 16B	%vreg5<def> = COPY %EDI; GR32:%vreg5
+	Success: %vreg4 -> %vreg5
+	Result = %vreg5 [16r,1344B:0)  0@16r
+272B	%vreg30<def> = COPY %vreg8; GR32:%vreg30,%vreg8
+	Considering merging to GR32 with %vreg8 in %vreg30
+		RHS = %vreg8 [256r,272r:0)  0@256r
+		LHS = %vreg30 [272r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@272r 1@1280r 2@304B-phi
+		merge %vreg30:0@272r into %vreg8:0@256r --> @256r
+		erased:	272r	%vreg30<def> = COPY %vreg8; GR32:%vreg30,%vreg8
+		updated: 256B	%vreg30<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg30
+	Success: %vreg8 -> %vreg30
+	Result = %vreg30 [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+Trying to inflate 0 regs.
+********** INTERVALS **********
+DIL [0B,16r:0)[96r,128r:5)[672r,688r:2)[896r,912r:3)[1136r,1152r:4)[1440r,1472r:1)  0@0B-phi 1@1440r 2@672r 3@896r 4@1136r 5@96r
+%vreg5 [16r,1344B:0)  0@16r
+%vreg11 [512r,576r:0)[576r,592r:1)  0@512r 1@576r
+%vreg12 [544r,624B:0)[800B,848B:0)[1024B,1040r:0)  0@544r
+%vreg14 [336r,496r:0)  0@336r
+%vreg18 [352r,416r:0)  0@352r
+%vreg20 [432r,624B:0)[800B,816r:0)  0@432r
+%vreg21 [1104r,1136r:0)  0@1104r
+%vreg22 [1184r,1184d:0)  0@1184r
+%vreg23 [864r,896r:0)  0@864r
+%vreg24 [944r,944d:0)  0@944r
+%vreg25 [640r,672r:0)  0@640r
+%vreg26 [720r,720d:0)  0@720r
+%vreg30 [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+RegMasks: 128r 688r 912r 1152r 1472r
+********** MACHINEINSTRS **********
+# Machine code for function fizzbuzz: Post SSA
+Function Live Ins: %EDI in %vreg4
+
+0B	BB#0: derived from LLVM BB %entry
+	    Live Ins: %EDI
+16B		%vreg5<def> = COPY %EDI; GR32:%vreg5
+80B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+96B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+112B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+128B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+144B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+160B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+176B		STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+192B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+208B		CMP32ri8 %vreg5, 0, %EFLAGS<imp-def>; GR32:%vreg5
+224B		JE_1 <BB#10>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#10 BB#1
+
+240B	BB#1: derived from LLVM BB %for.body.preheader
+	    Predecessors according to CFG: BB#0
+256B		%vreg30<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg30
+288B		JMP_1 <BB#2>
+	    Successors according to CFG: BB#2
+
+304B	BB#2: derived from LLVM BB %for.body
+	    Predecessors according to CFG: BB#1 BB#8
+336B		%vreg14<def> = MOV32ri 3; GR32:%vreg14
+352B		%vreg18<def> = MOV32ri 5; GR32:%vreg18
+368B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+400B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+416B		DIV32r %vreg18, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use,kill>, %EDX<imp-use,kill>; GR32:%vreg18
+432B		%vreg20<def> = COPY %EDX<kill>; GR32:%vreg20
+448B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+480B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+496B		DIV32r %vreg14, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use,kill>, %EDX<imp-use,kill>; GR32:%vreg14
+512B		%vreg11<def> = COPY %EDX<kill>; GR32:%vreg11
+528B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+544B		%vreg12<def> = SETEr %EFLAGS<imp-use,kill>; GR8:%vreg12
+576B		%vreg11<def,tied1> = OR32rr %vreg11<tied0>, %vreg20, %EFLAGS<imp-def,dead>; GR32:%vreg11,%vreg20
+592B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+608B		JNE_1 <BB#4>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#4 BB#3
+
+624B	BB#3: derived from LLVM BB %if.then
+	    Predecessors according to CFG: BB#2
+640B		%vreg25<def> = MOV64ri <ga:@str.4>; GR64:%vreg25
+656B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+672B		%RDI<def> = COPY %vreg25; GR64:%vreg25
+688B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+704B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+720B		%vreg26<def,dead> = COPY %EAX<kill>; GR32:%vreg26
+736B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+752B		STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+768B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+784B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+800B	BB#4: derived from LLVM BB %if.else
+	    Predecessors according to CFG: BB#2
+816B		CMP32ri8 %vreg20, 0, %EFLAGS<imp-def>; GR32:%vreg20
+832B		JNE_1 <BB#6>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#6 BB#5
+
+848B	BB#5: derived from LLVM BB %if.then.6
+	    Predecessors according to CFG: BB#4
+864B		%vreg23<def> = MOV64ri <ga:@str.3>; GR64:%vreg23
+880B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+896B		%RDI<def> = COPY %vreg23; GR64:%vreg23
+912B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+928B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+944B		%vreg24<def,dead> = COPY %EAX<kill>; GR32:%vreg24
+960B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+976B		STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+992B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1008B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+1024B	BB#6: derived from LLVM BB %if.else.8
+	    Predecessors according to CFG: BB#4
+1040B		TEST8ri %vreg12, 1, %EFLAGS<imp-def>; GR8:%vreg12
+1056B		JNE_1 <BB#7>, %EFLAGS<imp-use,kill>
+1072B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8 BB#7
+
+1088B	BB#7: derived from LLVM BB %if.then.11
+	    Predecessors according to CFG: BB#6
+1104B		%vreg21<def> = MOV64ri <ga:@str>; GR64:%vreg21
+1120B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1136B		%RDI<def> = COPY %vreg21; GR64:%vreg21
+1152B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+1168B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1184B		%vreg22<def,dead> = COPY %EAX<kill>; GR32:%vreg22
+1200B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1216B		STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+1232B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+	    Successors according to CFG: BB#8
+
+1248B	BB#8: derived from LLVM BB %for.inc
+	    Predecessors according to CFG: BB#6 BB#7 BB#5 BB#3
+1280B		%vreg30<def,tied1> = ADD32ri8 %vreg30<tied0>, 1, %EFLAGS<imp-def,dead>; GR32:%vreg30
+1296B		CMP32rr %vreg30, %vreg5, %EFLAGS<imp-def>; GR32:%vreg30,%vreg5
+1328B		JNE_1 <BB#2>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#2 BB#9
+
+1344B	BB#9: derived from LLVM BB %for.end.loopexit
+	    Predecessors according to CFG: BB#8
+1360B		JMP_1 <BB#10>
+	    Successors according to CFG: BB#10
+
+1376B	BB#10: derived from LLVM BB %for.end
+	    Predecessors according to CFG: BB#0 BB#9
+1424B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1440B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+1456B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+1472B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+1488B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1504B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1520B		STACKMAP 4, 0, ...
+1536B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1552B		RETQ
+
+# End machine code for function fizzbuzz.
+
+AllocationOrder(GR32) = [ %EAX %ECX %EDX %ESI %EDI %R8D %R9D %R10D %R11D %EBX %R14D %R15D %R12D %R13D ]
+AllocationOrder(GR16) = [ %AX %CX %DX %SI %DI %R8W %R9W %R10W %R11W %BX %R14W %R15W %R12W %R13W ]
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+AllocationOrder(GR8_ABCD_H) = [ %AH %CH %DH %BH ] (sub-class)
+AllocationOrder(GR8_ABCD_L) = [ %AL %CL %DL %BL ] (sub-class)
+AllocationOrder(BNDR) = [ %BND0 %BND1 %BND2 %BND3 ]
+AllocationOrder(SEGMENT_REG) = [ ]
+AllocationOrder(RFP32) = [ %FP0 %FP1 %FP2 %FP3 %FP4 %FP5 %FP6 ]
+AllocationOrder(GR8_NOREX) = [ %AL %CL %DL %BL ]
+AllocationOrder(VK1) = [ %K0 %K1 %K2 %K3 %K4 %K5 %K6 %K7 ]
+AllocationOrder(DEBUG_REG) = [ %DR0 %DR1 %DR2 %DR3 %DR4 %DR5 %DR6 %DR7 ]
+AllocationOrder(VR64) = [ %MM0 %MM1 %MM2 %MM3 %MM4 %MM5 %MM6 %MM7 ]
+AllocationOrder(GR64) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R10 %R11 %RBX %R14 %R15 %R12 %R13 ]
+AllocationOrder(GR64_NOREX_and_GR64_TC) = [ %RAX %RCX %RDX %RSI %RDI ] (sub-class)
+AllocationOrder(GR64_TCW64) = [ %RAX %RCX %RDX %R8 %R9 %R11 ] (sub-class)
+AllocationOrder(FR32) = [ %XMM0 %XMM1 %XMM2 %XMM3 %XMM4 %XMM5 %XMM6 %XMM7 %XMM8 %XMM9 %XMM10 %XMM11 %XMM12 %XMM13 %XMM14 %XMM15 ]
+AllocationOrder(CONTROL_REG) = [ %CR0 %CR1 %CR2 %CR3 %CR4 %CR5 %CR6 %CR7 %CR8 %CR9 %CR10 %CR11 %CR12 %CR13 %CR14 %CR15 ]
+AllocationOrder(GR64_NOREX) = [ %RAX %RCX %RDX %RSI %RDI %RBX ] (sub-class)
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+AllocationOrder(GR64_TC) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R11 ] (sub-class)
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+AllocationOrder(GR64_NOREX) = [ %RAX %RCX %RDX %RSI %RDI %RBX ] (sub-class)
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+AllocationOrder(FR32X) = [ %XMM0 %XMM1 %XMM2 %XMM3 %XMM4 %XMM5 %XMM6 %XMM7 %XMM8 %XMM9 %XMM10 %XMM11 %XMM12 %XMM13 %XMM14 %XMM15 ]
+AllocationOrder(GR64) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R10 %R11 %RBX %R14 %R15 %R12 %R13 ]
+handleMove 512B -> 504B: %vreg11<def> = COPY %EDX<kill>; GR32:%vreg11
+     %vreg11:	[512r,576r:0)[576r,592r:1)  0@512r 1@576r
+        -->	[504r,576r:0)[576r,592r:1)  0@504r 1@576r
+     DH:	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+        -->	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+     DL:	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+        -->	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+handleMove 448B -> 488B: %EAX<def> = COPY %vreg30; GR32:%vreg30
+     AH:	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+        -->	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+     AL:	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+        -->	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+     %vreg30:	[256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+        -->	[256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+handleMove 432B -> 424B: %vreg20<def> = COPY %EDX; GR32:%vreg20
+     %vreg20:	[432r,624B:0)[800B,816r:0)  0@432r
+        -->	[424r,624B:0)[800B,816r:0)  0@424r
+     DH:	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+        -->	[400r,416r:1)[416r,424r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+     DL:	[400r,416r:1)[416r,432r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+        -->	[400r,416r:1)[416r,424r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+handleMove 368B -> 408B: %EAX<def> = COPY %vreg30; GR32:%vreg30
+     AH:	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+        -->	[408r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@408r 5@496r 6@488r
+     AL:	[368r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@368r 5@496r 6@488r
+        -->	[408r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@408r 5@496r 6@488r
+     %vreg30:	[256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+        -->	[256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+********** GREEDY REGISTER ALLOCATION **********
+********** Function: fizzbuzz
+********** INTERVALS **********
+AH [408r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@408r 5@496r 6@488r
+AL [408r,416r:4)[416r,416d:3)[488r,496r:6)[496r,496d:5)[688r,720r:0)[912r,944r:1)[1152r,1184r:2)  0@688r 1@912r 2@1152r 3@416r 4@408r 5@496r 6@488r
+DH [400r,416r:1)[416r,424r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+DIL [0B,16r:0)[96r,128r:5)[672r,688r:2)[896r,912r:3)[1136r,1152r:4)[1440r,1472r:1)  0@0B-phi 1@1440r 2@672r 3@896r 4@1136r 5@96r
+DL [400r,416r:1)[416r,424r:2)[480r,496r:0)[496r,504r:3)  0@480r 1@400r 2@416r 3@496r
+%vreg5 [16r,1344B:0)  0@16r
+%vreg11 [504r,576r:0)[576r,592r:1)  0@504r 1@576r
+%vreg12 [544r,624B:0)[800B,848B:0)[1024B,1040r:0)  0@544r
+%vreg14 [336r,496r:0)  0@336r
+%vreg18 [352r,416r:0)  0@352r
+%vreg20 [424r,624B:0)[800B,816r:0)  0@424r
+%vreg21 [1104r,1136r:0)  0@1104r
+%vreg22 [1184r,1184d:0)  0@1184r
+%vreg23 [864r,896r:0)  0@864r
+%vreg24 [944r,944d:0)  0@944r
+%vreg25 [640r,672r:0)  0@640r
+%vreg26 [720r,720d:0)  0@720r
+%vreg30 [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+RegMasks: 128r 688r 912r 1152r 1472r
+********** MACHINEINSTRS **********
+# Machine code for function fizzbuzz: Post SSA
+Function Live Ins: %EDI in %vreg4
+
+0B	BB#0: derived from LLVM BB %entry
+	    Live Ins: %EDI
+16B		%vreg5<def> = COPY %EDI; GR32:%vreg5
+80B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+96B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+112B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+128B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+144B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+160B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+176B		STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+192B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+208B		CMP32ri8 %vreg5, 0, %EFLAGS<imp-def>; GR32:%vreg5
+224B		JE_1 <BB#10>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#10 BB#1
+
+240B	BB#1: derived from LLVM BB %for.body.preheader
+	    Predecessors according to CFG: BB#0
+256B		%vreg30<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg30
+288B		JMP_1 <BB#2>
+	    Successors according to CFG: BB#2
+
+304B	BB#2: derived from LLVM BB %for.body
+	    Predecessors according to CFG: BB#1 BB#8
+336B		%vreg14<def> = MOV32ri 3; GR32:%vreg14
+352B		%vreg18<def> = MOV32ri 5; GR32:%vreg18
+400B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+408B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+416B		DIV32r %vreg18, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>; GR32:%vreg18
+424B		%vreg20<def> = COPY %EDX; GR32:%vreg20
+480B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+488B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+496B		DIV32r %vreg14, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>; GR32:%vreg14
+504B		%vreg11<def> = COPY %EDX; GR32:%vreg11
+528B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+544B		%vreg12<def> = SETEr %EFLAGS<imp-use,kill>; GR8:%vreg12
+576B		%vreg11<def,tied1> = OR32rr %vreg11<tied0>, %vreg20, %EFLAGS<imp-def,dead>; GR32:%vreg11,%vreg20
+592B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+608B		JNE_1 <BB#4>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#4 BB#3
+
+624B	BB#3: derived from LLVM BB %if.then
+	    Predecessors according to CFG: BB#2
+640B		%vreg25<def> = MOV64ri <ga:@str.4>; GR64:%vreg25
+656B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+672B		%RDI<def> = COPY %vreg25; GR64:%vreg25
+688B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+704B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+720B		%vreg26<def,dead> = COPY %EAX; GR32:%vreg26
+736B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+752B		STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+768B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+784B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+800B	BB#4: derived from LLVM BB %if.else
+	    Predecessors according to CFG: BB#2
+816B		CMP32ri8 %vreg20, 0, %EFLAGS<imp-def>; GR32:%vreg20
+832B		JNE_1 <BB#6>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#6 BB#5
+
+848B	BB#5: derived from LLVM BB %if.then.6
+	    Predecessors according to CFG: BB#4
+864B		%vreg23<def> = MOV64ri <ga:@str.3>; GR64:%vreg23
+880B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+896B		%RDI<def> = COPY %vreg23; GR64:%vreg23
+912B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+928B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+944B		%vreg24<def,dead> = COPY %EAX; GR32:%vreg24
+960B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+976B		STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+992B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1008B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+
+1024B	BB#6: derived from LLVM BB %if.else.8
+	    Predecessors according to CFG: BB#4
+1040B		TEST8ri %vreg12, 1, %EFLAGS<imp-def>; GR8:%vreg12
+1056B		JNE_1 <BB#7>, %EFLAGS<imp-use,kill>
+1072B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8 BB#7
+
+1088B	BB#7: derived from LLVM BB %if.then.11
+	    Predecessors according to CFG: BB#6
+1104B		%vreg21<def> = MOV64ri <ga:@str>; GR64:%vreg21
+1120B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1136B		%RDI<def> = COPY %vreg21; GR64:%vreg21
+1152B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+1168B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1184B		%vreg22<def,dead> = COPY %EAX; GR32:%vreg22
+1200B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1216B		STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+1232B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+	    Successors according to CFG: BB#8
+
+1248B	BB#8: derived from LLVM BB %for.inc
+	    Predecessors according to CFG: BB#6 BB#7 BB#5 BB#3
+1280B		%vreg30<def,tied1> = ADD32ri8 %vreg30<tied0>, 1, %EFLAGS<imp-def,dead>; GR32:%vreg30
+1296B		CMP32rr %vreg30, %vreg5, %EFLAGS<imp-def>; GR32:%vreg30,%vreg5
+1328B		JNE_1 <BB#2>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#2 BB#9
+
+1344B	BB#9: derived from LLVM BB %for.end.loopexit
+	    Predecessors according to CFG: BB#8
+1360B		JMP_1 <BB#10>
+	    Successors according to CFG: BB#10
+
+1376B	BB#10: derived from LLVM BB %for.end
+	    Predecessors according to CFG: BB#0 BB#9
+1424B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1440B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+1456B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+1472B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use,kill>
+1488B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1504B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1520B		STACKMAP 4, 0, ...
+1536B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1552B		RETQ
+
+# End machine code for function fizzbuzz.
+
+
+selectOrSplit GR32:%vreg5 [16r,1344B:0)  0@16r w=2.842245e-03
+AllocationOrder(GR32) = [ %EAX %ECX %EDX %ESI %EDI %R8D %R9D %R10D %R11D %EBX %R14D %R15D %R12D %R13D ]
+hints: %EDI
+missed hint %EDI
+assigning %vreg5 to %EBX: BH [16r,1344B:0)  0@16r BL [16r,1344B:0)  0@16r
+
+selectOrSplit GR32:%vreg30 [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi w=7.034117e-03
+hints: %EAX
+missed hint %EAX
+%R14D is available at cost 1
+Only trying the first 10 regs.
+should evict: %vreg5 [16r,1344B:0)  0@16r w= 2.842245e-03
+should evict: %vreg5 [16r,1344B:0)  0@16r w= 2.842245e-03
+evicting %EBX interference: Cascade 1
+unassigning %vreg5 from %EBX: BH BL
+assigning %vreg30 to %EBX: BH [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi BL [256r,304B:0)[304B,1280r:2)[1280r,1344B:1)  0@256r 1@1280r 2@304B-phi
+queuing new interval: %vreg5 [16r,1344B:0)  0@16r
+
+selectOrSplit GR32:%vreg5 [16r,1344B:0)  0@16r w=2.842245e-03
+hints: %EDI
+missed hint %EDI
+%R14D is available at cost 1
+Only trying the first 10 regs.
+assigning %vreg5 to %R14D: R14B [16r,1344B:0)  0@16r
+
+selectOrSplit GR32:%vreg20 [424r,624B:0)[800B,816r:0)  0@424r w=4.086013e-03
+hints: %EDX
+missed hint %EDX
+assigning %vreg20 to %ECX: CH [424r,624B:0)[800B,816r:0)  0@424r CL [424r,624B:0)[800B,816r:0)  0@424r
+
+selectOrSplit GR32:%vreg11 [504r,576r:0)[576r,592r:1)  0@504r 1@576r w=1.034836e-02
+hints: %EDX
+assigning %vreg11 to %EDX: DH [504r,576r:0)[576r,592r:1)  0@504r 1@576r DL [504r,576r:0)[576r,592r:1)  0@504r 1@576r
+
+selectOrSplit GR64:%vreg25 [640r,672r:0)  0@640r w=1.150426e-03
+AllocationOrder(GR64) = [ %RAX %RCX %RDX %RSI %RDI %R8 %R9 %R10 %R11 %RBX %R14 %R15 %R12 %R13 ]
+hints: %RDI
+assigning %vreg25 to %RDI: DIL [640r,672r:0)  0@640r
+
+selectOrSplit GR32:%vreg26 [720r,720d:0)  0@720r w=inf
+hints: %EAX
+assigning %vreg26 to %EAX: AH [720r,720d:0)  0@720r AL [720r,720d:0)  0@720r
+
+selectOrSplit GR64:%vreg23 [864r,896r:0)  0@864r w=5.566579e-04
+hints: %RDI
+assigning %vreg23 to %RDI: DIL [864r,896r:0)  0@864r
+
+selectOrSplit GR32:%vreg24 [944r,944d:0)  0@944r w=inf
+hints: %EAX
+assigning %vreg24 to %EAX: AH [944r,944d:0)  0@944r AL [944r,944d:0)  0@944r
+
+selectOrSplit GR64:%vreg21 [1104r,1136r:0)  0@1104r w=2.968842e-04
+hints: %RDI
+assigning %vreg21 to %RDI: DIL [1104r,1136r:0)  0@1104r
+
+selectOrSplit GR32:%vreg22 [1184r,1184d:0)  0@1184r w=inf
+hints: %EAX
+assigning %vreg22 to %EAX: AH [1184r,1184d:0)  0@1184r AL [1184r,1184d:0)  0@1184r
+
+selectOrSplit GR8:%vreg12 [544r,624B:0)[800B,848B:0)[1024B,1040r:0)  0@544r w=2.275910e-03
+AllocationOrder(GR8) = [ %AL %CL %DL %SIL %DIL %R8B %R9B %R10B %R11B %BL %R14B %R15B %R12B %R13B ]
+assigning %vreg12 to %AL: AL [544r,624B:0)[800B,848B:0)[1024B,1040r:0)  0@544r
+
+selectOrSplit GR32:%vreg14 [336r,496r:0)  0@336r w=1.785714e-03
+assigning %vreg14 to %ESI: SIL [336r,496r:0)  0@336r
+
+selectOrSplit GR32:%vreg18 [352r,416r:0)  0@352r w=2.155172e-03
+assigning %vreg18 to %ECX: CH [352r,416r:0)  0@352r CL [352r,416r:0)  0@352r
+********** REWRITE VIRTUAL REGISTERS **********
+********** Function: fizzbuzz
+********** REGISTER MAP **********
+[%vreg5 -> %R14D] GR32
+[%vreg11 -> %EDX] GR32
+[%vreg12 -> %AL] GR8
+[%vreg14 -> %ESI] GR32
+[%vreg18 -> %ECX] GR32
+[%vreg20 -> %ECX] GR32
+[%vreg21 -> %RDI] GR64
+[%vreg22 -> %EAX] GR32
+[%vreg23 -> %RDI] GR64
+[%vreg24 -> %EAX] GR32
+[%vreg25 -> %RDI] GR64
+[%vreg26 -> %EAX] GR32
+[%vreg30 -> %EBX] GR32
+
+0B	BB#0: derived from LLVM BB %entry
+	    Live Ins: %EDI
+16B		%vreg5<def> = COPY %EDI; GR32:%vreg5
+80B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+96B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+112B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+128B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use>
+144B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+160B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+176B		STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+192B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+208B		CMP32ri8 %vreg5, 0, %EFLAGS<imp-def>; GR32:%vreg5
+224B		JE_1 <BB#10>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#10 BB#1
+> %R14D<def> = COPY %EDI
+> ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+> %ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+> CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use>
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> STACKMAP 0, 0, %R14D, ...
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> CMP32ri8 %R14D, 0, %EFLAGS<imp-def>
+> JE_1 <BB#10>, %EFLAGS<imp-use,kill>
+240B	BB#1: derived from LLVM BB %for.body.preheader
+	    Live Ins: %R14D
+	    Predecessors according to CFG: BB#0
+256B		%vreg30<def> = MOV32r0 %EFLAGS<imp-def,dead>; GR32:%vreg30
+288B		JMP_1 <BB#2>
+	    Successors according to CFG: BB#2
+> %EBX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+> JMP_1 <BB#2>
+304B	BB#2: derived from LLVM BB %for.body
+	    Live Ins: %EBX %R14D
+	    Predecessors according to CFG: BB#1 BB#8
+336B		%vreg14<def> = MOV32ri 3; GR32:%vreg14
+352B		%vreg18<def> = MOV32ri 5; GR32:%vreg18
+400B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+408B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+416B		DIV32r %vreg18<kill>, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>; GR32:%vreg18
+424B		%vreg20<def> = COPY %EDX; GR32:%vreg20
+480B		%EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+488B		%EAX<def> = COPY %vreg30; GR32:%vreg30
+496B		DIV32r %vreg14<kill>, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>; GR32:%vreg14
+504B		%vreg11<def> = COPY %EDX; GR32:%vreg11
+528B		CMP32ri8 %vreg11, 0, %EFLAGS<imp-def>; GR32:%vreg11
+544B		%vreg12<def> = SETEr %EFLAGS<imp-use,kill>; GR8:%vreg12
+576B		%vreg11<def,tied1> = OR32rr %vreg11<kill,tied0>, %vreg20, %EFLAGS<imp-def,dead>; GR32:%vreg11,%vreg20
+592B		CMP32ri8 %vreg11<kill>, 0, %EFLAGS<imp-def>; GR32:%vreg11
+608B		JNE_1 <BB#4>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#4 BB#3
+> %ESI<def> = MOV32ri 3
+> %ECX<def> = MOV32ri 5
+> %EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+> %EAX<def> = COPY %EBX
+> DIV32r %ECX<kill>, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>
+> %ECX<def> = COPY %EDX
+> %EDX<def> = MOV32r0 %EFLAGS<imp-def,dead>
+> %EAX<def> = COPY %EBX
+> DIV32r %ESI<kill>, %EAX<imp-def,dead>, %EDX<imp-def>, %EFLAGS<imp-def,dead>, %EAX<imp-use>, %EDX<imp-use>
+> %EDX<def> = COPY %EDX
+Deleting identity copy.
+> CMP32ri8 %EDX, 0, %EFLAGS<imp-def>
+> %AL<def> = SETEr %EFLAGS<imp-use,kill>
+> %EDX<def,tied1> = OR32rr %EDX<kill,tied0>, %ECX, %EFLAGS<imp-def,dead>
+> CMP32ri8 %EDX<kill>, 0, %EFLAGS<imp-def>
+> JNE_1 <BB#4>, %EFLAGS<imp-use,kill>
+624B	BB#3: derived from LLVM BB %if.then
+	    Live Ins: %EBX %R14D
+	    Predecessors according to CFG: BB#2
+640B		%vreg25<def> = MOV64ri <ga:@str.4>; GR64:%vreg25
+656B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+672B		%RDI<def> = COPY %vreg25<kill>; GR64:%vreg25
+688B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+704B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+720B		%vreg26<def,dead> = COPY %EAX; GR32:%vreg26
+736B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+752B		STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+768B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+784B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+> %RDI<def> = MOV64ri <ga:@str.4>
+> ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %RDI<def> = COPY %RDI<kill>
+Deleting identity copy.
+> CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %EAX<def,dead> = COPY %EAX
+Deleting identity copy.
+> ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> STACKMAP 1, 0, %EBX, %R14D, ...
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> JMP_1 <BB#8>
+800B	BB#4: derived from LLVM BB %if.else
+	    Live Ins: %AL %EBX %ECX %R14D
+	    Predecessors according to CFG: BB#2
+816B		CMP32ri8 %vreg20<kill>, 0, %EFLAGS<imp-def>; GR32:%vreg20
+832B		JNE_1 <BB#6>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#6 BB#5
+> CMP32ri8 %ECX<kill>, 0, %EFLAGS<imp-def>
+> JNE_1 <BB#6>, %EFLAGS<imp-use,kill>
+848B	BB#5: derived from LLVM BB %if.then.6
+	    Live Ins: %EBX %R14D
+	    Predecessors according to CFG: BB#4
+864B		%vreg23<def> = MOV64ri <ga:@str.3>; GR64:%vreg23
+880B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+896B		%RDI<def> = COPY %vreg23<kill>; GR64:%vreg23
+912B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+928B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+944B		%vreg24<def,dead> = COPY %EAX; GR32:%vreg24
+960B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+976B		STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+992B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1008B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8
+> %RDI<def> = MOV64ri <ga:@str.3>
+> ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %RDI<def> = COPY %RDI<kill>
+Deleting identity copy.
+> CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %EAX<def,dead> = COPY %EAX
+Deleting identity copy.
+> ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> STACKMAP 2, 0, %EBX, %R14D, ...
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> JMP_1 <BB#8>
+1024B	BB#6: derived from LLVM BB %if.else.8
+	    Live Ins: %AL %EBX %R14D
+	    Predecessors according to CFG: BB#4
+1040B		TEST8ri %vreg12<kill>, 1, %EFLAGS<imp-def>; GR8:%vreg12
+1056B		JNE_1 <BB#7>, %EFLAGS<imp-use,kill>
+1072B		JMP_1 <BB#8>
+	    Successors according to CFG: BB#8 BB#7
+> TEST8ri %AL<kill>, 1, %EFLAGS<imp-def>
+> JNE_1 <BB#7>, %EFLAGS<imp-use,kill>
+> JMP_1 <BB#8>
+1088B	BB#7: derived from LLVM BB %if.then.11
+	    Live Ins: %EBX %R14D
+	    Predecessors according to CFG: BB#6
+1104B		%vreg21<def> = MOV64ri <ga:@str>; GR64:%vreg21
+1120B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1136B		%RDI<def> = COPY %vreg21<kill>; GR64:%vreg21
+1152B		CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+1168B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1184B		%vreg22<def,dead> = COPY %EAX; GR32:%vreg22
+1200B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1216B		STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+1232B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+	    Successors according to CFG: BB#8
+> %RDI<def> = MOV64ri <ga:@str>
+> ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %RDI<def> = COPY %RDI<kill>
+Deleting identity copy.
+> CALL64pcrel32 <ga:@puts>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %EAX<imp-def>
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %EAX<def,dead> = COPY %EAX
+Deleting identity copy.
+> ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> STACKMAP 3, 0, %EBX, %R14D, ...
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1248B	BB#8: derived from LLVM BB %for.inc
+	    Live Ins: %EBX %R14D
+	    Predecessors according to CFG: BB#6 BB#7 BB#5 BB#3
+1280B		%vreg30<def,tied1> = ADD32ri8 %vreg30<kill,tied0>, 1, %EFLAGS<imp-def,dead>; GR32:%vreg30
+1296B		CMP32rr %vreg30, %vreg5, %EFLAGS<imp-def>; GR32:%vreg30,%vreg5
+1328B		JNE_1 <BB#2>, %EFLAGS<imp-use,kill>
+	    Successors according to CFG: BB#2 BB#9
+> %EBX<def,tied1> = ADD32ri8 %EBX<kill,tied0>, 1, %EFLAGS<imp-def,dead>
+> CMP32rr %EBX, %R14D, %EFLAGS<imp-def>
+> JNE_1 <BB#2>, %EFLAGS<imp-use,kill>
+1344B	BB#9: derived from LLVM BB %for.end.loopexit
+	    Predecessors according to CFG: BB#8
+1360B		JMP_1 <BB#10>
+	    Successors according to CFG: BB#10
+> JMP_1 <BB#10>
+1376B	BB#10: derived from LLVM BB %for.end
+	    Predecessors according to CFG: BB#0 BB#9
+1424B		ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1440B		%EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+1456B		%ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+1472B		CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use>
+1488B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1504B		ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1520B		STACKMAP 4, 0, ...
+1536B		ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+1552B		RETQ
+> ADJCALLSTACKDOWN64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> %EDI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RDI<imp-def>
+> %ESI<def,dead> = MOV32r0 %EFLAGS<imp-def,dead>, %RSI<imp-def>
+> CALL64pcrel32 <ga:@check_migrate>, <regmask>, %RSP<imp-use>, %RDI<imp-use>, %RSI<imp-use>
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> ADJCALLSTACKDOWN64 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> STACKMAP 4, 0, ...
+> ADJCALLSTACKUP64 0, 0, %RSP<imp-def>, %EFLAGS<imp-def,dead>, %RSP<imp-use>
+> RETQ
