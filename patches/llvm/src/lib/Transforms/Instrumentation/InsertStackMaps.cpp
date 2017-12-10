@@ -334,7 +334,6 @@ private:
 
 } /* end anonymous namespace */
 
-
 char InsertStackMaps::ID = 0;
 const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 

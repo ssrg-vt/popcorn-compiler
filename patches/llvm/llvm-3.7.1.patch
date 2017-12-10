@@ -6479,7 +6479,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,974 @@
+@@ -0,0 +1,978 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8884,7 +8884,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,341 @@
+@@ -0,0 +1,352 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -8990,11 +8990,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +             !CI->isInlineAsm() &&
 +             !isa<IntrinsicInst>(CI))
 +          {
-+            IRBuilder<> builder(CI->getNextNode());
-+            std::vector<Value *> args(2);
-+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-+
 +            if(NoLiveVals) {
 +              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
 +              this->numInstrumented++;
@@ -9225,7 +9220,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +};
 +
 +} /* end anonymous namespace */
-+
 +
 +char InsertStackMaps::ID = 0;
 +const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
