@@ -73,7 +73,7 @@ public:
     if(this->addSMDeclaration(M)) modified = true;
 
     modified |= this->removeOldStackmaps(M);
-  
+
     /* Iterate over all functions/basic blocks/instructions. */
     for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
     {
@@ -86,7 +86,7 @@ public:
       DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
       std::set<const Value *>::const_iterator v, ve;
       getHiddenVals(*f, hiddenInst, hiddenArgs);
-  
+
       /* Find call sites in the function. */
       for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
       {
@@ -95,7 +95,7 @@ public:
           b->printAsOperand(errs(), false);
           errs() << "\n"
         );
-  
+
         for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
         {
           CallInst *CI;
@@ -103,11 +103,6 @@ public:
              !CI->isInlineAsm() &&
              !isa<IntrinsicInst>(CI))
           {
-            IRBuilder<> builder(CI->getNextNode());
-            std::vector<Value *> args(2);
-            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
-
             if(NoLiveVals) {
               builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
               this->numInstrumented++;
@@ -134,17 +129,21 @@ public:
                 sortedLive.insert(val);
             }
             delete live;
-  
+
+            /* If the call's value is used, add it to the stackmap */
+            if(CI->use_begin() != CI->use_end())
+              sortedLive.insert(CI);
+
             DEBUG(
               const Function *calledFunc;
-  
+
               errs() << "  ";
               if(!CI->getType()->isVoidTy()) {
                 CI->printAsOperand(errs(), false);
                 errs() << " ";
               }
               else errs() << "(void) ";
-  
+
               calledFunc = CI->getCalledFunction();
               if(calledFunc && calledFunc->hasName())
               {
@@ -152,7 +151,7 @@ public:
                 errs() << name << " ";
               }
               errs() << "ID: " << this->callSiteID;
-  
+
               errs() << ", " << sortedLive.size() << " live value(s)\n   ";
               for(const Value *val : sortedLive) {
                 errs() << " ";
@@ -160,7 +159,11 @@ public:
               }
               errs() << "\n";
             );
-  
+
+            IRBuilder<> builder(CI->getNextNode());
+            std::vector<Value *> args(2);
+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
             for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
               args.push_back((Value*)*v);
             builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
@@ -174,14 +177,14 @@ public:
       hiddenArgs.clear();
       this->callSiteID = 0;
     }
-  
+
     DEBUG(
       errs() << "InsertStackMaps: finished module " << M.getName() << ", added "
              << this->numInstrumented << " stackmaps\n\n";
     );
-  
+
     if(numInstrumented > 0) modified = true;
-  
+
     return modified;
   }
 

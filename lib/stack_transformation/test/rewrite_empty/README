@@ -1,0 +1,4 @@
+This is a bare-bones test to ensure the runtime can correctly set up the stack
+structure for the transformed stack.
+
+Note: there is no default expected output besides timing information.

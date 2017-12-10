@@ -4,3 +4,5 @@ check-stackmaps
 dump-llvm-stackmap
 dump-stackinfo
 gen-stackinfo
+*.o
+*.swp

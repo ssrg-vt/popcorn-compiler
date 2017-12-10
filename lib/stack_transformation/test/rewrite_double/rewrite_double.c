@@ -13,6 +13,8 @@ double outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./rewrite_double_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./rewrite_double_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./rewrite_double_x86-64", outer_frame);
 #endif
@@ -30,7 +32,6 @@ int main(int argc, char** argv)
 {
   if(argc > 1)
     max_depth = atoi(argv[1]);
-  srand(10);
 
   double ret = recurse(1, 1.0);
   printf("Calculated %f\n", ret);

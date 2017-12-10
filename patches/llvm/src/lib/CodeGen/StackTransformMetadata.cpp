@@ -255,11 +255,6 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// are handled by the stackmap & convert to physical registers
   void sanitizeVregs(MachineLiveValPtr &LV, const MachineInstr *SM) const;
 
-  /// Analyze a machine instruction to find the value being used.  Needs the
-  /// call instruction to ensure values are generated correctly and are valid.
-  MachineLiveValPtr getTargetValue(const MachineInstr *MI,
-                                   const MachineInstr *Call) const;
-
   /// Find architecture-specific live values added by the backend
   void findArchSpecificLiveVals();
 
@@ -319,7 +314,7 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
 
     DEBUG(
       dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
-             << "********** Function: " << MF->getName() << '\n';
+             << "********** Function: " << MF->getName() << "\n";
       VRM->dump();
     );
 
@@ -460,6 +455,16 @@ void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
       }
     }
   }
+
+  DEBUG(
+    dbgs() << "\n*** Stack slot copies ***\n\n";
+    for(auto SC = SSUses.begin(), SCe = SSUses.end(); SC != SCe; SC++) {
+      dbgs() << "Stack slot " << SC->first << ":\n";
+      for(size_t i = 0, e = SC->second->size(); i < e; i++) {
+        (*SC->second)[i]->Instr->dump();
+      }
+    }
+  );
 }
 
 /// Find all virtual register/stack slot operands in a stackmap and collect
@@ -790,16 +795,13 @@ void StackTransformMetadata::findAlternateOpLocs() {
 /// handled by the stackmap & convert to physical registers
 void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
                                            const MachineInstr *SM) const {
-  typedef MachineGeneratedVal::ValueGenInst::OpType OpType;
-  typedef MachineGeneratedVal::RegInstructionBase RegInstruction;
-
   if(!LV) return;
   if(LV->isGenerated()) {
     MachineGeneratedVal *MGV = (MachineGeneratedVal *)LV.get();
-    MachineGeneratedVal::ValueGenInstList &Inst = MGV->getInstructions();
+    const ValueGenInstList &Inst = MGV->getInstructions();
     for(size_t i = 0, num = Inst.size(); i < num; i++) {
-      if(Inst[i]->opType() == OpType::Register) {
-        RegInstruction *RI = (RegInstruction *)Inst[i].get();
+      if(Inst[i]->opType() == ValueGenInst::OpType::Register) {
+        RegInstructionBase *RI = (RegInstructionBase *)Inst[i].get();
         if(!TRI->isVirtualRegister(RI->getReg())) {
           if(RI->getReg() == TRI->getFrameRegister(*MF)) continue;
           // TODO walk through stackmap and see if physical register in
@@ -820,38 +822,6 @@ void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
         }
       }
     }
-  }
-}
-
-/// Analyze a machine instruction to find the value being used.  Needs the call
-/// instruction to ensure values are generated correctly and are valid.
-MachineLiveValPtr
-StackTransformMetadata::getTargetValue(const MachineInstr *MI,
-                                       const MachineInstr *SM) const {
-  if(!MI) return MachineLiveValPtr(nullptr);
-
-  // Immediates can be handled in an architecture-agnostic way
-  if(MI->isMoveImmediate()) {
-    unsigned Size = 8;
-    uint64_t Value = UINT64_MAX;
-    for(unsigned i = 0, e = MI->getNumOperands(); i < e; i++) {
-      const MachineOperand &MO = MI->getOperand(i);
-      if(MO.isImm()) Value = MO.getImm();
-      if(MO.isFPImm()) {
-        // We need to encode the bits exactly as they are to represent the
-        // double, so switch types and read relevant info
-        APInt Bits(MO.getFPImm()->getValueAPF().bitcastToAPInt());
-        Size = Bits.getBitWidth() / 8;
-        Value = Bits.getZExtValue();
-      }
-    }
-    return MachineLiveValPtr(new MachineImmediate(Size, Value, MI));
-  }
-  // Otherwise, drop to architecture-specific value generator
-  else {
-    MachineLiveValPtr MLV = TVG->getMachineValue(MI);
-    sanitizeVregs(MLV, SM);
-    return MLV;
   }
 }
 
@@ -876,12 +846,15 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
              << MFI->getObjectIndexEnd() << "\n";
     );
 
+    // Include any mandatory architecture-specific live values
+    TVG->addRequiredArchLiveValues(MF, MISM, IRSM);
+
     // Search for virtual registers not handled by the stackmap.  Registers
     // spilled to the stack should have been converted to frame index
     // references by now.
     for(unsigned i = 0, numVregs = MRI->getNumVirtRegs(); i < numVregs; i++) {
       unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
-      MachineLiveValPtr MC;
+      MachineLiveValPtr MLV;
       MachineLiveReg MLR(0);
 
       if(VRM->hasPhys(Vreg) && isVregLiveAcrossInstr(Vreg, MICall) &&
@@ -900,14 +873,15 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
           continue;
         }
 
-        MC = getTargetValue(&*MRI->def_instr_begin(Vreg), MISM);
-        if(MC) {
+        MLV = TVG->getMachineValue(&*MRI->def_instr_begin(Vreg));
+        sanitizeVregs(MLV, MISM);
+        if(MLV) {
           DEBUG(dbgs() << "      Defining instruction: ";
-                MC->getDefiningInst()->print(dbgs());
-                dbgs() << "      Value: " << MC->toString() << "\n");
+                MLV->getDefiningInst()->print(dbgs());
+                dbgs() << "      Value: " << MLV->toString() << "\n");
 
           MLR.setReg(VRM->getPhys(Vreg));
-          MF->addSMArchSpecificLocation(IRSM, MLR, *MC);
+          MF->addSMArchSpecificLocation(IRSM, MLR, *MLV);
           CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
         }
         else {
@@ -950,6 +924,8 @@ static inline void displayWarning(std::string &Msg,
   // Note: it may be possible for us to not have a called function, for example
   // if we call a function using a function pointer
   const Function *CurF = CI->getParent()->getParent();
+  const std::string &Triple = CurF->getParent()->getTargetTriple();
+  Msg = "(" + Triple + ") " + Msg;
   if(F && F->hasName()) {
     Msg += " across call to ";
     Msg += F->getName();

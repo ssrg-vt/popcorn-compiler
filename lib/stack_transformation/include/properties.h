@@ -14,9 +14,6 @@ struct properties_t
   // Fields
   /////////////////////////////////////////////////////////////////////////////
 
-  /* Does the stack pointer need a specific alignment upon function entry? */
-  const bool sp_needs_align;
-
   /* Callee-saved registers */
   const size_t num_callee_saved;
   const uint16_t* callee_saved;
@@ -30,9 +27,8 @@ struct properties_t
    */
   const uint16_t* callee_saved_size;
 
-  /* Offset from CFA for return address & saved FBP */
+  /* Offset from CFA for return address. */
   const int32_t ra_offset;
-  const int32_t savedfbp_offset;
 
   /* Offset of CFA from SP upon function entry */
   const int32_t cfa_offset_funcentry;

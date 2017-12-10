@@ -20,7 +20,7 @@
 // Configuration
 ///////////////////////////////////////////////////////////////////////////////
 
-static const char *args = "ha:x:";
+static const char *args = "ha:x:p:";
 static const char *help =
 "check-stackmaps - check LLVM stackmap sections for matching metadata across "
 "binaries\n\n\
@@ -30,11 +30,13 @@ Options:\n\
 \t-h      : print help & exit\n\
 \t-a file : name of AArch64 executable\n\
 \t-x file : name of x86-64 executable\n\n\
+\t-p file : name of PowerPC64 executable\n\n\
 \
 Note: this tool assumes binaries have been through the alignment tool, as it \
 checks stackmaps based on function addresses";
 
 static const char *bin_aarch64_fn = NULL;
+static const char *bin_powerpc64_fn = NULL;
 static const char *bin_x86_64_fn = NULL;
 bool verbose = false;
 
@@ -65,13 +67,16 @@ static void parse_args(int argc, char **argv)
     case 'x':
       bin_x86_64_fn = optarg;
       break;
+    case 'p':
+      bin_powerpc64_fn = optarg;
+      break;
     default:
       fprintf(stderr, "Unknown argument '%c'\n", arg);
       break;
     }
   }
 
-  if(!bin_aarch64_fn || !bin_x86_64_fn)
+  if(!bin_aarch64_fn || !bin_x86_64_fn || !bin_powerpc64_fn)
     die("please specify binaries (run with -h for more information)",
         INVALID_ARGUMENT);
 }
@@ -267,9 +272,9 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
 int main(int argc, char **argv)
 {
   ret_t ret;
-  bin *bin_aarch64 = NULL, *bin_x86_64 = NULL;
-  stack_map_section *sm_aarch64 = NULL, *sm_x86_64 = NULL;
-  size_t num_sm_aarch64, num_sm_x86_64;
+  bin *bin_aarch64 = NULL, *bin_powerpc64 = NULL, *bin_x86_64 = NULL;
+  stack_map_section *sm_aarch64 = NULL, *sm_powerpc64 = NULL, *sm_x86_64 = NULL;
+  size_t num_sm_aarch64, num_sm_powerpc64, num_sm_x86_64;
 
   parse_args(argc, argv);
 
@@ -278,21 +283,33 @@ int main(int argc, char **argv)
 
   if((ret = init_elf_bin(bin_aarch64_fn, &bin_aarch64)) != SUCCESS)
     die("could not initialize the binary (aarch64)", ret);
+  if((ret = init_elf_bin(bin_powerpc64_fn, &bin_powerpc64)) != SUCCESS)
+    die("could not initialize the binary (powerpc64)", ret);
   if((ret = init_elf_bin(bin_x86_64_fn, &bin_x86_64)) != SUCCESS)
     die("could not initialize the binary (x86-64)", ret);
 
-  if((ret = init_stackmap(bin_aarch64, &sm_aarch64, &num_sm_aarch64)) != SUCCESS)
+  if((ret = init_stackmap(bin_aarch64,
+                          &sm_aarch64,
+                          &num_sm_aarch64)) != SUCCESS)
     die("could not read stackmaps (aarch64)", ret);
+  if((ret = init_stackmap(bin_powerpc64,
+                          &sm_powerpc64,
+                          &num_sm_powerpc64)) != SUCCESS)
+    die("could not read stackmaps (powerpc64)", ret);
   if((ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64)) != SUCCESS)
     die("could not read stackmaps (x86-64)", ret);
 
   if((ret = check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
                             bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
+  if((ret = check_stackmaps(bin_powerpc64, sm_powerpc64, num_sm_powerpc64,
+                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
     die("stackmap sections differ", ret);
 
   free_stackmaps(sm_aarch64, num_sm_aarch64);
+  free_stackmaps(sm_powerpc64, num_sm_powerpc64);
   free_stackmaps(sm_x86_64, num_sm_x86_64);
   free_elf_bin(bin_aarch64);
+  free_elf_bin(bin_powerpc64);
   free_elf_bin(bin_x86_64);
 
   return 0;
