@@ -56,11 +56,11 @@ def setup_argument_parsing():
 
     config_opts = parser.add_argument_group('Configuration Options')
     config_opts.add_argument("--base-path",
-                        help="Base path of popcorn-x86-arm compiler repo",
+                        help="Base path of popcorn-compiler repo",
                         default=os.getcwd(),
                         dest="base_path")
     config_opts.add_argument("--install-path",
-                        help="Install path of popcorn-x86-arm compiler",
+                        help="Install path of Popcorn compiler",
                         default="/usr/local/popcorn",
                         dest="install_path")
     config_opts.add_argument("--threads",
@@ -162,7 +162,7 @@ def warn_stupid(args):
 #================================================
 # PREREQUISITE CHECKING
 #   Determines if all needed prerequisites are installed
-#   See popcorn-compiler-arm-x86/README for more details
+#   See popcorn-compiler/README for more details
 #================================================
 def _check_for_prerequisite(prereq):
     try:

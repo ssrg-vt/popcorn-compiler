@@ -94,7 +94,7 @@ int64_t get_num_entries(Elf* e, const char* sec)
 
   if(!(scn = get_section(e, sec))) return -1;
   if(gelf_getshdr(scn, &shdr) != &shdr) return -1;
-  return (shdr.sh_size / shdr.sh_entsize);
+  return shdr.sh_entsize ? (shdr.sh_size / shdr.sh_entsize) : -1;
 }
 
 /*

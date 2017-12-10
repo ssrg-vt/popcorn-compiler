@@ -53,6 +53,7 @@ function copy_new_files {
   local files=$(svn status | grep "A  " | sed -e 's/A\s\+//g')
   for f in $files; do
     echo "  Copying new Popcorn file '$(basename $f)'"
+    mkdir -p $dest/$(dirname $f)
     cp -f $src/$f $dest/$f
   done
   cd - > /dev/null

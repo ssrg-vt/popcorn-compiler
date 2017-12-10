@@ -38,7 +38,7 @@ def buildArgParser():
 		"corresponding to the x86 binary (generated through ld -MAP)",
 		required=True)
 	res.add_argument("--arm-map", help="Path to the ARM memory map file " +
-		"corresponding to the x86 binary (generated through ld -MAP)",
+		"corresponding to the ARM binary (generated through ld -MAP)",
 		required=True)
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")

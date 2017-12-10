@@ -371,7 +371,7 @@ static bool prep_stack(void)
    * Get offset of main thread's stack pointer from stack base so we can avoid
    * clobbering argv & environment variables.
    */
-  ASSERT(__popcorn_stack_base, "Stack base not set correctly");
+  ASSERT(__popcorn_stack_base, "Stack base not correctly set by musl\n");
   offset = (uint64_t)(bounds.high - __popcorn_stack_base);
   offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
   bounds.high -= offset;

@@ -2,32 +2,6 @@
 Known compilation issues
 ------------------------
 
-- musl-libc is not compiled with clang and therefore some variables are not
-  able to be aligned.  The following symbols are known to not align, but
-  shouldn't prevent running the application:
-
-  __LLVM_StackMaps
-  __aio_close
-  __clone
-  __fini_array_end
-  __fini_array_start
-  __funcs_on_exit
-  __init_array_end
-  __init_array_start
-  __lctrans_impl
-  __set_thread_area
-  __syscall
-  __unlist_locked_file
-  __unmapself
-  _end
-  _fini
-  _start
-  byte_copy
-  dummy
-  fabs
-  fmodl
-  memmove
-
 - Additionally, OpenMP symbols for outlined functions are known to not align
   (due to clashing symbol names across binaries) but shouldn't cause issues,
   e.g., ".omp_outlined."

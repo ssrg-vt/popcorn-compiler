@@ -258,8 +258,8 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
 }
 
 /* Callback function & data for migration points inserted via compiler. */
-static void (*migrate_callback)(void *) = NULL;
-static void *migrate_callback_data = NULL;
+void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
+void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data")))= NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)

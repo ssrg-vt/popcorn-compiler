@@ -1,3 +1,4 @@
+.section .text.llrintf, "ax"
 .global llrintf
 .type llrintf,@function
 llrintf:

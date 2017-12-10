@@ -3,3 +3,4 @@ tags
 *.swp
 cscope.out
 binutils-2.27.tar.bz2
+patches/llvm/llvm-3.7.1_old.patch
