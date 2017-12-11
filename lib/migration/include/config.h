@@ -45,7 +45,9 @@
  *
  * Note: to resume execution on remote, set variable "__hold" to be zero.
  */
+#ifndef _DEBUG
 #define _DEBUG 0
+#endif
 
 #endif /* _CONFIG_H */
 

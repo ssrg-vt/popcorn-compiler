@@ -57,7 +57,7 @@
         ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
                                    &regs_src, &regs_dst.powerpc); \
       } \
-      ret; \
+      !ret; \
     })
 
 #define SET_FP_REGS \
