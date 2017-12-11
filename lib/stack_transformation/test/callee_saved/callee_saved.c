@@ -16,6 +16,8 @@ int outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./callee_saved_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./callee_saved_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./callee_saved_x86-64", outer_frame);
 #endif
@@ -35,6 +37,8 @@ int main(int argc, char** argv)
   // allocate live values to callee-saved registers first anyway
 #ifdef __aarch64__
   register uint64_t magic __asm__("x19");
+#elif defined(__powerpc64__)
+  register uint64_t magic __asm__("r30");
 #elif defined(__x86_64__)
   register uint64_t magic __asm__("rbx");
 #endif

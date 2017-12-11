@@ -1,0 +1,28 @@
+This test spawns multiple threads, all of which do the normal
+recursion/rewrite/return procedure.  This tests the runtime's ability to
+transform spawned thread stacks for multiple threads at a time without
+any data races.
+
+Expected output for default run:
+--------------------------------
+
+--> Child <1> beginning re-write <--
+--> Child <2> beginning re-write <--
+--> Child <3> beginning re-write <--
+--> Child <4> beginning re-write <--
+--> Child <5> beginning re-write <--
+--> Child <6> beginning re-write <--
+--> Child <7> beginning re-write <--
+--> Child <8> beginning re-write <--
+--> Child <9> beginning re-write <--
+<interspersed timing information>
+--> Child <5> finished re-write <--
+--> Child <3> finished re-write <--
+--> Child <6> finished re-write <--
+--> Child <4> finished re-write <--
+--> Child <8> finished re-write <--
+--> Child <9> finished re-write <--
+--> Child <1> finished re-write <--
+--> Child <2> finished re-write <--
+--> Child <7> finished re-write <--
+

@@ -1,3 +1,4 @@
+*.o
 Makefile
 config.h
 config.log
@@ -5,8 +6,9 @@ config.status
 libelf.pc
 stamp-h
 po/de.cat
+po/de.mo
 lib/stamp-h
 lib/sys_elf.h
 lib/libelf.a
 lib/*.o
-po/de.mo
+*.swp

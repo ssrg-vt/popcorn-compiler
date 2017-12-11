@@ -92,8 +92,8 @@ function gen_compare_patch {
 while [ "$1" != "" ]; do
   case $1 in
     -s)
-      LLVM_SRC=$2
-      CLANG_SRC=$2/tools/clang
+      LLVM_SRC=$(readlink -f $2)
+      CLANG_SRC=$(readlink -f $2)/tools/clang
       shift ;;
     -h | --help)
       print_help

@@ -8,16 +8,10 @@
 #include <stack_transform.h>
 #include <sys/prctl.h>
 #include "migrate.h"
+#include "config.h"
 
-#ifdef _TIME_REWRITE
-#include <time.h>
-#endif
-
-/* Architecture-specific assembly for migrating between architectures. */
-#ifdef __aarch64__
-# include <arch/aarch64/migrate.h>
-#else
-# include <arch/x86_64/migrate.h>
+#if _SIG_MIGRATION == 1
+#include "trigger.h"
 #endif
 
 /* Pierre: due to the-fdata-sections flags, in combination with the way the
@@ -40,7 +34,11 @@ struct popcorn_thread_status {
 	int peer_pid;
 } status;
 
-#ifdef _ENV_SELECT_MIGRATE
+#if _TIME_REWRITE == 1
+#include <time.h>
+#endif
+
+#if _ENV_SELECT_MIGRATE == 1
 
 /*
  * The user can specify at which point a thread should migrate by specifying
@@ -50,17 +48,22 @@ struct popcorn_thread_status {
 /* Environment variables specifying at which function to migrate */
 static const char *env_start_aarch64 = "AARCH64_MIGRATE_START";
 static const char *env_end_aarch64 = "AARCH64_MIGRATE_END";
+static const char *env_start_powerpc64 = "POWERPC64_MIGRATE_START";
+static const char *env_end_powerpc64 = "POWERPC64_MIGRATE_END";
 static const char *env_start_x86_64 = "X86_64_MIGRATE_START";
 static const char *env_end_x86_64 = "X86_64_MIGRATE_END";
 
 /* Per-arch functions (specified via address range) at which to migrate */
 static void *start_aarch64 = NULL;
 static void *end_aarch64 = NULL;
+static void *start_powerpc64 = NULL;
+static void *end_powerpc64 = NULL;
 static void *start_x86_64 = NULL;
 static void *end_x86_64 = NULL;
 
 /* TLS keys indicating if the thread has previously migrated */
 static pthread_key_t num_migrated_aarch64 = 0;
+static pthread_key_t num_migrated_powerpc64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
 /* Read environment variables to setup migration points. */
@@ -70,6 +73,7 @@ __init_migrate_testing(void)
   const char *start;
   const char *end;
 
+#ifdef __aarch64__
   start = getenv(env_start_aarch64);
   end = getenv(env_end_aarch64);
   if(start && end)
@@ -79,7 +83,17 @@ __init_migrate_testing(void)
     if(start_aarch64 && end_aarch64)
       pthread_key_create(&num_migrated_aarch64, NULL);
   }
-
+#elif defined(__powerpc64__)
+  start = getenv(env_start_powerpc64);
+  end = getenv(env_end_powerpc64);
+  if(start && end)
+  {
+    start_powerpc64 = (void *)strtoll(start, NULL, 16);
+    end_powerpc64 = (void *)strtoll(end, NULL, 16);
+    if(start_powerpc64 && end_powerpc64)
+      pthread_key_create(&num_migrated_powerpc64, NULL);
+  }
+#else
   start = getenv(env_start_x86_64);
   end = getenv(env_end_x86_64);
   if(start && end)
@@ -89,6 +103,7 @@ __init_migrate_testing(void)
     if(start_x86_64 && end_x86_64)
       pthread_key_create(&num_migrated_x86_64, NULL);
   }
+#endif
 }
 
 /*
@@ -98,21 +113,28 @@ __init_migrate_testing(void)
 static inline int do_migrate(void *addr)
 {
   int retval = -1;
-# ifdef __aarch64__
+#ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
       pthread_setspecific(num_migrated_aarch64, (void *)1);
       retval = 0;
     }
   }
-# elif defined __x86_64__
-  if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
-    if(start_x86_64 <= addr && addr < end_x86_64) {
-      pthread_setspecific(num_migrated_x86_64, (void *)1);
+#elif defined(__powerpc64__)
+  if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
+    if(start_powerpc64 <= addr && addr < end_powerpc64) {
+      pthread_setspecific(num_migrated_powerpc64, (void *)1);
       retval = 1;
     }
   }
-# endif
+#else
+  if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
+    if(start_x86_64 <= addr && addr < end_x86_64) {
+      pthread_setspecific(num_migrated_x86_64, (void *)1);
+      retval = 2;
+    }
+  }
+#endif
   return retval;
 }
 
@@ -128,13 +150,12 @@ static inline int do_migrate(void *fn)
 
 #endif /* _ENV_SELECT_MIGRATE */
 
-int origin_nid = -1;
-
-int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
+static int archs[MAX_POPCORN_NODES] = { 0 };
 
 static void __attribute__((constructor)) __init_nodes_info(void)
 {
 	int ret;
+	int origin_nid = -1;
 	struct node_info {
 		unsigned int status;
 		int arch;
@@ -152,7 +173,7 @@ static void __attribute__((constructor)) __init_nodes_info(void)
 	}
 	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
 		if (ni[i].status == 1) {
-			archs[i] = ni[i].arch;	
+			archs[i] = ni[i].arch;
 		}
 	}
 }
@@ -181,7 +202,7 @@ struct shim_data {
   void *regset;
 };
 
-#ifdef _DEBUG
+#if _DEBUG == 1
 /*
  * Flag indicating we should spin post-migration in order to wait until a
  * debugger can attach.
@@ -192,15 +213,15 @@ static volatile int __hold = 1;
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.
-static void inline __migrate_shim_internal(int nid,
-    void (*callback)(void *), void *callback_data)
+static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
+                                           void *callback_data)
 {
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
 
   if(data_ptr) // Post-migration
   {
-#ifdef _DEBUG
+#if _DEBUG == 1
     // Hold until we can attach post-migration
     while(__hold);
 #endif
@@ -214,54 +235,58 @@ static void inline __migrate_shim_internal(int nid,
   }
   else // Invoke migration
   {
-    // TODO support flexible node configuration
+#if _SIG_MIGRATION == 1
+    clear_migrate_flag();
+#endif
     const int dst_arch = archs[nid];
 
     GET_LOCAL_REGSET;
-	union {
-		struct regset_aarch64 aarch;
-		struct regset_x86_64 x86;
-	} regs_dst;
-	unsigned long sp = 0, bp = 0;
+    union {
+       struct regset_aarch64 aarch;
+       struct regset_powerpc64 powerpc;
+       struct regset_x86_64 x86;
+    } regs_dst;
 
-#ifdef _TIME_REWRITE
-    struct timespec start, end;
-    unsigned long start_ns, end_ns;
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
-
-	if (REWRITE_STACK) {
-		fprintf(stderr, "Could not rewrite stack!\n");
-		return;
-	}
-
-#ifdef _TIME_REWRITE
-	clock_gettime(CLOCK_MONOTONIC, &end);
-	start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
-	end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
-	printf("Stack transformation time: %ldns\n", end_ns - start_ns);
-#endif
+    unsigned long sp = 0, bp = 0;
 
     data.callback = callback;
     data.callback_data = callback_data;
-	data.regset = &regs_dst;
+    data.regset = &regs_dst;
     *pthread_migrate_args() = &data;
 
-	if (dst_arch == ARCH_X86_64) {
-		regs_dst.x86.rip = __migrate_shim_internal;
-		sp = (unsigned long)regs_dst.x86.rsp;
-		bp = (unsigned long)regs_dst.x86.rbp;
-	} else if (dst_arch == ARCH_AARCH64) {
-		regs_dst.aarch.pc = __migrate_shim_internal;
-		sp = (unsigned long)regs_dst.aarch.sp;
-		bp = (unsigned long)regs_dst.aarch.x[29];
-	} else {
-		assert(0 && "Unsupported architecture!");
-	}
+#if _TIME_REWRITE == 1
+    struct timespec start, end;
+    unsigned long start_ns, end_ns;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+    if(REWRITE_STACK)
+    {
+#if _TIME_REWRITE == 1
+      clock_gettime(CLOCK_MONOTONIC, &end);
+      start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
+      end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
+      printf("Stack transformation time: %ldns\n", end_ns - start_ns);
+#endif
 
-	MIGRATE;
-	assert(0 && "Couldn't migrate!");
+      if(dst_arch == ARCH_X86_64) {
+        regs_dst.x86.rip = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.x86.rsp;
+        bp = (unsigned long)regs_dst.x86.rbp;
+      } else if (dst_arch == ARCH_AARCH64) {
+        regs_dst.aarch.pc = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.aarch.sp;
+        bp = (unsigned long)regs_dst.aarch.x[29];
+      } else if (dst_arch == ARCH_POWERPC64) {
+        regs_dst.powerpc.pc = __migrate_shim_internal;
+        sp = (unsigned long)regs_dst.powerpc.r[1];
+        bp = (unsigned long)regs_dst.powerpc.r[31];
+      } else {
+        assert(0 && "Unsupported architecture!");
+      }
+
+      MIGRATE;
+      assert(0 && "Couldn't migrate!");
+    }
   }
 }
 
@@ -299,10 +324,6 @@ void __cyg_profile_func_enter(void *this_fn, void *call_site)
 }
 
 /* Hook inserted by compiler at the end of a function. */
-void __cyg_profile_func_exit(void *this_fn, void *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
+void __attribute__((alias("__cyg_profile_func_enter")))
+__cyg_profile_func_exit(void *this_fn, void *call_site);
 

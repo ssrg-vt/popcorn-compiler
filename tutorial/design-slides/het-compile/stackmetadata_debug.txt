@@ -1,0 +1,81 @@
+
+********** STACK TRANSFORMATION METADATA **********
+********** Function: fizzbuzz
+********** REGISTER MAP **********
+[%vreg5 -> %R14D] GR32
+[%vreg11 -> %EDX] GR32
+[%vreg12 -> %AL] GR8
+[%vreg14 -> %ESI] GR32
+[%vreg18 -> %ECX] GR32
+[%vreg20 -> %ECX] GR32
+[%vreg21 -> %RDI] GR64
+[%vreg22 -> %EAX] GR32
+[%vreg23 -> %RDI] GR64
+[%vreg24 -> %EAX] GR32
+[%vreg25 -> %RDI] GR64
+[%vreg26 -> %EAX] GR32
+[%vreg30 -> %EBX] GR32
+
+
+*** Stack slot copies ***
+
+
+Stackmap 0:
+  STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+
+i32 %max: in register %R14D (vreg 5)
+
+Duplicate operand locations:
+
+
+Stackmap 1:
+  STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+
+i32 %i.024: in register %EBX (vreg 30)
+i32 %max: in register %R14D (vreg 5)
+
+Duplicate operand locations:
+
+
+Stackmap 2:
+  STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+
+i32 %i.024: in register %EBX (vreg 30)
+i32 %max: in register %R14D (vreg 5)
+
+Duplicate operand locations:
+
+
+Stackmap 3:
+  STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+
+i32 %i.024: in register %EBX (vreg 30)
+i32 %max: in register %R14D (vreg 5)
+
+Duplicate operand locations:
+
+
+Stackmap 4:
+  STACKMAP 4, 0, ...
+
+
+Duplicate operand locations:
+
+
+*** Finding architecture-specific live values ***
+
+  STACKMAP 0, 0, %vreg5, ...; GR32:%vreg5
+  -> Call instruction SlotIndex 128B, searching vregs 0 -> 31 and stack slots 0 -> 0
+
+  STACKMAP 1, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+  -> Call instruction SlotIndex 688B, searching vregs 0 -> 31 and stack slots 0 -> 0
+
+  STACKMAP 2, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+  -> Call instruction SlotIndex 912B, searching vregs 0 -> 31 and stack slots 0 -> 0
+
+  STACKMAP 3, 0, %vreg30, %vreg5, ...; GR32:%vreg30,%vreg5
+  -> Call instruction SlotIndex 1152B, searching vregs 0 -> 31 and stack slots 0 -> 0
+
+  STACKMAP 4, 0, ...
+  -> Call instruction SlotIndex 1472B, searching vregs 0 -> 31 and stack slots 0 -> 0
+

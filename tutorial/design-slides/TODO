@@ -1,0 +1,6 @@
+Future work:
+- Stack transformation
+  - What target-specific information is needed
+  - Details & limitations of architecture-specific values, i.e., limited types & operations (can't implement entire type system!)
+- Advanced section
+  - How to hide architecture-specific code in libraries (e.g., migration)

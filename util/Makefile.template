@@ -13,6 +13,10 @@ POPCORN := /usr/local/popcorn
 ARM64_LIBGCC := $(shell dirname \
                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
+# FIXME directory of libgcc & libgcc_eh for powerpc64le compiler
+POWERPC64_LIBGCC := $(shell dirname \
+                    $(shell powerpc64le-linux-gnu-gcc -print-libgcc-file-name))
+
 # FIXME name of the generated executable
 BIN := test
 
@@ -124,8 +128,8 @@ all: post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-#	@echo " [CHECK] Checking stackmaps for $^"
-#	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking stackmaps for $^"
+	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 

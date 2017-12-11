@@ -1,0 +1,46 @@
+There are 38 section headers, starting at offset 0x65a0a0:
+
+Section Headers:
+  [Nr] Name              Type            Address          Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            0000000000000000 000000 000000 00      0   0  0
+  [ 1] .text             PROGBITS        0000000000500000 100000 02124c 00  AX  0   0 1048576
+  [ 2] .rodata           PROGBITS        0000000000600000 200000 004342 00   A  0   0 1048576
+  [ 3] .rodata.cst4      PROGBITS        0000000000604344 204344 00002c 04  AM  0   0  4
+  [ 4] .rodata.cst16     PROGBITS        0000000000604370 204370 0000a0 10  AM  0   0 16
+  [ 5] .rodata.str1.1    PROGBITS        0000000000604410 204410 000023 01 AMS  0   0  1
+  [ 6] .rodata.cst8      PROGBITS        0000000000604438 204438 000038 08  AM  0   0  8
+  [ 7] .data             PROGBITS        0000000000700000 300000 001280 00  WA  0   0 1048576
+  [ 8] .bss              NOBITS          0000000000800000 400000 0024f8 00  WA  0   0 1048576
+  [ 9] .bss.__response_timings NOBITS          0000000000802500 402500 002000 00  WA  0   0 16
+  [10] .ldata            PROGBITS        0000000000806500 404500 000000 00   A  0   0  0
+  [11] .eh_frame         PROGBITS        0000000000806500 404500 002c28 00   A  0   0  8
+  [12] .llvm_stackmaps   PROGBITS        000000000080a000 408000 000970 00   A  0   0 4096
+  [13] .tdata            PROGBITS        0000000000900000 500000 001000 00   A  0   0 1048576
+  [14] .tbss             PROGBITS        0000000000a00000 600000 001000 00   A  0   0 1048576
+  [15] .init_array       INIT_ARRAY      0000000000a01000 601000 000018 00  WA  0   0  8
+  [16] .fini_array       FINI_ARRAY      0000000000a01018 601018 000008 00  WA  0   0  8
+  [17] .comment          PROGBITS        0000000000000000 601020 0000f6 01  MS  0   0  1
+  [18] .stack_transform.unwind PROGBITS        0000000000000000 601118 0000b0 04      0   0  4
+  [19] .stack_transform.unwind_arange PROGBITS        0000000000000000 6011c8 0000d0 10      0   0  8
+  [20] .debug_str        PROGBITS        0000000000000000 601298 003a6f 01  MS  0   0  1
+  [21] .debug_loc        PROGBITS        0000000000000000 604d07 01195d 00      0   0  1
+  [22] .debug_abbrev     PROGBITS        0000000000000000 616664 00780e 00      0   0  1
+  [23] .debug_info       PROGBITS        0000000000000000 61de72 019b01 00      0   0  1
+  [24] .debug_ranges     PROGBITS        0000000000000000 637973 0034f0 00      0   0  1
+  [25] .debug_pubnames   PROGBITS        0000000000000000 63ae63 002847 00      0   0  1
+  [26] .debug_pubtypes   PROGBITS        0000000000000000 63d6aa 004cfa 00      0   0  1
+  [27] .debug_frame      PROGBITS        0000000000000000 6423a8 001f90 00      0   0  8
+  [28] .debug_line       PROGBITS        0000000000000000 644338 00bf62 00      0   0  1
+  [29] .debug_aranges    PROGBITS        0000000000000000 65029a 000180 00      0   0  1
+  [30] .note.gnu.gold-version NOTE            0000000000000000 65041c 00001c 00      0   0  4
+  [31] .symtab           SYMTAB          0000000000000000 650438 004fe0 18     32 426  8
+  [32] .strtab           STRTAB          0000000000000000 655418 003766 00      0   0  1
+  [33] .shstrtab         STRTAB          0000000000000000 658b7e 000202 00      0   0  1
+  [34] .stack_transform.id PROGBITS        0000000000000000 658d80 0007ec 34      0   0  0
+  [35] .stack_transform.addr PROGBITS        0000000000000000 65956c 0007ec 34      0   0  0
+  [36] .stack_transform.live PROGBITS        0000000000000000 659d58 000348 0c      0   0  0
+  [37] .stack_transform.arch_const PROGBITS        0000000000000000 65a0a0 000000 14      0   0  0
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), l (large)
+  I (info), L (link order), G (group), T (TLS), E (exclude), x (unknown)
+  O (extra OS processing required) o (OS specific), p (processor specific)

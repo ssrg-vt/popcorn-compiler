@@ -1,7 +1,7 @@
 #ifndef _MIGRATE_H
 #define _MIGRATE_H
 
-#if !defined __aarch64__ && !defined __x86_64__
+#if !defined(__aarch64__) && !defined(__powerpc64__) && !defined(__x86_64__)
 # error Unknown/unsupported architecture!
 #endif
 
@@ -21,6 +21,7 @@ enum arch {
   ARCH_UNKNOWN = -1,
   ARCH_AARCH64 = 0,
   ARCH_X86_64,
+  ARCH_POWERPC64,
   NUM_ARCHES,
 };
 
