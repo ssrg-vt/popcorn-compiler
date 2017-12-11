@@ -13,7 +13,8 @@
 
 #define GET_LOCAL_REGSET \
     struct regset_powerpc64 regs_src; \
-    READ_REGS_POWERPC64(regs_src)
+    READ_REGS_POWERPC64(regs_src); \
+    regs_src.pc = get_call_site()
 
 #define LOCAL_STACK_FRAME \
     (void *)regs_src.r[1]

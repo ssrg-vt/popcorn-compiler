@@ -13,7 +13,8 @@
 
 #define GET_LOCAL_REGSET \
     struct regset_x86_64 regs_src; \
-    READ_REGS_X86_64(regs_src)
+    READ_REGS_X86_64(regs_src); \
+    regs_src.rip = get_call_site()
 
 #define LOCAL_STACK_FRAME \
     (void *)regs_src.rsp

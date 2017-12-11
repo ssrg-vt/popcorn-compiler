@@ -210,6 +210,10 @@ struct shim_data {
 static volatile int __hold = 1;
 #endif
 
+/* Generate a call site to get rewriting metadata for outermost frame. */
+static void* __attribute__((noinline))
+get_call_site() { return __builtin_return_address(0); };
+
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.

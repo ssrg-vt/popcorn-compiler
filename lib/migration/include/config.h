@@ -21,7 +21,7 @@
  * Calculate time between when threads are signalled to migrate and when they
  * enter the migration library.
  */
-#define _TIME_RESPONSE_DELAY 1
+#define _TIME_RESPONSE_DELAY 0
 
 /* Time how long it takes the stack transformation library to do its thing. */
 #define _TIME_REWRITE 0
