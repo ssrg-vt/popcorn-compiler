@@ -166,7 +166,8 @@ $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 
 $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
 	@echo " [ALIGN] $@"
-	@$(ALIGN) --x86-bin $(X86_64_VANILLA) --arm-bin $(ARM64_VANILLA) \
+	@$(ALIGN) --compiler-inst $(POPCORN) \
+		--x86-bin $(X86_64_VANILLA) --arm-bin $(ARM64_VANILLA) \
 		--x86-map $(X86_64_MAP) --arm-map $(ARM64_MAP) \
 		--output-x86-ls $(X86_64_LD_SCRIPT)	--output-arm-ls $(ARM64_LD_SCRIPT)
 
