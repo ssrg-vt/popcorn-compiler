@@ -8,12 +8,13 @@
 
 #define SYSCALL_SCHED_MIGRATE 285
 #define SYSCALL_PROPOSE_MIGRATION 286
-#define SYSCALL_MIGRATION_PROPOSED 287
+#define SYSCALL_GET_THREAD_STATUS 287
 #define SYSCALL_GET_NODE_INFO 288
 
 #define GET_LOCAL_REGSET \
     struct regset_aarch64 regs_src; \
-    READ_REGS_AARCH64(regs_src)
+    READ_REGS_AARCH64(regs_src); \
+    regs_src.pc = get_call_site()
 
 #define LOCAL_STACK_FRAME \
     (void *)regs_src.sp
@@ -53,7 +54,7 @@
         fprintf(stderr, "Could not rewrite stack!\n"); \
         ret = 0; \
       } \
-      ret; \
+      !ret; \
     })
 
 #define SET_FP_REGS \
@@ -77,4 +78,3 @@
 #endif
 
 #endif /* _MIGRATE_AARCH64_H */
-

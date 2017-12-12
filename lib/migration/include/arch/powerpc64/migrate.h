@@ -13,7 +13,8 @@
 
 #define GET_LOCAL_REGSET \
     struct regset_powerpc64 regs_src; \
-    READ_REGS_POWERPC64(regs_src)
+    READ_REGS_POWERPC64(regs_src); \
+    regs_src.pc = get_call_site()
 
 #define LOCAL_STACK_FRAME \
     (void *)regs_src.r[1]
@@ -53,7 +54,7 @@
         fprintf(stderr, "Could not rewrite stack!\n"); \
         ret = 0; \
       } \
-      ret; \
+      !ret; \
     })
 
 #define SET_FP_REGS \

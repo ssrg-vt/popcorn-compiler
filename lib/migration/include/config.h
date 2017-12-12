@@ -30,7 +30,7 @@
  * enter the migration library.
  */
 #ifndef _TIME_RESPONSE_DELAY
-#define _TIME_RESPONSE_DELAY 1
+#define _TIME_RESPONSE_DELAY 0
 #endif
 
 /* Time how long it takes the stack transformation library to do its thing. */

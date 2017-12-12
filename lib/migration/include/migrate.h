@@ -17,6 +17,19 @@ extern "C" {
 #include "arch.h"
 
 /**
+ * Get the current architecture.
+ * @return the architecture on which we're executing
+ */
+enum arch current_arch(void);
+
+/**
+ * Get the current node id.
+ * @return the node id on which this thread is running
+ */
+int current_nid(void);
+
+
+/**
  * Check if thread should migrate, and if so, invoke migration.  The optional
  * callback function will be invoked before execution resumes on destination
  * architecture.
