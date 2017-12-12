@@ -499,7 +499,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         print("Configuring libelf ({})...".format(target))
         try:
             cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-                     '-specs {}"'.format(os.path.join(target_install_path,
+                     '-specs {}" LDFLAGS="-static"'.format(os.path.join(target_install_path,
                                                      'lib/musl-gcc.specs'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
