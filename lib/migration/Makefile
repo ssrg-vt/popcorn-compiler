@@ -27,7 +27,8 @@ CFLAGS_ARM     := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_POWERPC := $(CFLAGS) -target powerpc64le-linux-gnu
 CFLAGS_X86     := $(CFLAGS) -target x86_64-linux-gnu
 
-INC         := -I./include
+COMMON      := $(shell readlink -f ../../common/include)
+INC         := -I./include -I$(COMMON)
 INC_ARM     := $(INC) -I$(POPCORN_ARM)/include
 INC_POWERPC := $(INC) -I$(POPCORN_POWERPC)/include
 INC_X86     := $(INC) -I$(POPCORN_X86)/include
@@ -103,13 +104,13 @@ $(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
 	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
 
 # $(LIB_POWERPC)
+#	@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
+#	@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
+#	@cp $(HDR) $(POPCORN_POWERPC)/include
 install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
 	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
 	@cp $(HDR) $(POPCORN_ARM)/include
-	#@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
-	#@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
-	#@cp $(HDR) $(POPCORN_POWERPC)/include
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
 	@cp $(LIB_X86) $(POPCORN_X86)/lib
 	@cp $(HDR) $(POPCORN_X86)/include

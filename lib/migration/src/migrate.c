@@ -120,7 +120,7 @@ static inline int do_migrate(void *addr)
 
 #else /* _ENV_SELECT_MIGRATE */
 
-static inline int do_migrate(void *fn)
+static inline int do_migrate(void __attribute__((unused)) *fn)
 {
   return syscall(SYSCALL_MIGRATION_PROPOSED);
 }
@@ -134,7 +134,7 @@ struct shim_data {
   void *regset;
 };
 
-static int archs[MAX_POPCORN_NODES] = { 0 };
+static enum arch archs[MAX_POPCORN_NODES] = { 0 };
 
 static void __attribute__((constructor)) __init_nodes_info(void)
 {
@@ -191,7 +191,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 #if _SIG_MIGRATION == 1
     clear_migrate_flag();
 #endif
-    const int dst_arch = archs[nid];
+    const enum arch dst_arch = archs[nid];
 
     GET_LOCAL_REGSET;
     union {
@@ -221,15 +221,15 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
       printf("Stack transformation time: %ldns\n", end_ns - start_ns);
 #endif
 
-      if(dst_arch == X86_64) {
+      if(dst_arch == ARCH_X86_64) {
         regs_dst.x86.rip = __migrate_shim_internal;
         sp = (unsigned long)regs_dst.x86.rsp;
         bp = (unsigned long)regs_dst.x86.rbp;
-      } else if (dst_arch == AARCH64) {
+      } else if (dst_arch == ARCH_AARCH64) {
         regs_dst.aarch.pc = __migrate_shim_internal;
         sp = (unsigned long)regs_dst.aarch.sp;
         bp = (unsigned long)regs_dst.aarch.x[29];
-      } else if (dst_arch == POWERPC64) {
+      } else if (dst_arch == ARCH_POWERPC64) {
         regs_dst.powerpc.pc = __migrate_shim_internal;
         sp = (unsigned long)regs_dst.powerpc.r[1];
         bp = (unsigned long)regs_dst.powerpc.r[31];

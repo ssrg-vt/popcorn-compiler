@@ -219,94 +219,43 @@ stack_bounds get_stack_bounds()
  * Rewrite from source to destination stack.
  */
 int st_userspace_rewrite(void* sp,
+                         enum arch src_arch,
                          void* src_regs,
+                         enum arch dest_arch,
                          void* dest_regs)
 {
-  if(!aarch64_handle || !powerpc64_handle || !x86_64_handle)
+  st_handle src_handle, dest_handle;
+
+  switch(src_arch)
   {
-    ST_WARN("could not load user-space rewriting information\n");
+  case ARCH_AARCH64: src_handle = aarch64_handle; break;
+  case ARCH_POWERPC64: src_handle = powerpc64_handle; break;
+  case ARCH_X86_64: src_handle = x86_64_handle; break;
+  default: ST_WARN("Unsupported source architecture!\n"); return 1;
+  }
+
+  if(!src_handle)
+  {
+    ST_WARN("Could not load rewriting information for source!");
     return 1;
   }
 
-#ifdef __aarch64__
-  return userspace_rewrite_internal(sp,
-                                    src_regs,
-                                    dest_regs,
-                                    aarch64_handle,
-                                    x86_64_handle);
-#elif defined __powerpc64__
-  return userspace_rewrite_internal(sp,
-                                    src_regs,
-                                    dest_regs,
-                                    powerpc64_handle,
-                                    x86_64_handle);
-#elif defined __x86_64__
-  return userspace_rewrite_internal(sp,
-                                    src_regs,
-                                    dest_regs,
-                                    x86_64_handle,
-                                    aarch64_handle);
-#endif
-}
-
-/*
- * Rewrite from aarch64 -> aarch64.
- */
-int st_userspace_rewrite_aarch64(void* sp,
-                                 struct regset_aarch64* regs,
-                                 struct regset_aarch64* dest_regs)
-{
-  if(!aarch64_handle)
+  switch(dest_arch)
   {
-    ST_WARN("could not load user-space rewriting information\n");
+  case ARCH_AARCH64: dest_handle = aarch64_handle; break;
+  case ARCH_POWERPC64: dest_handle = powerpc64_handle; break;
+  case ARCH_X86_64: dest_handle = x86_64_handle; break;
+  default: ST_WARN("Unsupported destination architecture!\n"); return 1;
+  }
+
+  if(!dest_handle)
+  {
+    ST_WARN("Could not rewriting information for destination!");
     return 1;
   }
 
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    aarch64_handle,
-                                    aarch64_handle);
-}
-
-/*
- * Rewrite from powerpc64 -> powerpc64.
- */
-int st_userspace_rewrite_powerpc64(void* sp,
-                                 struct regset_powerpc64* regs,
-                                 struct regset_powerpc64* dest_regs)
-{
-  if(!powerpc64_handle)
-  {
-    ST_WARN("could not load user-space rewriting information\n");
-    return 1;
-  }
-
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    powerpc64_handle,
-                                    powerpc64_handle);
-}
-
-/*
- * Rewrite from x86_64 -> x86_64.
- */
-int st_userspace_rewrite_x86_64(void* sp,
-                                struct regset_x86_64* regs,
-                                struct regset_x86_64* dest_regs)
-{
-  if(!x86_64_handle)
-  {
-    ST_WARN("could not load user-space rewriting information\n");
-    return 1;
-  }
-
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    x86_64_handle,
-                                    x86_64_handle);
+  return userspace_rewrite_internal(sp, src_regs, dest_regs,
+                                    src_handle, dest_handle);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -384,13 +333,6 @@ static bool prep_stack(void)
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
-#ifdef _POPCORN_BUILD
-  // TODO hack -- Popcorn currently returns an incorrect PID, so hard-code in
-  // assuming we're at the top of the address space
-  bool found = true;
-  bounds->high = (void*)0x7ffffff000;
-  bounds->low = (void*)0x7ffffde000;
-#else
   /* /proc/<id>/maps fields */
   bool found = false;
   int fields;
@@ -425,7 +367,6 @@ static bool get_main_stack(stack_bounds* bounds)
   }
   free(lineptr);
   fclose(proc_fp);
-#endif
 
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;

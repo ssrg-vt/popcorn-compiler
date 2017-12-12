@@ -14,13 +14,7 @@ extern "C" {
 #endif
 #include <sched.h>
 
-/* Supported architectures */
-enum arch {
-  AARCH64 = 0,
-  POWERPC64,
-  X86_64,
-  NUM_ARCHES
-};
+#include "arch.h"
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional

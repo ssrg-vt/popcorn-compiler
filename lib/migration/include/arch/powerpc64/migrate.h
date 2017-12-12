@@ -24,7 +24,8 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if(st_userspace_rewrite_powerpc64(LOCAL_STACK_FRAME, &regs_src, &regs_src)) \
+      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_POWERPC64, &regs_src, \
+                              ARCH_POWERPC64, &regs_dst)) \
       { \
         fprintf(stderr, "Could not rewrite stack!\n"); \
         ret = 0; \
@@ -46,15 +47,11 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if (dst_arch == X86_64) { \
-        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
-                                   &regs_src, &regs_dst.x86); \
-      } else if (dst_arch == AARCH64) { \
-        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
-                                   &regs_src, &regs_dst.aarch); \
-      } else if (dst_arch == POWERPC64) { \
-        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
-                                   &regs_src, &regs_dst.powerpc); \
+      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_POWERPC64, &regs_src, \
+                              dest_arch, &regs_dst)) \
+      { \
+        fprintf(stderr, "Could not rewrite stack!\n"); \
+        ret = 0; \
       } \
       ret; \
     })
