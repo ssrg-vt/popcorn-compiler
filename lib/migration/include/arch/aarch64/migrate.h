@@ -54,7 +54,7 @@
         fprintf(stderr, "Could not rewrite stack!\n"); \
         ret = 0; \
       } \
-      !ret; \
+      ret; \
     })
 
 #define SET_FP_REGS \
