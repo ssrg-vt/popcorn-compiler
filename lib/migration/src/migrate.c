@@ -14,29 +14,13 @@
 #include "trigger.h"
 #endif
 
-/* Pierre: due to the-fdata-sections flags, in combination with the way the
- * library is compiled for each architecture, global variables here end up
- * placed into sections with different names, making them difficult to link
- * back together from the alignment tool  perspective without ugly hacks.
- * So, the solution here is to force these global variables to be in a custom
- * section. By construction it will have the same name on both architecture.
- * However for some reason this doesn't work if the global variable is static so
- * I had to remove the static keyword for the concerned variables. They are:
- * - migrate_callback
- * - migrate_callback_data
- * - archs
- */
-
+/* Thread migration status information. */
 struct popcorn_thread_status {
 	int current_nid;
 	int proposed_nid;
 	int peer_nid;
 	int peer_pid;
 } status;
-
-#if _TIME_REWRITE == 1
-#include <time.h>
-#endif
 
 #if _ENV_SELECT_MIGRATE == 1
 
@@ -259,16 +243,13 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
     *pthread_migrate_args() = &data;
 
 #if _TIME_REWRITE == 1
-    struct timespec start, end;
-    unsigned long start_ns, end_ns;
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    unsigned long long start, end;
+    TIMESTAMP(start);
 #endif
     if(REWRITE_STACK)
     {
 #if _TIME_REWRITE == 1
-      clock_gettime(CLOCK_MONOTONIC, &end);
-      start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
-      end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
+      TIMESTAMP(end);
       printf("Stack transformation time: %ldns\n", end_ns - start_ns);
 #endif
 
@@ -309,8 +290,8 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
 }
 
 /* Callback function & data for migration points inserted via compiler. */
-void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
-void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data"))) = NULL;
+static void (*migrate_callback)(void *) = NULL;
+static void *migrate_callback_data = NULL;
 
 /* Register callback function for compiler-inserted migration points. */
 void register_migrate_callback(void (*callback)(void*), void *callback_data)
@@ -320,7 +301,7 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 }
 
 /* Hook inserted by compiler at the beginning of a function. */
-void __cyg_profile_func_enter(void *this_fn, void *call_site)
+void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_site)
 {
   int nid = do_migrate(this_fn);
   if (nid >= 0)

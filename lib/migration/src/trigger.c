@@ -50,17 +50,19 @@ static void __attribute__((destructor)) __print_response_timing()
  * Reset the migrate flag when the thread has entered the migration library to
  * avoid continuously attempting migration.
  */
-// TODO remove assertion & reset of start to UINT64_MAX
 void clear_migrate_flag()
 {
 #if _TIME_RESPONSE_DELAY == 1
   unsigned long end, idx;
-  assert(start != UINT64_MAX && "No starting time stamp");
-  TIMESTAMP(end);
-  idx = __sync_fetch_and_add(&num_triggers, 1);
-  if(idx >= 1024) fprintf(stderr, "WARNING: too many response timings!\n");
-  else response_timings[idx] = TIMESTAMP_DIFF(start, end);
-  start = UINT64_MAX;
+  if(start != UINT64_MAX)
+  {
+    TIMESTAMP(end);
+    idx = __sync_fetch_and_add(&num_triggers, 1);
+    if(idx >= 1024) fprintf(stderr, "WARNING: too many response timings!\n");
+    else response_timings[idx] = TIMESTAMP_DIFF(start, end);
+    start = UINT64_MAX;
+  }
+  else fprintf(stderr, "WARNING: no starting time stamp");
 #endif
 
   // TODO in the real version, a migration should clear this
