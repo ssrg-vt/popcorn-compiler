@@ -14,8 +14,6 @@ extern "C" {
 #endif
 #include <sched.h>
 
-#include "arch.h"
-
 /**
  * Get the current architecture.
  * @return the architecture on which we're executing

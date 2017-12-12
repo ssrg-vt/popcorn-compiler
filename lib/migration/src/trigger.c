@@ -65,9 +65,6 @@ void clear_migrate_flag()
   else fprintf(stderr, "WARNING: no starting time stamp");
 #endif
 
-  // TODO in the real version, a migration should clear this
-  if(syscall(SYSCALL_PROPOSE_MIGRATION, 0, -1))
-    perror("Could not reset the migration destination for the thread");
   __migrate_flag = -1;
 }
 

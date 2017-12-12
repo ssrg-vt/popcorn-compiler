@@ -127,6 +127,8 @@ install-powerpc64: $(LIB_POWERPC64)
 	@cp $< $(POPCORN_POWERPC64)/lib
 	@echo " [INSTALL] $(INC)/stack_transform.h to $(POPCORN_POWERPC64)/include"
 	@cp $(INC)/stack_transform.h $(POPCORN_POWERPC64)/include
+	@echo " [INSTALL] $(COMMON)/include/arch.h to $(POPCORN_POWERPC64)/include"
+	@cp $(COMMON)/include/arch.h $(POPCORN_POWERPC64)/include
 	@mkdir -p $(POPCORN_POWERPC64)/include/arch/aarch64
 	@mkdir -p $(POPCORN_POWERPC64)/include/arch/powerpc64
 	@mkdir -p $(POPCORN_POWERPC64)/include/arch/x86_64
@@ -166,6 +168,8 @@ install-aarch64: $(LIB_AARCH64)
 	@cp $< $(POPCORN_AARCH64)/lib
 	@echo " [INSTALL] $(INC)/stack_transform.h to $(POPCORN_AARCH64)/include"
 	@cp $(INC)/stack_transform.h $(POPCORN_AARCH64)/include
+	@echo " [INSTALL] $(COMMON)/include/arch.h to $(POPCORN_AARCH64)/include"
+	@cp $(COMMON)/include/arch.h $(POPCORN_AARCH64)/include
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/aarch64
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/powerpc64
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/x86_64
@@ -205,6 +209,8 @@ install-x86_64: $(LIB_X86_64)
 	@cp $< $(POPCORN_X86_64)/lib
 	@echo " [INSTALL] $(INC)/stack_transform.h to $(POPCORN_X86_64)/include"
 	@cp $(INC)/stack_transform.h $(POPCORN_X86_64)/include
+	@echo " [INSTALL] $(COMMON)/include/arch.h to $(POPCORN_X86_64)/include"
+	@cp $(COMMON)/include/arch.h $(POPCORN_X86_64)/include
 	@mkdir -p $(POPCORN_X86_64)/include/arch/aarch64
 	@mkdir -p $(POPCORN_X86_64)/include/arch/powerpc64
 	@mkdir -p $(POPCORN_X86_64)/include/arch/x86_64

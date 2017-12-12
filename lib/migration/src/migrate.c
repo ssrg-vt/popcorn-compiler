@@ -9,9 +9,14 @@
 #include <sys/prctl.h>
 #include "migrate.h"
 #include "config.h"
+#include "arch.h"
 
 #if _SIG_MIGRATION == 1
 #include "trigger.h"
+#endif
+
+#if _TIME_REWRITE
+#include "timer.h"
 #endif
 
 /* Thread migration status information. */
@@ -250,7 +255,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
     {
 #if _TIME_REWRITE == 1
       TIMESTAMP(end);
-      printf("Stack transformation time: %ldns\n", end_ns - start_ns);
+      printf("Stack transformation time: %lluns\n", TIMESTAMP_DIFF(start, end));
 #endif
 
       if(dst_arch == ARCH_X86_64) {
