@@ -81,10 +81,12 @@ class Graph:
             return "page @ 0x" + hex(self.name)
 
     def __init__(self,
+                 pageAccessTraceFile,
                  hasEdgeWeights=False,
                  hasVertexSizes=False,
                  numVertexWeights=0):
         assert numVertexWeights >= 0, "Invalid number of vertex weights"
+        self.patFile = pageAccessTraceFile
         self.numEdges = 0
         self.hasEdgeWeights = hasEdgeWeights
         self.hasVertexSizes = hasVertexSizes
