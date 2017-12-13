@@ -64,7 +64,8 @@ chunks.
 Note: in order to avoid extensive preprocessing, we assume the page faults are
 sorted by timestamp in the PAT file.
 '''
-def parsePATtoTrendline(patfile, windowStart, windowEnd, perthread, verbose):
+def parsePATtoTrendline(patfile, windowStart, windowEnd,
+                        numChunks, perthread, verbose):
     def getTimeRange(patfile):
         with open(patfile, 'rb') as fp:
             start = float(fp.readline().split()[0])
@@ -76,14 +77,15 @@ def parsePATtoTrendline(patfile, windowStart, windowEnd, perthread, verbose):
     start, end = getTimeRange(patfile)
     assert start < end, "Starting time is larger than ending time: {} vs. {}" \
         .format(start, end)
-    chunkSize = (end - start) / 100.0
+    chunkSize = (end - start) / float(numChunks)
     assert chunkSize > 0, "Chunk size is too small"
     if verbose:
-        print("-> Dividing application into {}s chunks <-".format(chunkSize))
+        print("-> Dividing application into {} {}s-sized chunks <-" \
+        .format(numChunks, chunkSize))
 
     if perthread: chunks = {}
-    else: chunks = [ 0 for i in range(100) ]
-    ranges = [ (i + 1) * chunkSize for i in range(100) ]
+    else: chunks = [ 0 for i in range(numChunks) ]
+    ranges = [ (i + 1) * chunkSize for i in range(numChunks) ]
     ranges[-1] = ranges[-1] * 1.0001 # Avoid boundary corner cases caused by FP
                                      # representation for last entry
 
@@ -103,13 +105,13 @@ def parsePATtoTrendline(patfile, windowStart, windowEnd, perthread, verbose):
 
                 # Move to next chunk if the timestamp is past the upper time
                 # bound of the current chunk
-                if timestamp > ranges[curChunk]: curChunk += 1
+                while timestamp > ranges[curChunk]: curChunk += 1
 
                 # TODO do per-thread
                 if perthread:
                     pid = int(fields[1])
                     if pid not in chunks:
-                        chunks[pid] = [ 0 for i in range(100) ]
+                        chunks[pid] = [ 0 for i in range(numChunks) ]
                     chunks[pid][curChunk] += 1
                 else: chunks[curChunk] += 1
 
@@ -124,9 +126,9 @@ def parsePATtoTrendline(patfile, windowStart, windowEnd, perthread, verbose):
     # when the user doesn't set the window start/end times
     startChunk = 0
     endChunk = 99
-    for i in reversed(range(100)):
+    for i in reversed(range(numChunks)):
         if ranges[i] >= windowStart: startChunk = i
-    for i in range(100):
+    for i in range(numChunks):
         if ranges[i] <= windowEnd: endChunk = i
 
     # Note: end number for python slices are not inclusive, but we want to
