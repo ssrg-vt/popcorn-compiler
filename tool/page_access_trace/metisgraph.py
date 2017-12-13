@@ -129,12 +129,12 @@ def runGraphchk(graphchk, graphfile):
 def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
     global prefix
 
-    if verbose: print("-> Partitioning into {} nodes".format(nodes))
+    if verbose: print("-> Placing threads across {} nodes".format(nodes))
 
     try:
         args = [ gpmetis, graphfile, str(nodes) ]
         out = subprocess.check_output(args, stderr=subprocess.STDOUT)
-    except Exception:
+    except Exception as e:
         print("ERROR: could not run gpmetis - {}".format(e))
         sys.exit(1)
 
