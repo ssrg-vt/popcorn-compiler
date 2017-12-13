@@ -106,6 +106,7 @@ class Graph:
     Add an access from a thread to a page.
     '''
     def addMapping(self, tid, page, weight=1):
+        # TODO is it possible for TIDs to overlap with page addresses?
         if tid not in self.tids: self.tids[tid] = Graph.Thread(tid)
         if page not in self.pages: self.pages[page] = Graph.Page(page)
         if self.tids[tid].addEdge(page, weight): self.numEdges += 1
