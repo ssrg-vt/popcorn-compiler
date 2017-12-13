@@ -24,23 +24,36 @@ Arguments:
     patfile (str): page access trace file
     windowStart (float): window starting time
     windowEnd (float): window ending time
+    verbose (bool): print parsing status
 '''
-def parsePATtoGraph(patfile,
-                    windowStart=sys.float_info.min,
-                    windowEnd=sys.float_info.max):
+def parsePATtoGraph(patfile, windowStart, windowEnd, verbose):
+    if verbose: print("-> Parsing file '{}' <-".format(patfile))
+
     with open(patfile, 'r') as patfp:
-        graph = Graph(hasEdgeWeights=True)
+        graph = Graph(patfile, hasEdgeWeights=True)
+        lineNum = 0
         for line in patfp:
             fields = line.split()
             timestamp = float(fields[0])
             if timestamp >= windowStart and timestamp <= windowEnd:
+                if verbose:
+                    lineNum += 1
+                    if lineNum % 10000 == 0:
+                        sys.stdout.write("\rParsed {} lines...".format(lineNum))
+                        sys.stdout.flush()
+
                 pid = int(fields[1])
                 perm = fields[2]
                 ip = int(fields[3], base=16)
-                addr = int(fields[4], base=16)
+                addr = int(fields[4], base=16) & 0xfffffffffffff000
 
                 # TODO weight read/write permissions differently?
                 graph.addMapping(pid, addr)
+
+            # Why keep parsing if we're past the end of the time window?
+            if timestamp > windowEnd: break
+
+    if verbose: print("\rParsed {} lines".format(lineNum))
 
     return graph
 
