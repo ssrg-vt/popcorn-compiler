@@ -108,12 +108,23 @@ def writeGraphToFile(graph, suffix, verbose):
         print("Printed graph with {} vertices and {} edges" \
               .format(graph.getNumVertices(), graph.getNumEdges()))
 
-    # Return indexes for parsing the partitioning file
-    return graphfile, indexes
+    # Return the graph file & indexes for parsing the resulting partitioning
+    return graphfile, { indexes[k] : k for k in graph.tids.keys() }
+
+def printThreadPlacements(indexes, partitioning):
+    threads = sorted(indexes.items(), key=lambda tup:tup[0])
+    with open(partitioning, 'r') as partition:
+        for thread in threads:
+            node = partition.readline().strip()
+            print("Thread {} (PID: {}) should be placed on node {}" \
+                  .format(thread[0], thread[1], node))
 
 ###############################################################################
 # METIS execution
 ###############################################################################
+
+def runGraphchk(graphchk, graphfile):
+    assert False, "Not yet implemented!"
 
 def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
     global prefix
@@ -146,7 +157,7 @@ def placeThreads(graph, nodes, gpmetis, save, verbose):
     # TODO if verbose, run the graphchk tool
     metisOut, partitioning = runPartitioner(gpmetis, graphfile, nodes, suffix,
                                             verbose)
-    # TODO parse & print thread placement
+    printThreadPlacements(indexes, partitioning)
 
     if save:
         dirname = "place-threads-" + suffix + "/"
