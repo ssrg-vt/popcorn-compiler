@@ -34,6 +34,8 @@ def parseArguments():
             help="Ignore code page faults - requires -b/--binary")
     config.add_argument("--no-data", action="store_true",
             help="Ignore data page faults - requires -b/--binary")
+    # TODO filter by thread
+    # TODO filter by access type
     config.add_argument("-v", "--verbose", action="store_true",
             help="Print status updates & verbose files")
 
@@ -53,11 +55,16 @@ def parseArguments():
     plot.add_argument("--chunks", type=int, default=100,
             help="Number of chunks into which to divide the application")
     plot.add_argument("--per-thread", action="store_true",
-            help="Plot per-thread page fault frequencies, requires -t/--trend")
+            help="Plot per-thread page fault frequencies - requires -t/--trend")
     plot.add_argument("--save-plot", type=str,
             help="If specified, save the plot to file")
 
-    # TODO dump which symbols cause most page faults
+    problemsym = parser.add_argument_group("Per-symbol Access Options")
+    problemsym.add_argument("-l", "--list", action="store_true",
+                    help="List memory objects that cause the most faults " \
+                         "- requires -b/--binary")
+    problemsym.add_argument("--num-syms", type=int, default=10,
+                    help="Number of symbols to list")
 
     return parser.parse_args()
 
@@ -87,6 +94,11 @@ def sanityCheck(args):
         assert args.chunks > 1, \
             "Number of chunks must be >= 1 ({})".format(args.chunks)
 
+    if args.list:
+        assert args.binary, "Must specify a binary for -l/--list"
+        assert args.num_syms > 0, \
+            "Number of symbols must be >= 1 ({})".format(args.num_syms)
+
 ###############################################################################
 # Driver
 ###############################################################################
@@ -112,4 +124,12 @@ if __name__ == "__main__":
                                                  args.verbose)
         plot.plotPageAccessFrequency(chunks, ranges, args.per_thread,
                                      args.save_plot)
+
+    if args.list:
+        sortedSyms = \
+            pat.parsePATforProblemSymbols(args.input, config, args.verbose)
+        print("\n{:30} | Number of Accesses".format("Program Object"))
+        print("{:-<30}-|------------------".format("-"))
+        for sym in sortedSyms[:args.num_syms]:
+            print("{:30} | {}".format(sym[1], sym[0]))
 
