@@ -1,124 +1,150 @@
-'''
-Parse page-access trace files for various analyses.  PAT files have a line for
-each page fault recorded by the operating system at a given moment in the
-application's execution.  Each line has the following format:
+''' Parse page-access trace files for various analyses.  PAT files have a line
+    for each page fault recorded by the operating system at a given moment in
+    the application's execution.  Each line has the following format:
 
-time pid perm ip addr
+    time pid perm ip addr
 
-Where:
-  time: timestamp of fault inside of application's execution
-  pid: process ID of faulting task
-  perm: page access permissions
-  ip: instruction address which cause the fault
-  addr: faulting memory address
+    Where:
+      time: timestamp of fault inside of application's execution
+      pid: process ID of faulting task
+      perm: page access permissions
+      ip: instruction address which cause the fault
+      addr: faulting memory address
 '''
 
 import os
 import sys
 from graph import Graph
 
-'''
-Parse a page access trace (PAT) file and return a graph representing page fault
-patterns within a given time window.
+class ParseConfig:
+    ''' Configuration for parsing a PAT file. Can be configuration to only
+        parse entries within a given window and for certain types of accessed
+        memory.
+    '''
+    def __init__(self, start, end, symbolTable, noCode, noData):
+        self.start = start
+        self.end = end
+        self.symbolTable = symbolTable
+        self.noCode = noCode
+        self.noData = noData
 
-Arguments:
-    patfile (str): page access trace file
-    windowStart (float): window starting time
-    windowEnd (float): window ending time
-    verbose (bool): print parsing status
-'''
-def parsePATtoGraph(patfile, windowStart, windowEnd, verbose):
-    if verbose: print("-> Parsing file '{}' <-".format(patfile))
+def parsePAT(pat, config, callback, callbackData, verbose):
+    ''' Generic parser.  For each line in the PAT file, determine if it fits
+        the configuration.  If so, pass the parsed data to the callback.
 
-    with open(patfile, 'r') as patfp:
-        graph = Graph(patfile, hasEdgeWeights=True)
+        Note: we assume the entries in the PAT file are sorted by timestamp in
+        increasing order.
+
+        Arguments:
+            pat (str): page access trace file
+            config (ParseConfig): configuration for filtering PAT entries
+            callback (func): callback function to analyze a single PAT entry
+            callbackData (?): other data for the callback function
+            verbose (bool): print verbose output
+    '''
+    if verbose: print("-> Parsing file '{}' <-".format(pat))
+
+    with open(pat, 'r') as patfp:
         lineNum = 0
         for line in patfp:
             fields = line.split()
+
+            # Filter based on a time window
             timestamp = float(fields[0])
-            if timestamp >= windowStart and timestamp <= windowEnd:
-                if verbose:
-                    lineNum += 1
-                    if lineNum % 10000 == 0:
-                        sys.stdout.write("\rParsed {} lines...".format(lineNum))
-                        sys.stdout.flush()
+            if timestamp < config.start: continue
+            elif timestamp > config.end: break # No need to keep parsing
 
-                pid = int(fields[1])
-                addr = int(fields[4], base=16) & 0xfffffffffffff000
+            # Filter based on type of memory object accessed
+            if config.symbolTable:
+                addr = int(fields[4], base=16)
+                symbol = config.symbolTable.getSymbol(addr)
+                if symbol:
+                    if symbol.isCode() and config.noCode: continue
+                    elif symbol.isData() and config.noData: continue
 
-                # TODO weight read/write permissions differently?
-                graph.addMapping(pid, addr)
+            if verbose:
+                lineNum += 1
+                if lineNum % 10000 == 0:
+                    sys.stdout.write("\rParsed {} lines...".format(lineNum))
+                    sys.stdout.flush()
 
-            # Why keep parsing if we're past the end of the time window?
-            if timestamp > windowEnd: break
+            callback(fields, callbackData)
 
     if verbose: print("\rParsed {} lines".format(lineNum))
 
+def parsePATtoGraph(pat, config, verbose):
+    ''' Parse a page access trace (PAT) file and return a graph representing
+        page fault patterns within a given time window.
+
+        Arguments:
+            pat (str): page access trace file
+            config (ParseConfig): configuration for filtering PAT entries
+            verbose (bool): print verbose output
+    '''
+    def graphCallback(fields, graph):
+        pid = int(fields[1])
+        addr = int(fields[4], base=16) & 0xfffffffffffff000
+        # TODO weight read/write accesses differently?
+        graph.addMapping(pid, addr)
+
+    graph = Graph(pat, hasEdgeWeights=True)
+    parsePAT(pat, config, graphCallback, graph, verbose)
     return graph
 
-'''
-Parse page fault into frequencies over the duration of the application's
-execution.  In order to graph frequencies, divide execution duration into
-chunks.
+def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
+    ''' Parse page fault into frequencies over the duration of the
+        application's execution.  In order to graph frequencies, divide the
+        execution into chunks.
 
-Note: in order to avoid extensive preprocessing, we assume the page faults are
-sorted by timestamp in the PAT file.
-'''
-def parsePATtoTrendline(patfile, windowStart, windowEnd,
-                        numChunks, perthread, verbose):
-    def getTimeRange(patfile):
-        with open(patfile, 'rb') as fp:
+        Note: in order to avoid extensive preprocessing, we assume the page
+        faults are sorted by timestamp in the PAT file.
+
+        Arguments:
+            pat (str): page access trace file
+            config (ParseConfig): configuration for filtering PAT entries
+            numChunks (int): number of chunks into which to divide execution
+            perthread (bool): maintain fault frequencies per thread
+            verbose (bool): print verbose output
+    '''
+    def getTimeRange(pat):
+        with open(pat, 'rb') as fp:
             start = float(fp.readline().split()[0])
             fp.seek(-2, os.SEEK_END)
             while fp.read(1) != b"\n": fp.seek(-2, os.SEEK_CUR)
             end = float(fp.readline().split()[0])
             return start, end
 
-    start, end = getTimeRange(patfile)
-    assert start < end, "Starting time is larger than ending time: {} vs. {}" \
-        .format(start, end)
+    def trendlineCallback(fields, chunkData):
+        ''' Add entry to chunk bucket based on the timestamp & PID. '''
+        chunks = chunkData[0]
+        ranges = chunkData[1]
+        curChunk = chunkData[2]
+
+        # Move to the next chunk if the timestamp is past the upper bound of
+        # the current chunk.  Note: range[i] = upper bound of chunk[i-1].
+        timestamp = float(fields[0])
+        while timestamp > ranges[curChunk]: curChunk += 1
+        chunkData[2] = curChunk # Need to maintain across callbacks!
+
+        if perthread:
+            pid = int(fields[1])
+            if pid not in chunks: chunks[pid] = [ 0 for i in range(numChunks) ]
+            chunks[pid][curChunk] += 1
+        else: chunks[curChunk] += 1
+
+    start, end = getTimeRange(pat)
     chunkSize = (end - start) / float(numChunks)
-    assert chunkSize > 0, "Chunk size is too small"
-    if verbose:
-        print("-> Dividing application into {} {}s-sized chunks <-" \
-        .format(numChunks, chunkSize))
+    assert chunkSize > 0.0, "Chunk size is too small, use fewer chunks"
+    if verbose: print("-> Dividing application into {} {}s-sized chunks <-" \
+                      .format(numChunks, chunkSize))
 
     if perthread: chunks = {}
     else: chunks = [ 0 for i in range(numChunks) ]
     ranges = [ (i + 1) * chunkSize for i in range(numChunks) ]
     ranges[-1] = ranges[-1] * 1.0001 # Avoid boundary corner cases caused by FP
                                      # representation for last entry
-
-    with open(patfile, 'r') as patfp:
-        # Note: range[i] = upper bound of bucket[i-1]
-        lineNum = 0
-        curChunk = 0
-        for line in patfp:
-            fields = line.split(maxsplit=2)
-            timestamp = float(fields[0])
-            if timestamp >= windowStart and timestamp <= windowEnd:
-                if verbose:
-                    lineNum += 1
-                    if lineNum % 10000 == 0:
-                        sys.stdout.write("\rParsed {} lines...".format(lineNum))
-                        sys.stdout.flush()
-
-                # Move to next chunk if the timestamp is past the upper time
-                # bound of the current chunk
-                while timestamp > ranges[curChunk]: curChunk += 1
-
-                # TODO do per-thread
-                if perthread:
-                    pid = int(fields[1])
-                    if pid not in chunks:
-                        chunks[pid] = [ 0 for i in range(numChunks) ]
-                    chunks[pid][curChunk] += 1
-                else: chunks[curChunk] += 1
-
-            # Why keep parsing if we're past the end of the time window?
-            if timestamp > windowEnd: break
-
-    if verbose: print("\rParsed {} lines".format(lineNum))
+    callbackData = [ chunks, ranges, 0 ]
+    parsePAT(pat, config, trendlineCallback, callbackData, verbose)
 
     # Prune chunks outside of the time window.  Include chunk if at least part
     # of it is contained inside the window.
@@ -127,9 +153,9 @@ def parsePATtoTrendline(patfile, windowStart, windowEnd,
     startChunk = 0
     endChunk = 99
     for i in reversed(range(numChunks)):
-        if ranges[i] >= windowStart: startChunk = i
+        if ranges[i] >= config.start: startChunk = i
     for i in range(numChunks):
-        if ranges[i] <= windowEnd: endChunk = i
+        if ranges[i] <= config.end: endChunk = i
 
     # Note: end number for python slices are not inclusive, but we want to
     # include endChunk so add 1
@@ -137,6 +163,5 @@ def parsePATtoTrendline(patfile, windowStart, windowEnd,
         retChunks = {}
         for pid in chunks: retChunks[pid] = chunks[pid][startChunk:endChunk+1]
         return retChunks, ranges[startChunk:endChunk+1]
-    else:
-        return chunks[startChunk:endChunk+1], ranges[startChunk:endChunk+1]
+    else: return chunks[startChunk:endChunk+1], ranges[startChunk:endChunk+1]
 
