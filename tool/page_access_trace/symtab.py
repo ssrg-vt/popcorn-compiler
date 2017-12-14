@@ -84,6 +84,7 @@ class SymbolTable:
     ''' A symbol table.  Duh. '''
 
     def __init__(self, binary):
+        # TODO be verbose if requested
         ''' Read the symbol table from a file.  Return true if we parsed it
             correctly, false otherwise.
         '''
@@ -111,10 +112,10 @@ class SymbolTable:
 
             Because symbols occupy a range of memory, we can't simply use a
             hash table to map addresses to symbols.  Instead, we need an
-            ordering, so that we can determine the symbol whose address is
-            directly before or equal to the faulting address.  Once we find
-            this symbol (if it exists), we can do a simple range check to see
-            if the symbol contains the faulting address.
+            ordering, so that we can determine the symbol whose starting
+            address is directly before or equal to the faulting address.  Once
+            we find this symbol (if it exists), we can do a simple range check
+            to see if the symbol contains the faulting address.
 
             Returns the Symbol object corresponding to the faulting address, or
             None if the address doesn't correspond to any symbol.
