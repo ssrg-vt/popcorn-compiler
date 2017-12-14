@@ -1,18 +1,16 @@
-'''
-Implements an undirected graph G = (V, E), which along with weight & size
-configuration information maintains vertices, edges and their associated
-weights.  Specialized for Popcorn Linux, and in particular the graph where
-vertices represent threads & pages, and edges represent page accesses by those
-threads.
+''' Implements an undirected graph G = (V, E), which along with weight & size
+    configuration information maintains vertices, edges and their associated
+    weights.  Specialized for Popcorn Linux, and in particular the graph where
+    vertices represent threads & pages, and edges represent page accesses by
+    those threads.
 '''
 
 class Graph:
-    '''
-    A generic vertex in the graph.  An instance maintains the vertex's name and
-    edges to other vertexes.  Note that an instance's name field should be an
-    integer type.
-    '''
     class Vertex:
+        ''' A generic vertex in the graph.  An instance maintains the vertex's
+            name and edges to other vertexes.  Note that an instance's name
+            field should be an integer type.
+        '''
         def __init__(self, name):
             # TODO vertex size, vertex weight(s)
             assert type(name) is int, \
@@ -20,12 +18,12 @@ class Graph:
             self.name = name
             self.edges = {}
 
-        '''
-        Add or update an edge between this vertex and another with additional
-        weight.  Return true if the edge being added is new in the adjacency
-        list for this vertex, or false if it had been previously added.
-        '''
         def addEdge(self, vertex, weight):
+            ''' Add or update an edge between this vertex and another with
+                additional weight.  Return true if the edge being added is new
+                in the adjacency list for this vertex, or false if it had been
+                previously added.
+            '''
             if vertex in self.edges:
                 self.edges[vertex] += weight
                 return False
@@ -48,11 +46,10 @@ class Graph:
         def __lt__(self, other):
             return self.name < other.name
 
-    '''
-    A thread's page accesses.  Maintains a dictionary mapping page addresses to
-    the number of times they are accessed by the thread.
-    '''
     class Thread(Vertex):
+        ''' A thread's page accesses.  Maintains a dictionary mapping page
+            addresses to the number of times they are accessed by the thread.
+        '''
         def __init__(self, tid):
             super().__init__(tid)
 
@@ -64,11 +61,10 @@ class Graph:
         def __str__(self):
             return "thread " + str(self.name)
 
-    '''
-    A page accessed by threads.  Maintains a dictionary mapping thread IDs to
-    the number of times they access the page.
-    '''
     class Page(Vertex):
+        ''' A page accessed by threads.  Maintains a dictionary mapping thread
+            IDs to the number of times they access the page.
+        '''
         def __init__(self, page):
             super().__init__(page)
 
@@ -102,10 +98,8 @@ class Graph:
     def getNumEdges(self):
         return self.numEdges
 
-    '''
-    Add an access from a thread to a page.
-    '''
     def addMapping(self, tid, page, weight=1):
+        ''' Add an access from a thread to a page. '''
         # TODO is it possible for TIDs to overlap with page addresses?
         if tid not in self.tids: self.tids[tid] = Graph.Thread(tid)
         if page not in self.pages: self.pages[page] = Graph.Page(page)

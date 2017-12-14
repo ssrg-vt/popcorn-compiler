@@ -6,6 +6,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 def plotPageAccessFrequency(chunks, ranges, perthread, save):
+    ''' Plot page fault frequencies over the duration of an application's
+        execution.
+    '''
     fig = plt.figure(figsize=(12, 4))
     ax = plt.subplot(111)
     if perthread:
