@@ -55,8 +55,8 @@ def parsePAT(pat, config, callback, callbackData, verbose):
             elif timestamp > config.end: break # No need to keep parsing
 
             # Filter based on type of memory object accessed
+            addr = int(fields[4], base=16)
             if config.symbolTable:
-                addr = int(fields[4], base=16)
                 symbol = config.symbolTable.getSymbol(addr)
                 if symbol:
                     if symbol.isCode() and config.noCode: continue
@@ -68,7 +68,7 @@ def parsePAT(pat, config, callback, callbackData, verbose):
                     sys.stdout.write("\rParsed {} lines...".format(lineNum))
                     sys.stdout.flush()
 
-            callback(fields, callbackData)
+            callback(fields, timestamp, addr, callbackData)
 
     if verbose: print("\rParsed {} lines".format(lineNum))
 
@@ -81,11 +81,10 @@ def parsePATtoGraph(pat, config, verbose):
             config (ParseConfig): configuration for filtering PAT entries
             verbose (bool): print verbose output
     '''
-    def graphCallback(fields, graph):
+    def graphCallback(fields, timestamp, addr, graph):
         pid = int(fields[1])
-        addr = int(fields[4], base=16) & 0xfffffffffffff000
         # TODO weight read/write accesses differently?
-        graph.addMapping(pid, addr)
+        graph.addMapping(pid, addr & 0xfffffffffffff000)
 
     graph = Graph(pat, hasEdgeWeights=True)
     parsePAT(pat, config, graphCallback, graph, verbose)
@@ -114,7 +113,7 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
             end = float(fp.readline().split()[0])
             return start, end
 
-    def trendlineCallback(fields, chunkData):
+    def trendlineCallback(fields, timestamp, addr, chunkData):
         ''' Add entry to chunk bucket based on the timestamp & PID. '''
         chunks = chunkData[0]
         ranges = chunkData[1]
@@ -122,7 +121,6 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
 
         # Move to the next chunk if the timestamp is past the upper bound of
         # the current chunk.  Note: range[i] = upper bound of chunk[i-1].
-        timestamp = float(fields[0])
         while timestamp > ranges[curChunk]: curChunk += 1
         chunkData[2] = curChunk # Need to maintain across callbacks!
 
@@ -164,4 +162,25 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
         for pid in chunks: retChunks[pid] = chunks[pid][startChunk:endChunk+1]
         return retChunks, ranges[startChunk:endChunk+1]
     else: return chunks[startChunk:endChunk+1], ranges[startChunk:endChunk+1]
+
+def parsePATforProblemSymbols(pat, config, verbose):
+    def problemSymbolCallback(fields, timestamp, addr, symData):
+        objectsAccessed = symData[0]
+        symbolTable = config.symbolTable
+
+        symbol = symbolTable.getSymbol(addr)
+        if symbol:
+            if symbol.name not in objectsAccessed:
+                objectsAccessed[symbol.name] = 0
+            objectsAccessed[symbol.name] += 1
+        # TODO detect heap/stack/mmap
+
+    objectsAccessed = { "stack/mmap" : 0, "heap" : 0 }
+    callbackData = [ objectsAccessed, config.symbolTable ]
+    parsePAT(pat, config, problemSymbolCallback, callbackData, verbose)
+
+    # Generate list sorted by number of items accessed
+    sortedSyms = [ (objectsAccessed[sym], sym) for sym in objectsAccessed ]
+    sortedSyms.sort(reverse=True, key=lambda v: v[0])
+    return sortedSyms
 

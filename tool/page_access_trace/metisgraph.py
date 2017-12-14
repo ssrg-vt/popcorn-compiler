@@ -15,13 +15,17 @@ prefix = "/tmp/place-threads-"
 # Printing
 ###############################################################################
 
-def writeReadme(graph, gpmetis, nodes, directory):
+def writeReadme(graph, gpmetis, nodes, directory, suffix):
     ''' If saving intermediate information, describe how it was generated. '''
     with open(directory + "/README", 'w') as fp:
         fp.write("Partitioning generated from page access trace file '{}'\n" \
                  .format(graph.patFile))
         fp.write("  - Partitioning using '{}'\n".format(gpmetis))
-        fp.write("  - Distributing threads across {} nodes\n".format(nodes))
+        fp.write("  - Distributing threads across {} nodes\n\n".format(nodes))
+        fp.write("METIS graph file: place-threads-{}.graph\n".format(suffix))
+        fp.write("Partitioning result: place-threads-{}.graph.part.{}\n" \
+                 .format(suffix, nodes))
+        fp.write("METIS output: place-threads-{}.metis.out\n".format(suffix))
 
 def getHeader(graph):
     ''' Get the header for the graph file which contains configuration
@@ -170,7 +174,7 @@ def placeThreads(graph, nodes, gpmetis, save, verbose):
     if save:
         dirname = "place-threads-" + suffix + "/"
         os.mkdir(dirname)
-        writeReadme(graph, gpmetis, nodes, dirname)
+        writeReadme(graph, gpmetis, nodes, dirname, suffix)
         os.rename(graphfile, dirname + path.basename(graphfile))
         os.rename(metisOut, dirname + path.basename(metisOut))
         os.rename(partitioning, dirname + path.basename(partitioning))
