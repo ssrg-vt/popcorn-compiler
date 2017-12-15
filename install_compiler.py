@@ -18,11 +18,13 @@ import urllib
 
 # Supported targets
 supported_targets = ['aarch64', 'x86_64']
+
 # LLVM names for targets
 llvm_targets = {
     'aarch64' : 'AArch64',
     'powerpc64' : 'PowerPC',
     'powerpc64le' : 'PowerPC',
+    'ppc64le' : 'PowerPC',
     'x86_64' : 'X86'
 }
 
@@ -32,6 +34,8 @@ llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
 clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 # Binutils 2.27 URL
 binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2'
+# Alpine Linux v3.7 URL
+alpine_url = 'http://dl-4.alpinelinux.org/alpine/v3.7/main/!!/g++-6.4.0-r5.apk'
 
 #================================================
 # LOG CLASS
@@ -95,12 +99,16 @@ def setup_argument_parsing():
                         dest="skip_utils_install")
     process_opts.add_argument("--skip-namespace",
                         help="Skip building namespace tools (deprecated)",
-                        action="store_false",
+                        action="store_true",
                         dest="skip_namespace")
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
                         dest="install_call_info_library")
+    process_opts.add_argument("--install-c++",
+                        help="Install C++ headers & libraries",
+                        action="store_true",
+                        dest="install_cxx")
 
     selectable_targets = list(supported_targets)
     selectable_targets.extend(["all"])
@@ -130,11 +138,11 @@ def postprocess_args(args):
     global supported_targets
     global llvm_targets
 
-    # Clean up paths
+    # CLEAN UP PATHS
     args.base_path = os.path.abspath(args.base_path)
     args.install_path = os.path.abspath(args.install_path)
 
-    # Sanity check targets requested & generate LLVM-equivalent names
+    # SANITY CHECK TARGETS REQUESTED & GENERATE LLVM-EQUIVALENT NAMES
     user_targets = args.targets.split(',')
     args.install_targets = []
     for target in user_targets:
@@ -349,6 +357,7 @@ def install_binutils(base_path, install_path, num_threads):
         else:
             with tarfile.open('binutils-2.27.tar.bz2', 'r:bz2') as f:
                 f.extractall(path=os.path.join(install_path, 'src'))
+            os.remove('binutils-2.27.tar.bz2')
 
 
         # PATCH BINUTILS
@@ -406,7 +415,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
     cur_dir = os.getcwd()
 
-    # musl-libc & libelf are built individually per target
+    # MUSL-LIBC & LIBELF ARE BUILT INDIVIDUALLY PER TARGET
 
     for target in targets:
         target_install_path = os.path.join(install_path, target)
@@ -521,7 +530,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
-    # The build systems for the following already build for all ISAs
+    # THE BUILD SYSTEMS FOR THE FOLLOWING ALREADY BUILD FOR ALL ISAS
 
     #=====================================================
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
@@ -663,6 +672,42 @@ def install_call_info_library(base_path, install_path, num_threads):
 
     os.chdir(cur_dir)
 
+def install_cxx(install_path, targets):
+
+    #=====================================================
+    # INSTALL CXX HEADERS & LIBRARIES FROM ALPINE LINUX
+    #=====================================================
+
+    print('Installing C++ libraries from Alpine Linux mirrors - ' \
+          'see Alpine Linux (https://www.alpinelinux.org/) for more details')
+
+    package = 'g++-6.4.0-r5.apk'
+    extract_dir = os.path.join(install_path, 'src', 'c++')
+
+    for target in targets:
+        try:
+            urllib.urlretrieve(alpine_url.replace('!!', target), package)
+        except Exception as e:
+            print('Could not download C++ files ({})!'.format(e))
+            sys.exit(1)
+        else:
+            with tarfile.open(package, 'r:gz') as f:
+                include_dir = os.path.join(install_path, target, 'include')
+                lib_dir = os.path.join(install_path, target, 'lib')
+                if not os.path.isdir(include_dir): os.makedirs(include_dir)
+                if not os.path.isdir(lib_dir): os.makedirs(lib_dir)
+
+                f.extractall(extract_dir)
+                os.rename(os.path.join(extract_dir, 'usr/include/c++'),
+                          os.path.join(include_dir, 'c++'))
+                extracted_lib = os.path.join(extract_dir, 'usr/lib')
+                for lib in [ 'libstdc++.a', 'libsupc++.a' ]:
+                    os.rename(os.path.join(extracted_lib, lib),
+                              os.path.join(lib_dir, lib))
+
+            shutil.rmtree(extract_dir)
+            os.remove(package)
+
 def install_utils(base_path, install_path, num_threads):
     #=====================================================
     # MODIFY MAKEFILE TEMPLATE
@@ -723,6 +768,8 @@ def main(args):
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
                                   args.threads)
+
+    if args.install_cxx: install_cxx(args.install_path, args.install_targets)
 
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
