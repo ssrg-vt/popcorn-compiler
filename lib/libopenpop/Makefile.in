@@ -299,7 +299,8 @@ AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
-CFLAGS = @CFLAGS@
+#CFLAGS = @CFLAGS@
+CFLAGS = @CFLAGS@ -popcorn-alignment -fno-common #MLK
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CUDA_DRIVER_INCLUDE = @CUDA_DRIVER_INCLUDE@
@@ -409,7 +410,8 @@ builddir = @builddir@
 # Popcorn note: removing the testsuite from the build process
 ###############################################################################
 #SUBDIRS = testsuite
-config_path = @config_path@
+#config_path = @config_path@
+config_path = linux posix #for popcorn (MLK)
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@

@@ -54,7 +54,7 @@ static inline void *gomp_ptrlock_get (gomp_ptrlock_t *ptrlock)
     return (void *) v;
 
   oldval = 0;
-  if (__atomic_compare_exchange_n (ptrlock, &oldval, 1, false,
+  if (__atomic_compare_exchange_n (ptrlock, (gomp_ptrlock_t*)&oldval, (gomp_ptrlock_t)1, false,
 				   MEMMODEL_ACQUIRE, MEMMODEL_ACQUIRE))
     return NULL;
 

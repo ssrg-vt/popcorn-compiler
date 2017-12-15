@@ -31,6 +31,7 @@
 #include "openacc.h"
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <strings.h>
 #include <stdbool.h>
 #include <string.h>
@@ -629,10 +630,13 @@ ialias (acc_set_device_num)
    Compile this with optimization, so that the compiler expands
    this, rather than generating infinitely recursive code.  */
 
-int __attribute__ ((__optimize__ ("O2")))
+//int __attribute__ ((__optimize__ ("O2")))
+int 
 acc_on_device (acc_device_t dev)
 {
-  return __builtin_acc_on_device (dev);
+  //return __builtin_acc_on_device (dev);//builtin not supported 
+  printf("%s error: returning random value\n", __func__);
+  return -1;
 }
 
 ialias (acc_on_device)

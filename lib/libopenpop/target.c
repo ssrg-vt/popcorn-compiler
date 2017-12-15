@@ -2106,6 +2106,8 @@ omp_target_memcpy (void *dst, void *src, size_t length, size_t dst_offset,
   return EINVAL;
 }
 
+#define __builtin_mul_overflow(a,b,c) (*c=a*b)
+
 static int
 omp_target_memcpy_rect_worker (void *dst, void *src, size_t element_size,
 			       int num_dims, const size_t *volume,
