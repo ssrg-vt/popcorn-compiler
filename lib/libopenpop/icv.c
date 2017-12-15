@@ -87,14 +87,14 @@ omp_set_schedule (omp_sched_t kind, int chunk_size)
     default:
       return;
     }
-  icv->run_sched_var = kind;
+  icv->run_sched_var = (enum gomp_schedule_type) kind;
 }
 
 void
 omp_get_schedule (omp_sched_t *kind, int *chunk_size)
 {
   struct gomp_task_icv *icv = gomp_icv (false);
-  *kind = icv->run_sched_var;
+  *kind = (omp_sched_t)icv->run_sched_var;
   *chunk_size = icv->run_sched_chunk_size;
 }
 
