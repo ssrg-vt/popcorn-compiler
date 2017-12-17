@@ -580,26 +580,88 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
         os.chdir(cur_dir)
 
         #=====================================================
-        # CONFIGURE & INSTALL LIBBOMP
+        # CONFIGURE & INSTALL LIBOPENPOP
         #=====================================================
-        #os.chdir(os.path.join(base_path, 'lib/libbomp'))
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
 
-        #print('Making libbomp...')
-        #try:
-        #    print('Running Make...')
-        #    rv = subprocess.check_call(['make', '-j', str(num_threads),
-        #                                'POPCORN={}'.format(install_path)])
-        #    rv = subprocess.check_call(['make', 'install',
-        #                                'POPCORN={}'.format(install_path)])
-        #except Exception as e:
-        #    print('Could not run Make ({})!'.format(e))
-        #    sys.exit(1)
-        #else:
-        #    if rv != 0:
-        #        print('Make failed.')
-        #        sys.exit(1)
-        #os.chdir(cur_dir)
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
 
+        print("Configuring libopenpop (aarch64)...")
+        try:
+            rv = subprocess.check_call(" ".join(['./popcorn-config-arm64.sh',
+                                        install_path,
+                                        aarch64_install_path]),
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        try:
+            rv = subprocess.check_call(['make', 'distclean'])
+        except Exception as e:
+            print('ERROR running distclean!')
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make distclean failed.')
+                sys.exit(1)
+
+        print("Configuring libopenpop (x86_64)...")
+        try:
+            rv = subprocess.check_call(" ".join(['./popcorn-config-arm64.sh',
+                                        install_path,
+                                        x86_64_install_path]),
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+            print('Could not configure libopenpop({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('libopenpop configure failed.')
+                sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        os.chdir(cur_dir)
         #=====================================================
         # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
         #=====================================================
