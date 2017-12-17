@@ -105,7 +105,7 @@ class AbstractArchitecture():
 			sectionAddr = section.getAddress()
 			sectionSize = section.getSize()
 			sectionName = section.getName()
-			if (addr >= sectionAddr) and (addr < (sectionAddr + sectionSize)):
+			if symbol.getName().startswith(sectionName):
 				res = sectionName
 				if not symbol.getName().startswith(sectionName):
 				# Sanity check if the names fit. is it possible to have a symbol
@@ -120,6 +120,8 @@ class AbstractArchitecture():
 						str(hex(sectionSize)))
 
 				break
+
+			#FIXME: Since the TLS fix, the hack below should probabaly be removed
 
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
