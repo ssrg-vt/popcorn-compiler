@@ -108,7 +108,7 @@ if __name__ == "__main__":
     sanityCheck(args)
 
     # Instantiate objects needed for parsing & analysis
-    if args.binary: symbolTable = symtab.SymbolTable(args.binary)
+    if args.binary: symbolTable = symtab.SymbolTable(args.binary, args.verbose)
     else: symbolTable = None
     config = pat.ParseConfig(args.start, args.end, symbolTable,
                              args.no_code, args.no_data)
@@ -129,7 +129,7 @@ if __name__ == "__main__":
         sortedSyms = \
             pat.parsePATforProblemSymbols(args.input, config, args.verbose)
         print("\n{:30} | Number of Accesses".format("Program Object"))
-        print("{:-<30}-|------------------".format("-"))
+        print("{:-<30}-|-------------------".format("-"))
         for sym in sortedSyms[:args.num_syms]:
             print("{:30} | {}".format(sym[1], sym[0]))
 

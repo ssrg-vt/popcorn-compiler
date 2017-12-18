@@ -83,29 +83,43 @@ class Symbol:
 class SymbolTable:
     ''' A symbol table.  Duh. '''
 
-    def __init__(self, binary):
-        # TODO be verbose if requested
+    def __init__(self, binary, verbose):
         ''' Read the symbol table from a file.  Return true if we parsed it
             correctly, false otherwise.
         '''
+
+        if verbose: print("-> Parsing symbol table from '{}' <-".format(binary))
+
         with open(binary, 'rb') as binfp:
             elf = ELFFile(binfp)
             symtabSection = elf.get_section_by_name(".symtab")
             assert symtabSection, "No symbol table"
 
             self.symbols = {}
+            self.addrs = {}
             for sym in symtabSection.iter_symbols():
-                self.symbols[sym.name] = Symbol(sym.name,
-                                                sym["st_value"],
-                                                sym["st_size"],
-                                                sym["st_info"])
+                addr = sym["st_value"]
+                size = sym["st_size"]
+
+                if size == 0:
+                    if verbose:
+                        print("Skipping zero-size symbol '{}'".format(sym.name))
+                    continue
+
+                # Unfortunately we may have several symbols at the same address
+                # so we need to maintain a list of symbols per address
+                newSym = Symbol(sym.name, addr, size, sym["st_info"])
+                self.symbols[sym.name] = newSym
+                if addr not in self.addrs: self.addrs[addr] = []
+                self.addrs[addr].append(newSym)
 
             # Symbols occupy a range of memory rather than a single address,
             # making symbol lookups based on a faulting address complicated.
             # Create a list of symbols sorted by starting address to facilitate
             # a hybrid binary search + range check approach for symbol lookup.
-            self.sortedsyms = list(self.symbols.values())
-            self.sortedsyms.sort(key=lambda sym: sym.addr)
+            self.sortedaddrs = sorted(self.addrs.keys())
+
+        if verbose: print("Parsed {} symbols".format(len(self.symbols)))
 
     def getSymbol(self, addr):
         ''' Look up the symbol containing the faulting address.
@@ -120,9 +134,9 @@ class SymbolTable:
             Returns the Symbol object corresponding to the faulting address, or
             None if the address doesn't correspond to any symbol.
         '''
-        tmpSymbol = Symbol(None, addr, 0, {"type" : "", "bind" : ""})
-        idx = bisect.bisect_left(self.sortedsyms, tmpSymbol)
-        if idx != len(self.sortedsyms) and self.sortedsyms[idx].contains(addr):
-            return self.sortedsyms[idx]
-        else: return None
+        idx = bisect.bisect_right(self.sortedaddrs, addr)
+        if idx == 0: return None
+        else:
+            for sym in self.addrs[self.sortedaddrs[idx-1]]:
+                if sym.contains(addr): return sym
 
