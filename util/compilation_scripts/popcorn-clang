@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+
+echo "$0: called with $*"
+
+#for /usr/local/popcorn/ld
+export POPCORN_COMPILATION_SCRIPTS=1
+
+POPCORN=/usr/local/popcorn
+ARM64_POPCORN=$POPCORN/aarch64
+CC=$POPCORN/bin/clang
+#LINKER="-fuse-ld=/usr/local/popcorn/bin/popcorn-ld"
+HET_CFLAGS="-nostdinc -nostdlib -popcorn-migratable -fno-common -ftls-model=initial-exec"
+ARM64_INC="-isystem $ARM64_POPCORN/include"
+
+
+$CC $HET_CFLAGS $ARM64_INC $LINKER $*
