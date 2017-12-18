@@ -311,6 +311,24 @@ void __kmpc_end_master(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_end_master: %s %d\n", loc->psource, global_tid);
 }
 
+int32_t __kmpc_single(ident_t *loc,
+                         int32_t global_tid)
+{
+	return (int32_t)GOMP_single_start();
+
+}
+
+void __kmpc_end_single(ident_t *loc,
+                         int32_t global_tid)
+{
+	return;//FIXME:nothing to do?
+}
+
+void __kmpc_flush(ident_t *loc)
+{
+	__sync_synchronize();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Synchronization
 ///////////////////////////////////////////////////////////////////////////////
