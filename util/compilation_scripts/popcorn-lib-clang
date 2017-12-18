@@ -12,8 +12,8 @@ CC=$POPCORN/bin/clang
 HET_CFLAGS="-nostdinc -nostdlib -popcorn-alignment -fno-common -ftls-model=initial-exec -ffunction-sections -fdata-sections"
 ARM64_INC="-isystem $ARM64_POPCORN/include"
 
-CC_AARCH64="$(CC) -target aarch64-linux-gnu"
-CC_X86_64="$(CC) -target x86_64-linux-gnu"
+CC_AARCH64="$CC -target aarch64-linux-gnu"
+CC_X86_64="$CC -target x86_64-linux-gnu"
 
 DEFAULT_BIN="a.out"
 
