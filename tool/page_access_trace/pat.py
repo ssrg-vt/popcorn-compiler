@@ -164,6 +164,15 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
     else: return chunks[startChunk:endChunk+1], ranges[startChunk:endChunk+1]
 
 def parsePATforProblemSymbols(pat, config, verbose):
+    ''' Parse PAT for symbols which cause the most faults.  Return a list of
+        symbols sorted by the highest number of faults.
+
+        Arguments:
+            pat (str): page access trace file
+            config (ParseConfig): configuration for filtering PAT entries
+            verbose (bool): print verbose output
+    '''
+
     def problemSymbolCallback(fields, timestamp, addr, symData):
         objectsAccessed = symData[0]
         symbolTable = config.symbolTable
@@ -173,7 +182,10 @@ def parsePATforProblemSymbols(pat, config, verbose):
             if symbol.name not in objectsAccessed:
                 objectsAccessed[symbol.name] = 0
             objectsAccessed[symbol.name] += 1
-        # TODO detect heap/stack/mmap
+        else:
+            # TODO this is only an approximation!
+            if addr > 0x7f0000000000: objectsAccessed["stack/mmap"] += 1
+            else: objectsAccessed["heap"] += 1
 
     objectsAccessed = { "stack/mmap" : 0, "heap" : 0 }
     callbackData = [ objectsAccessed, config.symbolTable ]
