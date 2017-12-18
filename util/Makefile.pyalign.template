@@ -42,6 +42,7 @@ LIBS    := /lib/crt1.o \
            /lib/libmigrate.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
+	   /lib/libopenpop.a \
            /lib/libpthread.a \
            /lib/libc.a \
            /lib/libm.a
