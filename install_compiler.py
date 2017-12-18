@@ -579,6 +579,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         #=====================================================
         # CONFIGURE & INSTALL LIBOPENPOP
         #=====================================================
+    	#TODO: support != installation path
         os.chdir(os.path.join(base_path, 'lib/libopenpop'))
 
         if os.path.isfile('Makefile'):
@@ -824,6 +825,21 @@ def install_utils(base_path, install_path, num_threads):
         s = os.path.join('./util/scripts/', item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
         shutil.copy(s, d)
+
+    #=====================================================
+    # COPY COMPILATION SCRIPTS
+    #=====================================================
+    #TODO: support != installation path
+    print("backing up default ld {}/bin/ld...".format(install_path))
+    s = os.path.join(os.path.join(install_path, 'bin'), 'ld')
+    d = os.path.join(os.path.join(install_path, 'bin'), 'ld.default')
+    shutil.copy(s, d)
+    print("Copying util/compilation_scripts/ to {}/bin...".format(install_path))
+    for item in os.listdir('./util/compilation_scripts/'):
+        s = os.path.join('./util/compilation_scripts/', item)
+        d = os.path.join(os.path.join(install_path, 'bin'), item)
+        shutil.copy(s, d)
+    
 
 def build_namespace(base_path):
     print("Building namespace tools...")
