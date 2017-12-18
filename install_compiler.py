@@ -577,7 +577,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         print("Configuring libopenpop (x86_64)...")
         try:
-            rv = subprocess.check_call(" ".join(['./popcorn-config-arm64.sh',
+            rv = subprocess.check_call(" ".join(['./popcorn-config-x86_64.sh',
                                         install_path,
                                         x86_64_install_path]),
                                         stderr=subprocess.STDOUT,
