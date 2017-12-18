@@ -3,6 +3,7 @@ set -e
 #set -x
 
 echo "$0: called with $*"
+export POPCORN_COMPILATION_SCRIPTS=1
 #Similar to popcorn-clang but uses the -popcron-alignment flag
 #The complexity come from the need to generate two binaries *explicitly*: arm/x86 binaries.
 
