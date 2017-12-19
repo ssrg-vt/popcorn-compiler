@@ -175,17 +175,6 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
-def _check_javac():
-    try:
-        out = subprocess.check_output(['javac', '-version'],
-                    stderr=subprocess.STDOUT)
-    except Exception:
-        print('javac not found!')
-        return None
-    else:
-        out = out.split('\n')[0]
-        return out
-
 def check_for_prerequisites(args):
     success = True
 
@@ -210,9 +199,6 @@ def check_for_prerequisites(args):
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
-
-    if not _check_javac():
-        success = False
 
     return success
 
@@ -613,7 +599,7 @@ def install_tools(base_path, install_path, num_threads):
     #=====================================================
     # INSTALL ALIGNMENT TOOL
     #=====================================================
-    os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
+    os.chdir(os.path.join(base_path, 'tool/alignment'))
 
     print('Making pyalign...')
     try:

@@ -117,14 +117,10 @@ recommended that applications be built on x86-64.
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
       flex
       bison
-+ OpenJDK, version 1.7 or higher
-  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
-      default-jre
-      default-jdk
 + Python, v2.7 and v3
-  - v2 is needed for installation script
+  - v2 is needed for the installation script and the alignment tool
   - v3 is needed for scripts in util/scripts
-  - Both are pre-installed on Ubuntu 14.04
+  - Both are pre-installed on Ubuntu 14.04 and up
 + Cmake
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
       cmake

@@ -13,10 +13,6 @@ POPCORN := /usr/local/popcorn
 ARM64_LIBGCC := $(shell dirname \
                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
-# FIXME directory of libgcc & libgcc_eh for powerpc64le compiler
-POWERPC64_LIBGCC := $(shell dirname \
-                    $(shell powerpc64le-linux-gnu-gcc -print-libgcc-file-name))
-
 # FIXME name of the generated executable
 BIN := test
 
@@ -52,21 +48,7 @@ LIBS    := /lib/crt1.o \
 LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
-# TODO remove dependencies on external scripting
-ALIGN         := $(POPCORN)/bin/align
-SCRIPTS       := $(POPCORN)/lib/scripts
-ALIGN_BUILD   := align
-ALIGN_SCRIPTS := $(ALIGN_BUILD)/readMyElfToFile.sh \
-                 $(ALIGN_BUILD)/nmScript.sh \
-                 $(ALIGN_BUILD)/mlink_armObjs.sh \
-                 $(ALIGN_BUILD)/mlink_x86Objs.sh \
-                 $(ALIGN_BUILD)/aarch64linux.x \
-                 $(ALIGN_BUILD)/elf_x86_64.x
-ALIGN_BINS    := $(ALIGN_BUILD)/armexe_musl $(ALIGN_BUILD)/x86exe_musl
-ALIGN_MAPS    := $(ALIGN_BUILD)/map_aarch.txt $(ALIGN_BUILD)/map_x86.txt
-ALIGN_OBJ     := $(ALIGN_BUILD)/obj_arm.txt $(ALIGN_BUILD)/obj_x86.txt
-ALIGN_SYMBOLS := $(ALIGN_BUILD)/nm_symbols_aarch64.txt \
-                 $(ALIGN_BUILD)/nm_symbols_x86.txt
+ALIGN          := $(POPCORN)/bin/pyalign
 
 # Post-processing & checking
 POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
@@ -82,11 +64,12 @@ ARM64_POPCORN := $(POPCORN)/aarch64
 ARM64_BUILD   := build_aarch64
 
 # Generated files
-ARM64_ALIGNED   := $(BIN)_aarch64
-ARM64_VANILLA   := $(ARM64_BUILD)/$(ARM64_ALIGNED)
-ARM64_OBJ       := $(SRC:.c=.o)
-ARM64_MAP       := $(ARM64_BUILD)/map.txt
-ARM64_LD_SCRIPT := $(ALIGN_BUILD)/modified__aarch64.x
+ARM64_ALIGNED     := $(BIN)_aarch64
+ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
+ARM64_OBJ         := $(SRC:.c=.o)
+ARM64_MAP         := $(ARM64_BUILD)/map.txt
+ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
+ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
 
 # Flags
 ARM64_TARGET  := aarch64-linux-gnu
@@ -104,13 +87,14 @@ X86_64_BUILD    := build_x86-64
 X86_64_SD_BUILD := sd_x86-64
 
 # Generated files
-X86_64_ALIGNED   := $(BIN)_x86-64
-X86_64_VANILLA   := $(X86_64_BUILD)/$(X86_64_ALIGNED)
-X86_64_OBJ       := $(SRC:.c=_x86_64.o)
-X86_64_MAP       := $(X86_64_BUILD)/map.txt
-X86_64_LD_SCRIPT := $(ALIGN_BUILD)/modified__elf_x86_64.x
-X86_64_SD        := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
-X86_64_SD_OBJ    := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
+X86_64_ALIGNED     := $(BIN)_x86-64
+X86_64_VANILLA     := $(X86_64_BUILD)/$(X86_64_ALIGNED)
+X86_64_OBJ         := $(SRC:.c=_x86_64.o)
+X86_64_MAP         := $(X86_64_BUILD)/map.txt
+X86_64_SD          := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
+X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
+X86_64_LD_SCRIPT   := $(X86_64_BUILD)/aligned_linker_script_x86.x
+X86_64_ALIGNED_MAP := $(X86_64_BUILD)/aligned_map.txt
 
 # Flags
 X86_64_TARGET  := x86_64-linux-gnu
@@ -128,8 +112,8 @@ all: post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-	@echo " [CHECK] Checking stackmaps for $^"
-	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
+#	@echo " [CHECK] Checking stackmaps for $^"
+#	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 
@@ -149,43 +133,16 @@ vanilla-aarch64: $(ARM64_VANILLA)
 vanilla-x86-64: $(X86_64_VANILLA)
 
 clean:
-	@echo " [CLEAN] $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD) *.ll *.o"
-	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) $(X86_64_SD_BUILD) $(ALIGN_BUILD) *.ll *.o
+	@echo " [CLEAN] $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) \
+		$(X86_64_BUILD) $(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) \
+		$(ARM64_LD_SCRIPT) $(ALIGN_WORKDIR) *.ll *.o"
+	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) \
+		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) *.ll *.o
 
 %.dir:
 	@echo " [MKDIR] $*"
 	@mkdir -p $*
 	@touch $@
-
-# TODO remove dependencies on external scripting
-$(ALIGN_BUILD)/readMyElfToFile.sh: $(SCRIPTS)/readMyElfToFile.sh $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/nmScript.sh: $(SCRIPTS)/nmScript.sh $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/mlink_armObjs.sh: $(SCRIPTS)/mlink_armObjs.sh $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/mlink_x86Objs.sh: $(SCRIPTS)/mlink_x86Objs.sh $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/aarch64linux.x: $(SCRIPTS)/aarch64linux.x $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/elf_x86_64.x: $(SCRIPTS)/elf_x86_64.x $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/armexe_musl: $(ARM64_VANILLA) $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/x86exe_musl: $(X86_64_VANILLA) $(ALIGN_BUILD)/.dir
-	@cp $< $@
-$(ALIGN_BUILD)/map_aarch.txt: $(ARM64_VANILLA) $(ALIGN_BUILD)/.dir
-	@cp $(ARM64_MAP) $@
-$(ALIGN_BUILD)/map_x86.txt: $(X86_64_VANILLA) $(ALIGN_BUILD)/.dir
-	@cp $(X86_64_MAP) $@
-$(ALIGN_BUILD)/obj_arm.txt: $(ARM64_OBJ) $(ALIGN_BUILD)/.dir
-	@echo "$(addprefix $(APP_DIR)/,$(ARM64_OBJ))" > $@
-$(ALIGN_BUILD)/obj_x86.txt: $(X86_64_OBJ) $(ALIGN_BUILD)/.dir
-	@echo "$(addprefix $(APP_DIR)/,$(X86_64_OBJ))" > $@
-$(ALIGN_BUILD)/nm_symbols_aarch64.txt: $(ARM64_OBJ) $(ALIGN_BUILD)/.dir
-	@for f in $(ARM64_OBJ); do aarch64-linux-gnu-nm --numeric-sort $$f >> $@; done
-$(ALIGN_BUILD)/nm_symbols_x86.txt: $(X86_64_OBJ) $(ALIGN_BUILD)/.dir
-	@for f in $(X86_64_OBJ); do nm --numeric-sort $$f >> $@; done
 
 ##########
 # Common #
@@ -207,22 +164,17 @@ $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
 
-$(ARM64_LD_SCRIPT): $(ALIGN_BUILD)/.dir \
-                    $(ALIGN_SCRIPTS) \
-                    $(ALIGN_BINS) \
-                    $(ALIGN_MAPS) \
-                    $(ALIGN_OBJ) \
-                    $(ALIGN_SYMBOLS)
+$(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
 	@echo " [ALIGN] $@"
-	@$(ALIGN) $(APP_DIR) -skip-vanilla > $(APP_DIR)/$(ALIGN_BUILD)/align.txt
-	@if [ "`grep 'FAILURE' $(APP_DIR)/$(ALIGN_BUILD)/align.txt`" != "" ]; then \
-		echo "Align failed -- see $(ALIGN_BUILD)/align.txt"; \
-		false; \
-	fi
+	@$(ALIGN) --compiler-inst $(POPCORN) \
+		--x86-bin $(X86_64_VANILLA) --arm-bin $(ARM64_VANILLA) \
+		--x86-map $(X86_64_MAP) --arm-map $(ARM64_MAP) \
+		--output-x86-ls $(X86_64_LD_SCRIPT)	--output-arm-ls $(ARM64_LD_SCRIPT)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP) -T $<
+	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
+		$(ARM64_ALIGNED_MAP) -T $<
 
 ##########
 # x86-64 #
@@ -232,18 +184,13 @@ $(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"
 	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
 
-$(X86_64_LD_SCRIPT): $(ALIGN_BUILD)/.dir \
-                     $(ALIGN_SCRIPTS) \
-                     $(ALIGN_BINS) \
-                     $(ALIGN_MAPS) \
-                     $(ALIGN_OBJ) \
-                     $(ALIGN_SYMBOLS) \
-                     $(ARM64_LD_SCRIPT)
+$(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
 
 $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP) -T $<
+	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) \
+		-Map $(X86_64_ALIGNED_MAP) -T $<
 
 # Stack-depth builds
 $(X86_64_SD_BUILD)/%.o: %.c
