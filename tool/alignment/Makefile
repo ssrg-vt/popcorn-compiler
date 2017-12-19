@@ -15,6 +15,7 @@ tags:
 	ctags -R
 
 bin:
+	rm -rf $(BINARY)
 	zip $(TMP_ZIPFILE) *.py
 	cat $(BOOTSTRAP) $(TMP_ZIPFILE) > $(BINARY)
 	chmod +x $(BINARY)
