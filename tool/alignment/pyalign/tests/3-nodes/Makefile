@@ -1,1 +1,0 @@
-../../../../../util/Makefile.pyalign.3nodes.template
