@@ -667,12 +667,12 @@ def install_utils(base_path, install_path, num_threads):
     #=====================================================
     # MODIFY MAKEFILE TEMPLATE
     #=====================================================
-    print("Updating util/Makefile.pyalign.template to reflect install path...")
+    print("Updating util/Makefile.template to reflect install path...")
 
     try:
         tmp = install_path.replace('/', '\/')
         sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' " \
-                  "./util/Makefile.pyalign.template".format(tmp)
+                  "./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
