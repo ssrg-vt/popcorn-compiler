@@ -17,7 +17,7 @@ CFLAGS="-nostdinc"
 
 ###LDFLAGS
 LIBS="/lib/crt1.o /lib/libc.a /lib/libmigrate.a /lib/libstack-transform.a 
-	/lib/libelf.a  /lib/libpthread.a  /lib/libc.a  /lib/libm.a"
+	/lib/libelf.a  /lib/libopenpop.a /lib/libpthread.a  /lib/libc.a  /lib/libm.a"
 X86_64_LIBS=
 ARM64_LIBS=
 for lib in $LIBS; do
@@ -34,6 +34,7 @@ OBJS=()
 PRINT_VERSION=0
 _USR_LIBRARY_PATH=()
 _USR_LIBS=()
+STANDARD_USR_LIBS=()
 
 #filter "-o" options and "*.o" files
 while [[ $1 ]]
@@ -50,12 +51,16 @@ do
 	      PRINT_VERSION=1
 	      shift
 	      ;;
-	  -L*)
-  	      _USR_LIBRARY_PATH+=("$1")
+	  -lm)
+  	      STANDARD_USR_LIBS+=("$1")
 	      shift
 		;;
 	  -l*)
   	      _USR_LIBS+=("$1")
+	      shift
+		;;
+	  -L*)
+  	      _USR_LIBRARY_PATH+=("$1")
 	      shift
 		;;
 #	  -L*)
@@ -108,6 +113,8 @@ fi
 
 echo OPTIONS: ${options[@]}
 echo OBJS: ${OBJS[@]}
+echo USER_LIBS: ${_USR_LIBS[@]}
+echo STANDARD_USR_LIBS: ${STANDARD_USR_LIBS[@]}
 
 ALL_OBJS="${OBJS[@]}"
 ARM64_OBJ="$ALL_OBJS" #arms obj have no extension
@@ -116,8 +123,13 @@ X86_64_OBJ="${ALL_OBJS//.o/_x86_64.o}"
   	      
 USR_LIBRARY_PATH=${_USR_LIBRARY_PATH[@]}
 USR_LIBS="${_USR_LIBS[@]}"
-USR_LIBS_ARM64="$USR_LIBS"
-USR_LIBS_x86_64="${USR_LIBS/%/_x86_64}" 
+USR_LIBS_ARM64="$USR_LIBS $STANDARD_USR_LIBS"
+if [ -z "$USR_LIBS" ]; then
+	_USR_LIBS_x86_64=""
+else
+	_USR_LIBS_x86_64="${USR_LIBS/%/_x86_64}" 
+fi
+USR_LIBS_x86_64="$_USR_LIBS_x86_64 $STANDARD_USR_LIBS" 
 
 
 #LIBGCC="--start-group -lc -lgcc -lgcc_eh --end-group"
