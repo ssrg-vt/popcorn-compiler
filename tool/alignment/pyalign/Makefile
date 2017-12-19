@@ -28,15 +28,15 @@ check_dead_code:
 	vulture .
 
 tests: bin
-	# 2 nodes: x86-ppc
-	make -C $(TEST_2_NODES) clean
-	make -C $(TEST_2_NODES) MODE=ppc check
+	# 2 nodes: x86-ppc - Enable when ppc is merged for the compiler
+	# make -C $(TEST_2_NODES) clean
+	# make -C $(TEST_2_NODES) MODE=ppc check
 	# 2 nodes: x86-arm
 	make -C $(TEST_2_NODES) clean
 	make -C $(TEST_2_NODES) MODE=arm check
-	# 3 nodes
-	make -C $(TEST_3_NODES) clean
-	make -C $(TEST_3_NODES) check
+	# 3 nodes - Enable when ppc is merged for the compiler
+	# make -C $(TEST_3_NODES) clean
+	# make -C $(TEST_3_NODES) check
 
 clean:
 	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)
