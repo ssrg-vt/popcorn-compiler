@@ -1,4 +1,2 @@
 build/
-Makefile.ppc.disabled
 .ycm_extra_conf.py
-*.swp

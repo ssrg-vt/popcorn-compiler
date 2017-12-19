@@ -95,7 +95,9 @@ _elf_mmap(Elf *elf) {
 	seterr(ERROR_FDDISABLED);
     }
     else if (elf->e_size) {
-	tmp = (void*)mmap(0, elf->e_size, PROT_READ | PROT_WRITE,
+	int flags = PROT_READ;
+	if (elf->e_writable) flags |= PROT_WRITE;
+	tmp = (void*)mmap(0, elf->e_size, flags,
 			  MAP_PRIVATE, elf->e_fd, 0);
 	if (tmp != (void*)-1) {
 	    return tmp;

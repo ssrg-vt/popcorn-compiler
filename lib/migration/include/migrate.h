@@ -14,13 +14,18 @@ extern "C" {
 #endif
 #include <sched.h>
 
-/* Supported architectures */
-enum arch {
-  AARCH64 = 0,
-  POWERPC64,
-  X86_64,
-  NUM_ARCHES
-};
+/**
+ * Get the current architecture.
+ * @return the architecture on which we're executing
+ */
+enum arch current_arch(void);
+
+/**
+ * Get the current node id.
+ * @return the node id on which this thread is running
+ */
+int current_nid(void);
+
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional

@@ -1,6 +1,23 @@
+Index: include/llvm/ADT/SetVector.h
+===================================================================
+--- include/llvm/ADT/SetVector.h	(revision 277823)
++++ include/llvm/ADT/SetVector.h	(working copy)
+@@ -85,6 +85,12 @@
+     return vector_.end();
+   }
+ 
++  /// \brief Return the first element of the SetVector.
++  const T &front() const {
++    assert(!empty() && "Cannot call front() on empty SetVector!");
++    return vector_.front();
++  }
++
+   /// \brief Return the last element of the SetVector.
+   const T &back() const {
+     assert(!empty() && "Cannot call back() on empty SetVector!");
 Index: include/llvm/ADT/StringSet.h
 ===================================================================
---- include/llvm/ADT/StringSet.h	(revision 313649)
+--- include/llvm/ADT/StringSet.h	(revision 277823)
 +++ include/llvm/ADT/StringSet.h	(working copy)
 @@ -23,7 +23,16 @@
    class StringSet : public llvm::StringMap<char, AllocatorTy> {
@@ -21,7 +38,7 @@ Index: include/llvm/ADT/StringSet.h
        return base::insert(std::make_pair(Key, '\0'));
 Index: include/llvm/ADT/ilist_node.h
 ===================================================================
---- include/llvm/ADT/ilist_node.h	(revision 313649)
+--- include/llvm/ADT/ilist_node.h	(revision 277823)
 +++ include/llvm/ADT/ilist_node.h	(working copy)
 @@ -70,7 +70,7 @@
      const NodeTy *Prev = this->getPrev();
@@ -451,11 +468,274 @@ Index: include/llvm/Analysis/LoopNestingTree.h
 +
 +#endif /* _LOOP_NESTING_TREE_H */
 +
+Index: include/llvm/Analysis/LoopPaths.h
+===================================================================
+--- include/llvm/Analysis/LoopPaths.h	(nonexistent)
++++ include/llvm/Analysis/LoopPaths.h	(working copy)
+@@ -0,0 +1,258 @@
++//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements analysis which enumerates paths in loops.  In
++// particular, this pass calculates all paths in loops which are of the
++// following form:
++//
++//  - Header to backedge, with no equivalence points on the path
++//  - Header to with equivalence point
++//  - Equivalence point to equivalence point
++//  - Equivalence point to backedge
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_ANALYSIS_LOOPPATHS_H
++#define LLVM_ANALYSIS_LOOPPATHS_H
++
++#include <set>
++#include <vector>
++#include <list>
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include "llvm/ADT/SetVector.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/IR/BasicBlock.h"
++#include "llvm/Pass.h"
++#include "llvm/Support/Debug.h"
++
++namespace llvm {
++
++//===----------------------------------------------------------------------===//
++// Utilities
++//===----------------------------------------------------------------------===//
++
++/// Sort loops based on nesting depth, with deeper-nested loops coming first.
++/// If the depths are equal, sort based on pointer value so that distinct loops
++/// with equal depths are not considered equivalent during insertion.
++struct LoopNestCmp {
++  bool operator() (const Loop * const &A, const Loop * const &B) {
++    unsigned DepthA = A->getLoopDepth(), DepthB = B->getLoopDepth();
++    if(DepthA > DepthB) return true;
++    else if(DepthA < DepthB) return false;
++    else return (uint64_t)A < (uint64_t)B;
++  }
++};
++
++/// A loop nest, sorted by depth (deeper loops are first).
++typedef std::set<Loop *, LoopNestCmp> LoopNest;
++
++/// A set of basic blocks.
++typedef SmallPtrSet<const BasicBlock *, 16> BlockSet;
++
++namespace LoopPathUtilities {
++
++/// Populate a LoopNest by traversing the loop L and its children.  Does *not*
++/// traverse loops containing L (e.g., loops for which L is a child).
++void populateLoopNest(Loop *L, LoopNest &Nest);
++
++/// Get blocks contained in all sub-loops of a loop, including loops nested
++/// deeper than those in immediate sub-loops (e.g., blocks of loop depth 3
++/// inside loop depth 1).
++void getSubBlocks(Loop *L, BlockSet &SubBlocks);
++
++}
++
++//===----------------------------------------------------------------------===//
++// LoopPath helper class
++//===----------------------------------------------------------------------===//
++
++/// Nodes along a path in a loop, represented by a basic block.
++class PathNode {
++private:
++  /// The block encapsulated by the node.
++  const BasicBlock *Block;
++
++  /// Whether or not the block is an exiting block from a sub-loop inside of
++  /// the current path.
++  bool SubLoopExit;
++
++public:
++  PathNode() = delete;
++  PathNode(const BasicBlock *Block, bool SubLoopExit = false)
++    : Block(Block), SubLoopExit(SubLoopExit) {}
++
++  const BasicBlock *getBlock() const { return Block; }
++  bool isSubLoopExit() const { return SubLoopExit; }
++  bool operator<(const PathNode &RHS) const { return Block < RHS.Block; }
++};
++
++/// A path through the loop, which begins/ends either on the loop's header, the
++/// loop's backedge(s) or equivalence points.
++class LoopPath {
++private:
++  /// Nodes that comprise the path.  Iteration over the container is equivalent
++  /// to traversing the path, but container has set semantics for quick
++  /// existence checks.
++  // TODO use a DenseSet for the set template argument, which requires defining
++  // a custom comparator
++  SetVector<PathNode, std::vector<PathNode>, std::set<PathNode> > Nodes;
++
++  /// The path begins & ends on specific instructions.  Note that Start *must*
++  /// be inside the starting block and End *must* be inside the ending block.
++  const Instruction *Start, *End;
++
++  /// Does the path start at the loop header?  If not, it by definition starts
++  /// at an equivalence point.
++  bool StartsAtHeader;
++
++  /// Does the path end at a backedge?  If not, it by definition ends at an
++  /// equivalence point.
++  bool EndsAtBackedge;
++
++public:
++  LoopPath() = delete;
++  LoopPath(const std::vector<PathNode> &NodeVector,
++           const Instruction *Start, const Instruction *End,
++           bool StartsAtHeader, bool EndsAtBackedge);
++
++  bool contains(BasicBlock *BB) const { return Nodes.count(PathNode(BB)); }
++  bool contains(const BasicBlock *BB) const
++  { return Nodes.count(PathNode(BB)); }
++
++  /// Get the starting point of the path, guaranteed to be either the loop
++  /// header or an equivalence point.
++  const PathNode &startNode() const { return Nodes.front(); }
++  const Instruction *startInst() const { return Start; }
++
++  /// Get the the ending point of the path, guaranteed to be either an
++  /// equivalence point or a backedge.
++  const PathNode &endNode() const { return Nodes.back(); }
++  const Instruction *endInst() const { return End; }
++
++  /// Iterators over the path's blocks.
++  SetVector<PathNode>::iterator begin() { return Nodes.begin(); }
++  SetVector<PathNode>::iterator end() { return Nodes.end(); }
++  SetVector<PathNode>::const_iterator cbegin() const { return Nodes.begin(); }
++  SetVector<PathNode>::const_iterator cend() const { return Nodes.end(); }
++
++  /// Return whether the path starts at the loop header or equivalence point.
++  bool startsAtHeader() const { return StartsAtHeader; }
++
++  /// Return whether the path ends at a backedge block or equivalence point.
++  bool endsAtBackedge() const { return EndsAtBackedge; }
++
++  /// Return whether this is a spanning path.
++  bool isSpanningPath() const { return StartsAtHeader && EndsAtBackedge; }
++
++  /// Return whether this is an equivalence point path.
++  bool isEqPointPath() const { return !StartsAtHeader || !EndsAtBackedge; }
++
++  std::string toString() const;
++  void print(raw_ostream &O) const;
++  void dump() const { print(dbgs()); }
++};
++
++//===----------------------------------------------------------------------===//
++// Pass implementation
++//===----------------------------------------------------------------------===//
++
++/// Analyze all paths within a loop nest
++class EnumerateLoopPaths : public FunctionPass {
++private:
++  /// Loop information analysis.
++  LoopInfo *LI;
++
++  /// All calculated paths for each analyzed loop.
++  DenseMap<const Loop *, std::vector<LoopPath> > Paths;
++
++  /// Whether there are paths of each type through a basic block in a loop.
++  /// These are *only* maintained for the current loop, not any sub-loops.
++  DenseMap<const Loop *, DenseMap<const BasicBlock *, bool> >
++  HasSpPath, HasEqPointPath;
++
++  /// Information about the loop currently being analyzed
++  Loop *CurLoop;
++  SmallPtrSet<const BasicBlock *, 4> Latches;
++  BlockSet SubLoopBlocks;
++
++  /// Depth-first search information for the current path being explored.
++  struct LoopDFSInfo {
++  public:
++    const Instruction *Start;
++    std::vector<PathNode> PathNodes;
++    bool StartsAtHeader;
++  };
++
++  /// Search exit blocks of the loop containing Successor.  Add the terminating
++  /// instruction of the block to either of the two vectors, depending if there
++  /// is a path of either type through the exit block.
++  inline void getSubLoopSuccessors(const BasicBlock *Successor,
++                                   std::vector<const Instruction *> &EqPoint,
++                                   std::vector<const Instruction *> &Spanning);
++
++  /// Run a depth-first search for paths in the loop starting at an instruction.
++  /// Any paths found are added to the vector of paths, and new paths to explore
++  /// are added to the search list.
++  void loopDFS(const Instruction *I,
++               LoopDFSInfo &DFSI,
++               std::vector<LoopPath> &CurPaths,
++               std::list<const Instruction *> &NewPaths);
++
++  /// Enumerate all paths within a loop, stored in the vector argument.
++  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
++
++public:
++  static char ID;
++  EnumerateLoopPaths() : FunctionPass(ID) {}
++
++  /// Pass interface implementation.
++  void getAnalysisUsage(AnalysisUsage &AU) const override;
++  bool runOnFunction(Function &F) override;
++
++  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
++  /// below which populate containers with paths (for this loop only).
++  void rerunOnLoop(Loop *L);
++
++  bool hasPaths(const Loop *L) const { return Paths.count(L); }
++
++  /// Get all the paths through a loop.  Paths in the vector are ordered as
++  /// they were discovered in the depth-first traversal of the loop.
++  void getPaths(const Loop *L, std::vector<const LoopPath *> &P) const;
++
++  /// Get all paths through a loop that end at a backedge.
++  void getBackedgePaths(const Loop *L, std::vector<const LoopPath *> &P) const;
++  void getBackedgePaths(const Loop *L, std::set<const LoopPath *> &P) const;
++
++  /// Get all spanning paths through a loop, where a spanning path is defined
++  /// as starting at the first instruction of the header of the loop and ending
++  /// at the branch in a latch.
++  void getSpanningPaths(const Loop *L, std::vector<const LoopPath *> &P) const;
++  void getSpanningPaths(const Loop *L, std::set<const LoopPath *> &P) const;
++
++  /// Get all the paths through the loop that begin and/or end at an
++  /// equivalence point.
++  void getEqPointPaths(const Loop *L, std::vector<const LoopPath *> &P) const;
++  void getEqPointPaths(const Loop *L, std::set<const LoopPath *> &P) const;
++
++  /// Get all the paths through a loop that contain a given basic block.
++  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
++                            std::vector<const LoopPath *> &P) const;
++  void getPathsThroughBlock(const Loop *L, BasicBlock *BB,
++                            std::set<const LoopPath *> &P) const;
++
++  /// Return whether there is each type of path through a basic block.
++  bool spanningPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
++  bool eqPointPathThroughBlock(const Loop *L, const BasicBlock *BB) const;
++};
++
++}
++
++#endif
++
 Index: include/llvm/Analysis/Passes.h
 ===================================================================
---- include/llvm/Analysis/Passes.h	(revision 313649)
+--- include/llvm/Analysis/Passes.h	(revision 277823)
 +++ include/llvm/Analysis/Passes.h	(working copy)
-@@ -173,6 +173,13 @@
+@@ -173,6 +173,26 @@
    //
    FunctionPass *createMemDerefPrinter();
  
@@ -466,12 +746,215 @@ Index: include/llvm/Analysis/Passes.h
 +  //
 +  FunctionPass *createLiveValuesPass();
 +
++  //===--------------------------------------------------------------------===//
++  //
++  // createEnumerateLoopPathsPass - This pass calculates all paths between
++  // equivalence points within a loop.
++  //
++  FunctionPass *createEnumerateLoopPathsPass();
++
++  //===--------------------------------------------------------------------===//
++  //
++  // createSelectMigrationPointsPass - This pass analyzes and marks instructions
++  // inside of functions to be migration points.
++  //
++  FunctionPass *createSelectMigrationPointsPass();
  }
  
  #endif
+Index: include/llvm/Analysis/PopcornUtil.h
+===================================================================
+--- include/llvm/Analysis/PopcornUtil.h	(nonexistent)
++++ include/llvm/Analysis/PopcornUtil.h	(working copy)
+@@ -0,0 +1,185 @@
++//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file provides Popcorn-specific utility APIs.
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_ANALYSIS_POPCORNUTIL_H
++#define LLVM_ANALYSIS_POPCORNUTIL_H
++
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/IR/Module.h"
++
++namespace llvm {
++namespace Popcorn {
++
++#define POPCORN_META "popcorn"
++#define POPCORN_MIGPOINT "migpoint"
++#define POPCORN_HTM_BEGIN "htmbegin"
++#define POPCORN_HTM_END "htmend"
++
++/// Add named metadata node with string operand to an instruction.
++static inline void addMetadata(Instruction *I, StringRef name, StringRef op) {
++  SmallVector<Metadata *, 2> MetaOps;
++  LLVMContext &C = I->getContext();
++  MDNode *MetaNode = I->getMetadata(name);
++
++  if(MetaNode) {
++    for(auto &Op : MetaNode->operands()) {
++      if(isa<MDString>(Op) && cast<MDString>(Op)->getString() == op) return;
++      else MetaOps.push_back(Op);
++    }
++  }
++
++  MetaOps.push_back(MDString::get(C, op));
++  MetaNode = MDNode::get(C, MetaOps);
++  I->setMetadata(name, MetaNode);
++}
++
++/// Remove string operand from named metadata node.
++static inline void
++removeMetadata(Instruction *I, StringRef name, StringRef op) {
++  SmallVector<Metadata *, 2> MetaOps;
++  MDNode *MetaNode = I->getMetadata(name);
++
++  if(MetaNode) {
++    for(auto &Op : MetaNode->operands()) {
++      if(isa<MDString>(Op) && cast<MDString>(Op)->getString() == op) continue;
++      else MetaOps.push_back(Op);
++    }
++
++    if(MetaOps.size()) {
++      MetaNode = MDNode::get(I->getContext(), MetaOps);
++      I->setMetadata(name, MetaNode);
++    }
++    else I->setMetadata(name, nullptr);
++  }
++}
++
++/// Check to see if instruction has named metadata node with string operand.
++static inline bool
++hasMetadata(const Instruction *I, StringRef name, StringRef op) {
++  const MDNode *MetaNode = I->getMetadata(name);
++  if(MetaNode)
++    for(auto &Op : MetaNode->operands())
++      if(isa<MDString>(Op) && cast<MDString>(Op)->getString() == op)
++        return true;
++  return false;
++}
++
++/// Return whether the instruction is a "true" call site, i.e., not an LLVM
++/// IR-level intrinsic.
++static inline bool isCallSite(const Instruction *I) {
++  if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
++    return true;
++  else return false;
++}
++
++/// Add metadata to an instruction marking it as an equivalence point.
++static inline void addEquivalencePointMetadata(Instruction *I) {
++  addMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
++}
++
++/// Remove metadata from an instruction marking it as an equivalence point.
++static inline void removeEquivalencePointMetadata(Instruction *I) {
++  removeMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
++}
++
++static inline bool hasEquivalencePointMetadata(Instruction *I) {
++  return hasMetadata(I , POPCORN_META, POPCORN_MIGPOINT);
++}
++
++/// Return whether an instruction is an equivalence point.  The instruction must
++/// satisfy one of the following:
++///
++/// 1. Is a function call site (not an intrinsic function call)
++/// 2. Analysis has tagged the instruction with appropriate metadata
++static inline bool isEquivalencePoint(const Instruction *I) {
++  if(isCallSite(I)) return true;
++  else return hasMetadata(I, POPCORN_META, POPCORN_MIGPOINT);
++}
++
++/// Add metadata to an instruction marking it as an HTM begin point.
++static inline void addHTMBeginMetadata(Instruction *I) {
++  addMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
++}
++
++/// Remove metadata from an instruction marking it as an HTM begin point.
++static inline void removeHTMBeginMetadata(Instruction *I) {
++  removeMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
++}
++
++/// Return whether an instruction is an HTM begin point.
++static inline bool isHTMBeginPoint(Instruction *I) {
++  return hasMetadata(I, POPCORN_META, POPCORN_HTM_BEGIN);
++}
++
++/// Add metadata to an instruction marking it as an HTM end point.
++static inline void addHTMEndMetadata(Instruction *I) {
++  addMetadata(I, POPCORN_META, POPCORN_HTM_END);
++}
++
++/// Remove metadata from an instruction marking it as an HTM end point.
++static inline void removeHTMEndMetadata(Instruction *I) {
++  removeMetadata(I, POPCORN_META, POPCORN_HTM_END);
++}
++
++/// Return whether an instruction is an HTM end point.
++static inline bool isHTMEndPoint(Instruction *I) {
++  return hasMetadata(I, POPCORN_META, POPCORN_HTM_END);
++}
++
++#define POPCORN_INST_KEY "popcorn-inst-ty"
++
++/// Type of instrumentation.
++enum InstrumentType {
++  HTM = 0,
++  Cycles,
++  None,
++  NumVals // Don't use!
++};
++
++/// Mark the module as having a certain instrumentation type.
++static inline void
++setInstrumentationType(Module &M, enum InstrumentType Ty) {
++  switch(Ty) {
++  case HTM:
++    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, HTM);
++    break;
++  case Cycles:
++    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, Cycles);
++    break;
++  case None:
++    M.addModuleFlag(Module::Error, POPCORN_INST_KEY, None);
++    break;
++  default: llvm_unreachable("Unknown instrumentation type"); break;
++  }
++}
++
++/// Get the type of instrumentation.
++static inline enum InstrumentType getInstrumentationType(Module &M) {
++  Metadata *MD = M.getModuleFlag(POPCORN_INST_KEY);
++  if(MD) {
++    ConstantAsMetadata *Val = cast<ConstantAsMetadata>(MD);
++    ConstantInt *IntVal = cast<ConstantInt>(Val->getValue());
++    uint64_t RawVal = IntVal->getZExtValue();
++    assert(RawVal < NumVals && "Invalid instrumentation type");
++    return (enum InstrumentType)RawVal;
++  }
++  else return None;
++}
++
++}
++}
++
++#endif
++
 Index: include/llvm/CodeGen/AsmPrinter.h
 ===================================================================
---- include/llvm/CodeGen/AsmPrinter.h	(revision 313649)
+--- include/llvm/CodeGen/AsmPrinter.h	(revision 277823)
 +++ include/llvm/CodeGen/AsmPrinter.h	(working copy)
 @@ -199,9 +199,10 @@
  
@@ -516,7 +999,7 @@ Index: include/llvm/CodeGen/AsmPrinter.h
    //===------------------------------------------------------------------===//
 Index: include/llvm/CodeGen/MachineFunction.h
 ===================================================================
---- include/llvm/CodeGen/MachineFunction.h	(revision 313649)
+--- include/llvm/CodeGen/MachineFunction.h	(revision 277823)
 +++ include/llvm/CodeGen/MachineFunction.h	(working copy)
 @@ -20,6 +20,8 @@
  
@@ -592,14 +1075,14 @@ Index: include/llvm/CodeGen/MachineFunction.h
  //===--------------------------------------------------------------------===//
 Index: include/llvm/CodeGen/Passes.h
 ===================================================================
---- include/llvm/CodeGen/Passes.h	(revision 313649)
+--- include/llvm/CodeGen/Passes.h	(revision 277823)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
 @@ -123,6 +123,15 @@
    /// Default setting for -enable-shrink-wrap on this target.
    bool EnableShrinkWrap;
  
 +  /// Add equivalence points into the application
-+  bool AddEquivalencePoints;
++  bool AddMigrationPoints;
 +
 +  /// Add stackmaps at function call sites & equivalence points
 +  bool AddStackMaps;
@@ -625,7 +1108,7 @@ Index: include/llvm/CodeGen/Passes.h
    bool getEnableShrinkWrap() const;
  
 +  /// Return whether we should instrument the code with equivalence points.
-+  bool addEquivalencePoints() const { return AddEquivalencePoints; }
++  bool addMigrationPoints() const { return AddMigrationPoints; }
 +
 +  /// Return whether we should emit stack transformation metadata by
 +  /// instrumenting the code with IR-level StackMaps.
@@ -636,7 +1119,7 @@ Index: include/llvm/CodeGen/Passes.h
 +  bool addLibcStackMaps() const { return AddLibcStackMaps; }
 +
 +  /// \brief Enable/disable adding equivalence points.
-+  void setAddEquivalencePoints(bool Set) { AddEquivalencePoints = Set; }
++  void setAddMigrationPoints(bool Set) { AddMigrationPoints = Set; }
 +
 +  /// \brief Enable/disable adding StackMaps.
 +  void setAddStackMaps(bool Set) { AddStackMaps = Set; }
@@ -660,7 +1143,7 @@ Index: include/llvm/CodeGen/Passes.h
    extern char &VirtRegRewriterID;
 Index: include/llvm/CodeGen/StackMaps.h
 ===================================================================
---- include/llvm/CodeGen/StackMaps.h	(revision 313649)
+--- include/llvm/CodeGen/StackMaps.h	(revision 277823)
 +++ include/llvm/CodeGen/StackMaps.h	(working copy)
 @@ -13,6 +13,8 @@
  #include "llvm/ADT/MapVector.h"
@@ -1514,17 +1997,25 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +#endif
 Index: include/llvm/InitializePasses.h
 ===================================================================
---- include/llvm/InitializePasses.h	(revision 313649)
+--- include/llvm/InitializePasses.h	(revision 277823)
 +++ include/llvm/InitializePasses.h	(working copy)
-@@ -131,6 +131,7 @@
+@@ -119,6 +119,7 @@
+ void initializeDominatorTreeWrapperPassPass(PassRegistry&);
+ void initializeEarlyIfConverterPass(PassRegistry&);
+ void initializeEdgeBundlesPass(PassRegistry&);
++void initializeEnumerateLoopPathsPass(PassRegistry&);
+ void initializeExpandPostRAPass(PassRegistry&);
+ void initializeGCOVProfilerPass(PassRegistry&);
+ void initializeInstrProfilingPass(PassRegistry&);
+@@ -131,6 +132,7 @@
  void initializeScalarizerPass(PassRegistry&);
  void initializeEarlyCSELegacyPassPass(PassRegistry &);
  void initializeEliminateAvailableExternallyPass(PassRegistry&);
-+void initializeEquivalencePointsPass(PassRegistry&);
++void initializeMigrationPointsPass(PassRegistry&);
  void initializeExpandISelPseudosPass(PassRegistry&);
  void initializeFunctionAttrsPass(PassRegistry&);
  void initializeGCMachineCodeAnalysisPass(PassRegistry&);
-@@ -146,6 +147,7 @@
+@@ -146,6 +148,7 @@
  void initializeInductiveRangeCheckEliminationPass(PassRegistry&);
  void initializeIndVarSimplifyPass(PassRegistry&);
  void initializeInlineCostAnalysisPass(PassRegistry&);
@@ -1532,7 +2023,7 @@ Index: include/llvm/InitializePasses.h
  void initializeInstructionCombiningPassPass(PassRegistry&);
  void initializeInstCountPass(PassRegistry&);
  void initializeInstNamerPass(PassRegistry&);
-@@ -153,6 +155,7 @@
+@@ -153,6 +156,7 @@
  void initializeIntervalPartitionPass(PassRegistry&);
  void initializeJumpThreadingPass(PassRegistry&);
  void initializeLCSSAPass(PassRegistry&);
@@ -1540,7 +2031,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLICMPass(PassRegistry&);
  void initializeLazyValueInfoPass(PassRegistry&);
  void initializeLibCallAliasAnalysisPass(PassRegistry&);
-@@ -162,6 +165,7 @@
+@@ -162,6 +166,7 @@
  void initializeLiveRegMatrixPass(PassRegistry&);
  void initializeLiveStacksPass(PassRegistry&);
  void initializeLiveVariablesPass(PassRegistry&);
@@ -1548,7 +2039,7 @@ Index: include/llvm/InitializePasses.h
  void initializeLoaderPassPass(PassRegistry&);
  void initializeLocalStackSlotPassPass(PassRegistry&);
  void initializeLoopDeletionPass(PassRegistry&);
-@@ -208,6 +212,7 @@
+@@ -208,6 +213,7 @@
  void initializeMetaRenamerPass(PassRegistry&);
  void initializeMergeFunctionsPass(PassRegistry&);
  void initializeModuleDebugInfoPrinterPass(PassRegistry&);
@@ -1556,8 +2047,11 @@ Index: include/llvm/InitializePasses.h
  void initializeNaryReassociatePass(PassRegistry&);
  void initializeNoAAPass(PassRegistry&);
  void initializeObjCARCAliasAnalysisPass(PassRegistry&);
-@@ -252,7 +257,8 @@
+@@ -250,9 +256,11 @@
+ void initializeSROA_SSAUpPass(PassRegistry&);
+ void initializeScalarEvolutionAliasAnalysisPass(PassRegistry&);
  void initializeScalarEvolutionPass(PassRegistry&);
++void initializeSelectMigrationPointsPass(PassRegistry&);
  void initializeShrinkWrapPass(PassRegistry &);
  void initializeSimpleInlinerPass(PassRegistry&);
 -void initializeShadowStackGCLoweringPass(PassRegistry&);  
@@ -1566,7 +2060,7 @@ Index: include/llvm/InitializePasses.h
  void initializeRegisterCoalescerPass(PassRegistry&);
  void initializeSingleLoopExtractorPass(PassRegistry&);
  void initializeSinkingPass(PassRegistry&);
-@@ -263,6 +269,7 @@
+@@ -263,6 +271,7 @@
  void initializeStackProtectorPass(PassRegistry&);
  void initializeStackColoringPass(PassRegistry&);
  void initializeStackSlotColoringPass(PassRegistry&);
@@ -1576,7 +2070,7 @@ Index: include/llvm/InitializePasses.h
  void initializeStripDeadPrototypesPassPass(PassRegistry&);
 Index: include/llvm/LinkAllPasses.h
 ===================================================================
---- include/llvm/LinkAllPasses.h	(revision 313649)
+--- include/llvm/LinkAllPasses.h	(revision 277823)
 +++ include/llvm/LinkAllPasses.h	(working copy)
 @@ -33,6 +33,7 @@
  #include "llvm/Transforms/Instrumentation.h"
@@ -1586,15 +2080,18 @@ Index: include/llvm/LinkAllPasses.h
  #include "llvm/Transforms/Utils/SymbolRewriter.h"
  #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
  #include "llvm/Transforms/Vectorize.h"
-@@ -81,6 +82,7 @@
+@@ -81,8 +82,10 @@
        (void) llvm::createDomPrinterPass();
        (void) llvm::createDomOnlyViewerPass();
        (void) llvm::createDomViewerPass();
-+      (void) llvm::createEquivalencePointsPass();
++      (void) llvm::createMigrationPointsPass();
        (void) llvm::createGCOVProfilerPass();
        (void) llvm::createInstrProfilingPass();
++      (void) llvm::createEnumerateLoopPathsPass();
        (void) llvm::createFunctionInliningPass();
-@@ -92,11 +94,14 @@
+       (void) llvm::createAlwaysInlinerPass();
+       (void) llvm::createGlobalDCEPass();
+@@ -92,11 +95,14 @@
        (void) llvm::createIPSCCPPass();
        (void) llvm::createInductiveRangeCheckEliminationPass();
        (void) llvm::createIndVarSimplifyPass();
@@ -1609,7 +2106,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createLoopExtractorPass();
        (void) llvm::createLoopInterchangePass();
        (void) llvm::createLoopSimplifyPass();
-@@ -110,6 +115,7 @@
+@@ -110,6 +116,7 @@
        (void) llvm::createLowerInvokePass();
        (void) llvm::createLowerSwitchPass();
        (void) llvm::createNaryReassociatePass();
@@ -1617,7 +2114,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createNoAAPass();
        (void) llvm::createObjCARCAliasAnalysisPass();
        (void) llvm::createObjCARCAPElimPass();
-@@ -134,6 +140,7 @@
+@@ -134,6 +141,7 @@
        (void) llvm::createSafeStackPass();
        (void) llvm::createScalarReplAggregatesPass();
        (void) llvm::createSingleLoopExtractorPass();
@@ -1625,9 +2122,17 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createStripSymbolsPass();
        (void) llvm::createStripNonDebugSymbolsPass();
        (void) llvm::createStripDeadDebugInfoPass();
+@@ -170,6 +178,7 @@
+       (void) llvm::createBBVectorizePass();
+       (void) llvm::createPartiallyInlineLibCallsPass();
+       (void) llvm::createScalarizerPass();
++      (void) llvm::createSelectMigrationPointsPass();
+       (void) llvm::createSeparateConstOffsetFromGEPPass();
+       (void) llvm::createSpeculativeExecutionPass();
+       (void) llvm::createRewriteSymbolsPass();
 Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
---- include/llvm/MC/MCCodeGenInfo.h	(revision 313649)
+--- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
 @@ -32,6 +32,11 @@
    ///
@@ -1656,7 +2161,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
  
 Index: include/llvm/MC/MCObjectFileInfo.h
 ===================================================================
---- include/llvm/MC/MCObjectFileInfo.h	(revision 313649)
+--- include/llvm/MC/MCObjectFileInfo.h	(revision 277823)
 +++ include/llvm/MC/MCObjectFileInfo.h	(working copy)
 @@ -135,6 +135,10 @@
    /// Null if this target doesn't support a BSS section. ELF and MachO only.
@@ -1680,7 +2185,7 @@ Index: include/llvm/MC/MCObjectFileInfo.h
  
 Index: include/llvm/Target/TargetFrameLowering.h
 ===================================================================
---- include/llvm/Target/TargetFrameLowering.h	(revision 313649)
+--- include/llvm/Target/TargetFrameLowering.h	(revision 277823)
 +++ include/llvm/Target/TargetFrameLowering.h	(working copy)
 @@ -227,6 +227,14 @@
      return 0;
@@ -1699,7 +2204,7 @@ Index: include/llvm/Target/TargetFrameLowering.h
    /// The default implementation checks populates the \p SavedRegs bitset with
 Index: include/llvm/Target/TargetMachine.h
 ===================================================================
---- include/llvm/Target/TargetMachine.h	(revision 313649)
+--- include/llvm/Target/TargetMachine.h	(revision 277823)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
 @@ -171,6 +171,13 @@
    /// \brief Overrides the optimization level.
@@ -1717,7 +2222,7 @@ Index: include/llvm/Target/TargetMachine.h
    bool shouldPrintMachineCode() const { return Options.PrintMachineCode; }
 Index: include/llvm/Target/TargetRegisterInfo.h
 ===================================================================
---- include/llvm/Target/TargetRegisterInfo.h	(revision 313649)
+--- include/llvm/Target/TargetRegisterInfo.h	(revision 277823)
 +++ include/llvm/Target/TargetRegisterInfo.h	(working copy)
 @@ -869,6 +869,17 @@
    /// getFrameRegister - This method should return the register used as a base
@@ -1739,7 +2244,7 @@ Index: include/llvm/Target/TargetRegisterInfo.h
  
 Index: include/llvm/Target/TargetSubtargetInfo.h
 ===================================================================
---- include/llvm/Target/TargetSubtargetInfo.h	(revision 313649)
+--- include/llvm/Target/TargetSubtargetInfo.h	(revision 277823)
 +++ include/llvm/Target/TargetSubtargetInfo.h	(working copy)
 @@ -32,6 +32,7 @@
  class TargetRegisterInfo;
@@ -1823,14 +2328,14 @@ Index: include/llvm/Target/TargetValues.h
 +
 Index: include/llvm/Transforms/Instrumentation.h
 ===================================================================
---- include/llvm/Transforms/Instrumentation.h	(revision 313649)
+--- include/llvm/Transforms/Instrumentation.h	(revision 277823)
 +++ include/llvm/Transforms/Instrumentation.h	(working copy)
 @@ -136,6 +136,17 @@
  /// protect against stack-based overflow vulnerabilities.
  FunctionPass *createSafeStackPass();
  
 +/// \brief This pass inserts equivalence points into functions.
-+FunctionPass *createEquivalencePointsPass();
++FunctionPass *createMigrationPointsPass();
 +
 +/// \brief This pass inserts stack map intrinsics at equivalence points in
 +/// order to record live value locations
@@ -1866,9 +2371,17 @@ Index: include/llvm/Transforms/Utils.h
 +}
 Index: lib/Analysis/Analysis.cpp
 ===================================================================
---- lib/Analysis/Analysis.cpp	(revision 313649)
+--- lib/Analysis/Analysis.cpp	(revision 277823)
 +++ lib/Analysis/Analysis.cpp	(working copy)
-@@ -53,6 +53,7 @@
+@@ -42,6 +42,7 @@
+   initializeDomViewerPass(Registry);
+   initializeDomPrinterPass(Registry);
+   initializeDomOnlyViewerPass(Registry);
++  initializeEnumerateLoopPathsPass(Registry);
+   initializePostDomViewerPass(Registry);
+   initializeDomOnlyPrinterPass(Registry);
+   initializePostDomPrinterPass(Registry);
+@@ -53,6 +54,7 @@
    initializeLazyValueInfoPass(Registry);
    initializeLibCallAliasAnalysisPass(Registry);
    initializeLintPass(Registry);
@@ -1876,11 +2389,19 @@ Index: lib/Analysis/Analysis.cpp
    initializeLoopInfoWrapperPassPass(Registry);
    initializeMemDepPrinterPass(Registry);
    initializeMemDerefPrinterPass(Registry);
+@@ -66,6 +68,7 @@
+   initializeRegionOnlyPrinterPass(Registry);
+   initializeScalarEvolutionPass(Registry);
+   initializeScalarEvolutionAliasAnalysisPass(Registry);
++  initializeSelectMigrationPointsPass(Registry);
+   initializeTargetTransformInfoWrapperPassPass(Registry);
+   initializeTypeBasedAliasAnalysisPass(Registry);
+   initializeScopedNoAliasAAPass(Registry);
 Index: lib/Analysis/CMakeLists.txt
 ===================================================================
---- lib/Analysis/CMakeLists.txt	(revision 313649)
+--- lib/Analysis/CMakeLists.txt	(revision 277823)
 +++ lib/Analysis/CMakeLists.txt	(working copy)
-@@ -34,9 +34,11 @@
+@@ -34,10 +34,13 @@
    LibCallAliasAnalysis.cpp
    LibCallSemantics.cpp
    Lint.cpp
@@ -1890,8 +2411,18 @@ Index: lib/Analysis/CMakeLists.txt
    LoopInfo.cpp
 +  LoopNestingTree.cpp
    LoopPass.cpp
++  LoopPaths.cpp
    MemDepPrinter.cpp
    MemDerefPrinter.cpp
+   MemoryBuiltins.cpp
+@@ -55,6 +58,7 @@
+   ScalarEvolutionAliasAnalysis.cpp
+   ScalarEvolutionExpander.cpp
+   ScalarEvolutionNormalization.cpp
++  SelectMigrationPoints.cpp
+   SparsePropagation.cpp
+   TargetLibraryInfo.cpp
+   TargetTransformInfo.cpp
 Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
@@ -2424,9 +2955,2304 @@ Index: lib/Analysis/LoopNestingTree.cpp
 +  }
 +}
 +
+Index: lib/Analysis/LoopPaths.cpp
+===================================================================
+--- lib/Analysis/LoopPaths.cpp	(nonexistent)
++++ lib/Analysis/LoopPaths.cpp	(working copy)
+@@ -0,0 +1,478 @@
++//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements analysis which enumerates paths in loops.  In
++// particular, this pass calculates all paths in loops which are of the
++// following form:
++//
++//  - Header to backedge block, with no equivalence points on the path
++//  - Header to block with equivalence point
++//  - Block with equivalence point to block with equivalence point
++//  - Block with equivalence point to backedge block
++//
++// Note that backedge blocks may or may not also be exit blocks.
++//
++//===----------------------------------------------------------------------===//
++
++#include <queue>
++#include "llvm/Analysis/LoopPaths.h"
++#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_ostream.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "looppaths"
++
++void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
++  std::queue<Loop *> ToVisit;
++  Nest.clear();
++  Nest.insert(L);
++  ToVisit.push(L);
++
++  while(ToVisit.size()) {
++    const Loop *Sub = ToVisit.front();
++    ToVisit.pop();
++    for(auto L : Sub->getSubLoops()) {
++      Nest.insert(L);
++      ToVisit.push(L);
++    }
++  }
++}
++
++void LoopPathUtilities::getSubBlocks(Loop *L, BlockSet &SubBlocks) {
++  SubBlocks.clear();
++  LoopNest Nest;
++
++  for(auto Sub : L->getSubLoops()) {
++    populateLoopNest(Sub, Nest);
++    for(auto Nested : Nest)
++      for(auto BB : Nested->getBlocks())
++        SubBlocks.insert(BB);
++  }
++}
++
++LoopPath::LoopPath(const std::vector<PathNode> &NodeVector,
++                   const Instruction *Start, const Instruction *End,
++                   bool StartsAtHeader, bool EndsAtBackedge)
++  : Start(Start), End(End), StartsAtHeader(StartsAtHeader),
++    EndsAtBackedge(EndsAtBackedge) {
++  assert(NodeVector.size() && "Trivial path");
++  assert(Start && Start->getParent() == NodeVector.front().getBlock() &&
++         "Invalid starting instruction");
++  assert(End && End->getParent() == NodeVector.back().getBlock() &&
++         "Invalid ending instruction");
++
++  for(auto Node : NodeVector) Nodes.insert(Node);
++}
++
++std::string LoopPath::toString() const {
++  std::string buf = "Path with " + std::to_string(Nodes.size()) + " nodes(s)\n";
++
++  buf += "  Start: ";
++  if(Start->hasName()) buf += Start->getName();
++  else buf += "<unnamed instruction>";
++  buf += "\n";
++
++  buf += "  End: ";
++  if(End->hasName()) buf += End->getName();
++  else buf += "<unnamed instruction>";
++  buf += "\n";
++
++  buf += "  Nodes:\n";
++  for(auto Node : Nodes) {
++    buf += "    ";
++    const BasicBlock *BB = Node.getBlock();
++    if(BB->hasName()) buf += BB->getName();
++    else buf += "<unnamed block>";
++    if(Node.isSubLoopExit()) buf += " (sub-loop exit)";
++    buf += "\n";
++  }
++
++  return buf;
++}
++
++void LoopPath::print(raw_ostream &O) const {
++  O << "    Path with " << std::to_string(Nodes.size()) << " nodes(s)\n";
++  O << "    Start:"; Start->print(O); O << "\n";
++  O << "    End:"; End->print(O); O << "\n";
++  O << "    Nodes:\n";
++  for(auto Node : Nodes) {
++    const BasicBlock *BB = Node.getBlock();
++    if(BB->hasName()) O << "      " << BB->getName();
++    else O << "      <unnamed block>";
++    if(Node.isSubLoopExit()) O << " (sub-loop exit)";
++    O << "\n";
++  }
++}
++
++void EnumerateLoopPaths::getAnalysisUsage(AnalysisUsage &AU) const {
++  AU.addRequired<LoopInfoWrapperPass>();
++  AU.setPreservesAll();
++}
++
++/// Search over the instructions in a basic block (starting at I) for
++/// equivalence points.  Return an equivalence point if found, or null
++/// otherwise.
++static const Instruction *hasEquivalencePoint(const Instruction *I) {
++  if(!I) return nullptr;
++  for(BasicBlock::const_iterator it(I), e = I->getParent()->end();
++      it != e; ++it)
++    if(Popcorn::isEquivalencePoint(it)) return it;
++  return nullptr;
++}
++
++/// Add a value to a list if it's not already contained in the list.  This is
++/// used to unique new instructions at which to start searches, as multiple
++/// paths may end at the same equivalence point (but we don't need to search
++/// it multiple times).
++static inline void pushIfNotPresent(const Instruction *I,
++                                    std::list<const Instruction *> &List) {
++  if(std::find(List.begin(), List.end(), I) == List.end()) List.push_back(I);
++}
++
++// TODO this needs to be converted to iteration rather than recursion
++
++void
++EnumerateLoopPaths::getSubLoopSuccessors(const BasicBlock *Successor,
++                                   std::vector<const Instruction *> &EqPoint,
++                                   std::vector<const Instruction *> &Spanning) {
++  const Instruction *Term;
++  const Loop *SubLoop;
++  SmallVector<BasicBlock *, 4> ExitBlocks;
++
++  EqPoint.clear();
++  Spanning.clear();
++  assert(CurLoop->contains(Successor) && SubLoopBlocks.count(Successor) &&
++         "Invalid sub-loop block");
++
++  SubLoop = LI->getLoopFor(Successor);
++  SubLoop->getExitingBlocks(ExitBlocks);
++  for(auto Exit : ExitBlocks) {
++    Term = Exit->getTerminator();
++    if(HasSpPath[SubLoop][Exit]) Spanning.push_back(Term);
++    if(HasEqPointPath[SubLoop][Exit]) EqPoint.push_back(Term);
++  }
++}
++
++static inline void printNewPath(raw_ostream &O, const LoopPath &Path) {
++  O << "Found path that start at ";
++  if(Path.startsAtHeader()) O << "the header";
++  else O << "an equivalence point";
++  O << " and ends at ";
++  if(Path.endsAtBackedge()) O << "a loop backedge";
++  else O << "an equivalence point";
++  Path.print(O);
++}
++
++void EnumerateLoopPaths::loopDFS(const Instruction *I,
++                                 LoopDFSInfo &DFSI,
++                                 std::vector<LoopPath> &CurPaths,
++                                 std::list<const Instruction *> &NewPaths) {
++  const Instruction *EqPoint;
++  const BasicBlock *BB = I->getParent(), *PathBlock;
++  std::vector<const Instruction *> EqPointInsts, SpanningInsts;
++
++  if(!SubLoopBlocks.count(BB)) {
++    DFSI.PathNodes.emplace_back(BB, false);
++    if((EqPoint = hasEquivalencePoint(I))) {
++      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
++                            DFSI.StartsAtHeader, false);
++      for(auto Node : DFSI.PathNodes) {
++        PathBlock = Node.getBlock();
++        if(!SubLoopBlocks.count(PathBlock))
++          HasEqPointPath[CurLoop][PathBlock] = true;
++      }
++
++      // Add instruction after equivalence point (or at start of successor
++      // basic blocks if EqPoint is the last instruction in its block) as start
++      // of new equivalence point path to be searched.
++      if(!EqPoint->isTerminator())
++        pushIfNotPresent(EqPoint->getNextNode(), NewPaths);
++      else {
++        for(auto Succ : successors(BB)) {
++          if(!CurLoop->contains(Succ) || // Skip exit blocks & latches
++             Succ == CurLoop->getHeader()) continue;
++          else if(!SubLoopBlocks.count(Succ)) // Successor is in same outer loop
++            pushIfNotPresent(&Succ->front(), NewPaths);
++          else { // Successor is in sub-loop
++            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
++            for(auto SLE : SpanningInsts)
++              loopDFS(SLE, DFSI, CurPaths, NewPaths);
++          }
++        }
++      }
++
++      DEBUG(printNewPath(dbgs(), CurPaths.back()));
++    }
++    else if(Latches.count(BB)) {
++      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
++                            DFSI.StartsAtHeader, true);
++      if(DFSI.StartsAtHeader) {
++        for(auto Node : DFSI.PathNodes) {
++          PathBlock = Node.getBlock();
++          if(!SubLoopBlocks.count(PathBlock))
++            HasSpPath[CurLoop][PathBlock] = true;
++        }
++      }
++      else {
++        for(auto Node : DFSI.PathNodes) {
++          PathBlock = Node.getBlock();
++          if(!SubLoopBlocks.count(PathBlock))
++            HasEqPointPath[CurLoop][PathBlock] = true;
++        }
++      }
++
++      DEBUG(printNewPath(dbgs(), CurPaths.back()));
++    }
++    else {
++      for(auto Succ : successors(BB)) {
++        if(!CurLoop->contains(Succ)) continue;
++        else if(!SubLoopBlocks.count(Succ))
++          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++        else {
++          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++          for(auto SLE : EqPointInsts) {
++            // Rather than stopping the path at the equivalence point inside
++            // of a sub-loop, stop it at the end of the current block
++            // TODO this can create duplicates for a path that reaches a
++            // sub-loop with multiple exiting blocks, but the analysis in
++            // MigrationPoints doesn't care about paths that don't end at a
++            // backedge anyway
++            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
++                                  BB->getTerminator(),
++                                  DFSI.StartsAtHeader, false);
++            pushIfNotPresent(SLE, NewPaths);
++            DEBUG(printNewPath(dbgs(), CurPaths.back()));
++          }
++          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++        }
++      }
++    }
++    DFSI.PathNodes.pop_back();
++  }
++  else {
++    // This is a sub-loop block; we only want to explore successors who are not
++    // contained in this sub-loop but are still contained in the current loop.
++    DFSI.PathNodes.emplace_back(BB, true);
++    const Loop *WeedOutLoop = LI->getLoopFor(BB);
++    for(auto Succ : successors(BB)) {
++      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
++      else if(!SubLoopBlocks.count(Succ))
++        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++      else {
++        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
++        for(auto SLE : EqPointInsts) {
++          // TODO this can create duplicates for a path that reaches a sub-loop
++          // with multiple exiting blocks, but the analysis in MigrationPoints
++          // doesn't care about paths that don't end at a backedge anyway
++          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
++                                BB->getTerminator(),
++                                DFSI.StartsAtHeader, false);
++          DEBUG(printNewPath(dbgs(), CurPaths.back()));
++          pushIfNotPresent(SLE, NewPaths);
++        }
++        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++      }
++    }
++    DFSI.PathNodes.pop_back();
++  }
++}
++
++void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
++  std::list<const Instruction *> NewPaths;
++  SmallVector<BasicBlock *, 4> LatchVec;
++  LoopDFSInfo DFSI;
++
++  CurPaths.clear();
++  HasSpPath[L].clear();
++  HasEqPointPath[L].clear();
++
++  DEBUG(
++    DebugLoc DL(L->getStartLoc());
++    dbgs() << "Enumerating paths";
++    if(DL) {
++      dbgs() << " for loop at ";
++      DL.print(dbgs());
++    }
++    dbgs() << ": "; L->dump();
++  );
++
++  // Store information about the current loop, it's backedges, and sub-loops
++  CurLoop = L;
++  Latches.clear();
++  L->getLoopLatches(LatchVec);
++  for(auto L : LatchVec) Latches.insert(L);
++  LoopPathUtilities::getSubBlocks(L, SubLoopBlocks);
++
++  assert(Latches.size() && "No backedges, not a loop?");
++  assert(!SubLoopBlocks.count(L->getHeader()) && "Header is in sub-loop?");
++
++  DFSI.Start = &L->getHeader()->front();
++  DFSI.StartsAtHeader = true;
++  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
++
++  DFSI.StartsAtHeader = false;
++  while(!NewPaths.empty()) {
++    DFSI.Start = NewPaths.front();
++    NewPaths.pop_front();
++    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
++  }
++}
++
++bool EnumerateLoopPaths::runOnFunction(Function &F) {
++  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
++               << "********** Function: " << F.getName() << "\n\n");
++
++  Paths.clear();
++  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++  std::vector<LoopNest> Nests;
++
++  // Discover all loop nests.
++  for(LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
++    if((*I)->getLoopDepth() != 1) continue;
++    Nests.push_back(LoopNest());
++    LoopPathUtilities::populateLoopNest(*I, Nests.back());
++  }
++
++  // Search all loops within all loop nests.
++  for(auto Nest : Nests) {
++    DEBUG(dbgs() << "Analyzing nest with " << std::to_string(Nest.size())
++                 << " loops\n");
++
++    for(auto L : Nest) {
++      std::vector<LoopPath> &CurPaths = Paths[L];
++      assert(CurPaths.size() == 0 && "Re-processing loop?");
++      analyzeLoop(L, CurPaths);
++    }
++  }
++
++  return false;
++}
++
++void EnumerateLoopPaths::rerunOnLoop(Loop *L) {
++  // We *should* be analyzing a loop for the 2+ time
++  std::vector<LoopPath> &CurPaths = Paths[L];
++  DEBUG(if(!CurPaths.size()) dbgs() << "  -> No previous analysis?\n");
++  analyzeLoop(L, CurPaths);
++}
++
++void EnumerateLoopPaths::getPaths(const Loop *L,
++                                  std::vector<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second) P.push_back(&Path);
++}
++
++void
++EnumerateLoopPaths::getBackedgePaths(const Loop *L,
++                                     std::vector<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.endsAtBackedge()) P.push_back(&Path);
++}
++
++void
++EnumerateLoopPaths::getBackedgePaths(const Loop *L,
++                                     std::set<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.endsAtBackedge()) P.insert(&Path);
++}
++
++void
++EnumerateLoopPaths::getSpanningPaths(const Loop *L,
++                                     std::vector<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.isSpanningPath()) P.push_back(&Path);
++}
++
++void
++EnumerateLoopPaths::getSpanningPaths(const Loop *L,
++                                     std::set<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.isSpanningPath()) P.insert(&Path);
++}
++
++void
++EnumerateLoopPaths::getEqPointPaths(const Loop *L,
++                                    std::vector<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.isEqPointPath()) P.push_back(&Path);
++}
++
++void
++EnumerateLoopPaths::getEqPointPaths(const Loop *L,
++                                    std::set<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.isEqPointPath()) P.insert(&Path);
++}
++
++void
++EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
++                                         std::vector<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.contains(BB)) P.push_back(&Path);
++}
++
++void
++EnumerateLoopPaths::getPathsThroughBlock(const Loop *L, BasicBlock *BB,
++                                         std::set<const LoopPath *> &P) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  P.clear();
++  for(const LoopPath &Path : Paths.find(L)->second)
++    if(Path.contains(BB)) P.insert(&Path);
++}
++
++bool EnumerateLoopPaths::spanningPathThroughBlock(const Loop *L,
++                                                  const BasicBlock *BB) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  return HasSpPath.find(L)->second.find(BB)->second;
++}
++
++bool EnumerateLoopPaths::eqPointPathThroughBlock(const Loop *L,
++                                                 const BasicBlock *BB) const {
++  assert(hasPaths(L) && "No paths for loop");
++  assert(L->contains(BB) && "Loop does not contain basic block");
++  return HasEqPointPath.find(L)->second.find(BB)->second;
++}
++
++char EnumerateLoopPaths::ID = 0;
++INITIALIZE_PASS_BEGIN(EnumerateLoopPaths, "looppaths",
++                      "Enumerate paths in loops",
++                      false, true)
++INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_END(EnumerateLoopPaths, "looppaths",
++                    "Enumerate paths in loops",
++                    false, true)
++
++
++namespace llvm {
++  FunctionPass *createEnumerateLoopPathsPass()
++  { return new EnumerateLoopPaths(); }
++}
++
+Index: lib/Analysis/SelectMigrationPoints.cpp
+===================================================================
+--- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
++++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
+@@ -0,0 +1,1807 @@
++//===- SelectMigrationPoints.cpp ------------------------------------------------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// Select code locations to instrument with migration points, which are
++// locations where threads make calls to invoke the migration process in
++// addition to any other instrumentation (e.g., hardware transactional memory,
++// HTM, stops & starts).  Migration points only occur at equivalence points, or
++// locations in the program code where there is a direct mapping between
++// architecture-specific execution state, like registers and stack, across
++// different ISAs.  In our implementation, every function call site is an
++// equivalence point; hence, calls inserted to invoke the migration by
++// definition create equivalence points at the migration point.  Thus, all
++// migration points are equivalence points, but not all equivalence points are
++// migration points.
++//
++// By default, the pass only inserts migration points at the beginning and end
++// of a function.  More advanced analyses can be used to instrument function
++// bodies (in particular, loops) with more migration points and HTM execution.
++//
++// More details about equivalence points can be found in the paper "A Unified
++// Model of Pointwise Migration of Procedural Computations" by von Bank et. al
++// (http://dl.acm.org/citation.cfm?id=197402).
++//
++//===----------------------------------------------------------------------===//
++
++#include <cmath>
++#include <map>
++#include <memory>
++#include "llvm/Pass.h"
++#include "llvm/ADT/PostOrderIterator.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/ADT/Statistic.h"
++#include "llvm/ADT/StringSet.h"
++#include "llvm/ADT/SCCIterator.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/Analysis/LoopIterator.h"
++#include "llvm/Analysis/LoopPaths.h"
++#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/Analysis/ScalarEvolution.h"
++#include "llvm/Analysis/ScalarEvolutionExpressions.h"
++#include "llvm/IR/CallSite.h"
++#include "llvm/IR/IntrinsicInst.h"
++#include "llvm/IR/Intrinsics.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/IR/Module.h"
++#include "llvm/Support/CommandLine.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_os_ostream.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "migration-points"
++
++/// Insert more migration points into the body of a function.  Analyze
++/// execution behavior & attempt to instrument the code to reduce the time
++/// until the thread reaches a migration point.
++const static cl::opt<bool>
++MoreMigPoints("more-mig-points", cl::Hidden, cl::init(false),
++  cl::desc("Add additional migration points into the body of functions"));
++
++/// By default we assume that loops will execute "enough iterations as to
++/// require instrumentation".  That's not necessarily true, so contrain N in
++/// hitting migration point every N iterations.  If analysis determines that
++/// we need to hit analysis for some number larger than N, don't instrument
++/// the loop.
++const static cl::opt<unsigned>
++MaxItersPerMigPoint("max-iters-per-migpoint", cl::Hidden, cl::init(UINT32_MAX),
++  cl::desc("Max iterations per migration point"));
++
++/// Percent of capacity (determined by analysis type, e.g., HTM buffer size) at
++/// which point weight objects will request a new migration point be inserted.
++const static cl::opt<unsigned>
++CapacityThreshold("cap-threshold", cl::Hidden, cl::init(80),
++  cl::desc("Percent of capacity at which point a new migration point should "
++           "be inserted (only applies to -more-mig-points)"));
++
++/// Per-function capacity threshold.
++const static cl::list<std::string>
++FuncCapThreshold("func-cap", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific capacity threshold in function,value pairs"));
++
++/// Normally we instrument function entry points with migration points.  If
++/// we're below some percent of capacity at all exit points & we haven't added
++/// instrumentation into the body (i.e., nothing depends on a clean slate to
++/// start), skip this instrumentation.
++const static cl::opt<unsigned>
++StartThreshold("start-threshold", cl::Hidden, cl::init(5),
++  cl::desc("Don't instrument function entry points under a percent of "
++           "capacity (only applies to -more-mig-points), used for "
++           "small functions"));
++
++/// Per-function starting threshold.
++const static cl::list<std::string>
++FuncStartThreshold("func-start", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific start threshold in function,value pairs"));
++
++/// Normally we instrument function exit points with migration points.  If
++/// we're below some percent of capacity, skip this instrumentation (useful for
++/// very small/short-lived functions).
++const static cl::opt<unsigned>
++RetThreshold("ret-threshold", cl::Hidden, cl::init(5),
++  cl::desc("Don't instrument function exit points under a percent of "
++           "capacity (only applies to -more-mig-points)"));
++
++/// Per-function return threshold.
++const static cl::list<std::string>
++FuncRetThreshold("func-ret", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Function-specific return threshold in function,value pairs"));
++
++/// Don't instrument a specific function with extra migration points.
++const static cl::list<std::string>
++FuncNoInst("func-no-inst", cl::Hidden, cl::ZeroOrMore,
++  cl::desc("Don't instrument a particular function with migration points"));
++
++/// Target cycles between migration points when instrumenting applications with
++/// more migration points (but without HTM).  Allows tuning trade off between
++/// migration point response time and overhead.
++const static cl::opt<unsigned>
++MillionCyclesBetweenMigPoints("migpoint-cycles", cl::Hidden, cl::init(50),
++  cl::desc("Cycles between migration points, in millions of cycles"));
++
++/// Cover the application in transactional execution by inserting HTM
++/// stop/start instructions at migration points.  Tailors the analysis to
++/// reduce capacity aborts by estimating memory access behavior.
++const static cl::opt<bool>
++HTMExec("htm-execution", cl::NotHidden, cl::init(false),
++  cl::desc("Instrument migration points with HTM execution "
++           "(only supported on PowerPC 64-bit & x86-64)"));
++
++/// Disable wrapping mem<set, copy, move> instructions for which we don't know
++/// the size.
++const static cl::opt<bool>
++NoWrapUnknownMem("htm-no-wrap-unknown-mem", cl::Hidden, cl::init(false),
++  cl::desc("Disable wrapping mem<set, copy, move> of unknown size with HTM"));
++
++/// Disable wrapping libc functions which are likely to cause HTM aborts with
++/// HTM stop/start intrinsics.  Wrapping happens by default with HTM execution.
++const static cl::opt<bool>
++NoWrapLibc("htm-no-wrap-libc", cl::Hidden, cl::init(false),
++  cl::desc("Disable wrapping libc functions with HTM stop/start"));
++
++/// HTM memory read buffer size for tuning analysis when inserting additional
++/// migration points.
++const static cl::opt<unsigned>
++HTMReadBufSizeArg("htm-buf-read", cl::Hidden, cl::init(32),
++  cl::desc("HTM analysis tuning - HTM read buffer size, in kilobytes"),
++  cl::value_desc("size"));
++
++/// HTM memory write buffer size for tuning analysis when inserting additional
++/// migration points.
++const static cl::opt<unsigned>
++HTMWriteBufSizeArg("htm-buf-write", cl::Hidden, cl::init(8),
++  cl::desc("HTM analysis tuning - HTM write buffer size, in kilobytes"),
++  cl::value_desc("size"));
++
++#define KB 1024
++#define HTMReadBufSize (HTMReadBufSizeArg * KB)
++#define HTMWriteBufSize (HTMWriteBufSizeArg * KB)
++
++#define MILLION 1000000
++#define CyclesBetweenMigPoints \
++  ((unsigned long)MillionCyclesBetweenMigPoints * MILLION)
++#define MEM_WEIGHT 40
++
++STATISTIC(LoopsTransformed, "Number of loops transformed");
++STATISTIC(NumIVsAdded, "Number of induction variables added");
++
++namespace {
++
++/// Get the integer size of a value, if statically known.
++static int64_t getValueSize(const Value *V) {
++  if(isa<ConstantInt>(V)) return cast<ConstantInt>(V)->getSExtValue();
++  return -1;
++}
++
++/// Return a percentage of a value.
++static inline size_t getValuePercent(size_t V, unsigned P) {
++  assert(P <= 100 && "Invalid percentage");
++  return floor(((double)V) * (((double)P) / 100.0));
++}
++
++/// Return the number of cache lines accessed for a given number of
++/// (assumed contiguous) bytes.
++static inline size_t getNumCacheLines(size_t Bytes, unsigned LineSize) {
++  return ceil((double)Bytes / (double)LineSize);
++}
++
++/// Abstract weight metric.  Child classes implement for analyzing different
++/// resource capacities, e.g., HTM buffer sizes.
++class Weight {
++protected:
++  /// Number of times the weight was reset.
++  size_t Resets;
++
++  Weight() : Resets(0) {}
++  Weight(const Weight &C) : Resets(C.Resets) {}
++
++public:
++  virtual ~Weight() {};
++  virtual Weight *copy() const = 0;
++
++  /// Expose types of child implementations.
++  virtual bool isCycleWeight() const { return false; }
++  virtual bool isHTMWeight() const { return false; }
++
++  /// Analyze an instruction & update accounting.
++  virtual void analyze(const Instruction *I, const DataLayout *DL) = 0;
++
++  /// Return whether or not we should add a migration point.  This is tuned
++  /// based on the resource capacity and percentage threshold options.
++  virtual bool shouldAddMigPoint(unsigned percent) const {
++    return !underPercentOfThreshold(percent);
++  }
++
++  /// Reset the weight.
++  virtual void reset() { Resets++; }
++
++  /// Update this weight with the max of this weight and another.
++  virtual void max(const Weight *RHS) = 0;
++  virtual void max(const std::unique_ptr<Weight> &RHS) { max(RHS.get()); }
++
++  /// Multiply the weight by a factor, e.g., a number of loop iterations.
++  virtual void multiply(size_t factor) = 0;
++
++  /// Add another weight to this weight.
++  virtual void add(const Weight *RHS) = 0;
++  virtual void add(const std::unique_ptr<Weight> &RHS) { add(RHS.get()); }
++
++  /// Number of times this weight "fits" into the resource capacity before we
++  /// need to place a migration point.  This is used for calculating how many
++  /// iterations of a loop can be executed between migration points.
++  virtual size_t numIters(unsigned percent) const = 0;
++
++  /// Return whether or not the weight is within some percent (0-100) of the
++  /// resource capacity for a type of weight.
++  virtual bool underPercentOfThreshold(unsigned percent) const = 0;
++
++  /// Return a human-readable string describing weight information.
++  virtual std::string toString() const = 0;
++};
++
++typedef std::unique_ptr<Weight> WeightPtr;
++
++/// Weight metrics for HTM analysis, which basically depend on the number
++/// of bytes loaded & stored.
++class HTMWeight : public Weight {
++private:
++  // The number of bytes loaded & stored, respectively.
++  size_t LoadBytes, StoreBytes;
++
++  // Statistics about when the weight was reset (i.e., at HTM stop/starts).
++  size_t ResetLoad, ResetStore;
++
++public:
++  HTMWeight(size_t LoadBytes = 0, size_t StoreBytes = 0)
++    : LoadBytes(LoadBytes), StoreBytes(StoreBytes), ResetLoad(0),
++      ResetStore(0) {}
++  HTMWeight(const HTMWeight &C)
++    : Weight(C), LoadBytes(C.LoadBytes), StoreBytes(C.StoreBytes),
++      ResetLoad(C.ResetLoad), ResetStore(C.ResetStore) {}
++  virtual Weight *copy() const { return new HTMWeight(*this); }
++
++  virtual bool isHTMWeight() const { return true; }
++
++  /// Analyze an instruction for memory operations.
++  virtual void analyze(const Instruction *I, const DataLayout *DL) {
++    Type *Ty;
++
++    // TODO do extractelement, insertelement, shufflevector, extractvalue, or
++    // insertvalue read/write memory?
++    // TODO Need to handle the following instructions/instrinsics (also see
++    // Instruction::mayLoad() / Instruction::mayStore()):
++    //   llvm.masked.load
++    //   llvm.masked.store
++    //   llvm.masked.gather
++    //   llvm.masked.store
++    switch(I->getOpcode()) {
++    default: break;
++    case Instruction::Load: {
++      const LoadInst *LI = cast<LoadInst>(I);
++      Ty = LI->getPointerOperand()->getType()->getPointerElementType();
++      LoadBytes += DL->getTypeStoreSize(Ty);
++      break;
++    }
++
++    case Instruction::Store: {
++      const StoreInst *SI = cast<StoreInst>(I);
++      Ty = SI->getValueOperand()->getType();
++      StoreBytes += DL->getTypeStoreSize(Ty);
++      break;
++    }
++
++    case Instruction::AtomicCmpXchg: {
++      const AtomicCmpXchgInst *Cmp = cast<AtomicCmpXchgInst>(I);
++      Ty = Cmp->getPointerOperand()->getType()->getPointerElementType();
++      LoadBytes += DL->getTypeStoreSize(Ty);
++      StoreBytes += DL->getTypeStoreSize(Ty);
++    }
++
++    case Instruction::AtomicRMW: {
++      const AtomicRMWInst *RMW = cast<AtomicRMWInst>(I);
++      Ty = RMW->getPointerOperand()->getType()->getPointerElementType();
++      LoadBytes += DL->getTypeStoreSize(Ty);
++      StoreBytes += DL->getTypeStoreSize(Ty);
++    }
++
++    case Instruction::Call: {
++      const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
++      bool Loads = false, Stores = false;
++      int64_t Size = 0;
++
++      if(!II) break;
++      switch(II->getIntrinsicID()) {
++      default: break;
++      case Intrinsic::memcpy:
++      case Intrinsic::memmove:
++        // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
++        Loads = Stores = true;
++        Size = getValueSize(II->getArgOperand(2));
++        break;
++      case Intrinsic::memset:
++        // Arguments: i8* dest, i8 val, i<x> len, i32 align, i1 isvolatile
++        Stores = true;
++        Size = getValueSize(II->getArgOperand(2));
++        break;
++      }
++
++      // Size > 0: we know the size statically
++      // Size < 0: we can't determine the size statically
++      // Size == 0: some intrinsic we don't care about
++      if(Size > 0) {
++        if(Loads) LoadBytes += Size;
++        if(Stores) StoreBytes += Size;
++      }
++      else if(Size < 0) {
++        // Assume we're doing heavy reading & writing -- may need to revise if
++        // transaction begin/ends are too expensive.
++        if(Loads) LoadBytes += HTMReadBufSize;
++        if(Stores) StoreBytes += HTMWriteBufSize;
++      }
++
++      break;
++    }
++    }
++  }
++
++  virtual void reset() {
++    Weight::reset();
++    ResetLoad += LoadBytes;
++    ResetStore += StoreBytes;
++    LoadBytes = StoreBytes = 0;
++  }
++
++  /// The max value for HTM weights is the max of the two weights' LoadBytes
++  /// and StoreBytes (maintained separately).
++  virtual void max(const Weight *RHS) {
++    assert(RHS->isHTMWeight() && "Cannot mix weight types");
++    const HTMWeight *W = (const HTMWeight *)RHS;
++    if(W->LoadBytes > LoadBytes) LoadBytes = W->LoadBytes;
++    if(W->StoreBytes > StoreBytes) StoreBytes = W->StoreBytes;
++  }
++
++  virtual void multiply(size_t factor) {
++    LoadBytes *= factor;
++    StoreBytes *= factor;
++  }
++
++  virtual void add(const Weight *RHS) {
++    assert(RHS->isHTMWeight() && "Cannot mix weight types");
++    const HTMWeight *W = (const HTMWeight *)RHS;
++    LoadBytes += W->LoadBytes;
++    StoreBytes += W->StoreBytes;
++  }
++
++  /// The number of times this weight's load & stores could be executed without
++  /// overflowing the capacity threshold of the HTM buffers.
++  virtual size_t numIters(unsigned percent) const {
++    size_t NumLoadIters = UINT64_MAX, NumStoreIters = UINT64_MAX,
++      FPHtmReadSize = getValuePercent(HTMReadBufSize, percent),
++      FPHtmWriteSize = getValuePercent(HTMWriteBufSize, percent);
++
++    if(!LoadBytes && !StoreBytes) return 1024; // Return a safe value
++    else {
++      if(LoadBytes) NumLoadIters = FPHtmReadSize / LoadBytes;
++      if(StoreBytes) NumStoreIters = FPHtmWriteSize / StoreBytes;
++
++      if(!NumLoadIters && !NumStoreIters) return 1;
++      else return NumLoadIters < NumStoreIters ? NumLoadIters : NumStoreIters;
++    }
++  }
++
++  virtual bool underPercentOfThreshold(unsigned percent) const {
++    if(LoadBytes <= getValuePercent(HTMReadBufSize, percent) &&
++       StoreBytes <= getValuePercent(HTMWriteBufSize, percent))
++      return true;
++    else return false;
++  }
++
++  virtual std::string toString() const {
++    return std::to_string(LoadBytes) + " byte(s) loaded, " +
++           std::to_string(StoreBytes) + " byte(s) stored";
++  }
++};
++
++/// Weight metric for temporally-spaced migration points.
++class CycleWeight : public Weight {
++private:
++  // An estimate of the number of cycles since the last migration point.
++  size_t Cycles;
++
++  // Statistics about when the weight was reset (i.e., at migration points).
++  size_t ResetCycles;
++
++public:
++  CycleWeight(size_t Cycles = 0) : Cycles(Cycles), ResetCycles(0) {}
++  CycleWeight(const CycleWeight &C)
++    : Weight(C), Cycles(C.Cycles), ResetCycles(C.ResetCycles) {}
++  virtual CycleWeight *copy() const { return new CycleWeight(*this); }
++
++  virtual bool isCycleWeight() const { return true; }
++
++  virtual void analyze(const Instruction *I, const DataLayout *DL) {
++    Type *Ty;
++
++    // Cycles are estimated using Agner Fog's instruction latency guide at
++    // http://www.agner.org/optimize/instruction_tables.pdf for "Broadwell".
++    switch(I->getOpcode()) {
++    default: break;
++    // Terminator instructions
++    // TODO Ret, Invoke, Resume
++    case Instruction::Br: Cycles += 2; break;
++    case Instruction::Switch: Cycles += 2; break;
++    case Instruction::IndirectBr: Cycles += 2; break;
++
++    // Binary instructions
++    case Instruction::Add: Cycles++; break;
++    case Instruction::FAdd: Cycles += 3; break;
++    case Instruction::Sub: Cycles++; break;
++    case Instruction::FSub: Cycles += 3; break;
++    case Instruction::Mul: Cycles += 2; break;
++    case Instruction::FMul: Cycles += 3; break;
++    case Instruction::UDiv: Cycles += 73; break;
++    case Instruction::SDiv: Cycles += 81; break;
++    case Instruction::FDiv: Cycles += 14; break;
++    case Instruction::URem: Cycles += 73; break;
++    case Instruction::SRem: Cycles += 81; break;
++    case Instruction::FRem: Cycles += 14; break;
++
++    // Logical operators
++    case Instruction::Shl: Cycles += 2; break;
++    case Instruction::LShr: Cycles += 2; break;
++    case Instruction::AShr: Cycles += 2; break;
++    case Instruction::And: Cycles += 1; break;
++    case Instruction::Or: Cycles += 1; break;
++    case Instruction::Xor: Cycles += 1; break;
++
++    // Memory instructions
++    case Instruction::Load: {
++      const LoadInst *LI = cast<LoadInst>(I);
++      Ty = LI->getPointerOperand()->getType()->getPointerElementType();
++      Cycles += getNumCacheLines(DL->getTypeStoreSize(Ty), 64) * MEM_WEIGHT;
++      break;
++    }
++    case Instruction::Store: {
++      const StoreInst *SI = cast<StoreInst>(I);
++      Ty = SI->getValueOperand()->getType();
++      Cycles += getNumCacheLines(DL->getTypeStoreSize(Ty), 64) * MEM_WEIGHT;
++      break;
++    }
++    case Instruction::GetElementPtr: Cycles++; break;
++    case Instruction::Fence: Cycles += 33; break;
++    case Instruction::AtomicCmpXchg: Cycles += 21; break;
++    case Instruction::AtomicRMW: Cycles += 21; break;
++
++    // Cast instructions
++    case Instruction::Trunc: Cycles++; break;
++    case Instruction::ZExt: Cycles++; break;
++    case Instruction::SExt: Cycles++; break;
++    case Instruction::FPToUI: Cycles += 4; break;
++    case Instruction::FPToSI: Cycles += 4; break;
++    case Instruction::UIToFP: Cycles += 5; break;
++    case Instruction::SIToFP: Cycles += 5; break;
++    case Instruction::FPTrunc: Cycles += 4; break;
++    case Instruction::FPExt: Cycles += 2; break;
++
++    // Other instructions
++    // TODO VAArg, ExtractElement, InsertElement, ShuffleVector, ExtractValue,
++    // InsertValue, LandingPad
++    case Instruction::ICmp: Cycles++; break;
++    case Instruction::FCmp: Cycles += 3; break;
++    case Instruction::Call: {
++      const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
++      int64_t Size = 0;
++
++      if(!II) Cycles += 3;
++      else {
++        switch(II->getIntrinsicID()) {
++        default: break;
++        case Intrinsic::memcpy:
++        case Intrinsic::memmove:
++        case Intrinsic::memset:
++          // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
++          Size = getValueSize(II->getArgOperand(2));
++          break;
++        }
++
++        if(Size > 0) Cycles += getNumCacheLines(Size, 64) * MEM_WEIGHT;
++      }
++      break;
++    }
++    case Instruction::Select: Cycles += 3; break;
++    }
++  }
++
++  virtual void reset() {
++    Weight::reset();
++    ResetCycles += Cycles;
++    Cycles = 0;
++  }
++
++  virtual void max(const Weight *RHS) {
++    assert(RHS->isCycleWeight() && "Cannot mix weight types");
++    const CycleWeight *W = (const CycleWeight *)RHS;
++    if(W->Cycles > Cycles) Cycles = W->Cycles;
++  }
++
++  virtual void multiply(size_t factor) { Cycles *= factor; }
++  virtual void add(const Weight *RHS) {
++    assert(RHS->isCycleWeight() && "Cannot mix weight types");
++    const CycleWeight *W = (const CycleWeight *)RHS;
++    Cycles += W->Cycles;
++  }
++
++  virtual size_t numIters(unsigned percent) const {
++    if(!Cycles) return 1048576; // Return a safe value
++    else {
++      size_t FPCycleCap = getValuePercent(CyclesBetweenMigPoints, percent);
++      size_t Iters = FPCycleCap / Cycles;
++      return Iters ? Iters : 1;
++    }
++  }
++
++  virtual bool underPercentOfThreshold(unsigned percent) const {
++    if(Cycles <= getValuePercent(CyclesBetweenMigPoints, percent)) return true;
++    else return false;
++  }
++
++  virtual std::string toString() const {
++    return std::to_string(Cycles) + " cycles";
++  }
++};
++
++/// Get a weight object with zero-initialized weight based on the type of
++/// analysis being used to instrument the application.
++///
++/// Note: returns a dynamically allocated object to be managed by the caller
++static Weight *getZeroWeight() {
++  if(HTMExec) return new HTMWeight();
++  else return new CycleWeight();
++}
++
++/// SelectMigrationPoints - select locations at which to insert migration
++/// points into functions.
++class SelectMigrationPoints : public FunctionPass
++{
++public:
++  static char ID;
++
++  SelectMigrationPoints() : FunctionPass(ID) {
++    initializeSelectMigrationPointsPass(*PassRegistry::getPassRegistry());
++  }
++  ~SelectMigrationPoints() {}
++
++  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
++    AU.addRequired<LoopInfoWrapperPass>();
++    AU.addRequired<EnumerateLoopPaths>();
++    AU.addRequired<ScalarEvolution>();
++  }
++
++  virtual const char *getPassName() const
++  { return "Select migration point locations"; }
++
++  static inline unsigned splitFuncValPair(const std::string &Pair,
++                                          std::string &Func) {
++    unsigned Val;
++    size_t Comma = Pair.rfind(',');
++    Func = Pair.substr(0, Comma);
++    Val = stoul(Pair.substr(Comma + 1));
++    assert(Val <= 100 && "Invalid percentage");
++    return Val;
++  }
++
++  /// Parse per-function threshold values from the command line.
++  void parsePerFuncThresholds() {
++    unsigned Val;
++    std::string Name;
++
++    FuncCapList.clear();
++    FuncStartList.clear();
++    FuncRetList.clear();
++    NoInstFuncs.clear();
++
++    for(auto Pair : FuncCapThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncCapList[Name] = Val;
++    }
++    for(auto Pair : FuncStartThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncStartList[Name] = Val;
++    }
++    for(auto Pair : FuncRetThreshold) {
++      Val = splitFuncValPair(Pair, Name);
++      FuncRetList[Name] = Val;
++    }
++    for(auto Func : FuncNoInst) NoInstFuncs.insert(Func);
++  }
++
++  virtual bool doInitialization(Module &M) {
++    DL = &M.getDataLayout();
++    if(MoreMigPoints) parsePerFuncThresholds();
++    if(HTMExec) Popcorn::setInstrumentationType(M, Popcorn::HTM);
++    else Popcorn::setInstrumentationType(M, Popcorn::Cycles);
++    return false;
++  }
++
++  /// Select where to insert migration points into functions.
++  virtual bool runOnFunction(Function &F)
++  {
++    DEBUG(dbgs() << "\n********** SELECT MIGRATION POINTS **********\n"
++                 << "********** Function: " << F.getName() << "\n\n");
++
++    if(NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) return false;
++
++    initializeAnalysis(F);
++
++    // Some operations (e.g., big memory copies, I/O) will cause aborts.
++    // Instrument these operations to stop & resume transactions afterwards.
++    if(HTMExec) {
++      bool AddedMigPoint = wrapWithHTM(F, isBigMemoryOp,
++        "memory operations that overflow HTM buffers");
++      if(!NoWrapLibc)
++        AddedMigPoint |= wrapWithHTM(F, isLibcIO, "I/O functions");
++      if(AddedMigPoint) LP->runOnFunction(F);
++    }
++
++    if(MoreMigPoints) {
++      StringRef FuncName = F.getName();
++      StringMap<unsigned>::const_iterator It;
++      if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
++        CurCapThresh = It->second;
++      else CurCapThresh = CapacityThreshold;
++      if((It = FuncStartList.find(FuncName)) != FuncStartList.end())
++        CurStartThresh = It->second;
++      else CurStartThresh = StartThreshold;
++      if((It = FuncRetList.find(FuncName)) != FuncRetList.end())
++        CurRetThresh = It->second;
++      else CurRetThresh = RetThreshold;
++
++      DEBUG(
++        dbgs() << "\n-> Analyzing function body to add migration points <-\n"
++               << "\nCapacity threshold: " << std::to_string(CurCapThresh)
++               << "\nStart threshold: " << std::to_string(CurStartThresh)
++               << "\nReturn threshold: " << std::to_string(CurRetThresh)
++               << "\nMaximum iterations/migration point: "
++               << std::to_string(MaxItersPerMigPoint);
++
++        if(HTMExec)
++          dbgs() << "\nAnalyzing for HTM Instrumentation"
++                 << "\n  HTM read buffer size: "
++                 << std::to_string(HTMReadBufSizeArg) << "kb"
++                 << "\n  HTM write buffer size: "
++                 << std::to_string(HTMWriteBufSizeArg) << "kb\n";
++        else
++          dbgs() << "\nAnalyzing for migration call out instrumentation"
++                 << "\n  Target millions of cycles between migration points: "
++                 << std::to_string(MillionCyclesBetweenMigPoints) << "\n";
++      );
++
++      // We by default mark the function start as a migration point, but if we
++      // don't add any instrumentation & the function's exit weights are
++      // sufficiently small avoid instrumentation altogether.
++      bool MarkStart = false;
++      if(!analyzeFunctionBody(F)) {
++        for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
++          if(isa<ReturnInst>(BB->getTerminator()) &&
++             !BBWeights[BB].BlockWeight->underPercentOfThreshold(CurStartThresh))
++            MarkStart = true;
++      }
++      else MarkStart = true;
++
++      if(MarkStart) {
++        DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
++        markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
++      }
++      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
++    }
++    else {
++      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
++      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
++
++      // Instrument function exit point(s)
++      DEBUG(dbgs() << "-> Marking function exit(s) as a migration point <-\n");
++      for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
++        if(isa<ReturnInst>(BB->getTerminator()))
++          markAsMigPoint(BB->getTerminator(), true, true);
++    }
++
++    // Finally, apply transformations to loops headers according to analysis.
++    transformLoopHeaders(F);
++
++    return true;
++  }
++
++  /// Reset all analysis.
++  void initializeAnalysis(const Function &F) {
++    SE = &getAnalysis<ScalarEvolution>();
++    LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++    LP = &getAnalysis<EnumerateLoopPaths>();
++    BBWeights.clear();
++    LoopWeights.clear();
++    TransformLoops.clear();
++    MigPointInsts.clear();
++    HTMBeginInsts.clear();
++    HTMEndInsts.clear();
++  }
++
++private:
++  //===--------------------------------------------------------------------===//
++  // Types & fields
++  //===--------------------------------------------------------------------===//
++
++  /// Configuration for the function currently being analyzed.
++  unsigned CurCapThresh;
++  unsigned CurStartThresh;
++  unsigned CurRetThresh;
++
++  /// The current architecture - used to access architecture-specific HTM calls
++  const DataLayout *DL;
++
++  /// Parsed per-function thresholds.
++  StringMap<unsigned> FuncCapList;
++  StringMap<unsigned> FuncStartList;
++  StringMap<unsigned> FuncRetList;
++  StringSet<> NoInstFuncs;
++
++  /// Analyses on which we depend
++  ScalarEvolution *SE;
++  LoopInfo *LI;
++  EnumerateLoopPaths *LP;
++
++  /// libc functions which are likely to cause an HTM abort through a syscall
++  const static StringSet<> LibcIO;
++
++  /// Weight information for basic blocks.
++  class BasicBlockWeightInfo {
++  public:
++    /// Weight of the basic block at the end of its execution.  If the block has
++    /// a migration point, the weight *only* captures the instructions following
++    /// the migration point (migration points "reset" the weight).
++    WeightPtr BlockWeight;
++
++    BasicBlockWeightInfo() : BlockWeight(nullptr) {}
++    BasicBlockWeightInfo(const Weight *BlockWeight)
++      : BlockWeight(BlockWeight->copy()) {}
++    BasicBlockWeightInfo(const WeightPtr &BlockWeight)
++      : BlockWeight(BlockWeight->copy()) {}
++
++    std::string toString() const {
++      if(BlockWeight) return BlockWeight->toString();
++      else return "<uninitialized basic block weight info>";
++    }
++  };
++
++  /// Weight information for loops.  Maintains weights at loop exit points as
++  /// well as path-specific weight information for the loop & exit blocks.
++  class LoopWeightInfo {
++  private:
++    /// The weight of the loop upon entry.  Zero in the default case, but may
++    /// be set if analysis elides instrumentation in and around the loop.
++    WeightPtr EntryWeight;
++
++    /// The maximum weight when exiting the loop at each of its exit blocks.
++    /// Automatically recalculated when any of its ingredients are changed.
++    DenseMap<const BasicBlock *, WeightPtr> ExitWeights;
++
++    /// Whether the loop has either of the two types of paths, and if so the
++    /// maximum weight of each type.  Note that the spanning path weight is
++    /// *not* scaled by the number of iterations, ItersPerMigPoint.
++    bool LoopHasSpanningPath, LoopHasEqPointPath;
++    WeightPtr LoopSpanningPathWeight, LoopEqPointPathWeight;
++
++    /// Number of iterations between migration points if the loop has one or
++    /// more spanning paths, or zero otherwise.
++    size_t ItersPerMigPoint;
++
++    /// Whether there are either of the two types of paths through each exit
++    /// block, and if so the maximum weight of each type.
++    DenseMap<const BasicBlock *, bool> ExitHasSpanningPath, ExitHasEqPointPath;
++    DenseMap<const BasicBlock *, WeightPtr> ExitSpanningPathWeights,
++                                            ExitEqPointPathWeights;
++
++    /// Calculate the exit block's maximum weight, which is the max of both the
++    /// spanning path exit weight and equivalence point path exit weight.
++    void computeExitWeight(const BasicBlock *BB) {
++      // Note: these operations are in a specific order -- change with care!
++
++      // Calculate the loop weight up until the current iteration
++      WeightPtr BBWeight(getZeroWeight());
++      if(LoopHasSpanningPath) BBWeight->max(getLoopSpanningPathWeight(true));
++      if(LoopHasEqPointPath) BBWeight->max(LoopEqPointPathWeight);
++
++      // Calculate the maximum possible value of the current iteration:
++      //   - Spanning path: loop weight + current path weight
++      //   - Equivalence point path: current weight path
++      if(ExitHasSpanningPath[BB]) BBWeight->add(ExitSpanningPathWeights[BB]);
++      if(ExitHasEqPointPath[BB]) BBWeight->max(ExitEqPointPathWeights[BB]);
++
++      ExitWeights[BB] = std::move(BBWeight);
++    }
++
++    void computeAllExitWeights() {
++      for(auto I = ExitWeights.begin(), E = ExitWeights.end(); I != E; I++)
++        computeExitWeight(I->first);
++    }
++
++  public:
++    LoopWeightInfo() = delete;
++    LoopWeightInfo(const Loop *L)
++      : EntryWeight(getZeroWeight()), LoopHasSpanningPath(false),
++        LoopHasEqPointPath(false), ItersPerMigPoint(0) {
++      SmallVector<BasicBlock *, 4> ExitBlocks;
++      L->getExitingBlocks(ExitBlocks);
++      for(auto Block : ExitBlocks) {
++        ExitHasSpanningPath[Block] = false;
++        ExitHasEqPointPath[Block] = false;
++      }
++    }
++
++    /// Set the weight upon entering the loop & recompute all exit weights.
++    void setEntryWeight(const WeightPtr &W) {
++      EntryWeight.reset(W->copy());
++      computeAllExitWeights();
++    }
++
++    /// Get the number of iterations between migration points, or zero if there
++    /// are no spanning paths through the loop.
++    size_t getItersPerMigPoint() const {
++      return ItersPerMigPoint;
++    }
++
++    /// Get the loop's spanning path weight, scaled based on the number of
++    /// iterations.  Also includes loop entry weight if requested.
++    WeightPtr getLoopSpanningPathWeight(bool AddEntry) const {
++      assert(LoopHasSpanningPath && "No spanning path weight for loop");
++      WeightPtr Ret(LoopSpanningPathWeight->copy());
++      Ret->multiply(ItersPerMigPoint - 1);
++      if(AddEntry) Ret->add(EntryWeight);
++      return Ret;
++    }
++
++    /// Set the loop's spanning path weight & recompute all exit weights.
++    ///  - W: the maximum weight of a single spanning path iteration
++    ///  - I: the number of iterations per migration point
++    void setLoopSpanningPathWeight(const WeightPtr &W, size_t I) {
++      LoopHasSpanningPath = true;
++      LoopSpanningPathWeight.reset(W->copy());
++      ItersPerMigPoint = I;
++      computeAllExitWeights();
++    }
++
++    /// Get the loop's equivalence point path weight.
++    WeightPtr getLoopEqPointPathWeight() const
++    {
++      assert(LoopHasEqPointPath && "No equivalence point path weight for loop");
++      return WeightPtr(LoopEqPointPathWeight->copy());
++    }
++
++    /// Set the loop's equivalence point path weight & recompute all exit
++    /// weights.
++    void setLoopEqPointPathWeight(const WeightPtr &W) {
++      LoopHasEqPointPath = true;
++      LoopEqPointPathWeight.reset(W->copy());
++      computeAllExitWeights();
++    }
++
++    /// Get an exit block's spanning path weight.  This is the raw weight for
++    /// a single iteration of paths through this exiting block, it does *not*
++    /// incorporate loop weights.
++    WeightPtr getExitSpanningPathWeight(const BasicBlock *BB) const
++    {
++      assert(ExitHasSpanningPath.find(BB)->second &&
++             "No spanning path weight for exit block");
++      return WeightPtr(ExitSpanningPathWeights.find(BB)->second->copy());
++    }
++
++    /// Set the exit block's spanning path weight & recompute the exit block's
++    /// overall maximum weight.
++    void setExitSpanningPathWeight(const BasicBlock *BB, const WeightPtr &W)
++    {
++      ExitHasSpanningPath[BB] = true;
++      ExitSpanningPathWeights[BB].reset(W->copy());
++      computeExitWeight(BB);
++    }
++
++    /// Get an exit block's equivalence point path weight.  This is the raw
++    /// weight for a single iteration of paths through this exiting block, it
++    /// does *not* incorporate loop weights.
++    WeightPtr getExitEqPointPathWeight(const BasicBlock *BB) const
++    {
++      assert(ExitHasEqPointPath.find(BB)->second &&
++             "No equivalence point path weight for exit block");
++      return WeightPtr(ExitEqPointPathWeights.find(BB)->second->copy());
++    }
++
++    /// Set the equivalence point path exit block weight & recompute the exit
++    /// block's overall maximum weight.
++    void setExitEqPointPathWeight(const BasicBlock *BB, const WeightPtr &W)
++    {
++      ExitHasEqPointPath[BB] = true;
++      ExitEqPointPathWeights[BB].reset(W->copy());
++      computeExitWeight(BB);
++    }
++
++    /// Return whether the loop/exit block has spanning and equivalence point
++    /// paths through it.
++    bool loopHasSpanningPath() const { return LoopHasSpanningPath; }
++    bool loopHasEqPointPath() const { return LoopHasEqPointPath; }
++    bool exitHasSpanningPath(const BasicBlock *BB) const
++    { return ExitHasSpanningPath.find(BB)->second; }
++    bool exitHasEqPointPath(const BasicBlock *BB) const
++    { return ExitHasEqPointPath.find(BB)->second; }
++
++    /// Return the weight of a given exiting basic block.
++    const WeightPtr &getExitWeight(const BasicBlock *BB) const {
++      assert(ExitWeights.count(BB) && "Invalid exit basic block");
++      return ExitWeights.find(BB)->second;
++    }
++
++    const WeightPtr &operator[](const BasicBlock *BB) const
++    { return getExitWeight(BB); }
++
++    std::string toString() const {
++      if(!ExitWeights.size()) return "<uninitialized loop weight info>";
++      else {
++        std::string buf = "Exit block weights:\n";
++        for(auto It = ExitWeights.begin(), E = ExitWeights.end();
++            It != E; ++It) {
++          buf += "    ";
++          if(It->first->hasName()) {
++            buf += It->first->getName();
++            buf += ": ";
++          }
++          buf += It->second->toString() + "\n";
++        }
++        return buf;
++      }
++    }
++  };
++
++  /// Weight information gathered by analyses for basic blocks & loops
++  typedef std::map<const BasicBlock *, BasicBlockWeightInfo> BlockWeightMap;
++  typedef std::map<const Loop *, LoopWeightInfo> LoopWeightMap;
++  BlockWeightMap BBWeights;
++  LoopWeightMap LoopWeights;
++
++  /// Code locations marked for instrumentation.
++  SmallPtrSet<Loop *, 16> TransformLoops;
++  SmallPtrSet<Instruction *, 32> MigPointInsts;
++  SmallPtrSet<Instruction *, 32> HTMBeginInsts;
++  SmallPtrSet<Instruction *, 32> HTMEndInsts;
++
++  //===--------------------------------------------------------------------===//
++  // Analysis implementation
++  //===--------------------------------------------------------------------===//
++
++  /// Return whether the instruction requires HTM begin instrumentation.
++  bool shouldAddHTMBegin(Instruction *I) const {
++    if(Popcorn::isHTMBeginPoint(I)) return true;
++    else return HTMBeginInsts.count(I);
++  }
++
++  /// Return whether the instruction requires HTM end instrumentation.
++  bool shouldAddHTMEnd(Instruction *I) const {
++    if(Popcorn::isHTMEndPoint(I)) return true;
++    else return HTMEndInsts.count(I);
++  }
++
++  /// Return whether the instruction is a migration point.  We assume that all
++  /// called functions have migration points internally.
++  bool isMigrationPoint(Instruction *I) const {
++    if(Popcorn::isEquivalencePoint(I)) return true;
++    else return MigPointInsts.count(I);
++  }
++
++  /// Return whether the instruction is marked for any instrumentation.
++  bool isMarkedForInstrumentation(Instruction *I) const {
++    return isMigrationPoint(I) || shouldAddHTMBegin(I) || shouldAddHTMEnd(I);
++  }
++
++  /// Mark an instruction to be instrumented with an HTM begin, directly before
++  /// the instruction
++  bool markAsHTMBegin(Instruction *I) {
++    if(!HTMExec) return false;
++    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
++          dbgs() << " as HTM begin\n");
++    HTMBeginInsts.insert(I);
++    Popcorn::addHTMBeginMetadata(I);
++    return true;
++  }
++
++  /// Mark an instruction to be instrumented with an HTM end, directly before
++  /// the instruction
++  bool markAsHTMEnd(Instruction *I) {
++    if(!HTMExec) return false;
++    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
++          dbgs() << " as HTM end\n");
++    HTMEndInsts.insert(I);
++    Popcorn::addHTMEndMetadata(I);
++    return true;
++  }
++
++  /// Mark an instruction to be instrumented with a migration point, directly
++  /// before the instruction.  Optionally mark instruction as needing HTM
++  /// start/stop intrinsics.
++  bool markAsMigPoint(Instruction *I, bool AddHTMBegin, bool AddHTMEnd) {
++    // Don't clobber any existing instrumentation
++    if(isMarkedForInstrumentation(I)) return false;
++    DEBUG(dbgs() << "  + Marking"; I->print(dbgs());
++          dbgs() << " as a migration point\n");
++    MigPointInsts.insert(I);
++    Popcorn::addEquivalencePointMetadata(I);
++    if(AddHTMBegin) markAsHTMBegin(I);
++    if(AddHTMEnd) markAsHTMEnd(I);
++    return true;
++  }
++
++  /// Instruction matching function type.
++  typedef bool (*InstMatch)(const Instruction *, unsigned Thresh);
++
++  /// Return whether the instruction is a memory operation that will overflow
++  /// HTM buffers.
++  static bool isBigMemoryOp(const Instruction *I, unsigned Thresh) {
++    if(!I || !isa<IntrinsicInst>(I)) return false;
++    const IntrinsicInst *II = cast<IntrinsicInst>(I);
++    int64_t Size = 0;
++    switch(II->getIntrinsicID()) {
++    default: return false;
++    case Intrinsic::memcpy: case Intrinsic::memmove: case Intrinsic::memset:
++      // Arguments: i8* dest, i8* src, i<x> len, i32 align, i1 isvolatile
++      Size = getValueSize(II->getArgOperand(2));
++      break;
++    }
++
++    if(Size >= 0) { // We know the size
++      size_t USize = (size_t)Size;
++      return USize >= getValuePercent(HTMReadBufSize, Thresh) ||
++             USize >= getValuePercent(HTMWriteBufSize, Thresh);
++    }
++    else return !NoWrapUnknownMem;
++  }
++
++  /// Return whether the instruction is a libc I/O call.
++  static bool isLibcIO(const Instruction *I, unsigned Thresh) {
++    if(!I || !Popcorn::isCallSite(I)) return false;
++    const ImmutableCallSite CS(I);
++    const Function *CalledFunc = CS.getCalledFunction();
++    if(CalledFunc && CalledFunc->hasName())
++      return LibcIO.find(CalledFunc->getName()) != LibcIO.end();
++    return false;
++  }
++
++  /// Search for & wrap operations that match a certain criteria.
++  bool wrapWithHTM(Function &F, InstMatch Matcher, const char *Desc) {
++    bool AddedMigPoint = false;
++
++    DEBUG(dbgs() << "\n-> Wrapping " << Desc << " with HTM stop/start <-\n");
++    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++) {
++      if(LI->getLoopFor(BB)) continue; // Don't do this in loops!
++      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
++        if(Matcher(I, CurCapThresh)) {
++          markAsHTMEnd(I);
++
++          // Search subsequent instructions for other libc calls to prevent
++          // pathological transaction stop/starts.
++          const static size_t searchSpan = 10;
++          BasicBlock::iterator NextI(I->getNextNode());
++          for(size_t rem = searchSpan; rem > 0 && NextI != E; rem--, NextI++) {
++            if(Matcher(NextI, CurCapThresh)) {
++              DEBUG(dbgs() << "  - Found another match:"; NextI->dump());
++              I = NextI;
++              rem = searchSpan;
++            }
++          }
++
++          // TODO analyze successor blocks as well
++
++          AddedMigPoint |= markAsMigPoint(I->getNextNode(), true, false);
++        }
++      }
++    }
++
++    return AddedMigPoint;
++  }
++
++  /// Get the starting weight for a basic block based on the max weights of its
++  /// predecessors.
++  ///
++  /// Note: returns a dynamically allocated object to be managed by the caller
++  Weight *getInitialWeight(const BasicBlock *BB) const {
++    Weight *PredWeight = getZeroWeight();
++    const Loop *L = LI->getLoopFor(BB);
++    bool BBIsHeader = L && (BB == L->getHeader());
++    unsigned LDepth = L ? L->getLoopDepth() : 0;
++
++    for(auto Pred : predecessors(BB)) {
++      const Loop *PredLoop = LI->getLoopFor(Pred);
++
++      // We *only* gather header initial weights when analyzing whether to
++      // instrument loop entry, which doesn't depend on latches.
++      if(BBIsHeader && PredLoop == L) continue;
++
++      // Determine if the predecessor is an exit block from another loop:
++      //
++      //   1. The predecessor is in a loop
++      //   2. The predecessor's loop is not BB's loop
++      //   3. The nesting depth of the predecessor's loop is >= BB's loop*
++      //
++      // If it's an exit block, use the loop weight info to get the exit
++      // weight.  Otherwise, use the basic block weight info.
++      //
++      // *Note: if the predecessor's nesting depth is < BB's, then BB is in a
++      // child loop inside the predecessor's loop, and the predecessor is NOT a
++      // loop exiting block.
++      if(PredLoop && PredLoop != L && PredLoop->getLoopDepth() >= LDepth) {
++        assert(LoopWeights.count(PredLoop) &&
++               "Invalid reverse post-order traversal");
++        PredWeight->max(LoopWeights.at(PredLoop)[Pred]);
++      }
++      else {
++        assert(BBWeights.count(Pred) && "Invalid reverse post-order traversal");
++        PredWeight->max(BBWeights.at(Pred).BlockWeight);
++      }
++    }
++
++    return PredWeight;
++  }
++
++  /// Analyze a single basic block with an initial starting weight and update
++  /// it with the block's ending weight.  Return whether or not a migration
++  /// point was added.
++  bool traverseBlock(BasicBlock *BB, Weight *CurWeight) {
++    bool AddedMigPoint = false;
++
++    DEBUG(
++      dbgs() << "      Analyzing basic block";
++      if(BB->hasName()) dbgs() << " '" << BB->getName() << "'";
++      dbgs() << "\n";
++    );
++
++    // TODO this doesn't respect spans identified by wrapWithHTM()!
++
++    for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++) {
++      if(isa<PHINode>(I)) continue;
++
++      // Check if there is or there should be a migration point before the
++      // instruction, and if so, reset the weight.  Note: markAsMigPoint()
++      // internally avoids tampering with existing instrumentation.
++      if(isMigrationPoint(I)) CurWeight->reset();
++      else if(CurWeight->shouldAddMigPoint(CurCapThresh)) {
++        AddedMigPoint |= markAsMigPoint(I, true, true);
++        CurWeight->reset();
++      }
++
++      CurWeight->analyze(I, DL);
++    }
++
++    DEBUG(dbgs() << "       - Weight: " << CurWeight->toString() << "\n");
++
++    return AddedMigPoint;
++  }
++
++  bool traverseBlock(BasicBlock *BB, WeightPtr &Initial)
++  { return traverseBlock(BB, Initial.get()); }
++
++  /// Mark loop predecessors, i.e., all branches into the loop header, as
++  /// migration points.  Return whether or not a migration point was added.
++  bool markLoopPredecessors(const Loop *L) {
++    bool AddedMigPoint = false;
++    BasicBlock *Header = L->getHeader();
++    for(auto Pred : predecessors(Header)) {
++      // Weed out latches
++      if(!L->contains(Pred)) {
++        // Avoid adding migration points in bodies of predecessor loops when
++        // exiting from one loop directly into the header of another, e.g.,
++        //
++        //   for.body:  ;Body of first loop
++        //     ...
++        //     br i1 %cmp, for.body, for.body.2
++        //
++        //   for.body.2: ;Body of second, completely independent loop
++        //     ...
++        const Loop *PredL = LI->getLoopFor(Pred);
++        if(PredL == nullptr || (PredL->getLoopDepth() < L->getLoopDepth()))
++          AddedMigPoint |= markAsMigPoint(Pred->getTerminator(), true, true);
++      }
++    }
++    return AddedMigPoint;
++  }
++
++  /// Analyze & mark loop entry with migration points.  Avoid instrumenting if
++  /// we can execute the entire loop & any entry code without overflowing our
++  /// resource capacity.
++  bool traverseLoopEntry(Loop *L) {
++    // We don't need to instrument around the loop if we're instrumenting the
++    // header, as we'll hit a migration point at the beginning of the loop.
++    if(TransformLoops.count(L)) return false;
++
++    assert(LoopWeights.count(L) && "Invalid reverse post-order traversal");
++    LoopWeightInfo &LWI = LoopWeights.at(L);
++
++    // If the loop only has equivalence point paths, assume that we'll hit an
++    // equivalence point before we abort -- may need to revise if there are too
++    // many capacity aborts.
++    if(!LWI.loopHasSpanningPath()) {
++      DEBUG(dbgs() << "       - Loop only has equivalence point paths, "
++                      "can elide instrumenting loop entry points\n");
++      return false;
++    }
++
++    // TODO what if it's an irreducible loop, i.e., > 1 header?
++    BasicBlock *Header = L->getHeader();
++    WeightPtr HeaderWeight(getInitialWeight(Header));
++
++    DEBUG(dbgs() << "       + Analyzing loop entry points to "
++                 << Header->getName() << ", header weight: "
++                 << HeaderWeight->toString() << "\n");
++
++    // See if any of the exit spanning path weights are too heavy to include
++    // the entry point weight (entry point weights don't affect equivalence
++    // point paths).
++    bool InstrumentLoopEntry = false;
++    SmallVector<BasicBlock *, 4> ExitBlocks;
++    L->getExitingBlocks(ExitBlocks);
++    for(auto Exit : ExitBlocks) {
++      if(LWI.exitHasSpanningPath(Exit)) {
++        WeightPtr SpExitWeight(LWI.getLoopSpanningPathWeight(false));
++        SpExitWeight->add(LWI.getExitSpanningPathWeight(Exit));
++        SpExitWeight->add(HeaderWeight);
++        if(SpExitWeight->shouldAddMigPoint(CurCapThresh))
++          InstrumentLoopEntry = true;
++      }
++    }
++
++    if(InstrumentLoopEntry) {
++      DEBUG(dbgs() << "       - One or more spanning path(s) were too heavy, "
++                      "instrumenting loop entry points\n");
++      return markLoopPredecessors(L);
++    }
++    else {
++      DEBUG(dbgs() << "       + Can elide instrumenting loop entry points\n");
++      LWI.setEntryWeight(HeaderWeight);
++      return false;
++    }
++  }
++
++  /// Traverse a loop and instrument with migration points on paths that are
++  /// too "heavy".  Return whether or not a migration point was added.
++  bool traverseLoop(Loop *L) {
++    bool AddedMigPoint = false;
++    LoopBlocksDFS DFS(L); DFS.perform(LI);
++    LoopBlocksDFS::RPOIterator Block = DFS.beginRPO(), E = DFS.endRPO();
++    SmallPtrSet<const Loop *, 4> MarkedLoops;
++    Loop *BlockLoop;
++
++    assert(Block != E && "Loop with no basic blocks");
++
++    DEBUG(
++      dbgs() << "  + Analyzing "; L->dump();
++      dbgs() << "    - At "; L->getStartLoc().dump();
++    );
++
++    // TODO what if it's an irreducible loop, i.e., > 1 header?
++    BasicBlock *CurBB = *Block;
++    WeightPtr HdrWeight(getZeroWeight());
++    AddedMigPoint |= traverseBlock(CurBB, HdrWeight);
++    BBWeights[CurBB] = std::move(HdrWeight);
++
++    for(++Block; Block != E; ++Block) {
++      CurBB = *Block;
++      BlockLoop = LI->getLoopFor(CurBB);
++      if(BlockLoop == L) { // Block is in same loop & nesting depth
++        WeightPtr PredWeight(getInitialWeight(CurBB));
++        AddedMigPoint |= traverseBlock(CurBB, PredWeight);
++        BBWeights[CurBB] = std::move(PredWeight);
++      }
++      else if(!MarkedLoops.count(BlockLoop)) {
++        // Block is in a sub-loop, analyze & mark sub-loop's entry.  Only
++        // analyze direct sub-loops, as deeper-nested (2+) loops will have
++        // already been analyzed by their parents.
++        if(BlockLoop->getLoopDepth() - L->getLoopDepth() == 1)
++          AddedMigPoint |= traverseLoopEntry(BlockLoop);
++        MarkedLoops.insert(BlockLoop);
++      }
++    }
++
++    DEBUG(dbgs() << "    Finished analyzing loop\n");
++
++    return AddedMigPoint;
++  }
++
++  /// Analyze a path in a loop up until a particular end instruction and return
++  /// its weight.  Doesn't do any marking.
++  ///
++  /// Note: returns a dynamically allocated object to be managed by the caller
++  Weight *traversePathInternal(const LoopPath *LP,
++                               const Instruction *PathEnd,
++                               bool &ActuallyEqPoint) const {
++    assert(LP->cbegin() != LP->cend() && "Trivial loop path, no blocks");
++    assert(LP->contains(PathEnd->getParent()) && "Invalid end instruction");
++    ActuallyEqPoint = false;
++
++    Loop *SubLoop;
++    Weight *PathWeight = getZeroWeight();
++    SetVector<PathNode>::const_iterator Node = LP->cbegin(),
++                                        EndNode = LP->cend();
++    const BasicBlock *NodeBlock = Node->getBlock(),
++                     *EndBlock = PathEnd->getParent();
++    BasicBlock::const_iterator Inst, EndInst, PathEndInst(PathEnd);
++
++    if(Node->isSubLoopExit()) {
++      // Since the sub-loop exit block is the start of the path, it's by
++      // definition exiting from an equivalence point path.
++      SubLoop = LI->getLoopFor(NodeBlock);
++      assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++      const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++      PathWeight->add(LWI.getExitEqPointPathWeight(NodeBlock));
++    }
++    else {
++      for(Inst = LP->startInst(), EndInst = NodeBlock->end();
++          Inst != EndInst && Inst != PathEndInst; Inst++)
++        PathWeight->analyze(Inst, DL);
++    }
++
++    if(NodeBlock == EndBlock) {
++      PathWeight->analyze(PathEndInst, DL);
++      return PathWeight;
++    }
++
++    for(Node++; Node != EndNode; Node++) {
++      NodeBlock = Node->getBlock();
++      if(Node->isSubLoopExit()) {
++        // Since the sub-loop exit block is in the middle of the path, it's by
++        // definition exiting from a spanning path.  EnumerateLoopPaths doesn't
++        // know about loops we've marked for transformation, however, so reset
++        // the path weight for loops that'll have a migration point added to
++        // their header.
++        SubLoop = LI->getLoopFor(NodeBlock);
++        assert(LoopWeights.count(SubLoop) && "Invalid traversal");
++        const LoopWeightInfo &LWI = LoopWeights.at(SubLoop);
++        if(TransformLoops.count(SubLoop)) {
++          ActuallyEqPoint = true;
++          PathWeight->reset();
++        }
++
++        // TODO we need to ultimately deal with the following situation more
++        // gracefully:
++        //
++        //   loop 1: all spanning paths, contains loop 2
++        //     loop 2: all spanning paths, contains loop 3
++        //       loop 3: all spanning paths, to be instrumented
++        //
++        // Analysis determines loop 3 needs to be instrumented.  If all paths
++        // in loop 2 go through loop 3, then loop 2 no longer has spanning
++        // paths but only equivalence point paths.  The previous if statement
++        // detects this, and reports it to calculateLoopExitWeights().  However
++        // when analyzing paths through loop 1, we can't detect that loop 2
++        // only has equivalence points paths.
++
++        if(LWI.loopHasSpanningPath()) {
++          PathWeight->add(LWI.getLoopSpanningPathWeight(false));
++          PathWeight->add(LWI.getExitSpanningPathWeight(NodeBlock));
++        }
++        else {
++          ActuallyEqPoint = true;
++          PathWeight->reset();
++          PathWeight->add(LWI[NodeBlock]);
++        }
++      }
++      else {
++        for(Inst = NodeBlock->begin(), EndInst = NodeBlock->end();
++            Inst != EndInst && Inst != PathEndInst; Inst++)
++          PathWeight->analyze(Inst, DL);
++      }
++
++      if(NodeBlock == EndBlock) break;
++    }
++    PathWeight->analyze(PathEndInst, DL);
++
++    return PathWeight;
++  }
++
++  /// Analyze a path in a loop and return its weight.  Doesn't do any marking.
++  ///
++  /// Note: returns a dynamically allocated object to be managed by the caller
++  Weight *traversePath(const LoopPath *LP, bool &ActuallyEqPoint) const {
++    DEBUG(dbgs() << "  + Analyzing loop path: "; LP->dump());
++    return traversePathInternal(LP, LP->endInst(), ActuallyEqPoint);
++  }
++
++  /// Analyze a path until a given exit block & return path's weight up until
++  /// the exit point.
++  ///
++  /// Note: returns a dynamically allocated object to be managed by the caller
++  Weight *traversePathUntilExit(const LoopPath *LP,
++                                BasicBlock *Exit,
++                                bool &ActuallyEqPoint) const
++  { return traversePathInternal(LP, Exit->getTerminator(), ActuallyEqPoint); }
++
++  /// Get the loop trip count if available and less than UINT32_MAX, or 0
++  /// otherwise.
++  ///
++  /// Note: ported from ScalarEvolution::getSmallConstantMaxTripCount() in
++  /// later LLVM releases.
++  unsigned getTripCount(const Loop *L) const {
++    const SCEVConstant *MaxExitCount =
++      dyn_cast<SCEVConstant>(SE->getMaxBackedgeTakenCount(L));
++    if(!MaxExitCount) return 0;
++    ConstantInt *ExitConst = MaxExitCount->getValue();
++    if(ExitConst->getValue().getActiveBits() > 32) return 0;
++    else return ((unsigned)ExitConst->getZExtValue()) + 1;
++  }
++
++  /// Calculate the exit weights of a loop at all exit points.
++  void calculateLoopExitWeights(Loop *L) {
++    assert(!LoopWeights.count(L) && "Previously analyzed loop?");
++
++    bool HasSpPath = false, HasEqPointPath = false, ActuallyEqPoint;
++    std::vector<const LoopPath *> Paths;
++    LoopWeights.emplace(L, LoopWeightInfo(L));
++    LoopWeightInfo &LWI = LoopWeights.at(L);
++    SmallVector<BasicBlock *, 4> ExitBlocks;
++    WeightPtr SpanningWeight(getZeroWeight()),
++              EqPointWeight(getZeroWeight());
++    LP->getBackedgePaths(L, Paths);
++
++    DEBUG(dbgs() << "\n    Calculating loop path weights: "
++                 << std::to_string(Paths.size()) << " backedge path(s)\n");
++
++    // Analyze weights of individual paths through the loop that end at a
++    // backedge, as these will dictate the loop's weight.
++    for(auto Path : Paths) {
++      WeightPtr PathWeight(traversePath(Path, ActuallyEqPoint));
++      DEBUG(dbgs() << "    Path weight: " << PathWeight->toString() << " ");
++      if(Path->isSpanningPath() && !ActuallyEqPoint) {
++        HasSpPath = true;
++        SpanningWeight->max(PathWeight);
++        DEBUG(dbgs() << "(spanning path)\n");
++      }
++      else {
++        HasEqPointPath = true;
++        EqPointWeight->max(PathWeight);
++        DEBUG(dbgs() << "(equivalence point path)\n");
++      }
++    }
++
++    // Calculate/store the loop's spanning and equivalence point path weights.
++    if(HasSpPath) {
++      // Optimization: if the loop trip count is smaller than the number of
++      // iterations between migration points, elide loop instrumentation.
++      size_t NumIters = SpanningWeight->numIters(CurCapThresh);
++      unsigned TripCount = getTripCount(L);
++      assert(NumIters > 0 && "Should have added a migration point");
++      if(TripCount && TripCount < NumIters) {
++        DEBUG(dbgs() << "  Eliding loop instrumentation, loop trip count: "
++                     << std::to_string(TripCount) << "\n");
++        NumIters = TripCount;
++      }
++      else if(L->getLoopDepth() > 1 &&
++              NumIters > (size_t)MaxItersPerMigPoint) {
++        DEBUG(dbgs() << "  Eliding loop instrumentation (exceeded maximum "
++                        " iterations per migration point), loop trip count: "
++                     << std::to_string(MaxItersPerMigPoint) << "\n");
++        NumIters = MaxItersPerMigPoint;
++      }
++      // TODO mark first insertion point in loop header as migration point,
++      // propagate whether we added a migration point as return value
++      else TransformLoops.insert(L);
++      LWI.setLoopSpanningPathWeight(SpanningWeight, NumIters);
++
++      DEBUG(
++        dbgs() << "  Loop spanning path weight: " << SpanningWeight->toString()
++               << ", " << std::to_string(NumIters)
++               << " iteration(s)/migration point\n";
++      );
++    }
++    if(HasEqPointPath) {
++      LWI.setLoopEqPointPathWeight(EqPointWeight);
++
++      DEBUG(dbgs() << "  Loop equivalence point path weight: "
++                   << EqPointWeight->toString() << "\n");
++    }
++
++    DEBUG(dbgs() << "\n    Calculating loop exit weights");
++
++    // Calculate the weight of the loop at every exit point.  Maintain separate
++    // spanning & equivalence point path exit weights so that if we avoid
++    // instrumenting loop boundaries in traverseLoopEntry() we can update the
++    // exit weights.
++    L->getExitingBlocks(ExitBlocks);
++    for(auto Exit : ExitBlocks) {
++      HasSpPath = HasEqPointPath = false;
++      SpanningWeight.reset(getZeroWeight());
++      EqPointWeight.reset(getZeroWeight());
++
++      LP->getPathsThroughBlock(L, Exit, Paths);
++      for(auto Path : Paths) {
++        WeightPtr PathWeight(traversePathUntilExit(Path, Exit, ActuallyEqPoint));
++        if(Path->isSpanningPath() && !ActuallyEqPoint) {
++          HasSpPath = true;
++          SpanningWeight->max(PathWeight);
++        }
++        else {
++          HasEqPointPath = true;
++          EqPointWeight->max(PathWeight);
++        }
++      }
++
++      if(HasSpPath) LWI.setExitSpanningPathWeight(Exit, SpanningWeight);
++      if(HasEqPointPath) LWI.setExitEqPointPathWeight(Exit, EqPointWeight);
++    }
++  }
++
++  /// Analyze loop nests & mark locations for migration points.  Return whether
++  /// or not a migration point was added.
++  bool traverseLoopNest(const std::vector<BasicBlock *> &SCC) {
++    bool AddedMigPoint = false;
++    Loop *L;
++    LoopNest Nest;
++
++    // Get outermost loop in loop nest & enumerate the rest of the nest
++    assert(LI->getLoopFor(SCC.front()) && "No loop in SCC");
++    L = LI->getLoopFor(SCC.front());
++    while(L->getLoopDepth() != 1) L = L->getParentLoop();
++    LoopPathUtilities::populateLoopNest(L, Nest);
++
++    DEBUG(
++      dbgs() << " + Analyzing loop nest at "; L->getStartLoc().print(dbgs());
++      dbgs() << " with " << std::to_string(Nest.size()) << " loop(s)\n\n";
++    );
++
++    for(auto CurLoop : Nest) {
++      // Note: if migration points were added to any sub-loo(s) then we need to
++      // re-run the LoopPaths analysis on the outer loop.
++      // TODO this is a little overzealous, sibling loops (e.g., 2 sub-loops at
++      // the same depth and contained in the same outer loop) can cause
++      // unnecessary re-enumerations.
++      if(traverseLoop(CurLoop) || AddedMigPoint) {
++        AddedMigPoint = true;
++        LP->rerunOnLoop(CurLoop);
++      }
++
++      // TODO if we are instrumenting the loop header, re-enumerate paths
++      calculateLoopExitWeights(CurLoop);
++
++      DEBUG(dbgs() << "\n  Loop analysis: "
++                   << LoopWeights.at(CurLoop).toString() << "\n");
++    }
++
++    DEBUG(dbgs() << " - Finished loop nest\n");
++
++    return AddedMigPoint;
++  }
++
++  /// Analyze the function's body to add migration points.  Return whether or
++  /// not a migration point was added.
++  bool analyzeFunctionBody(Function &F) {
++    std::set<const Loop *> MarkedLoops;
++    bool AddedMigPoint = false;
++    Loop *BlockLoop;
++
++    // Analyze & mark paths through loop nests
++    DEBUG(dbgs() << "\n-> Analyzing loop nests <-\n");
++    for(scc_iterator<Function *> SCC = scc_begin(&F), E = scc_end(&F);
++        SCC != E; ++SCC)
++      if(SCC.hasLoop()) AddedMigPoint |= traverseLoopNest(*SCC);
++
++    // Analyze the rest of the function body
++    DEBUG(dbgs() << "\n-> Analyzing the rest of the function body <-\n");
++    ReversePostOrderTraversal<Function *> RPOT(&F);
++    for(auto BB = RPOT.begin(), BE = RPOT.end(); BB != BE; ++BB) {
++      BlockLoop = LI->getLoopFor(*BB);
++      if(!BlockLoop) {
++        WeightPtr PredWeight(getInitialWeight(*BB));
++        AddedMigPoint |= traverseBlock(*BB, PredWeight);
++        BBWeights[*BB] = std::move(PredWeight);
++      }
++      else if(!MarkedLoops.count(BlockLoop)) {
++        // Block is in a loop, analyze & mark loop's boundaries
++        AddedMigPoint |= traverseLoopEntry(BlockLoop);
++        MarkedLoops.insert(BlockLoop);
++      }
++    }
++
++    // Finally, determine if we should add a migration point at exit block(s).
++    for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++) {
++      if(isa<ReturnInst>(BB->getTerminator())) {
++        assert(!LI->getLoopFor(BB) && "Returning inside a loop");
++        assert(BBWeights.count(BB) && "Missing block weight");
++        const BasicBlockWeightInfo &BBWI = BBWeights[BB].BlockWeight;
++        if(!BBWI.BlockWeight->underPercentOfThreshold(CurRetThresh)) {
++          DEBUG(dbgs() << " - Not under weight threshold, marking return\n");
++          markAsMigPoint(BB->getTerminator(), true, true);
++        }
++      }
++    }
++
++    return AddedMigPoint;
++  }
++
++  //===--------------------------------------------------------------------===//
++  // Instrumentation implementation
++  //===--------------------------------------------------------------------===//
++
++  /// Either find an existing induction variable (and its stride), or create
++  /// one for a loop.
++  Instruction *getInductionVariable(Loop *L, size_t &Stride) {
++    BasicBlock *H = L->getHeader();
++    const SCEVAddRecExpr *Induct;
++    const SCEVConstant *StrideExpr;
++    Type *IVTy;
++
++    // Search for the induction variable & it's stride
++    for(BasicBlock::iterator I = H->begin(), E = H->end(); I != E; ++I) {
++      if(!isa<PHINode>(*I)) break;
++      IVTy = I->getType();
++      if(IVTy->isPointerTy() || !SE->isSCEVable(IVTy)) continue;
++      Induct = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(I));
++      if(Induct && isa<SCEVConstant>(Induct->getStepRecurrence(*SE))) {
++        StrideExpr = cast<SCEVConstant>(Induct->getStepRecurrence(*SE));
++        Stride = std::abs(StrideExpr->getValue()->getSExtValue());
++
++        // TODO if stride != 1, it's hard to ensure we're hitting a migration
++        // point every n iterations unless we know the *exact* number at which
++        // it starts.  For example, if stride = 4 but we start at 1, the
++        // migration point checking logic has to add checks for 1, 5, 9, etc.
++        // It's easier to just create our own induction variable.
++        if(Stride != 1) continue;
++
++        DEBUG(dbgs() << "Found induction variable with loop stride of "
++                     << std::to_string(Stride) << ":"; I->print(dbgs());
++              dbgs() << "\n");
++
++        return I;
++      }
++    }
++
++    DEBUG(dbgs() << "No induction variable, adding'migpoint.iv."
++                 << std::to_string(NumIVsAdded) << "' to the loop\n");
++
++    LLVMContext &C = H->getContext();
++    Type *Int32Ty = Type::getInt32Ty(C);
++    IRBuilder<> PhiBuilder(H->getFirstInsertionPt());
++    PHINode *IV = PhiBuilder.CreatePHI(Int32Ty, 0,
++      "migpoint.iv." + std::to_string(NumIVsAdded++));
++    Constant *One = ConstantInt::get(Int32Ty, 1, 0),
++             *Zero = ConstantInt::get(Int32Ty, 0, 0);
++    for(auto Pred : predecessors(H)) {
++      IRBuilder<> AddRecBuilder(Pred->getTerminator());
++      if(L->contains(Pred)) { // Backedge
++        Value *RecVal = AddRecBuilder.CreateAdd(IV, One);
++        IV->addIncoming(RecVal, Pred);
++      }
++      else IV->addIncoming(Zero, Pred);
++    }
++
++    Stride = 1;
++    return IV;
++  }
++
++  /// Round a value down to the nearest power of 2.  Stolen/modified from
++  /// https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
++  unsigned roundDownPowerOf2(unsigned Count) {
++    unsigned Starting = Count;
++    Count--;
++    Count |= Count >> 1;
++    Count |= Count >> 2;
++    Count |= Count >> 4;
++    Count |= Count >> 8;
++    Count |= Count >> 16;
++    Count++;
++
++    // If we're already a power of 2, then the above math returns the same
++    // value.  Otherwise, we've rounded *up* to the nearest power of 2 and need
++    // to divide by 2 to round *down*.
++    if(Count != Starting) Count >>= 1;
++    return Count;
++  }
++
++  /// Transform a loop header so that migration points (and any concomitant
++  /// costs) are only experienced every nth iteration, based on weight metrics
++  void transformLoopHeader(Loop *L) {
++    BasicBlock *Header = L->getHeader();
++    size_t ItersPerMigPoint, Stride = 0, InstrStride;
++
++    // If the first instruction has already been marked due to heuristics that
++    // bookend libc I/O & big memory operations, then there's nothing to do.
++    Instruction *First = Header->getFirstInsertionPt();
++    if(isMarkedForInstrumentation(First)) return;
++
++    DEBUG(dbgs() << "+ Instrumenting "; L->dump());
++
++    assert(LoopWeights.count(L) && "No loop analysis");
++    ItersPerMigPoint = LoopWeights.at(L).getItersPerMigPoint();
++
++    if(ItersPerMigPoint > 1) {
++      BasicBlock *NewSuccBB, *MigPointBB;
++      Instruction *IV = getInductionVariable(L, Stride);
++
++      IntegerType *IVType = cast<IntegerType>(IV->getType());
++      Function *CurF = Header->getParent();
++      LLVMContext &C = Header->getContext();
++
++      // Create new successor for all instructions after migration point
++      NewSuccBB = Header->splitBasicBlock(Header->getFirstInsertionPt(),
++        "l.postmigpoint" + std::to_string(LoopsTransformed));
++
++      // Create new block for migration point
++      MigPointBB = BasicBlock::Create(C,
++        "l.migpoint" + std::to_string(LoopsTransformed), CurF, NewSuccBB);
++      IRBuilder<> MigPointWorker(MigPointBB);
++      Instruction *Br = cast<Instruction>(MigPointWorker.CreateBr(NewSuccBB));
++      markAsMigPoint(Br, true, true);
++
++      // Add check and branch to migration point only every nth iteration.
++      // Round down to nearest power-of-2, which allows us to use a simple
++      // bitmask for migration point check (URem instructions can cause
++      // non-negligible overhead in tight-loops).
++      IRBuilder<> Worker(Header->getTerminator());
++      InstrStride = roundDownPowerOf2(ItersPerMigPoint * Stride) - 1;
++      assert(InstrStride > 0 && "Invalid migration point stride");
++      Constant *N = ConstantInt::get(IVType, InstrStride, IVType->getSignBit()),
++               *Zero = ConstantInt::get(IVType, 0, IVType->getSignBit());
++      Value *Rem = Worker.CreateAnd(IV, N);
++      Value *Cmp = Worker.CreateICmpEQ(Rem, Zero);
++      Worker.CreateCondBr(Cmp, MigPointBB, NewSuccBB);
++      Header->getTerminator()->eraseFromParent();
++
++      DEBUG(dbgs() << "Instrumenting to hit migration point every "
++                   << std::to_string(InstrStride + 1) << " iterations\n");
++    }
++    else {
++      DEBUG(dbgs() << "Instrumenting to hit migration point every iteration\n");
++      markAsMigPoint(Header->getFirstInsertionPt(), true, true);
++    }
++  }
++
++  /// Insert migration points & HTM instrumentation for instructions.
++  void transformLoopHeaders(Function &F) {
++    DEBUG(dbgs() << "\n-> Transforming loop headers <-\n");
++    for(auto Loop : TransformLoops) {
++      transformLoopHeader(Loop);
++      LoopsTransformed++;
++    }
++  }
++};
++
++} /* end anonymous namespace */
++
++char SelectMigrationPoints::ID = 0;
++
++INITIALIZE_PASS_BEGIN(SelectMigrationPoints, "select-migration-points",
++                      "Select migration points locations", true, false)
++INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_DEPENDENCY(EnumerateLoopPaths)
++INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
++INITIALIZE_PASS_END(SelectMigrationPoints, "select-migration-points",
++                    "Select migration points locations", true, false)
++
++const StringSet<> SelectMigrationPoints::LibcIO = {
++  "fopen", "freopen", "fclose", "fflush", "fwide",
++  "setbuf", "setvbuf", "fread", "fwrite",
++  "fgetc", "getc", "fgets", "fputc", "putc", "fputs",
++  "getchar", "gets", "putchar", "puts", "ungetc",
++  "fgetwc", "getwc", "fgetws", "fputwc", "putwc", "fputws",
++  "getwchar", "putwchar", "ungetwc",
++  "scanf", "fscanf", "vscanf", "vfscanf",
++  "printf", "fprintf", "vprintf", "vfprintf",
++  "wscanf", "fwscanf", "vwscanf", "vfwscanf",
++  "wprintf", "fwprintf", "vwprintf", "vfwprintf",
++  "ftell", "fgetpos", "fseek", "fsetpos", "rewind",
++  "clearerr", "feof", "ferror", "perror",
++  "remove", "rename", "tmpfile", "tmpnam",
++  "__isoc99_fscanf", "exit"
++};
++
++namespace llvm {
++  FunctionPass *createSelectMigrationPointsPass()
++  { return new SelectMigrationPoints(); }
++}
++
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
---- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 313649)
+--- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 277823)
 +++ lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(working copy)
 @@ -1160,6 +1160,41 @@
    return CurExceptionSym;
@@ -2472,7 +5298,7 @@ Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
    // Get the function symbol.
 Index: lib/CodeGen/CMakeLists.txt
 ===================================================================
---- lib/CodeGen/CMakeLists.txt	(revision 313649)
+--- lib/CodeGen/CMakeLists.txt	(revision 277823)
 +++ lib/CodeGen/CMakeLists.txt	(working copy)
 @@ -111,6 +111,8 @@
    StackSlotColoring.cpp
@@ -2493,7 +5319,7 @@ Index: lib/CodeGen/CMakeLists.txt
  
 Index: lib/CodeGen/CodeGen.cpp
 ===================================================================
---- lib/CodeGen/CodeGen.cpp	(revision 313649)
+--- lib/CodeGen/CodeGen.cpp	(revision 277823)
 +++ lib/CodeGen/CodeGen.cpp	(working copy)
 @@ -68,6 +68,7 @@
    initializeStackMapLivenessPass(Registry);
@@ -2505,7 +5331,7 @@ Index: lib/CodeGen/CodeGen.cpp
    initializeTwoAddressInstructionPassPass(Registry);
 Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
---- lib/CodeGen/LLVMTargetMachine.cpp	(revision 313649)
+--- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
 @@ -42,6 +42,26 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
@@ -2514,8 +5340,8 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +// Popcorn-specific IR-level instrumentation
 +enum PopcornInstrumentation {
 +  none, // No instrumentation
-+  eqpoints, // Only add equivalence points, don't generate rewriting metadata
-+  migration, // Add equivalence points & generate rewriting metadata for migration
++  migpoints, // Only add equivalence points, don't generate rewriting metadata
++  migration, // Add migration points & generate rewriting metadata for migration
 +  libc // Generate rewriting metadata for libc thread start functions
 +};
 +
@@ -2524,7 +5350,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  cl::init(none),
 +  cl::values(
 +    clEnumVal(none, "No instrumentation (default)"),
-+    clEnumVal(eqpoints, "Only add equivalence points (no migration metadata)"),
++    clEnumVal(migpoints, "Only add migration points (no migration metadata)"),
 +    clEnumVal(migration, "Add equivalence points & migration metadata"),
 +    clEnumVal(libc, "Instrument libc thread start functions for migration"),
 +    NULL
@@ -2545,11 +5371,11 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +    TM->setArchIROptLevel(CodeGenOpt::None);
 +
 +    switch(PopcornInstrument) {
-+    case PopcornInstrumentation::eqpoints:
-+      PassConfig->setAddEquivalencePoints(true);
++    case PopcornInstrumentation::migpoints:
++      PassConfig->setAddMigrationPoints(true);
 +      break;
 +    case PopcornInstrumentation::migration:
-+      PassConfig->setAddEquivalencePoints(true);
++      PassConfig->setAddMigrationPoints(true);
 +      PassConfig->setAddStackMaps(true);
 +      break;
 +    case PopcornInstrumentation::libc:
@@ -2566,7 +5392,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
    PassConfig->addIRPasses();
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
---- lib/CodeGen/MachineFunction.cpp	(revision 313649)
+--- lib/CodeGen/MachineFunction.cpp	(revision 277823)
 +++ lib/CodeGen/MachineFunction.cpp	(working copy)
 @@ -253,6 +253,15 @@
                                 MMO->getBaseAlignment());
@@ -2751,7 +5577,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  //===----------------------------------------------------------------------===//
 Index: lib/CodeGen/Passes.cpp
 ===================================================================
---- lib/CodeGen/Passes.cpp	(revision 313649)
+--- lib/CodeGen/Passes.cpp	(revision 277823)
 +++ lib/CodeGen/Passes.cpp	(working copy)
 @@ -217,7 +217,9 @@
      : ImmutablePass(ID), PM(&pm), StartBefore(nullptr), StartAfter(nullptr),
@@ -2759,21 +5585,62 @@ Index: lib/CodeGen/Passes.cpp
        AddingMachinePasses(false), TM(tm), Impl(nullptr), Initialized(false),
 -      DisableVerify(false), EnableTailMerge(true), EnableShrinkWrap(false) {
 +      DisableVerify(false), EnableTailMerge(true), EnableShrinkWrap(false),
-+      AddEquivalencePoints(false), AddStackMaps(false),
++      AddMigrationPoints(false), AddStackMaps(false),
 +      AddLibcStackMaps(false) {
  
    Impl = new PassConfigImpl();
  
-@@ -459,6 +461,21 @@
+@@ -391,7 +393,9 @@
+     addPass(createVerifierPass());
+ 
+   // Run loop strength reduction before anything else.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableLSR) {
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableLSR) {
+     addPass(createLoopStrengthReducePass());
+     if (PrintLSR)
+       addPass(createPrintFunctionPass(dbgs(), "\n\n*** Code after LSR ***\n"));
+@@ -406,10 +410,14 @@
+   addPass(createUnreachableBlockEliminationPass());
+ 
+   // Prepare expensive constants for SelectionDAG.
+-  if (getOptLevel() != CodeGenOpt::None && !DisableConstantHoisting)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableConstantHoisting)
+     addPass(createConstantHoistingPass());
+ 
+-  if (getOptLevel() != CodeGenOpt::None && !DisablePartialLibcallInlining)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisablePartialLibcallInlining)
+     addPass(createPartiallyInlineLibCallsPass());
+ }
+ 
+@@ -449,7 +457,9 @@
+ /// Add pass to prepare the LLVM IR for code generation. This should be done
+ /// before exception handling preparation passes.
+ void TargetPassConfig::addCodeGenPrepare() {
+-  if (getOptLevel() != CodeGenOpt::None && !DisableCGP)
++  if (getOptLevel() != CodeGenOpt::None &&
++      getArchIROptLevel() != CodeGenOpt::None &&
++      !DisableCGP)
+     addPass(createCodeGenPreparePass(TM));
+   addPass(createRewriteSymbolsPass());
+ }
+@@ -459,6 +469,23 @@
  void TargetPassConfig::addISelPrepare() {
    addPreISel();
  
-+  // Add pass to instrument IR with equivalence points, which are implemented
-+  // various ways depending on other command-line arguments
-+  if(AddEquivalencePoints) addPass(createEquivalencePointsPass());
-+
 +  assert(!(AddStackMaps && AddLibcStackMaps) &&
 +    "Cannot add both InsertStackMapsPass and LibcStackMapsPass");
++  assert(!(AddMigrationPoints && AddLibcStackMaps) &&
++    "Should not be instrumenting libc with extra migration points");
++
++  // Add pass to instrument IR with equivalence points, which are implemented
++  // various ways depending on other command-line arguments
++  if(AddMigrationPoints) addPass(createMigrationPointsPass());
 +
 +  // Add pass to instrument IR with stackmap instructions, which get lowered to
 +  // metadata needed for Popcorn's stack transformation
@@ -2786,7 +5653,7 @@ Index: lib/CodeGen/Passes.cpp
    // Add both the safe stack and the stack protection passes: each of them will
    // only protect functions that have corresponding attributes.
    addPass(createSafeStackPass());
-@@ -754,6 +771,10 @@
+@@ -754,6 +781,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -2799,7 +5666,7 @@ Index: lib/CodeGen/Passes.cpp
  
 Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
---- lib/CodeGen/RegAllocFast.cpp	(revision 313649)
+--- lib/CodeGen/RegAllocFast.cpp	(revision 277823)
 +++ lib/CodeGen/RegAllocFast.cpp	(working copy)
 @@ -1078,6 +1078,13 @@
  /// runOnMachineFunction - Register allocate the whole function
@@ -2817,7 +5684,7 @@ Index: lib/CodeGen/RegAllocFast.cpp
    MF = &Fn;
 Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
 ===================================================================
---- lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(revision 313649)
+--- lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(revision 277823)
 +++ lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(working copy)
 @@ -886,6 +886,9 @@
    case ISD::SRL:
@@ -2855,7 +5722,7 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
    SDValue Ch = N->getChain(), Ptr = N->getBasePtr();
 Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
 ===================================================================
---- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 313649)
+--- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 277823)
 +++ lib/CodeGen/SelectionDAG/LegalizeTypes.h	(working copy)
 @@ -288,6 +288,7 @@
    SDValue PromoteIntOp_Shift(SDNode *N);
@@ -2867,7 +5734,7 @@ Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
    SDValue PromoteIntOp_UINT_TO_FP(SDNode *N);
 Index: lib/CodeGen/StackColoring.cpp
 ===================================================================
---- lib/CodeGen/StackColoring.cpp	(revision 313649)
+--- lib/CodeGen/StackColoring.cpp	(revision 277823)
 +++ lib/CodeGen/StackColoring.cpp	(working copy)
 @@ -713,7 +713,7 @@
  
@@ -2880,7 +5747,7 @@ Index: lib/CodeGen/StackColoring.cpp
  
 Index: lib/CodeGen/StackMaps.cpp
 ===================================================================
---- lib/CodeGen/StackMaps.cpp	(revision 313649)
+--- lib/CodeGen/StackMaps.cpp	(revision 277823)
 +++ lib/CodeGen/StackMaps.cpp	(working copy)
 @@ -12,13 +12,18 @@
  #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -3588,7 +6455,7 @@ Index: lib/CodeGen/StackMaps.cpp
    OS.AddBlankLine();
 Index: lib/CodeGen/StackSlotColoring.cpp
 ===================================================================
---- lib/CodeGen/StackSlotColoring.cpp	(revision 313649)
+--- lib/CodeGen/StackSlotColoring.cpp	(revision 277823)
 +++ lib/CodeGen/StackSlotColoring.cpp	(working copy)
 @@ -278,6 +278,7 @@
    SmallVector<int, 16> SlotMapping(NumObjs, -1);
@@ -3612,7 +6479,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,974 @@
+@@ -0,0 +1,978 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3652,6 +6519,10 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "stacktransform"
++
++static cl::opt<bool>
++NoWarnings("no-sm-warn", cl::desc("Don't issue warnings about stackmaps"),
++           cl::init(false), cl::Hidden);
 +
 +//===----------------------------------------------------------------------===//
 +//                          StackTransformMetadata
@@ -3925,14 +6796,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +    DEBUG(
 +      dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
-+             << "********** Function: " << MF->getName() << '\n';
++             << "********** Function: " << MF->getName() << "\n";
 +      VRM->dump();
 +    );
 +
 +    findStackmapsAndStackSlotCopies();
 +    findAlternateOpLocs();
 +    findArchSpecificLiveVals();
-+    warnUnhandled();
++    if(!NoWarnings) warnUnhandled();
 +  }
 +
 +  return false;
@@ -5036,7 +7907,7 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +
 Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
---- lib/MC/MCCodeGenInfo.cpp	(revision 313649)
+--- lib/MC/MCCodeGenInfo.cpp	(revision 277823)
 +++ lib/MC/MCCodeGenInfo.cpp	(working copy)
 @@ -20,4 +20,5 @@
    RelocationModel = RM;
@@ -5046,7 +7917,7 @@ Index: lib/MC/MCCodeGenInfo.cpp
  }
 Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
---- lib/MC/MCObjectFileInfo.cpp	(revision 313649)
+--- lib/MC/MCObjectFileInfo.cpp	(revision 277823)
 +++ lib/MC/MCObjectFileInfo.cpp	(working copy)
 @@ -519,6 +519,15 @@
    DwarfAddrSection =
@@ -5066,7 +7937,7 @@ Index: lib/MC/MCObjectFileInfo.cpp
  
 Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 313649)
+--- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64AsmPrinter.cpp	(working copy)
 @@ -28,6 +28,7 @@
  #include "llvm/CodeGen/MachineModuleInfoImpls.h"
@@ -5115,7 +7986,7 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  MachineLocation
 Index: lib/Target/AArch64/AArch64FrameLowering.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64FrameLowering.cpp	(revision 313649)
+--- lib/Target/AArch64/AArch64FrameLowering.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64FrameLowering.cpp	(working copy)
 @@ -655,6 +655,15 @@
    return resolveFrameIndexReference(MF, FI, FrameReg);
@@ -5135,7 +8006,7 @@ Index: lib/Target/AArch64/AArch64FrameLowering.cpp
                                                       bool PreferFP) const {
 Index: lib/Target/AArch64/AArch64FrameLowering.h
 ===================================================================
---- lib/Target/AArch64/AArch64FrameLowering.h	(revision 313649)
+--- lib/Target/AArch64/AArch64FrameLowering.h	(revision 277823)
 +++ lib/Target/AArch64/AArch64FrameLowering.h	(working copy)
 @@ -40,6 +40,8 @@
    int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
@@ -5148,7 +8019,7 @@ Index: lib/Target/AArch64/AArch64FrameLowering.h
                                   bool PreferFP = false) const;
 Index: lib/Target/AArch64/AArch64ISelLowering.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 313649)
+--- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64ISelLowering.cpp	(working copy)
 @@ -2032,6 +2032,8 @@
      return LowerFSINCOS(Op, DAG);
@@ -5161,7 +8032,7 @@ Index: lib/Target/AArch64/AArch64ISelLowering.cpp
  
 Index: lib/Target/AArch64/AArch64RegisterInfo.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64RegisterInfo.cpp	(revision 313649)
+--- lib/Target/AArch64/AArch64RegisterInfo.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64RegisterInfo.cpp	(working copy)
 @@ -215,6 +215,23 @@
    return TFI->hasFP(MF) ? AArch64::FP : AArch64::SP;
@@ -5189,7 +8060,7 @@ Index: lib/Target/AArch64/AArch64RegisterInfo.cpp
    return true;
 Index: lib/Target/AArch64/AArch64RegisterInfo.h
 ===================================================================
---- lib/Target/AArch64/AArch64RegisterInfo.h	(revision 313649)
+--- lib/Target/AArch64/AArch64RegisterInfo.h	(revision 277823)
 +++ lib/Target/AArch64/AArch64RegisterInfo.h	(working copy)
 @@ -91,6 +91,9 @@
    // Debug information queries.
@@ -5203,7 +8074,7 @@ Index: lib/Target/AArch64/AArch64RegisterInfo.h
    // Base pointer (stack realignment) support.
 Index: lib/Target/AArch64/AArch64Subtarget.h
 ===================================================================
---- lib/Target/AArch64/AArch64Subtarget.h	(revision 313649)
+--- lib/Target/AArch64/AArch64Subtarget.h	(revision 277823)
 +++ lib/Target/AArch64/AArch64Subtarget.h	(working copy)
 @@ -19,6 +19,7 @@
  #include "AArch64InstrInfo.h"
@@ -5233,7 +8104,7 @@ Index: lib/Target/AArch64/AArch64Subtarget.h
    bool enablePostRAScheduler() const override {
 Index: lib/Target/AArch64/AArch64TargetMachine.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 313649)
+--- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 277823)
 +++ lib/Target/AArch64/AArch64TargetMachine.cpp	(working copy)
 @@ -220,16 +220,20 @@
    // Cmpxchg instructions are often used with a subsequent comparison to
@@ -5454,7 +8325,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 +
 Index: lib/Target/AArch64/CMakeLists.txt
 ===================================================================
---- lib/Target/AArch64/CMakeLists.txt	(revision 313649)
+--- lib/Target/AArch64/CMakeLists.txt	(revision 277823)
 +++ lib/Target/AArch64/CMakeLists.txt	(working copy)
 @@ -43,6 +43,7 @@
    AArch64TargetMachine.cpp
@@ -5466,7 +8337,7 @@ Index: lib/Target/AArch64/CMakeLists.txt
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
 Index: lib/Target/PowerPC/CMakeLists.txt
 ===================================================================
---- lib/Target/PowerPC/CMakeLists.txt	(revision 313649)
+--- lib/Target/PowerPC/CMakeLists.txt	(revision 277823)
 +++ lib/Target/PowerPC/CMakeLists.txt	(working copy)
 @@ -34,6 +34,7 @@
    PPCTargetTransformInfo.cpp
@@ -5478,7 +8349,7 @@ Index: lib/Target/PowerPC/CMakeLists.txt
    PPCVSXSwapRemoval.cpp
 Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 ===================================================================
---- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 313649)
+--- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 277823)
 +++ lib/Target/PowerPC/PPCAsmPrinter.cpp	(working copy)
 @@ -36,6 +36,7 @@
  #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -5501,7 +8372,7 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  
      const char *getPassName() const override {
        return "PowerPC Assembly Printer";
-@@ -99,9 +101,31 @@
+@@ -99,9 +101,33 @@
      void LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
                           const MachineInstr &MI);
      void EmitTlsCall(const MachineInstr *MI, MCSymbolRefExpr::VariantKind VK);
@@ -5513,6 +8384,9 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 -      return AsmPrinter::runOnMachineFunction(MF);
 +      bool retval = AsmPrinter::runOnMachineFunction(MF);
 +
++      // Add this function's register unwind info.  The PowerPC backend doesn't
++      // maintain the saved FBP (old r31) and link register as callee-saved
++      // registers, so manually add where they're saved.
 +      if(MF.getFrameInfo()->hasStackMap()) {
 +        UI.recordUnwindInfo(MF);
 +
@@ -5529,12 +8403,11 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 +        Offset = TFL->getFrameIndexReferenceFromFP(MF, Index, BaseReg);
 +        UI.addRegisterUnwindInfo(MF, PPC::X31, Offset);
 +      }
-+
 +      return retval;
      }
    };
  
-@@ -327,7 +351,9 @@
+@@ -327,7 +353,9 @@
  }
  
  void PPCAsmPrinter::EmitEndOfAsmFile(Module &M) {
@@ -5545,7 +8418,7 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  }
  
  void PPCAsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
-@@ -490,6 +516,19 @@
+@@ -490,6 +518,19 @@
                   .addExpr(SymVar));
  }
  
@@ -5567,7 +8440,7 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  ///
 Index: lib/Target/PowerPC/PPCSubtarget.h
 ===================================================================
---- lib/Target/PowerPC/PPCSubtarget.h	(revision 313649)
+--- lib/Target/PowerPC/PPCSubtarget.h	(revision 277823)
 +++ lib/Target/PowerPC/PPCSubtarget.h	(working copy)
 @@ -17,6 +17,7 @@
  #include "PPCFrameLowering.h"
@@ -5675,7 +8548,7 @@ Index: lib/Target/PowerPC/PPCValues.h
 +
 Index: lib/Target/TargetMachine.cpp
 ===================================================================
---- lib/Target/TargetMachine.cpp	(revision 313649)
+--- lib/Target/TargetMachine.cpp	(revision 277823)
 +++ lib/Target/TargetMachine.cpp	(working copy)
 @@ -149,6 +149,17 @@
      CodeGenInfo->setOptLevel(Level);
@@ -5697,7 +8570,7 @@ Index: lib/Target/TargetMachine.cpp
      return TargetTransformInfo(F.getParent()->getDataLayout());
 Index: lib/Target/X86/CMakeLists.txt
 ===================================================================
---- lib/Target/X86/CMakeLists.txt	(revision 313649)
+--- lib/Target/X86/CMakeLists.txt	(revision 277823)
 +++ lib/Target/X86/CMakeLists.txt	(working copy)
 @@ -34,6 +34,7 @@
    X86VZeroUpper.cpp
@@ -5709,7 +8582,7 @@ Index: lib/Target/X86/CMakeLists.txt
  if( CMAKE_CL_64 )
 Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
---- lib/Target/X86/X86AsmPrinter.cpp	(revision 313649)
+--- lib/Target/X86/X86AsmPrinter.cpp	(revision 277823)
 +++ lib/Target/X86/X86AsmPrinter.cpp	(working copy)
 @@ -24,6 +24,7 @@
  #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
@@ -5728,7 +8601,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
    SMShadowTracker.startFunction(MF);
  
    SetupMachineFunction(MF);
-@@ -66,8 +69,19 @@
+@@ -66,8 +69,17 @@
    // Emit the rest of the function body.
    EmitFunctionBody();
  
@@ -5737,12 +8610,10 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
 +  // Add this function's register unwind info.  The x86 backend doesn't
 +  // maintain the saved FBP (old RBP) and return address (RIP) as callee-saved
 +  // registers, so manually add where they're saved.
-+  MachineFrameInfo *MFI = MF.getFrameInfo();
-+  if(MFI->hasStackMap()) {
-+    const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
++  if(MF.getFrameInfo()->hasStackMap()) {
 +    UI.recordUnwindInfo(MF);
-+    UI.addRegisterUnwindInfo(MF, TRI->getFrameRegister(MF), 0);
-+    UI.addRegisterUnwindInfo(MF, TRI->getProgramCounter(), 8);
++    UI.addRegisterUnwindInfo(MF, X86::RIP, 8);
++    UI.addRegisterUnwindInfo(MF, X86::RBP, 0);
 +  }
 +
 +  // We may have modified where stack map intrinsics are located.
@@ -5750,7 +8621,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
  }
  
  /// printSymbolOperand - Print a raw symbol reference operand.  This handles
-@@ -689,8 +703,10 @@
+@@ -689,8 +701,10 @@
    }
  
    if (TT.isOSBinFormatELF()) {
@@ -5764,7 +8635,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
  
 Index: lib/Target/X86/X86AsmPrinter.h
 ===================================================================
---- lib/Target/X86/X86AsmPrinter.h	(revision 313649)
+--- lib/Target/X86/X86AsmPrinter.h	(revision 277823)
 +++ lib/Target/X86/X86AsmPrinter.h	(working copy)
 @@ -14,6 +14,7 @@
  #include "llvm/CodeGen/AsmPrinter.h"
@@ -5795,7 +8666,7 @@ Index: lib/Target/X86/X86AsmPrinter.h
      return "X86 Assembly / Object Emitter";
 Index: lib/Target/X86/X86ISelLowering.cpp
 ===================================================================
---- lib/Target/X86/X86ISelLowering.cpp	(revision 313649)
+--- lib/Target/X86/X86ISelLowering.cpp	(revision 277823)
 +++ lib/Target/X86/X86ISelLowering.cpp	(working copy)
 @@ -18621,6 +18621,8 @@
    case ISD::GC_TRANSITION_START:
@@ -5808,7 +8679,7 @@ Index: lib/Target/X86/X86ISelLowering.cpp
  
 Index: lib/Target/X86/X86RegisterInfo.cpp
 ===================================================================
---- lib/Target/X86/X86RegisterInfo.cpp	(revision 313649)
+--- lib/Target/X86/X86RegisterInfo.cpp	(revision 277823)
 +++ lib/Target/X86/X86RegisterInfo.cpp	(working copy)
 @@ -596,6 +596,13 @@
    return FrameReg;
@@ -5826,7 +8697,7 @@ Index: lib/Target/X86/X86RegisterInfo.cpp
                                        bool High) {
 Index: lib/Target/X86/X86RegisterInfo.h
 ===================================================================
---- lib/Target/X86/X86RegisterInfo.h	(revision 313649)
+--- lib/Target/X86/X86RegisterInfo.h	(revision 277823)
 +++ lib/Target/X86/X86RegisterInfo.h	(working copy)
 @@ -126,6 +126,9 @@
    unsigned getBaseRegister() const { return BasePtr; }
@@ -5840,7 +8711,7 @@ Index: lib/Target/X86/X86RegisterInfo.h
  /// Returns the sub or super register of a specific X86 register.
 Index: lib/Target/X86/X86Subtarget.h
 ===================================================================
---- lib/Target/X86/X86Subtarget.h	(revision 313649)
+--- lib/Target/X86/X86Subtarget.h	(revision 277823)
 +++ lib/Target/X86/X86Subtarget.h	(working copy)
 @@ -18,6 +18,7 @@
  #include "X86ISelLowering.h"
@@ -5993,13 +8864,13 @@ Index: lib/Target/X86/X86Values.h
 +
 Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
---- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 313649)
+--- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 277823)
 +++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
 @@ -2,10 +2,13 @@
    AddressSanitizer.cpp
    BoundsChecking.cpp
    DataFlowSanitizer.cpp
-+  EquivalencePoints.cpp
++  MigrationPoints.cpp
    GCOVProfiling.cpp
    MemorySanitizer.cpp
 +  InsertStackMaps.cpp
@@ -6009,384 +8880,11 @@ Index: lib/Transforms/Instrumentation/CMakeLists.txt
    SafeStack.cpp
    SanitizerCoverage.cpp
    ThreadSanitizer.cpp
-Index: lib/Transforms/Instrumentation/EquivalencePoints.cpp
-===================================================================
---- lib/Transforms/Instrumentation/EquivalencePoints.cpp	(nonexistent)
-+++ lib/Transforms/Instrumentation/EquivalencePoints.cpp	(working copy)
-@@ -0,0 +1,368 @@
-+//===- EquivalencePoints.cpp ----------------------------------------------===//
-+//
-+//                     The LLVM Compiler Infrastructure
-+//
-+// This file is distributed under the University of Illinois Open Source
-+// License. See LICENSE.TXT for details.
-+//
-+//===----------------------------------------------------------------------===//
-+//
-+// Instrument the code with equivalence points, defined as a location in the
-+// program code where there is a direct mapping between architecture-specific
-+// execution state, i.e., registers and stack, across different ISAs.  More
-+// details can be found in the paper "A Unified Model of Pointwise Equivalence
-+// of Procedural Computations" by von Bank et. al
-+// (http://dl.acm.org/citation.cfm?id=197402).
-+//
-+// By default, the pass only inserts equivalence points at the beginning and
-+// end of a function.
-+//
-+// TODO more advanced analysis to insert additional equivalence points
-+//
-+//===----------------------------------------------------------------------===//
-+
-+#include <map>
-+#include "llvm/Pass.h"
-+#include "llvm/ADT/Statistic.h"
-+#include "llvm/ADT/StringSet.h"
-+#include "llvm/ADT/Triple.h"
-+#include "llvm/IR/DiagnosticInfo.h"
-+#include "llvm/IR/Intrinsics.h"
-+#include "llvm/IR/Instructions.h"
-+#include "llvm/IR/IRBuilder.h"
-+#include "llvm/IR/Module.h"
-+#include "llvm/Support/CommandLine.h"
-+#include "llvm/Support/Debug.h"
-+
-+using namespace llvm;
-+
-+#define DEBUG_TYPE "equivalence-points"
-+
-+/// Insert more equivalence points into the body of a function.  Analyze memory
-+/// usage & attempt to instrument the code to reduce the time until the thread
-+/// reaches an equivalence point.  If HTM instrumentation is enabled, analysis
-+/// is tailored to avoid hardware transactional memory (HTM) capacity aborts.
-+static cl::opt<bool>
-+MoreEqPoints("more-eq-points", cl::Hidden, cl::init(false),
-+  cl::desc("Add additional equivalence points into the body of functions"));
-+
-+/// Cover the application in transactional execution by inserting HTM
-+/// stop/start instructions at equivalence points.
-+static cl::opt<bool>
-+HTMExec("htm-execution", cl::NotHidden, cl::init(false),
-+  cl::desc("Instrument equivalence points with HTM execution "
-+           "(only supported on PowerPC (64-bit) & x86-64)"));
-+
-+/// Disable wrapping libc functions which are likely to cause HTM aborts with
-+/// HTM stop/start intrinsics.  Wrapping happens by default with HTM execution.
-+static cl::opt<bool>
-+NoWrapLibc("htm-no-wrap-libc", cl::Hidden, cl::init(false),
-+  cl::desc("Disable wrapping libc functions with HTM stop/start"));
-+
-+/// Disable rollback-only transactions for PowerPC
-+static cl::opt<bool>
-+NoROTPPC("htm-ppc-no-rot", cl::Hidden, cl::init(false),
-+  cl::desc("Disable rollback-only transactions in HTM instrumentation "
-+           "(PowerPC only)"));
-+
-+/// HTM memory read buffer size for tuning analysis when inserting additional
-+/// equivalence points.
-+static cl::opt<unsigned>
-+HTMReadBufSize("htm-buf-read", cl::Hidden, cl::init(8),
-+  cl::desc("HTM analysis tuning - HTM read buffer size, in kilobytes"),
-+  cl::value_desc("size"));
-+
-+/// HTM memory write buffer size for tuning analysis when inserting additional
-+/// equivalence points.
-+static cl::opt<unsigned>
-+HTMWriteBufSize("htm-buf-write", cl::Hidden, cl::init(8),
-+  cl::desc("HTM analysis tuning - HTM write buffer size, in kilobytes"),
-+  cl::value_desc("size"));
-+
-+STATISTIC(NumEqPoints, "Number of equivalence points added");
-+
-+namespace {
-+
-+/// EquivalencePoints - insert equivalence points into functions, optionally
-+/// adding HTM execution.
-+class EquivalencePoints : public FunctionPass
-+{
-+public:
-+  static char ID;
-+
-+  EquivalencePoints() : FunctionPass(ID), NumInstr(0) {}
-+  ~EquivalencePoints() {}
-+
-+  virtual const char *getPassName() const
-+  { return "Insert equivalence points"; }
-+
-+  virtual bool doInitialization(Module &M) {
-+    bool modified = false;
-+
-+    // Ensure HTM is supported on this architecture if attempting to instrument
-+    // with transactional execution, otherwise disable it and warn the user
-+    DoHTMInstrumentation = HTMExec;
-+    if(DoHTMInstrumentation) {
-+      Triple TheTriple(M.getTargetTriple());
-+      Arch = TheTriple.getArch();
-+
-+      if(HTMBegin.find(Arch) != HTMBegin.end()) {
-+        // Add intrinsic declarations, used to create call instructions
-+        HTMBeginDecl = addIntrinsicDecl(M, HTMBegin);
-+        HTMEndDecl = addIntrinsicDecl(M, HTMEnd);
-+        HTMTestDecl = addIntrinsicDecl(M, HTMTest);
-+        modified = true;
-+      }
-+      else {
-+        std::string Msg("HTM instrumentation not supported for '");
-+        Msg += TheTriple.getArchName();
-+        Msg += "'";
-+        DiagnosticInfoInlineAsm DI(Msg, DiagnosticSeverity::DS_Warning);
-+        M.getContext().diagnose(DI);
-+        DoHTMInstrumentation = false;
-+      }
-+    }
-+
-+    return modified;
-+  }
-+
-+  /// Insert equivalence points into functions
-+  virtual bool runOnFunction(Function &F)
-+  {
-+    NumInstr = 0;
-+    SmallVector<Instruction *, 16> Returns;
-+
-+    // TODO need to check for HTM attributes, e.g., "+rtm" on Intel and "+htm"
-+    // on POWER8
-+
-+    // Instrument function boundaries, i.e., entry and return points.  Collect
-+    // returns first & then instrument, otherwise we can inadvertently create
-+    // more return instructions & infinitely loop.
-+    addEquivalencePoint(F.getEntryBlock().getFirstInsertionPt());
-+    for(Function::iterator BB = F.begin(), E = F.end(); BB != E; BB++)
-+      if(isa<ReturnInst>(BB->getTerminator()))
-+        Returns.push_back(BB->getTerminator());
-+    for(auto &I : Returns) addEquivalencePoint(I);
-+
-+    // Some libc functions (e.g., I/O) will cause aborts from system calls.
-+    // Instrument libc calls to stop & resume transactions afterwards.
-+    if(DoHTMInstrumentation && !NoWrapLibc) wrapLibcWithHTM(F);
-+
-+    NumEqPoints += NumInstr;
-+    return NumInstr > 0;
-+  }
-+
-+private:
-+  /// Number of equivalence points added to the application
-+  size_t NumInstr;
-+
-+  /// Rather than modifying the command-line argument (which can mess up
-+  /// compile configurations for multi-ISA binary generation), store a
-+  /// per-module value during intialization
-+  bool DoHTMInstrumentation;
-+
-+  /// The current architecture - used to access architecture-specific HTM calls
-+  Triple::ArchType Arch;
-+
-+  /// Function declarations for HTM intrinsics
-+  Value *HTMBeginDecl;
-+  Value *HTMEndDecl;
-+  Value *HTMTestDecl;
-+
-+  /// Per-architecture LLVM intrinsic IDs for HTM begin, HTM end, and testing
-+  /// if executing transactionally
-+  typedef std::map<Triple::ArchType, Intrinsic::ID> IntrinsicMap;
-+  const static IntrinsicMap HTMBegin;
-+  const static IntrinsicMap HTMEnd;
-+  const static IntrinsicMap HTMTest;
-+
-+  /// libc functions which are likely to cause an HTM abort through a syscall
-+  // TODO LLVM has to have a better way to detect these
-+  const static StringSet<> LibcIO;
-+
-+  /// Add a declaration for an architecture-specific intrinsic (contained in
-+  /// the map).
-+  Constant *addIntrinsicDecl(Module &M, const IntrinsicMap &Map) {
-+    IntrinsicMap::const_iterator It = Map.find(Arch);
-+    assert(It != Map.end() && "Unsupported architecture");
-+    FunctionType *FuncTy = Intrinsic::getType(M.getContext(), It->second);
-+    return M.getOrInsertFunction(Intrinsic::getName(It->second), FuncTy);
-+  }
-+
-+  // TODO because we're only supporting 2 architectures for now, we're not
-+  // going to abstract this out into the appropriate Target/* folders
-+
-+  /// Add a transactional execution begin intrinsic for PowerPC, optionally
-+  /// with rollback-only transactions
-+  void addPowerPCHTMBegin(Instruction *I) {
-+    LLVMContext &C = I->getContext();
-+    IRBuilder<> Worker(I);
-+    ConstantInt *ROT = ConstantInt::get(IntegerType::getInt32Ty(C),
-+                                        !NoROTPPC, false);
-+    Worker.CreateCall(HTMBeginDecl, ArrayRef<Value *>(ROT));
-+  }
-+
-+  /// Add a transactional execution begin intrinsic for x86
-+  void addX86HTMBegin(Instruction *I) {
-+    IRBuilder<> Worker(I);
-+    Worker.CreateCall(HTMBeginDecl);
-+  }
-+
-+  /// Add transactional execution end intrinsic for PowerPC before an
-+  /// instruction.  Note that PowerPC's HTM facility *will not* throw a
-+  /// segfault if a tend. instruction is called outside of a transaction.
-+  void addPowerPCHTMEnd(Instruction *I) {
-+    LLVMContext &C = I->getContext();
-+    IRBuilder<> EndWorker(I);
-+    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C),
-+                                         0, false);
-+    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(Zero));
-+  }
-+
-+  /// Add transactional execution check & end intrinsics for x86 before an
-+  /// instruction.  Note that x86's HTM facility *will* throw a segfault if an
-+  /// xend instruction is called outside of a transaction, hence we need to
-+  /// check if we're in a transaction before actually trying to end it.
-+  void addX86HTMCheckAndEnd(Instruction *I) {
-+    LLVMContext &C = I->getContext();
-+    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
-+    Function *CurF = CurBB->getParent();
-+
-+    // Create a new successor which contains all instructions after the HTM
-+    // check & end
-+    NewSuccBB =
-+      CurBB->splitBasicBlock(I, ".htmendsucc" + std::to_string(NumInstr));
-+
-+    // Create an HTM end block, which ends the transaction and jumps to the
-+    // new successor
-+    HTMEndBB = BasicBlock::Create(C, ".htmend" + std::to_string(NumInstr),
-+                                  CurF, NewSuccBB);
-+    IRBuilder<> EndWorker(HTMEndBB);
-+    EndWorker.CreateCall(HTMEndDecl);
-+    EndWorker.CreateBr(NewSuccBB);
-+
-+    // Finally, add the HTM test & replace the unconditional branch created by
-+    // splitBasicBlock() with a conditional branch to end the transaction or
-+    // continue on to the new successor
-+    IRBuilder<> PredWorker(CurBB->getTerminator());
-+    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
-+    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
-+    Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
-+                                         "htmcmp" + std::to_string(NumInstr));
-+    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
-+    CurBB->getTerminator()->eraseFromParent();
-+  }
-+
-+  /// Insert an equivalence point directly before an instruction
-+  void addEquivalencePoint(Instruction *I) {
-+
-+    if(DoHTMInstrumentation) {
-+      switch(Arch) {
-+      case Triple::x86_64:
-+        addX86HTMCheckAndEnd(I);
-+        addX86HTMBegin(I);
-+        break;
-+      case Triple::ppc64le:
-+        addPowerPCHTMEnd(I);
-+        addPowerPCHTMBegin(I);
-+        break;
-+      default:
-+        llvm_unreachable("HTM -- unsupported architecture");
-+        break;
-+      }
-+    }
-+    // TODO insert flag check & migration call if flag is set
-+
-+    NumInstr++;
-+  }
-+
-+  /// Return whether the call instruction is a libc I/O call
-+  static inline bool isLibcIO(const Instruction *I) {
-+    const CallInst *CI;
-+
-+    // Is it a call instruction?
-+    if(!I || !isa<CallInst>(I)) return false;
-+    CI = cast<CallInst>(I);
-+
-+    // Is the called function in the set of libc I/O functions?
-+    const Function *CalledFunc = CI->getCalledFunction();
-+    if(CalledFunc && CalledFunc->hasName()) {
-+      const StringRef Name = CalledFunc->getName();
-+      return LibcIO.find(Name) != LibcIO.end();
-+    }
-+    return false;
-+  }
-+
-+  /// Search for & wrap libc functions which are likely to cause an HTM abort
-+  void wrapLibcWithHTM(Function &F) {
-+    SmallVector<Instruction *, 16> LibcCalls;
-+
-+    // Add libc call instructions to the work list & then instrument (same
-+    // reasoning as for instrumenting function returns)
-+    for(Function::iterator BB = F.begin(), BE = F.end(); BB != BE; BB++)
-+      for(BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; I++)
-+        if(isLibcIO(&*I)) LibcCalls.push_back(&*I);
-+
-+    // Add HTM check/end control flow before and HTM begins after calls
-+    for(auto &Inst : LibcCalls) {
-+      switch(Arch) {
-+      case Triple::x86_64:
-+        addX86HTMCheckAndEnd(Inst);
-+        addX86HTMBegin(Inst->getNextNode());
-+        break;
-+      case Triple::ppc64le:
-+        addPowerPCHTMEnd(Inst);
-+        addPowerPCHTMBegin(Inst->getNextNode());
-+        break;
-+      default:
-+        llvm_unreachable("HTM -- unsupported architecture");
-+        break;
-+      }
-+    }
-+  }
-+};
-+
-+} /* end anonymous namespace */
-+
-+char EquivalencePoints::ID = 0;
-+
-+const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMBegin = {
-+  {Triple::x86_64, Intrinsic::x86_xbegin},
-+  {Triple::ppc64le, Intrinsic::ppc_tbegin}
-+};
-+
-+const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMEnd = {
-+  {Triple::x86_64, Intrinsic::x86_xend},
-+  {Triple::ppc64le, Intrinsic::ppc_tend}
-+};
-+
-+const std::map<Triple::ArchType, Intrinsic::ID> EquivalencePoints::HTMTest = {
-+  {Triple::x86_64, Intrinsic::x86_xtest},
-+  {Triple::ppc64le, Intrinsic::ppc_ttest}
-+};
-+
-+INITIALIZE_PASS(EquivalencePoints, "equivalence-points",
-+                "Insert equivalence points into functions",
-+                true, false)
-+
-+const StringSet<> EquivalencePoints::LibcIO = {
-+  "fopen", "freopen", "fclose", "fflush", "fwide",
-+  "setbuf", "setvbuf", "fread", "fwrite",
-+  "fgetc", "getc", "fgets", "fputc", "putc", "fputs",
-+  "getchar", "gets", "putchar", "puts", "ungetc",
-+  "fgetwc", "getwc", "fgetws", "fputwc", "putwc", "fputws",
-+  "getwchar", "putwchar", "ungetwc",
-+  "scanf", "fscanf", "vscanf", "vfscanf",
-+  "printf", "fprintf", "vprintf", "vfprintf",
-+  "wscanf", "fwscanf", "vwscanf", "vfwscanf",
-+  "wprintf", "fwprintf", "vwprintf", "vfwprintf",
-+  "ftell", "fgetpos", "fseek", "fsetpos", "rewind",
-+  "clearerr", "feof", "ferror", "perror",
-+  "remove", "rename", "tmpfile", "tmpnam"
-+};
-+
-+namespace llvm {
-+  FunctionPass *createEquivalencePointsPass()
-+  { return new EquivalencePoints(); }
-+}
-+
 Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,341 @@
+@@ -0,0 +1,353 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -6405,6 +8903,12 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +#define DEBUG_TYPE "insert-stackmaps"
 +
 +using namespace llvm;
++
++static cl::opt<bool>
++NoLiveVals("no-live-vals",
++           cl::desc("Don't add live values to inserted stackmaps"),
++           cl::init(false),
++           cl::Hidden);
 +
 +namespace {
 +
@@ -6456,7 +8960,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    if(this->addSMDeclaration(M)) modified = true;
 +
 +    modified |= this->removeOldStackmaps(M);
-+  
++
 +    /* Iterate over all functions/basic blocks/instructions. */
 +    for(Module::iterator f = M.begin(), fe = M.end(); f != fe; f++)
 +    {
@@ -6469,7 +8973,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
 +      std::set<const Value *>::const_iterator v, ve;
 +      getHiddenVals(*f, hiddenInst, hiddenArgs);
-+  
++
 +      /* Find call sites in the function. */
 +      for(Function::iterator b = f->begin(), be = f->end(); b != be; b++)
 +      {
@@ -6478,7 +8982,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +          b->printAsOperand(errs(), false);
 +          errs() << "\n"
 +        );
-+  
++
 +        for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
 +        {
 +          CallInst *CI;
@@ -6486,6 +8990,17 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +             !CI->isInlineAsm() &&
 +             !isa<IntrinsicInst>(CI))
 +          {
++            IRBuilder<> builder(CI->getNextNode());
++            std::vector<Value *> args(2);
++            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
++            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++
++            if(NoLiveVals) {
++              builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
++              this->numInstrumented++;
++              continue;
++            }
++
 +            live = liveVals.getLiveValues(&*i);
 +            for(const Value *val : *live) sortedLive.insert(val);
 +            for(const Instruction *val : hiddenInst) {
@@ -6510,17 +9025,17 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +            /* If the call's value is used, add it to the stackmap */
 +            if(CI->use_begin() != CI->use_end())
 +              sortedLive.insert(CI);
-+  
++
 +            DEBUG(
 +              const Function *calledFunc;
-+  
++
 +              errs() << "  ";
 +              if(!CI->getType()->isVoidTy()) {
 +                CI->printAsOperand(errs(), false);
 +                errs() << " ";
 +              }
 +              else errs() << "(void) ";
-+  
++
 +              calledFunc = CI->getCalledFunction();
 +              if(calledFunc && calledFunc->hasName())
 +              {
@@ -6528,7 +9043,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +                errs() << name << " ";
 +              }
 +              errs() << "ID: " << this->callSiteID;
-+  
++
 +              errs() << ", " << sortedLive.size() << " live value(s)\n   ";
 +              for(const Value *val : sortedLive) {
 +                errs() << " ";
@@ -6536,11 +9051,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +              }
 +              errs() << "\n";
 +            );
-+  
-+            IRBuilder<> builder(CI->getNextNode());
-+            std::vector<Value *> args(2);
-+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
++
 +            for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
 +              args.push_back((Value*)*v);
 +            builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
@@ -6554,14 +9065,14 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +      hiddenArgs.clear();
 +      this->callSiteID = 0;
 +    }
-+  
++
 +    DEBUG(
 +      errs() << "InsertStackMaps: finished module " << M.getName() << ", added "
 +             << this->numInstrumented << " stackmaps\n\n";
 +    );
-+  
++
 +    if(numInstrumented > 0) modified = true;
-+  
++
 +    return modified;
 +  }
 +
@@ -6711,7 +9222,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +} /* end anonymous namespace */
 +
-+
 +char InsertStackMaps::ID = 0;
 +const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";
 +
@@ -6730,13 +9240,13 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 Index: lib/Transforms/Instrumentation/Instrumentation.cpp
 ===================================================================
---- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 313649)
+--- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 277823)
 +++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
 @@ -24,8 +24,11 @@
    initializeAddressSanitizerPass(Registry);
    initializeAddressSanitizerModulePass(Registry);
    initializeBoundsCheckingPass(Registry);
-+  initializeEquivalencePointsPass(Registry);
++  initializeMigrationPointsPass(Registry);
    initializeGCOVProfilerPass(Registry);
 +  initializeInsertStackMapsPass(Registry);
    initializeInstrProfilingPass(Registry);
@@ -6978,9 +9488,504 @@ Index: lib/Transforms/Instrumentation/LibcStackMaps.cpp
 +  ModulePass *createLibcStackMapsPass() { return new LibcStackMaps(); }
 +}
 +
+Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
+===================================================================
+--- lib/Transforms/Instrumentation/MigrationPoints.cpp	(nonexistent)
++++ lib/Transforms/Instrumentation/MigrationPoints.cpp	(working copy)
+@@ -0,0 +1,490 @@
++//===- MigrationPoints.cpp ------------------------------------------------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// Instruments the migration points selected by SelectMigrationPoints.  May
++// additionally add HTM instrumentation if selected by user & supported by the
++// architecture.
++//
++//===----------------------------------------------------------------------===//
++
++#include <fstream>
++#include <map>
++#include "llvm/Pass.h"
++#include "llvm/ADT/Statistic.h"
++#include "llvm/ADT/Triple.h"
++#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/IR/Module.h"
++#include "llvm/Support/CommandLine.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/raw_os_ostream.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "migration-points"
++#define MIGRATE_FLAG_NAME "__migrate_flag"
++
++/// Disable rollback-only transactions for PowerPC.
++const static cl::opt<bool>
++NoROTPPC("htm-ppc-no-rot", cl::Hidden, cl::init(false),
++  cl::desc("Disable rollback-only transactions in HTM instrumentation "
++           "(PowerPC only)"));
++
++/// Add counters to abort handlers for the specified function.  Allows in-depth
++/// profiling of which HTM sections added to the function are causing aborts.
++const static cl::opt<std::string>
++AbortCount("abort-count", cl::Hidden, cl::init(""),
++  cl::desc("Add counters for each abort handler in the specified function"),
++  cl::value_desc("function"));
++
++STATISTIC(NumMigPoints, "Number of migration points added");
++STATISTIC(NumHTMBegins, "Number of HTM begin intrinsics added");
++STATISTIC(NumHTMEnds, "Number of HTM end intrinsics added");
++
++namespace {
++
++/// MigrationPoints - insert migration points into functions, optionally adding
++/// HTM execution.
++class MigrationPoints : public FunctionPass
++{
++public:
++  static char ID;
++
++  MigrationPoints() : FunctionPass(ID) {}
++  ~MigrationPoints() {}
++
++  virtual const char *getPassName() const
++  { return "Insert migration points"; }
++
++  /// Generate the migration library API function declaration.
++  void addMigrationIntrinsic(Module &M, bool DoHTM) {
++    LLVMContext &C = M.getContext();
++    Type *VoidTy = Type::getVoidTy(C);
++    PointerType *VoidPtrTy = Type::getInt8PtrTy(C, 0);
++    std::vector<Type *> FuncPtrArgTy = { VoidPtrTy };
++    FunctionType *FuncPtrTy = FunctionType::get(VoidTy, FuncPtrArgTy, false);
++    CallbackType = PointerType::get(FuncPtrTy, 0);
++    std::vector<Type *> ArgTy = { CallbackType, VoidPtrTy };
++    FunctionType *FuncTy = FunctionType::get(VoidTy, ArgTy, false);
++    if(DoHTM) {
++      MigrateAPI = M.getOrInsertFunction("migrate", FuncTy);
++      MigrateFlag = cast<GlobalValue>(
++        M.getOrInsertGlobal(MIGRATE_FLAG_NAME, Type::getInt32Ty(C)));
++      // TODO this needs to be thread-local storage
++      //MigrateFlag->setThreadLocal(true);
++    }
++    else {
++      MigrateAPI = M.getOrInsertFunction("check_migrate", FuncTy);
++      MigrateFlag = nullptr;
++    }
++  }
++
++  virtual bool doInitialization(Module &M) {
++    Triple TheTriple(M.getTargetTriple());
++    Arch = TheTriple.getArch();
++    Ty = Popcorn::getInstrumentationType(M);
++
++    switch(Ty) {
++    case Popcorn::HTM:
++      if(HTMBegin.find(Arch) != HTMBegin.end()) {
++        DEBUG(dbgs() << "\n-> MigrationPoints: Adding HTM intrinsics for '"
++                     << TheTriple.getArchName() << "' <-\n");
++        HTMBeginDecl =
++          Intrinsic::getDeclaration(&M, HTMBegin.find(Arch)->second);
++        HTMEndDecl = Intrinsic::getDeclaration(&M, HTMEnd.find(Arch)->second);
++        HTMTestDecl =
++          Intrinsic::getDeclaration(&M, HTMTest.find(Arch)->second);
++        addMigrationIntrinsic(M, true);
++      }
++      else {
++        DEBUG(
++          dbgs() << "\n-> MigrationPoints: Selected HTM instrumentation but '"
++                 << TheTriple.getArchName()
++                 << "' is not supported, falling back to call-outs <-\n"
++        );
++        Ty = Popcorn::Cycles;
++        addMigrationIntrinsic(M, false);
++      }
++      break;
++    case Popcorn::Cycles:
++      addMigrationIntrinsic(M, false);
++      break;
++    case Popcorn::None:
++      return false;
++    default: llvm_unreachable("Unknown instrumentation type"); break;
++    }
++
++    // Add abort counters if somebody requested abort profiling.
++    const Function *CounterFunc;
++    if(AbortCount != "" && (CounterFunc = M.getFunction(AbortCount)) &&
++       !CounterFunc->isDeclaration()) {
++      LLVMContext &C = M.getContext();
++      IntegerType *Unsigned = Type::getInt32Ty(C);
++      GlobalVariable *NumCtrs = cast<GlobalVariable>(
++        M.getOrInsertGlobal("__num_abort_counters", Unsigned));
++      NumCtrs->setInitializer(ConstantInt::get(Unsigned, 1024, false));
++      Type *ArrType = ArrayType::get(Type::getInt64Ty(C), 1024);
++      AbortCounters = cast<GlobalVariable>(
++        M.getOrInsertGlobal("__abort_counters", ArrType));
++      AbortCounters->setInitializer(ConstantAggregateZero::get(ArrType));
++    }
++
++    return true;
++  }
++
++  /// Insert migration points into functions
++  virtual bool runOnFunction(Function &F)
++  {
++    if(Ty == Popcorn::None) return false;
++
++    DEBUG(dbgs() << "\n********** ADD MIGRATION POINTS **********\n"
++                 << "********** Function: " << F.getName() << "\n\n");
++
++    initializeAnalysis(F);
++
++    // Find all instrumentation points marked by previous analysis passes.
++    findInstrumentationPoints(F);
++
++    // Apply code transformations to marked instructions, including adding
++    // migration points & HTM instrumentation.
++    addMigrationPoints(F);
++
++    // Write the modified IR & close the abort handler map file if we
++    // instrumented the code to profile abort handlers.
++    if(MapFile.is_open()) {
++      MapFile.close();
++      std::fstream TheIR("htm-abort-ir.ll", std::ios::out | std::ios::trunc);
++      raw_os_ostream IRStream(TheIR);
++      F.print(IRStream);
++      TheIR.close();
++    }
++
++    return true;
++  }
++
++  /// Reset all analysis.
++  void initializeAnalysis(const Function &F) {
++    DoHTMInst = false;
++    DoAbortInstrument = false;
++    MigPointInsts.clear();
++    HTMBeginInsts.clear();
++    HTMEndInsts.clear();
++
++    if(Ty == Popcorn::HTM) {
++      // We've checked at the global scope whether HTM is enabled for the
++      // module.  Check whether the target-specific feature for HTM is enabled
++      // for the current function.
++      if(!F.hasFnAttribute("target-features")) {
++        DEBUG(dbgs() << "-> Disabled HTM instrumentation, "
++                        "no 'target-features' attribute\n");
++        return;
++      }
++
++      Attribute TargetAttr = F.getFnAttribute("target-features");
++      assert(TargetAttr.isStringAttribute() && "Invalid target features");
++      StringRef AttrVal = TargetAttr.getValueAsString();
++      size_t pos = StringRef::npos;
++
++      switch(Arch) {
++      case Triple::ppc64le: pos = AttrVal.find("+htm"); break;
++      case Triple::x86_64: pos = AttrVal.find("+rtm"); break;
++      default: break;
++      }
++
++      DoHTMInst = (pos != StringRef::npos);
++
++      DEBUG(if(!DoHTMInst) dbgs() << "-> Disabled HTM instrumentation, HTM "
++                                     "not listed in target-features\n");
++
++      // Enable HTM abort handler profiling if specified
++      if(DoHTMInst && AbortCount == F.getName()) {
++        DoAbortInstrument = true;
++        AbortHandlerCount = 0;
++        MapFile.open("htm-abort.map", std::ios::out | std::ios::trunc);
++        assert(MapFile.is_open() && MapFile.good() &&
++               "Could not open abort handler map file");
++      }
++    }
++
++    DEBUG(
++      if(DoHTMInst) {
++        dbgs() << "-> Adding HTM instrumentation\n";
++        if(DoAbortInstrument) dbgs() << "  - Adding abort counters\n";
++      }
++      else dbgs() << "-> Adding call-out instrumentation\n";
++    );
++  }
++
++private:
++  //===--------------------------------------------------------------------===//
++  // Types & fields
++  //===--------------------------------------------------------------------===//
++
++  /// Type of the instrumentation to be applied to functions.
++  enum Popcorn::InstrumentType Ty;
++
++  /// The current architecture - used to access architecture-specific HTM calls
++  Triple::ArchType Arch;
++
++  /// Should we instrument code with HTM execution?  Set if HTM is enabled on
++  /// the command line and if the target is supported
++  bool DoHTMInst;
++
++  /// Should we instrument HTM abort handlers with counters for precise
++  /// profiling of which code locations cause aborts & all associated state.
++  bool DoAbortInstrument;
++  GlobalVariable *AbortCounters;
++  unsigned AbortHandlerCount;
++  std::ofstream MapFile;
++
++  /// Function declaration & migration node ID for migration library API
++  Constant *MigrateAPI;
++  GlobalValue *MigrateFlag;
++  PointerType *CallbackType;
++
++  /// Function declarations for HTM intrinsics
++  Value *HTMBeginDecl;
++  Value *HTMEndDecl;
++  Value *HTMTestDecl;
++
++  /// Per-architecture LLVM intrinsic IDs for HTM begin, HTM end, and testing
++  /// if executing transactionally
++  typedef std::map<Triple::ArchType, Intrinsic::ID> IntrinsicMap;
++  const static IntrinsicMap HTMBegin;
++  const static IntrinsicMap HTMEnd;
++  const static IntrinsicMap HTMTest;
++
++  /// Code locations marked for instrumentation.
++  SmallPtrSet<Instruction *, 32> MigPointInsts;
++  SmallPtrSet<Instruction *, 32> HTMBeginInsts;
++  SmallPtrSet<Instruction *, 32> HTMEndInsts;
++
++  //===--------------------------------------------------------------------===//
++  // Instrumentation implementation
++  //===--------------------------------------------------------------------===//
++
++  /// Find instructions tagged by SelectMigrationPoints with instrumentation
++  /// metadata.
++  void findInstrumentationPoints(Function &F) {
++    for(Function::iterator BB = F.begin(), BBE = F.end(); BB != BBE; BB++) {
++      for(BasicBlock::iterator I = BB->begin(), IE = BB->end(); I != IE; I++) {
++        if(Popcorn::hasEquivalencePointMetadata(I)) MigPointInsts.insert(I);
++        if(Popcorn::isHTMBeginPoint(I)) HTMBeginInsts.insert(I);
++        if(Popcorn::isHTMEndPoint(I)) HTMEndInsts.insert(I);
++      }
++    }
++  }
++
++  /// Add a migration point directly before an instruction.
++  void addMigrationPoint(Instruction *I) {
++    LLVMContext &C = I->getContext();
++    IRBuilder<> Worker(I);
++    std::vector<Value *> Args = {
++      ConstantPointerNull::get(CallbackType),
++      ConstantPointerNull::get(Type::getInt8PtrTy(C, 0))
++    };
++    Worker.CreateCall(MigrateAPI, Args);
++  }
++
++  // Note: because we're only supporting 2 architectures for now, we're not
++  // going to abstract this out into the appropriate Target/* folders
++
++  /// Add HTM begin which avoids doing any work unless there's an abort.  In
++  /// the event of an abort, the instrumentation checks if it should migrate,
++  /// and if so, invokes the migration API.
++  void addHTMBeginInternal(Instruction *I, Value *Begin, Value *Comparison) {
++    LLVMContext &C = I->getContext();
++    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *FlagCheckBB, *MigPointBB;
++
++    // Set up each of the new basic blocks
++    NewSuccBB =
++      CurBB->splitBasicBlock(I, "migpointsucc" + std::to_string(NumMigPoints));
++    MigPointBB =
++      BasicBlock::Create(C, "migpoint" + std::to_string(NumMigPoints),
++                         CurBB->getParent(), NewSuccBB);
++    FlagCheckBB =
++      BasicBlock::Create(C, "migflagcheck" + std::to_string(NumMigPoints),
++                         CurBB->getParent(), MigPointBB);
++
++    // Add check & branch based on HTM begin result Comparison.  The true
++    // target of the branch is when we've started the transaction.
++    IRBuilder<> HTMWorker(CurBB->getTerminator());
++    HTMWorker.CreateCondBr(Comparison, NewSuccBB, FlagCheckBB);
++    CurBB->getTerminator()->eraseFromParent();
++
++    // Check flag to see if we should invoke migration library API.
++    IRBuilder<> FlagCheckWorker(FlagCheckBB);
++    if(DoAbortInstrument) {
++      assert(AbortHandlerCount < 1024 && "Too abort handler many counters!");
++
++      // Write the name of the basic block to the map file so we can map abort
++      // counters to their basic blocks.
++      if(!AbortHandlerCount) MapFile << FlagCheckBB->getName().str();
++      else MapFile << " " << FlagCheckBB->getName().str();
++
++      // Add instrumentation to increment the counter's value.
++      std::string CtrNum(std::to_string(AbortHandlerCount));
++      std::vector<Value *> Idx = {
++        ConstantInt::get(Type::getInt64Ty(C), 0),
++        ConstantInt::get(Type::getInt64Ty(C), AbortHandlerCount),
++      };
++      Value *One = ConstantInt::get(Type::getInt64Ty(C), 1, false);
++      Value *GEP = FlagCheckWorker.CreateInBoundsGEP(AbortCounters, Idx,
++                                                     "ctrptr" + CtrNum);
++      Value *CtrVal = FlagCheckWorker.CreateLoad(GEP, "ctr" + CtrNum);
++      Value *Inc = FlagCheckWorker.CreateAdd(CtrVal, One);
++      FlagCheckWorker.CreateStore(Inc, GEP);
++
++      AbortHandlerCount++;
++    }
++    Value *Flag = FlagCheckWorker.CreateLoad(MigrateFlag);
++    Value *NegOne = ConstantInt::get(Type::getInt32Ty(C), -1, true);
++    Value *Cmp = FlagCheckWorker.CreateICmpEQ(Flag, NegOne);
++    FlagCheckWorker.CreateCondBr(Cmp, NewSuccBB, MigPointBB);
++
++    // Add call to migration library API.
++    IRBuilder<> MigPointWorker(MigPointBB);
++    std::vector<Value *> Args = {
++      ConstantPointerNull::get(CallbackType),
++      ConstantPointerNull::get(Type::getInt8PtrTy(C, 0))
++    };
++    MigPointWorker.CreateCall(MigrateAPI, Args);
++    MigPointWorker.CreateBr(NewSuccBB);
++  }
++
++  /// Add a transactional execution begin intrinsic for PowerPC, optionally
++  /// with rollback-only transactions.
++  void addPowerPCHTMBegin(Instruction *I) {
++    LLVMContext &C = I->getContext();
++    IRBuilder<> Worker(I);
++    std::vector<Value *> Args = { ConstantInt::get(Type::getInt32Ty(C),
++                                                   NoROTPPC ? 0 : 1,
++                                                   false) };
++    Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl, Args);
++    Value *Zero = ConstantInt::get(Type::getInt32Ty(C), 0, false);
++    Value *Cmp = Worker.CreateICmpNE(HTMBeginVal, Zero);
++    addHTMBeginInternal(I, HTMBeginVal, Cmp);
++  }
++
++  /// Add a transactional execution begin intrinsice for x86.
++  void addX86HTMBegin(Instruction *I) {
++    LLVMContext &C = I->getContext();
++    IRBuilder<> Worker(I);
++    Value *HTMBeginVal = Worker.CreateCall(HTMBeginDecl);
++    Value *Success = ConstantInt::get(Type::getInt32Ty(C), 0xffffffff, false);
++    Value *Cmp = Worker.CreateICmpEQ(HTMBeginVal, Success);
++    addHTMBeginInternal(I, HTMBeginVal, Cmp);
++  }
++
++  /// Add transactional execution end intrinsic for PowerPC.
++  void addPowerPCHTMEnd(Instruction *I) {
++    LLVMContext &C = I->getContext();
++    IRBuilder<> EndWorker(I);
++    ConstantInt *One = ConstantInt::get(IntegerType::getInt32Ty(C),
++                                        1, false);
++    EndWorker.CreateCall(HTMEndDecl, ArrayRef<Value *>(One));
++  }
++
++  /// Add transactional execution check & end intrinsics for x86.
++  void addX86HTMCheckAndEnd(Instruction *I) {
++    // Note: x86's HTM facility will cause a segfault if an xend instruction is
++    // called outside of a transaction, hence we need to check if we're in a
++    // transaction before actually trying to end it.
++    LLVMContext &C = I->getContext();
++    BasicBlock *CurBB = I->getParent(), *NewSuccBB, *HTMEndBB;
++    Function *CurF = CurBB->getParent();
++
++    // Create a new successor which contains all instructions after the HTM
++    // check & end
++    NewSuccBB = CurBB->splitBasicBlock(I,
++      ".htmendsucc" + std::to_string(NumHTMEnds));
++
++    // Create an HTM end block, which ends the transaction and jumps to the
++    // new successor
++    HTMEndBB = BasicBlock::Create(C,
++      ".htmend" + std::to_string(NumHTMEnds), CurF, NewSuccBB);
++    IRBuilder<> EndWorker(HTMEndBB);
++    EndWorker.CreateCall(HTMEndDecl);
++    EndWorker.CreateBr(NewSuccBB);
++
++    // Finally, add the HTM test & replace the unconditional branch created by
++    // splitBasicBlock() with a conditional branch to either end the
++    // transaction or continue on to the new successor
++    IRBuilder<> PredWorker(CurBB->getTerminator());
++    CallInst *HTMTestVal = PredWorker.CreateCall(HTMTestDecl);
++    ConstantInt *Zero = ConstantInt::get(IntegerType::getInt32Ty(C), 0, true);
++    Value *Cmp = PredWorker.CreateICmpNE(HTMTestVal, Zero,
++      "htmcmp" + std::to_string(NumHTMEnds));
++    PredWorker.CreateCondBr(Cmp, HTMEndBB, NewSuccBB);
++    CurBB->getTerminator()->eraseFromParent();
++  }
++
++  /// Insert migration points & HTM instrumentation for instructions.
++  void addMigrationPoints(Function &F) {
++    if(DoHTMInst) {
++      // Note: need to add the HTM ends before begins
++      for(auto I = HTMEndInsts.begin(), E = HTMEndInsts.end(); I != E; ++I) {
++        switch(Arch) {
++        case Triple::ppc64le: addPowerPCHTMEnd(*I); break;
++        case Triple::x86_64: addX86HTMCheckAndEnd(*I); break;
++        default: llvm_unreachable("HTM -- unsupported architecture");
++        }
++        NumHTMEnds++;
++      }
++
++      // The following APIs both insert HTM begins & migration points because
++      // the control flow with/without abort handlers is intertwined
++      for(auto I = HTMBeginInsts.begin(), E = HTMBeginInsts.end();
++          I != E; ++I) {
++        switch(Arch) {
++        case Triple::ppc64le: addPowerPCHTMBegin(*I); break;
++        case Triple::x86_64: addX86HTMBegin(*I); break;
++        default: llvm_unreachable("HTM -- unsupported architecture");
++        }
++        NumHTMBegins++;
++        NumMigPoints++;
++      }
++    }
++    else {
++      for(auto I = MigPointInsts.begin(), E = MigPointInsts.end();
++          I != E; ++I) {
++        addMigrationPoint(*I);
++        NumMigPoints++;
++      }
++    }
++  }
++};
++
++} /* end anonymous namespace */
++
++char MigrationPoints::ID = 0;
++
++const MigrationPoints::IntrinsicMap MigrationPoints::HTMBegin = {
++  {Triple::x86_64, Intrinsic::x86_xbegin},
++  {Triple::ppc64le, Intrinsic::ppc_tbegin}
++};
++
++const MigrationPoints::IntrinsicMap MigrationPoints::HTMEnd = {
++  {Triple::x86_64, Intrinsic::x86_xend},
++  {Triple::ppc64le, Intrinsic::ppc_tend}
++};
++
++const MigrationPoints::IntrinsicMap MigrationPoints::HTMTest = {
++  {Triple::x86_64, Intrinsic::x86_xtest},
++  {Triple::ppc64le, Intrinsic::ppc_ttest}
++};
++
++INITIALIZE_PASS(MigrationPoints, "migration-points",
++                "Insert migration points into functions", true, false)
++
++namespace llvm {
++  FunctionPass *createMigrationPointsPass()
++  { return new MigrationPoints(); }
++}
++
 Index: lib/Transforms/Utils/CMakeLists.txt
 ===================================================================
---- lib/Transforms/Utils/CMakeLists.txt	(revision 313649)
+--- lib/Transforms/Utils/CMakeLists.txt	(revision 277823)
 +++ lib/Transforms/Utils/CMakeLists.txt	(working copy)
 @@ -28,6 +28,7 @@
    Mem2Reg.cpp
@@ -7191,7 +10196,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +      }
 +  
 +      // InternalLinkage is specifically for STATIC variables
-+      if(gl->hasInternalLinkage()) {
++      if(gl->hasInternalLinkage() && !gl->hasSection()) {
 +        if(gl->isConstant()) {
 +          //Belongs in RODATA
 +          assert(!gl->isThreadLocal() && "TLS data should not be in .rodata");
@@ -7235,7 +10240,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +
 Index: lib/Transforms/Utils/Utils.cpp
 ===================================================================
---- lib/Transforms/Utils/Utils.cpp	(revision 313649)
+--- lib/Transforms/Utils/Utils.cpp	(revision 277823)
 +++ lib/Transforms/Utils/Utils.cpp	(working copy)
 @@ -28,7 +28,9 @@
    initializeLoopSimplifyPass(Registry);

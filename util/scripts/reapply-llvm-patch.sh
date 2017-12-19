@@ -7,7 +7,7 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PATCHES=$(readlink -f $CUR_DIR/../../patches/llvm)
 BACKUP=$CUR_DIR/llvm-bak
 NTHREADS=$(cat /proc/cpuinfo | grep processor | wc -l)
-UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt"
+UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt projects/openmp"
 
 function print_help {
   echo "Re-apply clang/LLVM patches & re-install compiler"
@@ -108,6 +108,13 @@ function reapply_patch {
   # Re-apply patch & remove backup
   patch -p0 < $patch || die "could not patch" $src $backup
   echo
+
+  # Remove files which were previously added to the svn index but no longer
+  # exist in the new patch
+  local missing=$(svn status | grep "! " | sed -e 's/!       //g')
+  for f in $missing; do
+    $(svn rm $f)
+  done
 }
 
 while [ "$1" != "" ]; do

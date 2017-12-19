@@ -1,5 +1,5 @@
 Popcorn Linux Compiler Toolchain, Copyright Systems Software Research Group at
-Virginia Tech, 2016.
+Virginia Tech, 2017.
 
 For more information, please visit http://popcornlinux.org or e-mail Rob Lyerly
 (rlyerly@vt.edu).
@@ -24,7 +24,8 @@ would be too costly in performance).
 
 The toolchain operates as follows:
 
-1. Parsing/LLVM bitcode generation (clang) - unmodified clang frontend
+1. Parsing/LLVM bitcode generation (clang) - clang frontend, mostly unmodified
+   except to pass the generated LLVM IR to multiple ISA-specific backends
 
 2. Middle-end analysis, refactoring & optimization - in addition to standard
    optimizations, run several passes which adjust the linkage of some variables
@@ -92,7 +93,7 @@ root
   util - various utilities, including a Makefile template, for heterogeneous
          applications
    \
-    scripts - scripts for testing and running binaries
+    scripts - scripts for patch generation, testing and running binaries
 
 See the README file in each subdirectory for more information, and the INSTALL
 file for installation instructions.
@@ -101,10 +102,10 @@ file for installation instructions.
 Prerequisites
 -------------
 
-Note: the toolchain has been tested on x86-64 with Ubuntu 14.04.  It should
-work on other architectures and distributions, but may require installing
-alternate packages and some extra hacking.  It is *highly* recommended that
-applications be built on x86-64.
+Note: the toolchain has been tested on x86-64 with Ubuntu 14.04 and up.  It
+should work on other architectures and distributions, but may require
+installing alternate packages and some extra hacking.  It is *highly*
+recommended that applications be built on x86-64.
 
 + gcc and g++ 4.8 or higher, for both aarch64 & x86-64
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
@@ -124,6 +125,12 @@ applications be built on x86-64.
   - v2 is needed for installation script
   - v3 is needed for scripts in util/scripts
   - Both are pre-installed on Ubuntu 14.04
++ Cmake
+  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
+      cmake
++ SVN
+  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
+      subversion
 
 -----------
 Limitations

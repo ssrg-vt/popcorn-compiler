@@ -26,6 +26,8 @@ def buildArgParser():
 	res = argparse.ArgumentParser(description="Align symbols in binaries from" +
 		" multiple ISAs")
 
+        res.add_argument("--compiler-inst", help="Path to the compiler installation",
+                required=True)
 	res.add_argument("--x86-bin", help="Path to the input x86 executable")
 	res.add_argument("--arm-bin", help="Path to the input ARM executable")
         res.add_argument("--ppc-bin", help = "Path to the input PPC64 " + 
@@ -219,6 +221,7 @@ if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
+        Globals.POPCORN_LOCATION = args.compiler_inst
 
 	# Set the considered architectures then grab input/output files from the 
         # command line arguments

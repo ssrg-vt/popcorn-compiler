@@ -27,6 +27,12 @@ std::shared_ptr<TargetOptions> GetPopcornTargetOpts(llvm::StringRef TripleStr);
 /// architectures.
 void StripTargetAttributes(llvm::Module &M);
 
+
+/// Add the target-features attribute specified in TargetOpts to every function
+/// in module M.
+void AddArchSpecificTargetFeatures(llvm::Module &M,
+                                   std::shared_ptr<TargetOptions> TargetOpts);
+
 } /* end Popcorn namespace */
 } /* end clang namespace */
 

@@ -38,6 +38,10 @@ using namespace llvm;
 
 #define DEBUG_TYPE "stacktransform"
 
+static cl::opt<bool>
+NoWarnings("no-sm-warn", cl::desc("Don't issue warnings about stackmaps"),
+           cl::init(false), cl::Hidden);
+
 //===----------------------------------------------------------------------===//
 //                          StackTransformMetadata
 //===----------------------------------------------------------------------===//
@@ -310,14 +314,14 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
 
     DEBUG(
       dbgs() << "\n********** STACK TRANSFORMATION METADATA **********\n"
-             << "********** Function: " << MF->getName() << '\n';
+             << "********** Function: " << MF->getName() << "\n";
       VRM->dump();
     );
 
     findStackmapsAndStackSlotCopies();
     findAlternateOpLocs();
     findArchSpecificLiveVals();
-    warnUnhandled();
+    if(!NoWarnings) warnUnhandled();
   }
 
   return false;

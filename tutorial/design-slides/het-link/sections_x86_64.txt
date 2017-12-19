@@ -1,0 +1,28 @@
+There are 20 section headers, starting at offset 0x668:
+
+Section Headers:
+  [Nr] Name              Type            Address          Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            0000000000000000 000000 000000 00      0   0  0
+  [ 1] .strtab           STRTAB          0000000000000000 0004e8 00017c 00      0   0  1
+  [ 2] .text             PROGBITS        0000000000000000 000040 000000 00  AX  0   0  4
+  [ 3] .data             PROGBITS        0000000000000000 000040 000000 00  WA  0   0  4
+  [ 4] .bss              NOBITS          0000000000000000 000040 000000 00  WA  0   0  4
+  [ 5] .text.fizzbuzz    PROGBITS        0000000000000000 000040 0000c6 00  AX  0   0 16
+  [ 6] .rela.text.fizzbuzz RELA            0000000000000000 0003e0 0000c0 18     19   5  8
+  [ 7] .rodata.fizzbuzz__str_fizzbuzz__ PROGBITS        0000000000000000 000106 00000a 00   A  0   0  1
+  [ 8] .rodata.fizzbuzz__str_1_fizz__ PROGBITS        0000000000000000 000110 000006 00   A  0   0  1
+  [ 9] .rodata.fizzbuzz__str_2_buzz__ PROGBITS        0000000000000000 000116 000006 00   A  0   0  1
+  [10] .comment          PROGBITS        0000000000000000 00011c 000035 01  MS  0   0  1
+  [11] .note.GNU-stack   PROGBITS        0000000000000000 000151 000000 00      0   0  1
+  [12] .stack_transform.unwind PROGBITS        0000000000000000 000154 00000c 04      0   0  4
+  [13] .stack_transform.unwind_arange PROGBITS        0000000000000000 000160 000010 10      0   0  8
+  [14] .rela.stack_transform.unwind_arange RELA            0000000000000000 0004a0 000018 18     19  13  8
+  [15] .llvm_stackmaps   PROGBITS        0000000000000000 000170 000118 00   A  0   0  8
+  [16] .rela.llvm_stackmaps RELA            0000000000000000 0004b8 000018 18     19  15  8
+  [17] .eh_frame         PROGBITS        0000000000000000 000288 000038 00   A  0   0  8
+  [18] .rela.eh_frame    RELA            0000000000000000 0004d0 000018 18     19  17  8
+  [19] .symtab           SYMTAB          0000000000000000 0002c0 000120 18      1   6  8
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), l (large)
+  I (info), L (link order), G (group), T (TLS), E (exclude), x (unknown)
+  O (extra OS processing required) o (OS specific), p (processor specific)

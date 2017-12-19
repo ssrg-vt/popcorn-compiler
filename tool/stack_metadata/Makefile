@@ -6,12 +6,13 @@ CHECK		:= check-stackmaps
 
 POPCORN        := /usr/local/popcorn
 POPCORN_X86_64 := $(POPCORN)/x86_64
-COMMON         := $(shell readlink -f ../../common/stack_transformation)
+COMMON         := $(shell readlink -f ../../common)
 
 CC     := gcc
 CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include \
           -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
-LIB    := -static -lelf
+LDFLAGS=-static
+LIB    := -lelf
 
 HDR := $(shell ls include/*.h) $(shell ls $(COMMON)/include/*.h)
 SRC := $(shell ls src/*.c)
@@ -33,23 +34,23 @@ build/%.o: src/%.c $(HDR)
 
 $(BIN): $(BUILD)/.dir $(OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(@) $(OBJ) $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $(OBJ) $(LDFLAGS) $(LIB)
 
 util: $(DUMP_SM) $(DUMP_ST)
 
 $(DUMP_SM): utils/dump_llvm_stackmap.c $(CHECK_OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
 $(DUMP_ST): utils/dump_stackinfo.c $(UTIL_OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
 check: $(CHECK)
 
 $(CHECK): utils/check_stackmaps.c $(CHECK_OBJ)
 	@echo " [CC] $@"
-	@$(CC) $(CFLAGS) -o $(@) $^ $(LIB)
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
 install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
 	@echo " [INSTALL] $^ to $(POPCORN)/bin"

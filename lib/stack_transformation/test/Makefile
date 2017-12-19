@@ -84,7 +84,8 @@ X86_64_LIB    := -L$(X86_64_POPCORN)/lib $(addprefix $(X86_64_POPCORN),$(LIBS))
 #                                 Recipes                                     #
 ###############################################################################
 
-all: $(ARM64_BIN) $(POWERPC64_BIN) $(X86_64_BIN)
+#$(POWERPC64_BIN)
+all: $(ARM64_BIN) $(X86_64_BIN)
 
 clean:
 	@echo " [CLEAN] $(ARM64_BIN) $(ARM64_BUILD) $(POWERPC64_BIN) $(POWERPC64_BUILD) $(X86_64_BIN) $(X86_64_BUILD) $(LOG)"
