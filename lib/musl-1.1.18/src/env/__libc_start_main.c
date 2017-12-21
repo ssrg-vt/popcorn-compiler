@@ -5,6 +5,7 @@
 #include "syscall.h"
 #include "atomic.h"
 #include "libc.h"
+#include "popcorn.h"
 
 void __init_tls(size_t *);
 
@@ -62,9 +63,6 @@ static void libc_start_init(void)
 }
 
 weak_alias(libc_start_init, __libc_start_init);
-
-/* Store the highest stack address dedicated to function activations. */
-void *__popcorn_stack_base = NULL;
 
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
