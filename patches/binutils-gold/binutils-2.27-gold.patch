@@ -1,6 +1,6 @@
 diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
 --- ./gold/aarch64.cc	2016-08-03 03:36:53.000000000 -0400
-+++ ../binutils-2.27/gold/aarch64.cc	2016-08-05 09:36:58.086009371 -0400
++++ ../binutils-2.27/gold/aarch64.cc	2017-12-21 16:06:24.417790483 -0500
 @@ -46,6 +46,8 @@
  #include "icf.h"
  #include "aarch64-reloc-property.h"
@@ -10,15 +10,10 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
  // The first three .got.plt entries are reserved.
  const int32_t AARCH64_GOTPLT_RESERVE_COUNT = 3;
  
-@@ -5033,6 +5035,27 @@
+@@ -5037,6 +5039,26 @@
+       static_cast<Valtype>(val | (immed << doffset)));
+   }
  
-     // Clear immediate fields.
-     val &= ~dst_mask;
-+    //Comment out the following?? HETCOMPILE
-+    elfcpp::Swap<valsize, big_endian>::writeval(wv,
-+      static_cast<Valtype>(val | (immed << doffset)));
-+  }
-+
 +  template<int valsize>
 +  static inline void
 +  update_viewN(unsigned char* view,
@@ -35,32 +30,23 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
 +    val &= ~0x20000000;
 +    val &= ~dst_mask;
 +
-     elfcpp::Swap<valsize, big_endian>::writeval(wv,
-       static_cast<Valtype>(val | (immed << doffset)));
-   }
-@@ -5235,7 +5258,40 @@
++    elfcpp::Swap<valsize, big_endian>::writeval(wv,
++      static_cast<Valtype>(val | (immed << doffset)));
++  }
++
+   // Update two parts of an instruction (pointed by view) with selected
+   // bits (immed1 and immed2).
+   // val = (val & ~dst_mask) | (immed1 << doffset1) | (immed2 << doffset2)
+@@ -5235,7 +5257,27 @@
    {
      // Calculate relocation.
      Address x = s + addend;
 +#ifdef X86_TLS
-+    x = -5424 + x - 16; // 0x1530
-+
-+    // Select bits from X.
-+    Address immed;
-+    if((static_cast<uint64_t>(x) >> 32) == 0) {
-+      immed = reloc_property->select_x_value(x);
-+      // Update view.
-+      const AArch64_reloc_property::Reloc_inst inst =
-+        reloc_property->reloc_inst();
-+      // If it is a data relocation or instruction has 2 parts of immediate
-+      // fields, you should not call pcrela_general.
-+      gold_assert(aarch64_howto[inst].doffset2 == -1 &&
-+      aarch64_howto[inst].doffset != -1);
-+      This::template update_view<valsize>(view, immed,
-+  					aarch64_howto[inst].doffset,
-+  					aarch64_howto[inst].dst_mask);
-+    } else {
-+      immed = reloc_property->select_x_value((0 - x));
++    if(reloc_property->reloc_class() != AArch64_reloc_property::RC_TLS)
++      return This::template reloc_common<valsize>(view, x, reloc_property);
++    else {
++      x = -5424 + x - 16; // 0x1530
++      Address immed = reloc_property->select_x_value((0 - x));
 +      // Update view.
 +      const AArch64_reloc_property::Reloc_inst inst =
 +          reloc_property->reloc_inst();
@@ -71,15 +57,15 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
 +      This::template update_viewN<valsize>(view, immed,
 +                                          aarch64_howto[inst].doffset,
 +                                          aarch64_howto[inst].dst_mask);
++      return This::STATUS_OKAY;
 +    }
-+    return This::STATUS_OKAY;
 +#else
      return This::template reloc_common<valsize>(view, x, reloc_property);
 +#endif
    }
  
    // Do address relative relocate. Update selected bits in text.
-@@ -5346,10 +5402,14 @@
+@@ -5346,10 +5388,14 @@
      // Update movnz instruction.
      update_movnz(view, immed, is_movz);
  
@@ -94,7 +80,7 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
    }
  
    static inline bool
-@@ -7707,14 +7767,22 @@
+@@ -7707,14 +7753,22 @@
    AArch64_address aligned_tcb_address =
        align_address(target->tcb_size(), tls_segment->maximum_alignment());
    const elfcpp::Elf_Xword addend = rela.get_r_addend();
@@ -117,7 +103,7 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
      }
  
    Insntype* ip = reinterpret_cast<Insntype*>(view);
-@@ -7729,10 +7797,21 @@
+@@ -7729,10 +7783,21 @@
      }
    else if (r_type == elfcpp::R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC)
      {
@@ -139,7 +125,7 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
      }
    else
      gold_unreachable();
-@@ -7801,9 +7880,19 @@
+@@ -7801,9 +7866,19 @@
        break;
  
      case elfcpp::R_AARCH64_TLSDESC_LD64_LO12:
@@ -161,7 +147,7 @@ diff -Naur ./gold/aarch64.cc ../binutils-2.27/gold/aarch64.cc
        gold_error(_("unsupported tlsdesc gd_to_le optimization on reloc %u"),
 diff -Naur ./gold/mapfile.cc ../binutils-2.27/gold/mapfile.cc
 --- ./gold/mapfile.cc	2016-08-03 03:36:53.000000000 -0400
-+++ ../binutils-2.27/gold/mapfile.cc	2016-08-04 08:45:59.968445578 -0400
++++ ../binutils-2.27/gold/mapfile.cc	2017-12-21 16:03:06.612189237 -0500
 @@ -264,9 +264,11 @@
    snprintf(sizebuf, sizeof sizebuf, "0x%llx",
  	   static_cast<unsigned long long>(size));
@@ -170,8 +156,8 @@ diff -Naur ./gold/mapfile.cc ../binutils-2.27/gold/mapfile.cc
 +  fprintf(this->map_file_, "0x%0*llx %10s 0x%lx %s\n",
  	  parameters->target().get_size() / 4,
 -	  static_cast<unsigned long long>(addr), sizebuf,
-+	  static_cast<unsigned long long>(addr), 
-+	  sizebuf, 
++	  static_cast<unsigned long long>(addr),
++	  sizebuf,
 +	  (unsigned long) relobj->section_addralign(shndx),
  	  relobj->name().c_str());
  
