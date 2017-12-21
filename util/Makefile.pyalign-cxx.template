@@ -9,15 +9,21 @@
 # FIXME directory of Popcorn compiler installation
 POPCORN := /usr/local/popcorn
 
-# FIXME directory of libgcc & libgcc_eh for aarch64 compiler
-ARM64_LIBGCC := $(shell dirname \
-                $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
+# FIXME directory of libgcc installation for each target
+X86_64_LIBGCC := $(shell dirname \
+                 $(shell x86_64-linux-gnu-gcc -print-libgcc-file-name))
+ARM64_LIBGCC  := $(shell dirname \
+                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
 BIN := test
 
+# FIXME Alpine Linux C++ version
+CXX_VERSION := 6.4.0
+
 # FIXME specify source files
-SRC := $(shell ls *.c)
+SUFFIX := cpp
+SRC    := $(shell ls *.$(SUFFIX))
 
 APP_DIR := $(shell pwd)
 
@@ -26,13 +32,12 @@ APP_DIR := $(shell pwd)
 ###############################################################################
 
 # Compiler
-CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
-CFLAGS     := -O0 -Wall -nostdinc -g
+CFLAGS     := -O0 -Wall -nostdinc -nostdinc++ -g
 HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
               -ftls-model=initial-exec
 
-IR := $(SRC:.c=.ll)
+IR := $(SRC:.$(SUFFIX)=.ll)
 
 # Linker
 LD      := $(POPCORN)/bin/ld.gold
@@ -40,6 +45,7 @@ LDFLAGS := -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/crti.o \
            /lib/libc.a \
+           /lib/libstdc++.a \
            /lib/libmigrate.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
@@ -47,7 +53,7 @@ LIBS    := /lib/crt1.o \
            /lib/libc.a \
            /lib/libm.a \
            /lib/crtn.o
-LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
+LIBGCC  := --start-group -lc -lgcc -lgcc_eh --end-group
 
 # Alignment
 ALIGN          := $(POPCORN)/bin/pyalign
@@ -64,18 +70,21 @@ STACKMAP_CHECK := $(POPCORN)/bin/check-stackmaps
 # Locations
 ARM64_POPCORN := $(POPCORN)/aarch64
 ARM64_BUILD   := build_aarch64
+ARM64_CXX     := $(ARM64_POPCORN)/include/c++/$(CXX_VERSION)
 
 # Generated files
 ARM64_ALIGNED     := $(BIN)_aarch64
 ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
-ARM64_OBJ         := $(SRC:.c=.o)
+ARM64_OBJ         := $(SRC:.$(SUFFIX)=.o)
 ARM64_MAP         := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
 ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
 
 # Flags
 ARM64_TARGET  := aarch64-linux-gnu
-ARM64_INC     := -isystem $(ARM64_POPCORN)/include
+ARM64_INC     := -cxx-isystem $(ARM64_CXX) \
+                 -I$(ARM64_CXX)/aarch64-alpine-linux-musl \
+                 -cxx-isystem $(ARM64_POPCORN)/include
 ARM64_LDFLAGS := -m aarch64linux -L$(ARM64_POPCORN)/lib -L$(ARM64_LIBGCC) \
                  $(addprefix $(ARM64_POPCORN),$(LIBS)) $(LIBGCC)
 
@@ -87,23 +96,25 @@ ARM64_LDFLAGS := -m aarch64linux -L$(ARM64_POPCORN)/lib -L$(ARM64_LIBGCC) \
 X86_64_POPCORN  := $(POPCORN)/x86_64
 X86_64_BUILD    := build_x86-64
 X86_64_SD_BUILD := sd_x86-64
+X86_64_CXX      := $(X86_64_POPCORN)/include/c++/$(CXX_VERSION)
 
 # Generated files
 X86_64_ALIGNED     := $(BIN)_x86-64
 X86_64_VANILLA     := $(X86_64_BUILD)/$(X86_64_ALIGNED)
-X86_64_OBJ         := $(SRC:.c=_x86_64.o)
+X86_64_OBJ         := $(SRC:.$(SUFFIX)=_x86_64.o)
 X86_64_MAP         := $(X86_64_BUILD)/map.txt
 X86_64_SD          := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
-X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
+X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.$(SUFFIX)=.o))
 X86_64_LD_SCRIPT   := $(X86_64_BUILD)/aligned_linker_script_x86.x
 X86_64_ALIGNED_MAP := $(X86_64_BUILD)/aligned_map.txt
 
 # Flags
 X86_64_TARGET  := x86_64-linux-gnu
-X86_64_INC     := -isystem $(X86_64_POPCORN)/include
-X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
-                  $(addprefix $(X86_64_POPCORN),$(LIBS)) \
-                  --start-group --end-group
+X86_64_INC     := -cxx-isystem $(X86_64_CXX) \
+                  -I$(X86_64_CXX)/x86_64-alpine-linux-musl \
+                  -cxx-isystem $(X86_64_POPCORN)/include
+X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib -L$(X86_64_LIBGCC) \
+                  $(addprefix $(X86_64_POPCORN),$(LIBS)) $(LIBGCC)
 
 ###############################################################################
 #                                 Recipes                                     #
@@ -150,13 +161,13 @@ clean:
 # Common #
 ##########
 
-%.ll: %.c
+%.ll: %.$(SUFFIX)
 	@echo " [IR] $<"
-	@$(CC) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $<
+	@$(CXX) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $<
 
-%.o: %.c
+%.o: %.$(SUFFIX)
 	@echo " [CC] $<"
-	@$(CC) $(HET_CFLAGS) -c $(ARM64_INC) -o $@ $<
+	@$(CXX) $(HET_CFLAGS) -c $(ARM64_INC) -o $@ $<
 
 ###########
 # AArch64 #
@@ -195,9 +206,9 @@ $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 		-Map $(X86_64_ALIGNED_MAP) -T $<
 
 # Stack-depth builds
-$(X86_64_SD_BUILD)/%.o: %.c
+$(X86_64_SD_BUILD)/%.o: %.$(SUFFIX)
 	@echo " [CC (x86-64)] $< (stack depth)"
-	@$(CC) -target $(X86_64_TARGET) $(CFLAGS) -finstrument-functions -c $(X86_64_INC) -o $@ $<
+	@$(CXX) -target $(X86_64_TARGET) $(CFLAGS) -finstrument-functions -c $(X86_64_INC) -o $@ $<
 
 $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"

@@ -117,7 +117,7 @@ class AbstractArchitecture():
 						str(hex(symbol.getSize(arch))) + "\n")
 					warn(" Section: " + sectionName + " @" +
 						str(hex(sectionAddr)) + ", size: " +
-						str(hex(sectionSize)))
+						str(hex(sectionSize)) + "\n")
 
 				break
 
