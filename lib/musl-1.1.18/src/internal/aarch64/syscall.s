@@ -2,6 +2,7 @@
 .global __syscall
 .hidden __syscall
 .type __syscall,%function
+.align 4
 __syscall:
 	uxtw x8,w0
 	mov x0,x1

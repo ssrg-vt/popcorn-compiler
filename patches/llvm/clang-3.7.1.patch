@@ -896,7 +896,18 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 277850)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -675,6 +675,16 @@
+@@ -374,6 +374,10 @@
+   }
+   Opts.OptimizationLevel = OptimizationLevel;
+ 
++  // TODO Popcorn: until we can limit optimizations across migration points, we
++  // need to turn off backend optimizations
++  if (Args.hasArg(OPT_popcorn_migratable)) Opts.OptimizationLevel = 0;
++
+   // We must always run at least the always inlining pass.
+   Opts.setInlining(
+     (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
+@@ -675,6 +679,16 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
@@ -913,7 +924,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
    return Success;
  }
  
-@@ -856,7 +866,11 @@
+@@ -856,7 +870,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -926,7 +937,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1817,7 @@
+@@ -1803,6 +1821,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:

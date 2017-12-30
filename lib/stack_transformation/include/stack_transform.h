@@ -19,6 +19,8 @@ extern "C" {
 #include <arch/powerpc64/regs.h>
 #include <arch/x86_64/regs.h>
 
+#include "arch.h"
+
 /* Handle containing per-binary rewriting information */
 typedef struct _st_handle* st_handle;
 
@@ -59,56 +61,17 @@ void st_destroy(st_handle handle);
  * Note: specific to Popcorn Compiler/the migration wrapper.
  *
  * @param sp the current stack pointer
- * @param regs the current register set
+ * @param src_arch the source ISA
+ * @param src_regs the current register set
+ * @param dest_arch the destination ISA
  * @param dest_regs the transformed destination register set
  * @return 0 if the stack was successfully re-written, 1 otherwise
  */
-int st_userspace_rewrite(void* sp, void* src_regs, void* dest_regs);
-
-/*
- * Rewrite the stack from user-space (aarch64 -> aarch64).  Useful for
- * debugging homogeneously.
- *
- * Note: specific to Popcorn Compiler/the migration wrapper.
- *
- * @param sp the current stack pointer
- * @param regs the current register set
- * @param dest_regs the transformed destination register set.
- * @return 0 if the stack was successfully re-written, 1 otherwise
- */
-int st_userspace_rewrite_aarch64(void* sp,
-                                 struct regset_aarch64* regs,
-                                 struct regset_aarch64* dest_regs);
-
-/*
- * Rewrite the stack from user-space (powerpc64 -> powerpc64).  Useful for
- * debugging homogeneously.
- *
- * Note: specific to Popcorn Compiler/the migration wrapper.
- *
- * @param sp the current stack pointer
- * @param regs the current register set
- * @param dest_regs the transformed destination register set.
- * @return 0 if the stack was successfully re-written, 1 otherwise
- */
-int st_userspace_rewrite_powerpc64(void* sp,
-                                   struct regset_powerpc64* regs,
-                                   struct regset_powerpc64* dest_regs);
-
-/*
- * Rewrite the stack from user-space (x86_64 -> x86_64).  Useful for debugging
- * homogeneously.
- *
- * Note: specific to Popcorn Compiler/the migration wrapper.
- *
- * @param sp the current stack pointer
- * @param regs the current register set
- * @param dest_regs the transformed destination register set.
- * @return 0 if the stack was successfully re-written, 1 otherwise
- */
-int st_userspace_rewrite_x86_64(void* sp,
-                                struct regset_x86_64* regs,
-                                struct regset_x86_64* dest_regs);
+int st_userspace_rewrite(void* sp,
+                         enum arch src_arch,
+                         void* src_regs,
+                         enum arch dest_arch,
+                         void* dest_regs);
 
 /*
  * Rewrite the stack in its entirety from its current form (source) to the

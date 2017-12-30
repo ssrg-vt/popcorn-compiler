@@ -7,7 +7,7 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PATCHES=$(readlink -f $CUR_DIR/../../patches/llvm)
 BACKUP=$CUR_DIR/llvm-bak
 NTHREADS=$(cat /proc/cpuinfo | grep processor | wc -l)
-UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt"
+UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt projects/openmp"
 
 function print_help {
   echo "Re-apply clang/LLVM patches & re-install compiler"

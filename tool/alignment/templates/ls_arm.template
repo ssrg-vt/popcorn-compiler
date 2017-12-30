@@ -62,7 +62,10 @@ __DATA__ 		/* marker for the DATA section insertion */
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
 /*   . = ALIGN(0x100);   . = .;*/
-  __bss_start = .;
+
+ .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
+ 
+ __bss_start = .;
   __bss_start__ = .;
   
 __BSS__		/* marker for the BSS section insertion */
@@ -74,8 +77,6 @@ __BSS__		/* marker for the BSS section insertion */
   _end = .; PROVIDE (end = .);
   . = DATA_SEGMENT_END (.);
   .eh_frame_hdr : { *(.eh_frame_hdr) }
- 
- .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
   
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table
   .gcc_except_table.*) }

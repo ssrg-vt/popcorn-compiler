@@ -8,12 +8,13 @@
 
 #define SYSCALL_SCHED_MIGRATE 285
 #define SYSCALL_PROPOSE_MIGRATION 286
-#define SYSCALL_MIGRATION_PROPOSED 287
+#define SYSCALL_GET_THREAD_STATUS 287
 #define SYSCALL_GET_NODE_INFO 288
 
 #define GET_LOCAL_REGSET \
     struct regset_aarch64 regs_src; \
-    READ_REGS_AARCH64(regs_src)
+    READ_REGS_AARCH64(regs_src); \
+    regs_src.pc = get_call_site()
 
 #define LOCAL_STACK_FRAME \
     (void *)regs_src.sp
@@ -24,7 +25,8 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if(st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, &regs_src, &regs_src)) \
+      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
+                              ARCH_AARCH64, &regs_dst)) \
       { \
         fprintf(stderr, "Could not rewrite stack!\n"); \
         ret = 0; \
@@ -46,15 +48,11 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if (dst_arch == X86_64) { \
-        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
-                                   &regs_src, &regs_dst.x86); \
-      } else if (dst_arch == AARCH64) { \
-        ret = st_userspace_rewrite_aarch64(LOCAL_STACK_FRAME, \
-                                           &regs_src, &regs_dst.aarch); \
-      } else if (dst_arch == POWERPC64) { \
-        ret = st_userspace_rewrite(LOCAL_STACK_FRAME, \
-                                   &regs_src, &regs_dst.powerpc); \
+      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
+                              dst_arch, &regs_dst)) \
+      { \
+        fprintf(stderr, "Could not rewrite stack!\n"); \
+        ret = 0; \
       } \
       ret; \
     })
@@ -80,4 +78,3 @@
 #endif
 
 #endif /* _MIGRATE_AARCH64_H */
-

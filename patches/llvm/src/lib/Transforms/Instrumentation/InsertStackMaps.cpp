@@ -165,10 +165,6 @@ public:
               errs() << "\n";
             );
 
-            IRBuilder<> builder(CI->getNextNode());
-            std::vector<Value *> args(2);
-            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
             for(v = sortedLive.begin(), ve = sortedLive.end(); v != ve; v++)
               args.push_back((Value*)*v);
             builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
@@ -338,7 +334,6 @@ private:
 };
 
 } /* end anonymous namespace */
-
 
 char InsertStackMaps::ID = 0;
 const StringRef InsertStackMaps::SMName = "llvm.experimental.stackmap";

@@ -7,6 +7,7 @@
 .section .text.__clone, "ax"
 .global __clone
 .type   __clone,%function
+.align 4
 __clone:
 	// align stack and save func,arg
 	and x1,x1,#-16

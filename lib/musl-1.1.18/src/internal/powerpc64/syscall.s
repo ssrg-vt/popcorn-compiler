@@ -2,6 +2,7 @@
 	.global __syscall
 	.hidden __syscall
 	.type   __syscall,@function
+	.align 4
 __syscall:
 	mr      0, 3                  # Save the system call number
 	mr      3, 4                  # Shift the arguments: arg1
