@@ -284,14 +284,15 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
-  if (nid >= 0)
+  if (nid >= 0 && nid != current_nid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Externally-visible function to invoke migration. */
 void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
-  __migrate_shim_internal(nid, callback, callback_data);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Callback function & data for migration points inserted via compiler. */
@@ -309,7 +310,7 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_site)
 {
   int nid = do_migrate(this_fn);
-  if (nid >= 0)
+  if (nid >= 0 && nid != current_nid())
     __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
 }
 
