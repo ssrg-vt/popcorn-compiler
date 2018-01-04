@@ -3,6 +3,7 @@
 #include <vector>
 #include "llvm/Pass.h"
 #include "llvm/Analysis/LiveValues.h"
+#include "llvm/Analysis/PopcornUtil.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/InstIterator.h"
@@ -98,11 +99,9 @@ public:
 
         for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
         {
-          CallInst *CI;
-          if((CI = dyn_cast<CallInst>(&*i)) &&
-             !CI->isInlineAsm() &&
-             !isa<IntrinsicInst>(CI))
+          if(Popcorn::isEquivalencePoint(&*i))
           {
+            CallInst *CI = cast<CallInst>(&*i);
             IRBuilder<> builder(CI->getNextNode());
             std::vector<Value *> args(2);
             args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
@@ -134,10 +133,6 @@ public:
                 sortedLive.insert(val);
             }
             delete live;
-
-            /* If the call's value is used, add it to the stackmap */
-            if(CI->use_begin() != CI->use_end())
-              sortedLive.insert(CI);
 
             DEBUG(
               const Function *calledFunc;

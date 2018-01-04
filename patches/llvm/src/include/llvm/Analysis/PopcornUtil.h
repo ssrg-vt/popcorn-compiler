@@ -15,6 +15,7 @@
 #define LLVM_ANALYSIS_POPCORNUTIL_H
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
@@ -77,11 +78,13 @@ hasMetadata(const Instruction *I, StringRef name, StringRef op) {
 }
 
 /// Return whether the instruction is a "true" call site, i.e., not an LLVM
-/// IR-level intrinsic.
+/// IR-level intrinsic or inline assembly.
 static inline bool isCallSite(const Instruction *I) {
-  if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
-    return true;
-  else return false;
+  if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I)) {
+    ImmutableCallSite CS(I);
+    if(!CS.isInlineAsm()) return true;
+  }
+  return false;
 }
 
 /// Add metadata to an instruction marking it as an equivalence point.

@@ -15,7 +15,8 @@ POWERPC64_LIBGCC := $(shell dirname \
 # Compiler
 CC     := $(POPCORN)/bin/clang
 CFLAGS := -O0 -Wall -Wno-unused-variable -g -nostdinc -nostdlib -static \
-          -I../../utils -DPOSIX -mllvm -optimize-regalloc
+          -I../../utils -DPOSIX -mllvm -optimize-regalloc \
+          -mllvm -fast-isel=false
 LIBS   := /lib/crt1.o \
           /lib/libc.a \
           /lib/libstack-transform.a \
@@ -125,7 +126,6 @@ $(POWERPC64_BIN): $(POWERPC64_BUILD)/.dir $(POWERPC64_BC)
 	@$(CC) -target $(POWERPC64_TARGET) $(CFLAGS) -o $@ $(POWERPC64_BC) \
 				 $(POWERPC64_LIB)
 	@$(POST_PROCESS) -f $@
-
 
 ##########
 # x86-64 #
