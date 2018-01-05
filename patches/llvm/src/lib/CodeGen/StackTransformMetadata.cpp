@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/StackMaps.h"
@@ -61,13 +62,13 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// machine instruction and the call machine instruction that caused the
   /// stackmap to be emitted in the IR, respectively
   typedef std::tuple<const CallInst *,
-                     const MachineInstr *,
+                     MachineInstr *,
                      const MachineInstr *> SMInstBundle;
 
   /// Getters for individual elements of instruction bundles
   static inline const
   CallInst *getIRSM(const SMInstBundle &B) { return std::get<0>(B); }
-  static inline const
+  static inline
   MachineInstr *getMISM(const SMInstBundle &B) { return std::get<1>(B); }
   static inline const
   MachineInstr *getMICall(const SMInstBundle &B) { return std::get<2>(B); }
@@ -210,6 +211,11 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// Find all virtual register/stack slot operands in a stackmap and collect
   /// virtual register/stack slot <-> IR value mappings
   void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
+
+  /// Rather than modifying the backend machinery to prevent hoisting code
+  /// between the stackmap and call site, unwind instructions in order to get
+  /// real live value locations at the function call.
+  void unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
 
   /// Is a virtual register live across the machine instruction?
   /// Note: returns false if the MI is the last instruction for which the
@@ -445,11 +451,9 @@ void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
         enum CopyLoc::Type type = loc->getType();
         if(type == CopyLoc::STACK_LOAD || type == CopyLoc::STACK_STORE) {
           StackCopyLoc *SCL = (StackCopyLoc *)loc.get();
-          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end()) {
-            StackSlotCopyPair ins(SCL->StackSlot,
-                                  CopyLocVecPtr(new CopyLocVec));
-            it = SSUses.insert(std::move(ins)).first;
-          }
+          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end())
+            it = SSUses.emplace(SCL->StackSlot,
+                                CopyLocVecPtr(new CopyLocVec)).first;
           it->second->push_back(loc);
         }
       }
@@ -478,8 +482,8 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
 
   // Initialize new storage location/IR map objects (i.e., for virtual
   // registers & stack slots) for the stackmap
-  SMVregs.insert(SMVregsPair(MISM, RegValsMap()));
-  SMStackSlots.insert(SMStackSlotPair(MISM, StackValsMap()));
+  SMVregs.emplace(MISM, RegValsMap());
+  SMStackSlots.emplace(MISM, StackValsMap());
 
   // Loop over all operands
   for(MOit = std::next(MISM->operands_begin(), 2),
@@ -516,10 +520,9 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       // Update the list of IR values mapped to the stack slot (multiple IR
       // values may be mapped to a single stack slot).
       SSIt = SMStackSlots[MISM].find(FrameIdx);
-      if(SSIt == SMStackSlots[MISM].end()) {
-        StackValsPair OpMap(FrameIdx, ValueVecPtr(new ValueVec));
-        SSIt = SMStackSlots[MISM].insert(std::move(OpMap)).first;
-      }
+      if(SSIt == SMStackSlots[MISM].end())
+        SSIt = SMStackSlots[MISM].emplace(FrameIdx,
+                                          ValueVecPtr(new ValueVec)).first;
       SSIt->second->push_back(IRVal);
     }
     else if(MOit->isReg()) { // Map IR values to virtual registers
@@ -534,16 +537,129 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       // Update the list of IR values mapped to the virtual register (multiple
       // IR values may be mapped to a single virtual register).
       VregIt = SMVregs[MISM].find(Reg);
-      if(VregIt == SMVregs[MISM].end()) {
-        RegValsPair OpMap(Reg, ValueVecPtr(new ValueVec));
-        VregIt = SMVregs[MISM].insert(std::move(OpMap)).first;
-      }
+      if(VregIt == SMVregs[MISM].end())
+        VregIt = SMVregs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
       VregIt->second->push_back(IRVal);
     } else {
       llvm_unreachable("Unrecognized stackmap operand type.");
     }
   }
   assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
+}
+
+/// Rather than modifying the backend machinery to prevent hoisting code
+/// between the stackmap and call site, unwind instructions in order to get
+/// real live value locations at the function call.
+void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
+                                              const MachineInstr *Call) {
+  bool Changed = false;
+  const MachineInstr *InB = SM;
+  RegValsMap::iterator VregIt;
+  StackValsMap::iterator SSIt;
+  CopyLocPtr C;
+  RegCopyLoc *RCL;
+  StackCopyLoc *SCL;
+
+  DEBUG(dbgs() << "\nUnwinding stackmap back to call site:\n\n");
+  while((InB = InB->getPrevNode()) && InB != Call) {
+    if((C = getCopyLocation(InB))) {
+      DEBUG(dbgs() << "  + Copy instruction: "; InB->dump());
+
+      switch(C->getType()) {
+      default: DEBUG(dbgs() << "    Unhandled copy type\n"); break;
+      case CopyLoc::VREG:
+        RCL = (RegCopyLoc *)C.get();
+        for(size_t i = 2; i < SM->getNumOperands(); i++) {
+          MachineOperand &MO = SM->getOperand(i);
+          if(MO.isReg() && MO.getReg() == RCL->Vreg) {
+            assert(SMVregs[SM].count(RCL->Vreg) &&
+                   "Unhandled register operands in stackmap!");
+
+            // TODO if the sibling register is killed/dead in the intervening
+            // instruction we probably need to propagate that to the stackmap
+            // and remove it from the other instruction.
+
+            // Check if source vreg is already contained in stackmap
+            if(SMVregs[SM].count(RCL->SrcVreg)) SM->RemoveOperand(i);
+            else { // Mutate current vreg to source vreg of copy instruction
+              MO.ChangeToRegister(RCL->SrcVreg, false);
+              VregIt = SMVregs[SM].find(RCL->Vreg);
+              SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
+            }
+            SMVregs[SM].erase(RCL->Vreg);
+            Changed = true;
+          }
+        }
+        break;
+      case CopyLoc::STACK_LOAD:
+        SCL = (StackCopyLoc *)C.get();
+        for(size_t i = 2; i < SM->getNumOperands(); i++) {
+          MachineOperand &MO = SM->getOperand(i);
+          if(MO.isReg() && MO.getReg() == SCL->Vreg) {
+            MachineInstr::mop_iterator Next(&MO); Next++;
+            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
+
+            // Check if source frame index is already contained in stackmap
+            if(SMStackSlots[SM].count(SCL->StackSlot)) SM->RemoveOperand(i);
+            else {
+              // There's not a great way to replace what's already there, so
+              // trash all trailing operands up to and including the Vreg, add
+              // the spill slot, and finally add the trailing operands back.
+              while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
+              MachineInstrBuilder Worker(*MF, SM);
+              Worker.addImm(StackMaps::IndirectMemRefOp);
+              Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
+              Worker.addFrameIndex(SCL->StackSlot);
+              Worker.addImm(0);
+              for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
+
+              VregIt = SMVregs[SM].find(SCL->Vreg);
+              SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
+            }
+            SMVregs[SM].erase(SCL->Vreg);
+            Changed = true;
+          }
+        }
+        break;
+      case CopyLoc::STACK_STORE:
+        SCL = (StackCopyLoc *)C.get();
+        for(size_t i = 2; i < SM->getNumOperands(); i++) {
+          MachineOperand &MO = SM->getOperand(i);
+          if(MO.isFI() && MO.getIndex() == SCL->StackSlot) {
+            // Note: this *must* be an indirect memory reference (spill slot)
+            // since we're copying to a register!
+            unsigned StartIdx = i - 2;
+            MachineInstr::mop_iterator Next(&MO); Next++; Next++;
+            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
+
+            // TODO if the sibling register is killed/dead in the intervening
+            // instruction we probably need to propagate that to the stackmap
+            // and remove it from the other instruction.
+
+            if(SMVregs[SM].count(SCL->Vreg)) {
+              for(size_t j = 0; j < 4; j++)
+                SM->RemoveOperand(i - 2 + j);
+            }
+            else {
+              // Mutate the first indirect memory reference operand, then
+              // remove the rest
+              SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
+              for(size_t j = 0; j < 3; j++) SM->RemoveOperand(StartIdx + 1);
+
+              SSIt = SMStackSlots[SM].find(SCL->StackSlot);
+              SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
+            }
+            SMStackSlots[SM].erase(SCL->StackSlot);
+            Changed = true;
+          }
+        }
+        break;
+      }
+    }
+    else DEBUG(dbgs() << "  - Skipping "; InB->dump());
+  }
+
+  if(Changed) DEBUG(dbgs() << "\n  Transformed stackmap: "; SM->dump());
 }
 
 /// Is a virtual register live across the machine instruction?
@@ -587,15 +703,13 @@ bool StackTransformMetadata::addVregMetadata(unsigned Vreg,
                                              ValueVecPtr IRVals,
                                              const SMInstBundle &SM) {
   const CallInst *IRSM = getIRSM(SM);
-  const MachineInstr *MISM = getMISM(SM);
   const MachineInstr *MICall = getMICall(SM);
-  RegValsMap &Vregs = SMVregs[MISM];
+  RegValsMap &Vregs = SMVregs[getMISM(SM)];
 
   assert(TargetRegisterInfo::isVirtualRegister(Vreg) && VRM->hasPhys(Vreg) &&
          "Cannot add virtual register metadata -- invalid virtual register");
 
-  if(Vregs.find(Vreg) == Vregs.end() &&
-     (isVregLiveAcrossInstr(Vreg, MISM) || isVregLiveAcrossInstr(Vreg, MICall)))
+  if(Vregs.find(Vreg) == Vregs.end() && isVregLiveAcrossInstr(Vreg, MICall))
   {
     unsigned Phys = VRM->getPhys(Vreg);
     for(size_t sz = 0; sz < IRVals->size(); sz++) {
@@ -613,15 +727,13 @@ bool StackTransformMetadata::addSSMetadata(int SS,
                                            ValueVecPtr IRVals,
                                            const SMInstBundle &SM) {
   const CallInst *IRSM = getIRSM(SM);
-  const MachineInstr *MISM = getMISM(SM);
   const MachineInstr *MICall = getMICall(SM);
-  StackValsMap &SSlots = SMStackSlots[MISM];
+  StackValsMap &SSlots = SMStackSlots[getMISM(SM)];
 
   assert(!MFI->isDeadObjectIndex(SS) &&
          "Cannot add stack slot metadata -- invalid stack slot");
 
-  if(SSlots.find(SS) == SSlots.end() &&
-     (isSSLiveAcrossInstr(SS, MISM) || isSSLiveAcrossInstr(SS, MICall)))
+  if(SSlots.find(SS) == SSlots.end() && isSSLiveAcrossInstr(SS, MICall))
   {
     for(size_t sz = 0; sz < IRVals->size(); sz++) {
       DEBUG(dumpStackSlot(SS, (*IRVals)[sz]););
@@ -771,7 +883,8 @@ void StackTransformMetadata::findAlternateOpLocs() {
 
   for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
     const CallInst *IRSM = getIRSM(*S);
-    const MachineInstr *MISM = getMISM(*S);
+    const MachineInstr *MICall = getMICall(*S);
+    MachineInstr *MISM = getMISM(*S);
 
     DEBUG(
       dbgs() << "\nStackmap " << MISM->getOperand(0).getImm() << ":\n";
@@ -782,6 +895,10 @@ void StackTransformMetadata::findAlternateOpLocs() {
     // Get all virtual register/stack slot operands & their associated IR
     // values
     mapOpsToIR(IRSM, MISM);
+
+    // Because the CodeGen machinery is wily (and may hoist instructions above
+    // the stackmap), unwind copies until the call site.
+    unwindToCallSite(MISM, MICall);
 
     // Find alternate locations for vregs in stack map.  Note we don't need to
     // find alternate stack slot locations, as allocas *should* already be in
@@ -882,7 +999,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
 
           MLR.setReg(VRM->getPhys(Vreg));
           MF->addSMArchSpecificLocation(IRSM, MLR, *MLV);
-          CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
+          CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
         }
         else {
           DEBUG(dbgs() << "      Unhandled defining instruction: ";

@@ -7,10 +7,9 @@
 extern uint64_t get_magic(void);
 extern uint64_t get_magic_a(void);
 extern uint64_t get_magic_b(void);
-static int max_depth = 10;
 static int post_transform = 0;
 
-int outer_frame()
+void outer_frame()
 {
   if(!post_transform)
   {
@@ -22,13 +21,6 @@ int outer_frame()
     TIME_AND_TEST_REWRITE("./callee_saved_x86-64", outer_frame);
 #endif
   }
-  return rand();
-}
-
-int recurse(int depth)
-{
-  if(depth < max_depth) return recurse(depth + 1) + 1;
-  else return outer_frame();
 }
 
 int main(int argc, char** argv)
@@ -43,11 +35,8 @@ int main(int argc, char** argv)
   register uint64_t magic __asm__("rbx");
 #endif
 
-  if(argc > 1)
-    max_depth = atoi(argv[1]);
-
   magic = get_magic_a();
-  recurse(1);
+  outer_frame();
   magic |= get_magic_b();
 
   printf("Expected %lx, got %lx\n", get_magic(), magic);
