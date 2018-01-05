@@ -99,7 +99,7 @@ public:
 
         for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
         {
-          if(Popcorn::isEquivalencePoint(&*i))
+          if(Popcorn::isCallSite(&*i))
           {
             CallInst *CI = cast<CallInst>(&*i);
             IRBuilder<> builder(CI->getNextNode());
