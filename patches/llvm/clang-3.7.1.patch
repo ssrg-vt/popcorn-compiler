@@ -182,6 +182,50 @@ Index: include/clang/Frontend/CodeGenOptions.def
  /// The user specified number of registers to be used for integral arguments,
  /// or 0 if unspecified.
  VALUE_CODEGENOPT(NumRegisterParameters, 32, 0)
+Index: include/clang/Frontend/CompilerInstance.h
+===================================================================
+--- include/clang/Frontend/CompilerInstance.h	(revision 320332)
++++ include/clang/Frontend/CompilerInstance.h	(working copy)
+@@ -260,6 +260,13 @@
+     return Invocation->getCodeGenOpts();
+   }
+ 
++  CodeGenOptions &getCodeGenNoOpts() {
++    return Invocation->getCodeGenNoOpts();
++  }
++  const CodeGenOptions &getCodeGenNoOpts() const {
++    return Invocation->getCodeGenNoOpts();
++  }
++
+   DependencyOutputOptions &getDependencyOutputOpts() {
+     return Invocation->getDependencyOutputOpts();
+   }
+Index: include/clang/Frontend/CompilerInvocation.h
+===================================================================
+--- include/clang/Frontend/CompilerInvocation.h	(revision 320332)
++++ include/clang/Frontend/CompilerInvocation.h	(working copy)
+@@ -108,6 +108,9 @@
+   /// Options controlling IRgen and the backend.
+   CodeGenOptions CodeGenOpts;
+ 
++  /// Options controlling IRgen and the backend (with optimization disabled).
++  CodeGenOptions CodeGenOptsNoOpt;
++
+   /// Options controlling dependency output.
+   DependencyOutputOptions DependencyOutputOpts;
+ 
+@@ -179,6 +182,11 @@
+     return CodeGenOpts;
+   }
+ 
++  CodeGenOptions &getCodeGenNoOpts() { return CodeGenOptsNoOpt; }
++  const CodeGenOptions &getCodeGenNoOpts() const {
++    return CodeGenOptsNoOpt;
++  }
++
+   DependencyOutputOptions &getDependencyOutputOpts() {
+     return DependencyOutputOpts;
+   }
 Index: include/clang/Frontend/FrontendOptions.h
 ===================================================================
 --- include/clang/Frontend/FrontendOptions.h	(revision 320332)
@@ -430,7 +474,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +268,74 @@
+@@ -261,6 +268,76 @@
    };
    
    void BackendConsumer::anchor() {}
@@ -441,11 +485,13 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    SmallVector<raw_pwrite_stream *, 2> &AsmOutStreams;
 +    const SmallVector<std::shared_ptr<TargetOptions>, 2> &AsmTargetOpts;
 +    const SmallVector<TargetInfo *, 2> &AsmTargetInfos;
++    const CodeGenOptions &NoOptCodegen;
 +  public:
 +    MultiBackendConsumer(DiagnosticsEngine &Diags,
 +                    const HeaderSearchOptions &HeaderSearchOpts,
 +                    const PreprocessorOptions &PPOpts,
 +                    const CodeGenOptions &CodeGenOpts,
++                    const CodeGenOptions &NoOptCodegen,
 +                    const SmallVector<std::shared_ptr<TargetOptions>, 2> &TargetOpts,
 +                    const LangOptions &LangOpts, bool TimePasses,
 +                    const std::string &InFile, llvm::Module *LinkModule,
@@ -457,7 +503,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +                          TimePasses, InFile, LinkModule, OSs[0], C,
 +                          CoverageInfo),
 +          AsmOutStreams(OSs), AsmTargetOpts(TargetOpts),
-+          AsmTargetInfos(TargetInfos) {}
++          AsmTargetInfos(TargetInfos), NoOptCodegen(NoOptCodegen) {}
 +
 +    void HandleTranslationUnit(ASTContext &C) override {
 +      HandleTranslationUnitCommon(C);
@@ -489,7 +535,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +        ArchModule->setTargetTriple(AsmTargetInfos[i]->getTriple().getTriple());
 +        ArchModule->setDataLayout(AsmTargetInfos[i]->getTargetDescription());
 +        Popcorn::AddArchSpecificTargetFeatures(*ArchModule, AsmTargetOpts[i]);
-+        CodegenBackendOutput(Diags, CodeGenOpts, *AsmTargetOpts[i], LangOpts,
++        CodegenBackendOutput(Diags, NoOptCodegen, *AsmTargetOpts[i], LangOpts,
 +                             AsmTargetInfos[i]->getTargetDescription(),
 +                             ArchModule, Action, AsmOutStreams[i]);
 +        delete ArchModule;
@@ -505,7 +551,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  }
  
  /// ConvertBackendLocation - Convert a location in a temporary llvm::SourceMgr
-@@ -626,6 +701,7 @@
+@@ -626,6 +703,7 @@
    case Backend_EmitMCNull:
      return CI.createNullOutputFile();
    case Backend_EmitObj:
@@ -513,7 +559,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      return CI.createDefaultOutputFile(true, InFile, "o");
    }
  
-@@ -632,13 +708,7 @@
+@@ -632,13 +710,7 @@
    llvm_unreachable("Invalid action!");
  }
  
@@ -528,7 +574,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    llvm::Module *LinkModuleToUse = LinkModule;
  
    // If we were not given a link module, and the user requested that one be
-@@ -662,6 +732,10 @@
+@@ -662,6 +734,10 @@
      LinkModuleToUse = ModuleOrErr.get().release();
    }
  
@@ -539,7 +585,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    CoverageSourceInfo *CoverageInfo = nullptr;
    // Add the preprocessor callback only when the coverage mapping is generated.
    if (CI.getCodeGenOpts().CoverageMapping) {
-@@ -669,6 +743,19 @@
+@@ -669,6 +745,19 @@
      CI.getPreprocessor().addPPCallbacks(
                                      std::unique_ptr<PPCallbacks>(CoverageInfo));
    }
@@ -559,7 +605,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
    std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
        BA, CI.getDiagnostics(), CI.getHeaderSearchOpts(),
        CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getTargetOpts(),
-@@ -684,6 +771,42 @@
+@@ -684,6 +773,42 @@
    SM.print(nullptr, llvm::errs());
  }
  
@@ -602,7 +648,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
  void CodeGenAction::ExecuteAction() {
    // If this is an IR file, we have to treat it specially.
    if (getCurrentFileKind() == IK_LLVM_IR) {
-@@ -693,37 +816,9 @@
+@@ -693,37 +818,9 @@
      if (BA != Backend_EmitNothing && !OS)
        return;
  
@@ -641,7 +687,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +864,118 @@
+@@ -769,3 +866,118 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -704,8 +750,8 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  // except that it runs the generated IR through multiple backends.
 +  std::unique_ptr<MultiBackendConsumer> Result(new MultiBackendConsumer(
 +      CI.getDiagnostics(), CI.getHeaderSearchOpts(),
-+      CI.getPreprocessorOpts(), CI.getCodeGenOpts(), TargetOpts,
-+      CI.getLangOpts(), CI.getFrontendOpts().ShowTimers, InFile,
++      CI.getPreprocessorOpts(), CI.getCodeGenOpts(), CI.getCodeGenNoOpts(),
++      TargetOpts, CI.getLangOpts(), CI.getFrontendOpts().ShowTimers, InFile,
 +      LinkModuleToUse, OutFiles, *VMContext, TargetInfos, CoverageInfo));
 +  BEConsumer = Result.get();
 +  return std::move(Result);
@@ -746,7 +792,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      Popcorn::AddArchSpecificTargetFeatures(*ArchModule, TargetOpts[i]);
 +      LLVMContext &Ctx = ArchModule->getContext();
 +      Ctx.setInlineAsmDiagnosticHandler(BitcodeInlineAsmDiagHandler);
-+      CodegenBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
++      CodegenBackendOutput(CI.getDiagnostics(), CI.getCodeGenNoOpts(),
 +                           *TargetOpts[i], CI.getLangOpts(),
 +                           TargetInfos[i]->getTargetDescription(),
 +                           ArchModule, BA, OutFiles[i]);
@@ -898,18 +944,32 @@ Index: lib/Frontend/CompilerInvocation.cpp
 ===================================================================
 --- lib/Frontend/CompilerInvocation.cpp	(revision 320332)
 +++ lib/Frontend/CompilerInvocation.cpp	(working copy)
-@@ -374,6 +374,10 @@
-   }
-   Opts.OptimizationLevel = OptimizationLevel;
+@@ -358,22 +358,11 @@
  
-+  // TODO Popcorn: until we can limit optimizations across migration points, we
-+  // need to turn off backend optimizations
-+  if (Args.hasArg(OPT_popcorn_migratable)) Opts.OptimizationLevel = 0;
-+
+ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
+                              DiagnosticsEngine &Diags,
+-                             const TargetOptions &TargetOpts) {
++                             const TargetOptions &TargetOpts,
++                             unsigned OptimizationLevel) {
+   using namespace options;
+   bool Success = true;
+ 
+-  unsigned OptimizationLevel = getOptimizationLevel(Args, IK, Diags);
+-  // TODO: This could be done in Driver
+-  unsigned MaxOptLevel = 3;
+-  if (OptimizationLevel > MaxOptLevel) {
+-    // If the optimization level is not supported, fall back on the default
+-    // optimization
+-    Diags.Report(diag::warn_drv_optimization_value)
+-        << Args.getLastArg(OPT_O)->getAsString(Args) << "-O" << MaxOptLevel;
+-    OptimizationLevel = MaxOptLevel;
+-  }
+-  Opts.OptimizationLevel = OptimizationLevel;
+-
    // We must always run at least the always inlining pass.
    Opts.setInlining(
      (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
-@@ -675,6 +679,16 @@
+@@ -675,9 +664,37 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
@@ -926,7 +986,28 @@ Index: lib/Frontend/CompilerInvocation.cpp
    return Success;
  }
  
-@@ -856,7 +870,11 @@
++static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
++                             DiagnosticsEngine &Diags,
++                             const TargetOptions &TargetOpts) {
++  unsigned OptimizationLevel = getOptimizationLevel(Args, IK, Diags);
++  // TODO: This could be done in Driver
++  unsigned MaxOptLevel = 3;
++  if (OptimizationLevel > MaxOptLevel) {
++    // If the optimization level is not supported, fall back on the default
++    // optimization
++    Diags.Report(diag::warn_drv_optimization_value)
++        << Args.getLastArg(OPT_O)->getAsString(Args) << "-O" << MaxOptLevel;
++    OptimizationLevel = MaxOptLevel;
++  }
++  Opts.OptimizationLevel = OptimizationLevel;
++  return ParseCodeGenArgs(Opts, Args, IK, Diags, TargetOpts,
++                          OptimizationLevel);
++}
++
+ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
+                                       ArgList &Args) {
+   using namespace options;
+@@ -856,7 +873,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -939,7 +1020,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1803,6 +1821,7 @@
+@@ -1803,6 +1824,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:
@@ -947,6 +1028,18 @@ Index: lib/Frontend/CompilerInvocation.cpp
    case frontend::FixIt:
    case frontend::GenerateModule:
    case frontend::GeneratePCH:
+@@ -1890,6 +1912,11 @@
+   ParseTargetArgs(Res.getTargetOpts(), Args);
+   Success &= ParseCodeGenArgs(Res.getCodeGenOpts(), Args, DashX, Diags,
+                               Res.getTargetOpts());
++  // TODO Popcorn: until we can limit optimizations across migration points, we
++  // need to turn off backend optimizations
++  if(Args.hasArg(OPT_popcorn_migratable))
++    Success &= ParseCodeGenArgs(Res.getCodeGenNoOpts(), Args, DashX, Diags,
++                                Res.getTargetOpts(), 0);
+   ParseHeaderSearchArgs(Res.getHeaderSearchOpts(), Args);
+   if (DashX != IK_AST && DashX != IK_LLVM_IR) {
+     ParseLangArgs(*Res.getLangOpts(), Args, DashX, Diags);
 Index: lib/FrontendTool/ExecuteCompilerInvocation.cpp
 ===================================================================
 --- lib/FrontendTool/ExecuteCompilerInvocation.cpp	(revision 320332)
