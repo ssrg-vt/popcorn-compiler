@@ -5739,7 +5739,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 ===================================================================
 --- lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(revision 320332)
 +++ lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(working copy)
-@@ -6542,6 +6542,22 @@
+@@ -6542,6 +6542,25 @@
    Callee = getValue(CI.getCalledValue());
    NullPtr = DAG.getIntPtrConstant(0, DL, true);
  
@@ -5755,14 +5755,17 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 +    CSE = CSE->getGluedNode();
 +  }
 +
-+  if(CSE) Chain = SDValue(CSE, 0);
-+  else { DEBUG(dbgs() << "WARNING: no call node for: "; Chain->dump()); }
++  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) Chain = SDValue(CSE, 0);
++  else {
++    DEBUG(dbgs() << "WARNING: no call node for: "; Chain->dump());
++    RetCopyOut = nullptr;
++  }
 +  assert(Chain.getSimpleValueType() == MVT::Other && "Invalid chain");
 +
    // The stackmap intrinsic only records the live variables (the arguemnts
    // passed to it) and emits NOPS (if requested). Unlike the patchpoint
    // intrinsic, this won't be lowered to a function call. This means we don't
-@@ -6552,9 +6568,26 @@
+@@ -6552,9 +6571,26 @@
    // chain, flag = STACKMAP(id, nbytes, ..., chain, flag)
    // chain, flag = CALLSEQ_END(chain, 0, 0, flag)
    //
@@ -5790,7 +5793,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
    // Add the <id> and <numBytes> constants.
    SDValue IDVal = getValue(CI.getOperand(PatchPointOpers::IDPos));
    Ops.push_back(DAG.getTargetConstant(
-@@ -6581,9 +6614,30 @@
+@@ -6581,9 +6617,30 @@
    InFlag = Chain.getValue(1);
  
    Chain = DAG.getCALLSEQ_END(Chain, NullPtr, NullPtr, InFlag, DL);
@@ -9239,7 +9242,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +        for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
 +        {
-+          if(Popcorn::isEquivalencePoint(&*i))
++          if(Popcorn::isCallSite(&*i))
 +          {
 +            CallInst *CI = cast<CallInst>(&*i);
 +            IRBuilder<> builder(CI->getNextNode());
