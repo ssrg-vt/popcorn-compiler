@@ -3,8 +3,6 @@ continues recursion down to the outermost frame, and then re-uses the values
 upon returning.  This tests the runtime's basic ability to copy live values
 between the source and destination stack.
 
-Note: this is broken on x86-64 due to instruction scheduling issues
-
 Expected output for default run (note that generated values may change):
 ------------------------------------------------------------------------
 

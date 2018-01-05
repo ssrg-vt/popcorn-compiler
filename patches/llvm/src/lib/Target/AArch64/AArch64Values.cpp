@@ -90,7 +90,6 @@ AArch64Values::genBitfieldInstructions(const MachineInstr *MI) const {
 }
 
 MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
-  unsigned Size;
   IntFloat64 Conv64;
   MachineLiveVal* Val = nullptr;
   const MachineOperand *MO;
@@ -113,9 +112,18 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     if(MO->isReg() && MO->getReg() == AArch64::LR) Val = new ReturnAddress(MI);
     break;
   case AArch64::FMOVDi:
-    Size = 8;
     Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
-    Val = new MachineImmediate(Size, Conv64.i, MI, false);
+    Val = new MachineImmediate(8, Conv64.i, MI, false);
+    break;
+  case AArch64::MOVi32imm:
+    MO = &MI->getOperand(1);
+    assert(MO->isImm() && "Invalid immediate for MOVi32imm");
+    Val = new MachineImmediate(4, MO->getImm(), MI, false);
+    break;
+  case AArch64::MOVi64imm:
+    MO = &MI->getOperand(1);
+    assert(MO->isImm() && "Invalid immediate for MOVi64imm");
+    Val = new MachineImmediate(8, MO->getImm(), MI, false);
     break;
   case AArch64::UBFMXri:
     Val = genBitfieldInstructions(MI);
