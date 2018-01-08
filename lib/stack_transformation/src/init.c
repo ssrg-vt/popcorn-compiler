@@ -14,6 +14,8 @@
 #include "unwind.h"
 #include "util.h"
 
+//#include <my_begin.h>
+
 #ifdef _LOG
 /* Log file descriptor */
 FILE* __log = NULL;
@@ -64,7 +66,8 @@ __st_dtor(void)
 st_handle st_init(const char* fn)
 {
   const char* id;
-  Elf64_Ehdr* ehdr;
+  //Elf64_Ehdr* ehdr;
+  Elf64_Ehdr e_hdr;
   st_handle handle;
 
   if(!fn) goto return_null;
@@ -76,12 +79,28 @@ st_handle st_init(const char* fn)
   handle->fn = fn;
 
   /* Initialize libelf data */
-  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
+//  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
+  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) 
+  {
+	printf("Couldn't open file");
+	goto free_handle;
+  }
+
+  if(read(handle->fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
+        printf("Read Failed\n");
+        goto close_file;
+  }
+
+  if(lseek(handle->fd, 0, SEEK_SET) < 0){
+	printf("lseek failed\n");
+	goto close_file;
+  }
+
   if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
 
   /* Get architecture-specific information */
-  if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
-  handle->arch = ehdr->e_machine;
+ // if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
+  handle->arch = e_hdr.e_machine;
   if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
