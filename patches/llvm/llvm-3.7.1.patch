@@ -8382,7 +8382,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,181 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8395,6 +8395,8 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +#include "AArch64Values.h"
 +#include "AArch64.h"
 +#include "MCTargetDesc/AArch64AddressingModes.h"
++#include "llvm/CodeGen/MachineConstantPool.h"
++#include "llvm/IR/Constants.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -8474,6 +8476,42 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  return nullptr;
 +}
 +
++MachineLiveVal *
++AArch64Values::genConstantPoolValue(const MachineInstr *MI) const {
++  switch(MI->getOpcode()) {
++  case AArch64::LDRDui:
++    if(MI->getOperand(2).isCPI()) {
++      int Idx = MI->getOperand(2).getIndex();
++      const MachineFunction *MF = MI->getParent()->getParent();
++      const MachineConstantPool *MCP = MF->getConstantPool();
++      const std::vector<MachineConstantPoolEntry> &CP = MCP->getConstants();
++      if(CP[Idx].isMachineConstantPoolEntry()) {
++        // TODO unhandled for now
++      }
++      else {
++        const Constant *Val = CP[Idx].Val.ConstVal;
++        if(isa<ConstantFP>(Val)) {
++          const ConstantFP *FPVal = cast<ConstantFP>(Val);
++          const APFloat &Flt = FPVal->getValueAPF();
++          switch(APFloat::getSizeInBits(Flt.getSemantics())) {
++          case 32: {
++            IntFloat32 I2F = { Flt.convertToFloat() };
++            return new MachineImmediate(4, I2F.i, MI, false);
++          }
++          case 64: {
++            IntFloat64 I2D = { Flt.convertToDouble() };
++            return new MachineImmediate(8, I2D.i, MI, false);
++          }
++          default: break;
++          }
++        }
++      }
++    }
++    break;
++  }
++  return nullptr;
++}
++
 +MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
 +  IntFloat64 Conv64;
 +  MachineLiveVal* Val = nullptr;
@@ -8499,6 +8537,9 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  case AArch64::FMOVDi:
 +    Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
 +    Val = new MachineImmediate(8, Conv64.i, MI, false);
++    break;
++  case AArch64::LDRDui:
++    Val = genConstantPoolValue(MI);
 +    break;
 +  case AArch64::MOVi32imm:
 +    MO = &MI->getOperand(1);
@@ -8527,7 +8568,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.h	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.h	(working copy)
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8549,6 +8590,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 +private:
 +  MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
 +  MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
++  MachineLiveVal *genConstantPoolValue(const MachineInstr *MI) const;
 +};
 +
 +}
@@ -8998,7 +9040,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,95 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9033,17 +9075,25 @@ Index: lib/Target/X86/X86Values.cpp
 +  case X86::LEA64r:
 +    Size = 8;
 +
-+    // Initialize to index register * scale if indexing, or zero otherwise
-+    Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
-+    if(Reg) {
-+      Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
-+      IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
-+      IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
++    if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
++      assert(MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
++             MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1 &&
++             "Invalid scale amount for frame index");
++      return new
++        MachineStackObject(MI->getOperand(1 + X86::AddrBaseReg).getIndex(),
++                           false, MI, true);
 +    }
-+    else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
++    else {
++      // Initialize to index register * scale if indexing, or zero otherwise
++      Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
++      if(Reg) {
++        Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
++        IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
++        IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
++      }
++      else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
 +
-+    // Add the base register & displacement
-+    if(!MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
++      // Add the base register & displacement
 +      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
 +             MI->getOperand(1 + X86::AddrDisp).isImm());
 +
@@ -9053,9 +9103,6 @@ Index: lib/Target/X86/X86Values.cpp
 +      IL.emplace_back(new ImmInstruction<InstType::Add>(Size, Imm));
 +      return new MachineGeneratedVal(IL, MI, true);
 +    }
-+    // TODO what if we're referencing a frame? The frame index becomes the base
-+    // register + displacement after register rewriting & stack slot allocation
-+    //Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
 +
 +    break;
 +  default:

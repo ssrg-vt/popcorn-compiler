@@ -10,6 +10,8 @@
 #include "AArch64Values.h"
 #include "AArch64.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -89,6 +91,42 @@ AArch64Values::genBitfieldInstructions(const MachineInstr *MI) const {
   return nullptr;
 }
 
+MachineLiveVal *
+AArch64Values::genConstantPoolValue(const MachineInstr *MI) const {
+  switch(MI->getOpcode()) {
+  case AArch64::LDRDui:
+    if(MI->getOperand(2).isCPI()) {
+      int Idx = MI->getOperand(2).getIndex();
+      const MachineFunction *MF = MI->getParent()->getParent();
+      const MachineConstantPool *MCP = MF->getConstantPool();
+      const std::vector<MachineConstantPoolEntry> &CP = MCP->getConstants();
+      if(CP[Idx].isMachineConstantPoolEntry()) {
+        // TODO unhandled for now
+      }
+      else {
+        const Constant *Val = CP[Idx].Val.ConstVal;
+        if(isa<ConstantFP>(Val)) {
+          const ConstantFP *FPVal = cast<ConstantFP>(Val);
+          const APFloat &Flt = FPVal->getValueAPF();
+          switch(APFloat::getSizeInBits(Flt.getSemantics())) {
+          case 32: {
+            IntFloat32 I2F = { Flt.convertToFloat() };
+            return new MachineImmediate(4, I2F.i, MI, false);
+          }
+          case 64: {
+            IntFloat64 I2D = { Flt.convertToDouble() };
+            return new MachineImmediate(8, I2D.i, MI, false);
+          }
+          default: break;
+          }
+        }
+      }
+    }
+    break;
+  }
+  return nullptr;
+}
+
 MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
   IntFloat64 Conv64;
   MachineLiveVal* Val = nullptr;
@@ -114,6 +152,9 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
   case AArch64::FMOVDi:
     Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
     Val = new MachineImmediate(8, Conv64.i, MI, false);
+    break;
+  case AArch64::LDRDui:
+    Val = genConstantPoolValue(MI);
     break;
   case AArch64::MOVi32imm:
     MO = &MI->getOperand(1);

@@ -19,6 +19,7 @@ public:
 private:
   MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
   MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
+  MachineLiveVal *genConstantPoolValue(const MachineInstr *MI) const;
 };
 
 }
