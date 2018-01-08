@@ -99,9 +99,12 @@ st_handle st_init(const char* fn)
 //  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
   if(!(handle->elf = my_read_elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
 
+//  handle->elf->e_ehdr = &e_hdr;
+//  printf("Handle = %d\t machine = %d\n", handle->fd, ((Elf64_Ehdr*)(handle->elf->e_ehdr))->e_machine);
   /* Get architecture-specific information */
  // if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
   handle->arch = e_hdr.e_machine;
+  //printf("shdrstrndx -> %d\n", e_hdr.e_shstrndx);
  // if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
   id = (char*) e_hdr.e_ident;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);

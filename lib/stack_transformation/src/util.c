@@ -12,6 +12,8 @@
 #include "arch_regs.h"
 #include "util.h"
 
+#include <my_private.h>
+#include <my_strptr.h>
 ///////////////////////////////////////////////////////////////////////////////
 // (Private) Utility functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -62,6 +64,32 @@ properties_t get_properties(uint16_t arch)
   }
 }
 
+GElf_Shdr*
+my_gelf_getshdr(Elf_Scn *scn, GElf_Shdr *dst) {
+    GElf_Shdr buf;
+
+    if (!scn) {
+	return NULL;
+    }
+    if (!dst) {
+	dst = &buf;
+    }
+    if (scn->s_elf->e_class == ELFCLASS64)
+    	*dst = scn->s_shdr64;
+    else 
+	return NULL;
+
+    if (dst == &buf) {
+	dst = (GElf_Shdr*)malloc(sizeof(GElf_Shdr));
+	if (!dst) {
+	    //seterr(ERROR_MEM_SHDR);
+	    return NULL;
+	}
+	*dst = buf;
+    }
+    return dst;
+}
+
 /*
  * Search for and return ELF section named SEC.
  */
@@ -71,17 +99,46 @@ Elf_Scn* get_section(Elf* e, const char* sec)
   const char* cur_sec;
   Elf_Scn* scn = NULL;
   GElf_Shdr shdr;
+  Elf64_Ehdr e_hdr;
 
   ASSERT(sec, "invalid arguments to get_section()\n");
+  
+ // if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
+  if(lseek(e->e_fd, 0, SEEK_SET) < 0){
+        printf("lseek failed\n");
+        close(e->e_fd);
+    	return NULL;
+  }  
 
-  if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
+  if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
+        printf("Read Failed\n");
+        close(e->e_fd);
+	return NULL;
+  }
+  shdrstrndx = e_hdr.e_shstrndx;
+  
   while((scn = elf_nextscn(e, scn)))
   {
-    if(gelf_getshdr(scn, &shdr) != &shdr) return NULL;
+    if(my_gelf_getshdr(scn, &shdr) != &shdr) return NULL;
     if((cur_sec = elf_strptr(e, shdrstrndx, shdr.sh_name)))
       if(!strcmp(sec, cur_sec)) break;
   }
+
   return scn; // NULL if not found
+
+/*for (scn = e->e_scn_1; scn; scn = scn->s_link) {//loop until index 1 found
+  	if (scn->s_index == 1) {
+		do{
+   			 if(my_gelf_getshdr(scn, &shdr) != &shdr) return NULL;//memory leack
+   			 if((cur_sec = my_elf_strptr(e, shdrstrndx, shdr.sh_name)))
+     			 if(!strcmp(sec, cur_sec)) break;
+			 scn = scn->s_link;
+ 		 }while(scn->s_elf == e);//work with next item until it's from same Elf
+  		return scn; // NULL if not found
+	}
+   }
+return NULL;
+*/
 }
 
 /*
