@@ -102,7 +102,8 @@ st_handle st_init(const char* fn)
   /* Get architecture-specific information */
  // if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
   handle->arch = e_hdr.e_machine;
-  if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
+ // if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
+  id = (char*) e_hdr.e_ident;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
   /* Read unwinding addresses */
