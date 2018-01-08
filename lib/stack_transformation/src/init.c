@@ -14,7 +14,7 @@
 #include "unwind.h"
 #include "util.h"
 
-//#include <my_begin.h>
+#include <my_begin.h>
 
 #ifdef _LOG
 /* Log file descriptor */
@@ -96,7 +96,8 @@ st_handle st_init(const char* fn)
 	goto close_file;
   }
 
-  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
+//  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
+  if(!(handle->elf = my_read_elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
 
   /* Get architecture-specific information */
  // if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
