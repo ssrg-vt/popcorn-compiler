@@ -112,7 +112,7 @@ recommended that applications be built on x86-64.
       build-essential
       gcc-aarch64-linux-gnu
       g++-aarch64-linux-gnu
-	  libc6-dev-i386
+      libc6-dev-i386
 + flex & bison (x86-64 only), needed by binutils
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
       flex

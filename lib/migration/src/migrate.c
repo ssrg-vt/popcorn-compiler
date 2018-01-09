@@ -15,7 +15,7 @@
 #include "trigger.h"
 #endif
 
-#if _TIME_REWRITE
+#if _TIME_REWRITE == 1
 #include "timer.h"
 #endif
 
