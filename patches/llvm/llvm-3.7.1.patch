@@ -8447,7 +8447,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,191 @@
+@@ -0,0 +1,195 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8607,6 +8607,10 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  case AArch64::COPY:
 +    MO = &MI->getOperand(1);
 +    if(MO->isReg() && MO->getReg() == AArch64::LR) Val = new ReturnAddress(MI);
++    break;
++  case AArch64::FMOVD0:
++    Conv64.d = 0.0;
++    Val = new MachineImmediate(8, Conv64.i, MI, false);
 +    break;
 +  case AArch64::FMOVDi:
 +    Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());

@@ -158,6 +158,10 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     MO = &MI->getOperand(1);
     if(MO->isReg() && MO->getReg() == AArch64::LR) Val = new ReturnAddress(MI);
     break;
+  case AArch64::FMOVD0:
+    Conv64.d = 0.0;
+    Val = new MachineImmediate(8, Conv64.i, MI, false);
+    break;
   case AArch64::FMOVDi:
     Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
     Val = new MachineImmediate(8, Conv64.i, MI, false);
