@@ -2275,7 +2275,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,59 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2323,6 +2323,12 @@ Index: include/llvm/Target/TargetValues.h
 +
 +protected:
 +  TargetValues() {}
++
++  /// Return whether or not the operand is some type of symbol reference.
++  static bool isSymbolValue(const MachineOperand &MO)
++  { return MO.isGlobal() || MO.isSymbol() || MO.isMCSymbol(); }
++  static bool isSymbolValue(const MachineOperand *MO)
++  { return isSymbolValue(*MO); }
 +};
 +
 +} // End llvm namespace
@@ -6571,7 +6577,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1095 @@
+@@ -0,0 +1,1154 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7516,6 +7522,39 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  }
 +}
 +
++/// Try to find the best defining instruction.
++static const MachineInstr *
++tryToBreakDefMITie(const MachineInstr *MICall,
++                   MachineRegisterInfo::def_instr_iterator Def) {
++  // First heuristic -- find closest preceding defining instruction in the same
++  // machine basic block.
++  const MachineInstr *Cur, *BestDef = nullptr;
++  unsigned Distance, Best = UINT32_MAX;
++  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> Defs;
++  do {
++    Cur = MICall;
++    Distance = 1;
++    while((Cur = Cur->getPrevNode())) {
++      if(Cur == &*Def) {
++        Defs.emplace_back(&*Def, Distance);
++        break;
++      }
++      Distance++;
++    }
++  } while((++Def) != MachineRegisterInfo::def_instr_end());
++
++  for(auto Pair : Defs) {
++    if(Pair.second < Best) {
++      BestDef = Pair.first;
++      Best = Pair.second;
++    }
++  }
++
++  if(BestDef)
++    DEBUG(dbgs() << "Choosing defining instruction"; BestDef->dump());
++  return BestDef;
++}
++
 +/// Find architecture-specific live values added by the backend
 +void StackTransformMetadata::findArchSpecificLiveVals() {
 +  DEBUG(dbgs() << "\n*** Finding architecture-specific live values ***\n\n";);
@@ -7553,19 +7592,45 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        DEBUG(dbgs() << "    + vreg" << i
 +                     << " is live in register but not in stackmap\n";);
 +
-+        if(!MRI->hasOneDef(Vreg)) {
-+          DEBUG(
-+            dbgs() << "WARNING: multiple definitions for virtual "
-+                      "register, missed in live-value analysis?\n";
-+            for(auto d = MRI->def_instr_begin(Vreg), e = MRI->def_instr_end();
-+                d != e; d++)
-+              d->dump();
-+          );
-+          continue;
-+        }
++        // Walk the use-def chain to see if we can find a valid value
++        const MachineInstr *DefMI;
++        unsigned ChainVreg = Vreg;
++        do {
++          // Try to find a suitable defining instruction
++          MachineRegisterInfo::def_instr_iterator DefIt;
++          DefIt = MRI->def_instr_begin(ChainVreg);
++          if(MRI->hasOneDef(ChainVreg)) DefMI = &*DefIt;
++          else if(!(DefMI = tryToBreakDefMITie(MICall, DefIt))) {
++            // No suitable defining instruction, not much we can do...
++            DEBUG(
++              dbgs() << "WARNING: multiple definitions for virtual "
++                        "register, missed in live-value analysis?\n";
++              for(auto d = MRI->def_instr_begin(ChainVreg),
++                  e = MRI->def_instr_end(); d != e; d++)
++                d->dump();
++            );
++            break;
++          }
 +
-+        MLV = TVG->getMachineValue(&*MRI->def_instr_begin(Vreg));
-+        sanitizeVregs(MLV, MISM);
++          MLV = TVG->getMachineValue(DefMI);
++          sanitizeVregs(MLV, MISM);
++
++          if(MLV) break; // We got a value!
++          else {
++            // Couldn't get a value, follow the use-def chain
++            CopyLocPtr Copy = getCopyLocation(DefMI);
++            if(Copy) {
++              switch(Copy->getType()) {
++              default: ChainVreg = 0; break;
++              case CopyLoc::VREG:
++                ChainVreg = ((RegCopyLoc *)Copy.get())->SrcVreg;
++                break;
++              }
++            }
++            else ChainVreg = 0;
++          }
++        } while(TargetRegisterInfo::isVirtualRegister(ChainVreg));
++
 +        if(MLV) {
 +          DEBUG(dbgs() << "      Defining instruction: ";
 +                MLV->getDefiningInst()->print(dbgs());
@@ -8382,7 +8447,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,191 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8477,7 +8542,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +}
 +
 +MachineLiveVal *
-+AArch64Values::genConstantPoolValue(const MachineInstr *MI) const {
++AArch64Values::genLoadRegValue(const MachineInstr *MI) const {
 +  switch(MI->getOpcode()) {
 +  case AArch64::LDRDui:
 +    if(MI->getOperand(2).isCPI()) {
@@ -8508,6 +8573,15 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +      }
 +    }
 +    break;
++  case AArch64::LDRXui:
++    // Note: if this is of the form %vreg, <ga:...>, then the compiler has
++    // emitted multiple instructions in order to form the full address.  We,
++    // however, don't have the instruction encoding limitations.
++    // TODO verify this note above is true, maybe using MO::getTargetFlags?
++    if(TargetValues::isSymbolValue(MI->getOperand(2)))
++      return new MachineSymbolRef(MI->getOperand(2), MI, true);
++    break;
++  default: break;
 +  }
 +  return nullptr;
 +}
@@ -8527,7 +8601,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    MO = &MI->getOperand(1);
 +    if(MO->isCPI())
 +      Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
-+    else if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
++    else if(TargetValues::isSymbolValue(MO))
 +      Val = new MachineSymbolRef(*MO, MI, true);
 +    break;
 +  case AArch64::COPY:
@@ -8538,8 +8612,9 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
 +    Val = new MachineImmediate(8, Conv64.i, MI, false);
 +    break;
++  case AArch64::LDRXui:
 +  case AArch64::LDRDui:
-+    Val = genConstantPoolValue(MI);
++    Val = genLoadRegValue(MI);
 +    break;
 +  case AArch64::MOVi32imm:
 +    MO = &MI->getOperand(1);
@@ -8590,7 +8665,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 +private:
 +  MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
 +  MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
-+  MachineLiveVal *genConstantPoolValue(const MachineInstr *MI) const;
++  MachineLiveVal *genLoadRegValue(const MachineInstr *MI) const;
 +};
 +
 +}
@@ -9040,7 +9115,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,107 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9114,17 +9189,29 @@ Index: lib/Target/X86/X86Values.cpp
 +
 +MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
 +  MachineLiveVal* Val = nullptr;
-+  const MachineOperand *MO;
++  const MachineOperand *MO, *MO2;
 +  const TargetInstrInfo *TII;
 +
 +  switch(MI->getOpcode()) {
 +  case X86::LEA64r:
 +    Val = genLEAInstructions(MI);
 +    break;
++  case X86::MOV32ri:
++    MO = &MI->getOperand(1);
++    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
 +  case X86::MOV64ri:
 +    MO = &MI->getOperand(1);
-+    if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
++    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
++    else if(TargetValues::isSymbolValue(MO))
 +      Val = new MachineSymbolRef(*MO, MI, true);
++    break;
++  case X86::MOV64rm:
++    // Note: codegen'd a PC relative symbol reference
++    MO = &MI->getOperand(1 + X86::AddrBaseReg);
++    MO2 = &MI->getOperand(1 + X86::AddrDisp);
++    if(MO->isReg() && MO->getReg() == X86::RIP &&
++       TargetValues::isSymbolValue(MO2))
++      Val = new MachineSymbolRef(*MO2, MI, true);
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

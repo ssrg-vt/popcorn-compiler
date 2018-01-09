@@ -942,6 +942,39 @@ void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
   }
 }
 
+/// Try to find the best defining instruction.
+static const MachineInstr *
+tryToBreakDefMITie(const MachineInstr *MICall,
+                   MachineRegisterInfo::def_instr_iterator Def) {
+  // First heuristic -- find closest preceding defining instruction in the same
+  // machine basic block.
+  const MachineInstr *Cur, *BestDef = nullptr;
+  unsigned Distance, Best = UINT32_MAX;
+  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> Defs;
+  do {
+    Cur = MICall;
+    Distance = 1;
+    while((Cur = Cur->getPrevNode())) {
+      if(Cur == &*Def) {
+        Defs.emplace_back(&*Def, Distance);
+        break;
+      }
+      Distance++;
+    }
+  } while((++Def) != MachineRegisterInfo::def_instr_end());
+
+  for(auto Pair : Defs) {
+    if(Pair.second < Best) {
+      BestDef = Pair.first;
+      Best = Pair.second;
+    }
+  }
+
+  if(BestDef)
+    DEBUG(dbgs() << "Choosing defining instruction"; BestDef->dump());
+  return BestDef;
+}
+
 /// Find architecture-specific live values added by the backend
 void StackTransformMetadata::findArchSpecificLiveVals() {
   DEBUG(dbgs() << "\n*** Finding architecture-specific live values ***\n\n";);
@@ -979,19 +1012,45 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
         DEBUG(dbgs() << "    + vreg" << i
                      << " is live in register but not in stackmap\n";);
 
-        if(!MRI->hasOneDef(Vreg)) {
-          DEBUG(
-            dbgs() << "WARNING: multiple definitions for virtual "
-                      "register, missed in live-value analysis?\n";
-            for(auto d = MRI->def_instr_begin(Vreg), e = MRI->def_instr_end();
-                d != e; d++)
-              d->dump();
-          );
-          continue;
-        }
+        // Walk the use-def chain to see if we can find a valid value
+        const MachineInstr *DefMI;
+        unsigned ChainVreg = Vreg;
+        do {
+          // Try to find a suitable defining instruction
+          MachineRegisterInfo::def_instr_iterator DefIt;
+          DefIt = MRI->def_instr_begin(ChainVreg);
+          if(MRI->hasOneDef(ChainVreg)) DefMI = &*DefIt;
+          else if(!(DefMI = tryToBreakDefMITie(MICall, DefIt))) {
+            // No suitable defining instruction, not much we can do...
+            DEBUG(
+              dbgs() << "WARNING: multiple definitions for virtual "
+                        "register, missed in live-value analysis?\n";
+              for(auto d = MRI->def_instr_begin(ChainVreg),
+                  e = MRI->def_instr_end(); d != e; d++)
+                d->dump();
+            );
+            break;
+          }
 
-        MLV = TVG->getMachineValue(&*MRI->def_instr_begin(Vreg));
-        sanitizeVregs(MLV, MISM);
+          MLV = TVG->getMachineValue(DefMI);
+          sanitizeVregs(MLV, MISM);
+
+          if(MLV) break; // We got a value!
+          else {
+            // Couldn't get a value, follow the use-def chain
+            CopyLocPtr Copy = getCopyLocation(DefMI);
+            if(Copy) {
+              switch(Copy->getType()) {
+              default: ChainVreg = 0; break;
+              case CopyLoc::VREG:
+                ChainVreg = ((RegCopyLoc *)Copy.get())->SrcVreg;
+                break;
+              }
+            }
+            else ChainVreg = 0;
+          }
+        } while(TargetRegisterInfo::isVirtualRegister(ChainVreg));
+
         if(MLV) {
           DEBUG(dbgs() << "      Defining instruction: ";
                 MLV->getDefiningInst()->print(dbgs());

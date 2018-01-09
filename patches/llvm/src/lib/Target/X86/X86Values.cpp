@@ -71,17 +71,29 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
 
 MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   MachineLiveVal* Val = nullptr;
-  const MachineOperand *MO;
+  const MachineOperand *MO, *MO2;
   const TargetInstrInfo *TII;
 
   switch(MI->getOpcode()) {
   case X86::LEA64r:
     Val = genLEAInstructions(MI);
     break;
+  case X86::MOV32ri:
+    MO = &MI->getOperand(1);
+    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
   case X86::MOV64ri:
     MO = &MI->getOperand(1);
-    if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
+    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
+    else if(TargetValues::isSymbolValue(MO))
       Val = new MachineSymbolRef(*MO, MI, true);
+    break;
+  case X86::MOV64rm:
+    // Note: codegen'd a PC relative symbol reference
+    MO = &MI->getOperand(1 + X86::AddrBaseReg);
+    MO2 = &MI->getOperand(1 + X86::AddrDisp);
+    if(MO->isReg() && MO->getReg() == X86::RIP &&
+       TargetValues::isSymbolValue(MO2))
+      Val = new MachineSymbolRef(*MO2, MI, true);
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

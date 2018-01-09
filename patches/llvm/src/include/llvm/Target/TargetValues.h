@@ -45,6 +45,12 @@ public:
 
 protected:
   TargetValues() {}
+
+  /// Return whether or not the operand is some type of symbol reference.
+  static bool isSymbolValue(const MachineOperand &MO)
+  { return MO.isGlobal() || MO.isSymbol() || MO.isMCSymbol(); }
+  static bool isSymbolValue(const MachineOperand *MO)
+  { return isSymbolValue(*MO); }
 };
 
 } // End llvm namespace

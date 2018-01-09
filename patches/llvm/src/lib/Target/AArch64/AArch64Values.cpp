@@ -92,7 +92,7 @@ AArch64Values::genBitfieldInstructions(const MachineInstr *MI) const {
 }
 
 MachineLiveVal *
-AArch64Values::genConstantPoolValue(const MachineInstr *MI) const {
+AArch64Values::genLoadRegValue(const MachineInstr *MI) const {
   switch(MI->getOpcode()) {
   case AArch64::LDRDui:
     if(MI->getOperand(2).isCPI()) {
@@ -123,6 +123,15 @@ AArch64Values::genConstantPoolValue(const MachineInstr *MI) const {
       }
     }
     break;
+  case AArch64::LDRXui:
+    // Note: if this is of the form %vreg, <ga:...>, then the compiler has
+    // emitted multiple instructions in order to form the full address.  We,
+    // however, don't have the instruction encoding limitations.
+    // TODO verify this note above is true, maybe using MO::getTargetFlags?
+    if(TargetValues::isSymbolValue(MI->getOperand(2)))
+      return new MachineSymbolRef(MI->getOperand(2), MI, true);
+    break;
+  default: break;
   }
   return nullptr;
 }
@@ -142,7 +151,7 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     MO = &MI->getOperand(1);
     if(MO->isCPI())
       Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
-    else if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
+    else if(TargetValues::isSymbolValue(MO))
       Val = new MachineSymbolRef(*MO, MI, true);
     break;
   case AArch64::COPY:
@@ -153,8 +162,9 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
     Val = new MachineImmediate(8, Conv64.i, MI, false);
     break;
+  case AArch64::LDRXui:
   case AArch64::LDRDui:
-    Val = genConstantPoolValue(MI);
+    Val = genLoadRegValue(MI);
     break;
   case AArch64::MOVi32imm:
     MO = &MI->getOperand(1);
