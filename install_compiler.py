@@ -537,11 +537,11 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                     print('Make distclean failed.')
                     sys.exit(1)
 
-        print("Configuring libopenpop (aarch64)...")
+        print("Configuring libopenpop ({})...", target)
         try:
-            rv = subprocess.check_call(" ".join(['./popcorn-config-arm64.sh',
+            rv = subprocess.check_call(['./popcorn-config-{}.sh'.format(target),
                                         install_path,
-                                        aarch64_install_path]),
+                                        target_install_path]),
                                         stderr=subprocess.STDOUT,
                                         shell=True)
         except Exception as e:
@@ -565,49 +565,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                 print('Make failed.')
                 sys.exit(1)
 
-        try:
-            rv = subprocess.check_call(['make', 'distclean'])
-        except Exception as e:
-            print('ERROR running distclean!')
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
-
-        print("Configuring libopenpop (x86_64)...")
-        try:
-            rv = subprocess.check_call(" ".join(['./popcorn-config-x86_64.sh',
-                                        install_path,
-                                        x86_64_install_path]),
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure libopenpop({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('libopenpop configure failed.')
-                sys.exit(1)
-
-        print('Making libopenpop...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
         os.chdir(cur_dir)
-        #=====================================================
-        # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
 
     # The build systems for the following already build for all ISAs
 
