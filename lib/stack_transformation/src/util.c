@@ -97,7 +97,6 @@ char* match_string(Elf* e, char* name, int *str_index)
 	Elf64_Shdr s_hdr;
  	char *stringTable;
 	char entryStr[100];
-	int entryNo = 0;
 
  	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
         	printf("lseek failed\n");
@@ -150,7 +149,6 @@ char* match_string(Elf* e, char* name, int *str_index)
 				return stringTable;
 			}
 //			printf("\n");
-			entryNo++;
 			j = 0;
 		}
 		else
@@ -230,12 +228,8 @@ Elf_Scn* get_section(Elf* e, const char* sec)
 Elf64_Shdr* my_get_section(Elf* e, const char* sec)
 {
   size_t shdrstrndx = 0;
-  const char* cur_sec;
-  Elf_Scn* scn = NULL;
-  GElf_Shdr shdr;
   Elf64_Ehdr e_hdr;
   Elf64_Shdr *s_hdr;
-  int sh_index = 0;
   int str_index = 0;
 
   ASSERT(sec, "invalid arguments to get_section()\n");
@@ -269,7 +263,7 @@ int64_t get_num_entries(Elf* e, const char* sec)
 {
   Elf_Scn* scn;
   GElf_Shdr shdr;
-  int i;
+  
   if(!(scn = get_section(e, sec))) return -1;
   if(gelf_getshdr(scn, &shdr) != &shdr) return -1;
   return shdr.sh_entsize ? (shdr.sh_size / shdr.sh_entsize) : -1;
@@ -278,7 +272,6 @@ int64_t get_num_entries(Elf* e, const char* sec)
 
 int64_t my_get_num_entries(Elf* e, const char* sec)
 {
-  Elf_Scn* scn;
   Elf64_Shdr *shdr;
   int i;
   if(!(shdr = my_get_section(e, sec))) return -1;

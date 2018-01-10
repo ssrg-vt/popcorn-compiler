@@ -57,6 +57,7 @@ Elf_Scn* get_section(Elf* e, const char* sec);
  */
 int64_t get_num_entries(Elf* e, const char* sec);
 
+int64_t my_get_num_entries(Elf* e, const char* sec);
 /*
  * Return the section data encoded in section SEC_NAME in ELF E.
  *
