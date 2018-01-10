@@ -1210,6 +1210,7 @@ initialize_env (void)
   parse_int ("GOMP_DEBUG", &gomp_debug_var, true);
 #ifndef HAVE_SYNC_BUILTINS
   gomp_mutex_init (&gomp_managed_threads_lock);
+  gomp_mutex_init (&popcorn_tid_lock);
 #endif
   gomp_init_num_threads ();
   gomp_available_cpus = gomp_global_icv.nthreads_var;
