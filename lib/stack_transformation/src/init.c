@@ -110,7 +110,7 @@ st_handle st_init(const char* fn)
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
   /* Read unwinding addresses */
-  handle->unwind_addr_count = get_num_entries(handle->elf,
+  handle->unwind_addr_count = my_get_num_entries(handle->elf,
                                               SECTION_ST_UNWIND_ADDR);
   if(handle->unwind_addr_count > 0)
   {
@@ -127,7 +127,7 @@ st_handle st_init(const char* fn)
   }
 
   /* Read unwinding information */
-  handle->unwind_count = get_num_entries(handle->elf, SECTION_ST_UNWIND);
+  handle->unwind_count = my_get_num_entries(handle->elf, SECTION_ST_UNWIND);
   if(handle->unwind_count > 0)
   {
     handle->unwind_locs = get_section_data(handle->elf, SECTION_ST_UNWIND);
@@ -142,7 +142,7 @@ st_handle st_init(const char* fn)
   }
 
   /* Read call site metadata */
-  handle->sites_count = get_num_entries(handle->elf, SECTION_ST_ID);
+  handle->sites_count = my_get_num_entries(handle->elf, SECTION_ST_ID);
   if(handle->sites_count > 0)
   {
     handle->sites_id = get_section_data(handle->elf, SECTION_ST_ID);
@@ -157,7 +157,7 @@ st_handle st_init(const char* fn)
   }
 
   /* Read live value location records */
-  handle->live_vals_count = get_num_entries(handle->elf, SECTION_ST_LIVE);
+  handle->live_vals_count = my_get_num_entries(handle->elf, SECTION_ST_LIVE);
   if(handle->live_vals_count > 0)
   {
     handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
@@ -174,7 +174,7 @@ st_handle st_init(const char* fn)
   /* Read architecture-specific live value location records */
   // Note: unlike other sections, we may not have any architecture-specific
   // live value records
-  handle->arch_live_vals_count = get_num_entries(handle->elf,
+  handle->arch_live_vals_count = my_get_num_entries(handle->elf,
                                                  SECTION_ST_ARCH_LIVE);
   if(handle->arch_live_vals_count > 0)
   {
