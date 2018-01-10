@@ -298,7 +298,7 @@ gomp_free_thread (void *arg __attribute__((unused)))
 #ifndef HAVE_SYNC_BUILTINS
 gomp_mutex_t popcorn_tid_lock;
 #endif
-static size_t popcorn_tid = 0;
+static size_t popcorn_tid = 1;
 
 /* Launch a team.  */
 
@@ -814,9 +814,12 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->ts.single_count = 0;
       start_data->popcorn_tid = __sync_fetch_and_add(&popcorn_tid, 1);
 #else
-      gomp_mutex_lock(&popcorn_tid_lock);
-      start_data->popcorn_tid = popcorn_tid++;
-      gomp_mutex_unlock(&popcorn_tid_lock);
+      if(nested) {
+        gomp_mutex_lock(&popcorn_tid_lock);
+        start_data->popcorn_tid = popcorn_tid++;
+        gomp_mutex_unlock(&popcorn_tid_lock);
+      }
+      else start_data->popcorn_tid = popcorn_tid++;
 #endif
       start_data->ts.static_trip = 0;
       start_data->task = &team->implicit_task[i];

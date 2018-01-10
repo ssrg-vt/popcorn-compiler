@@ -82,6 +82,7 @@ extern void omp_set_num_threads (int) __GOMP_NOTHROW;
 extern int omp_get_num_threads (void) __GOMP_NOTHROW;
 extern int omp_get_max_threads (void) __GOMP_NOTHROW;
 extern int omp_get_thread_num (void) __GOMP_NOTHROW;
+extern int omp_get_popcorn_tid (void) __GOMP_NOTHROW;
 extern int omp_get_num_procs (void) __GOMP_NOTHROW;
 
 extern int omp_in_parallel (void) __GOMP_NOTHROW;
