@@ -295,26 +295,3 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Callback function & data for migration points inserted via compiler. */
-static void (*migrate_callback)(void *) = NULL;
-static void *migrate_callback_data = NULL;
-
-/* Register callback function for compiler-inserted migration points. */
-void register_migrate_callback(void (*callback)(void*), void *callback_data)
-{
-  migrate_callback = callback;
-  migrate_callback_data = callback_data;
-}
-
-/* Hook inserted by compiler at the beginning of a function. */
-void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0 && nid != current_nid())
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
-
-/* Hook inserted by compiler at the end of a function. */
-void __attribute__((alias("__cyg_profile_func_enter")))
-__cyg_profile_func_exit(void *this_fn, void *call_site);
-

@@ -48,18 +48,6 @@ void check_migrate(void (*callback)(void*), void *callback_data);
  */
 void migrate(int nid, void (*callback)(void*), void *callback_data);
 
-/**
- * Register a function to be used for migration points inserted by
- * -finstrument-functions.
- *
- * Note: does not apply to direct calls to migrate_shim().
- *
- * @param callback a callback function to be invoked before execution resumes
- *                 on destination architecture
- * @param callback_data data to be passed to the callback function
- */
-void register_migrate_callback(void (*callback)(void*), void *callback_data);
-
 #ifdef __cplusplus
 }
 #endif
