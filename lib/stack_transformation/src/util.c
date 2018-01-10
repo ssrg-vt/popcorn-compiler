@@ -90,7 +90,80 @@ my_gelf_getshdr(Elf_Scn *scn, GElf_Shdr *dst) {
     return dst;
 }
 
-Elf_Scn* my_find_index(Elf*e, Elf_Scn* scn, int index){
+//str_tbl_off = e_shoff + e_shentsize*e_shstrndx
+char* match_string(Elf* e, char* name, int *index)
+{
+	Elf64_Ehdr e_hdr;
+	Elf64_Shdr s_hdr;
+ 	char *stringTable;
+	char entryStr[100];
+	int entryNo = 0;
+
+ 	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
+        	printf("lseek failed\n");
+        	close(e->e_fd);
+        	return NULL;
+  	}
+
+  	if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
+        	printf("Read Failed\n");
+        	close(e->e_fd);
+        	return NULL;
+  	}
+
+	if(lseek(e->e_fd, e_hdr.e_shoff + e_hdr.e_shentsize*e_hdr.e_shstrndx, SEEK_SET) < 0){
+		printf("lseek failed\n");
+		close(e->e_fd);
+		return NULL;
+	}
+
+	if(read(e->e_fd, (void*)&s_hdr, sizeof(Elf64_Shdr)) < 0){
+		printf("Read Failed\n");
+		close(e->e_fd);
+		return NULL;
+	}
+	//got string header
+	if(e_hdr.e_shstrndx==SHN_UNDEF)
+		return NULL;
+
+        if(lseek(e->e_fd, s_hdr.sh_offset, SEEK_SET) < 0){
+                printf("lseek failed\n");
+                close(e->e_fd);
+                return NULL;
+        }
+
+	stringTable = (char*)malloc(s_hdr.sh_size);
+        if(read(e->e_fd, (void*)stringTable, sizeof(char)*s_hdr.sh_size) < 0){
+                printf("Read Failed\n");
+                close(e->e_fd);
+                return NULL;
+        }
+
+	for(int i=0, j=0; i<s_hdr.sh_size; i++)
+	{
+		if(stringTable[i] == '\0')
+		{
+			entryStr[j] = '\0';
+			j = 0;
+			if(!strcmp(entryStr, name))
+			{
+				*index = entryNo;
+				return stringTable;
+			}
+//			printf("\n");
+			entryNo++;
+		}
+		else
+		{
+			entryStr[j] = stringTable[i];
+			j++; 
+//			printf("%c", stringTable[i]);
+		}
+	}		
+ 	return stringTable;
+}
+
+Elf_Scn* my_find_index(Elf* e, Elf_Scn* scn, int index){
  
   Elf64_Ehdr e_hdr;
   Elf64_Shdr s_hdr;
@@ -182,7 +255,7 @@ Elf_Scn* get_section(Elf* e, const char* sec)
   Elf_Scn* scn = NULL;
   GElf_Shdr shdr;
   Elf64_Ehdr e_hdr;
-  int count = 0;
+  int index = 0;
 
   ASSERT(sec, "invalid arguments to get_section()\n");
   
@@ -205,6 +278,9 @@ Elf_Scn* get_section(Elf* e, const char* sec)
   if(!(scn=my_next_scn(e, scn)))
 	printf("Index not found");
  scn = NULL; */
+ if(!match_string(e, sec, &index))
+	return NULL;
+ //printf("Clue %s Index %d\n", sec, index); 
   while((scn = elf_nextscn(e, scn)))
   {
     if(my_gelf_getshdr(scn, &shdr) != &shdr) return NULL;
