@@ -214,23 +214,6 @@ Elf_Scn* get_section(Elf* e, const char* sec)
 
   return scn; // NULL if not found
 
-/*
-for (scn = e->e_scn_1; scn; scn = scn->s_link) {//loop until index 1 found
-  	if (scn->s_index == 1) {
-		do{
-   			 if(my_gelf_getshdr(scn, &shdr) != &shdr) return NULL;//memory leack
-   			 if((cur_sec = my_elf_strptr(e, shdrstrndx, shdr.sh_name)))
-     			 if(!strcmp(sec, cur_sec)) break;
-			 scn = scn->s_link;
- 		 }while(scn->s_elf == e);//work with next item until it's from same Elf
-  		printf("First index found\n");
-		while(1);
-		return scn; // NULL if not found
-	}
-   }
-*/
-return NULL;
-
 }
 
 /*
