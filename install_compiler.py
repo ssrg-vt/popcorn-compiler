@@ -525,7 +525,6 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         # CONFIGURE & INSTALL LIBOPENPOP
         #=====================================================
         os.chdir(os.path.join(base_path, 'lib/libopenpop'))
-
         if os.path.isfile('Makefile'):
             try:
                 rv = subprocess.check_call(['make', 'distclean'])
@@ -537,13 +536,23 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                     print('Make distclean failed.')
                     sys.exit(1)
 
-        print("Configuring libopenpop ({})...", target)
+        print("Configuring libopenpop ({})...".format(target))
         try:
-            rv = subprocess.check_call(['./popcorn-config-{}.sh'.format(target),
-                                        install_path,
-                                        target_install_path]),
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
+            # TODO -popcorn-alignment -> -popcorn-migratable
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu \
+                                    -nostdinc -isystem {}/include \
+                                    -popcorn-alignment'\
+                                    .format(target, target_install_path)
+            args = ['./configure',
+                    '--prefix=' + target_install_path,
+                    '--target={}-linux-gnu'.format(target),
+                    '--host={}-linux-gnu'.format(target),
+                    '--enable-static',
+                    '--disable-shared']
+            rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
+            del os.environ['CC']
+            del os.environ['CFLAGS']
         except Exception as e:
            print('Could not configure libopenpop ({})!'.format(e))
            sys.exit(1)
