@@ -352,6 +352,7 @@ struct gomp_task_icv
 extern struct gomp_task_icv gomp_global_icv;
 #ifndef HAVE_SYNC_BUILTINS
 extern gomp_mutex_t gomp_managed_threads_lock;
+extern gomp_mutex_t popcorn_tid_lock;
 #endif
 extern unsigned long gomp_max_active_levels_var;
 extern bool gomp_cancel_var;
@@ -613,6 +614,10 @@ struct gomp_thread
 
   /* User pthread thread pool */
   struct gomp_thread_pool *thread_pool;
+
+  /* Popcorn's TID, basically this thread's number out of the total number of
+     threads created by the runtime over the lifetime of the application. */
+  size_t popcorn_tid;
 };
 
 

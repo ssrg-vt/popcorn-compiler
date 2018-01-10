@@ -56,6 +56,7 @@ struct gomp_thread_start_data
   struct gomp_team_state ts;
   struct gomp_task *task;
   struct gomp_thread_pool *thread_pool;
+  size_t popcorn_tid;
   unsigned int place;
   bool nested;
 };
@@ -89,6 +90,7 @@ gomp_thread_start (void *xdata)
   thr->ts = data->ts;
   thr->task = data->task;
   thr->place = data->place;
+  thr->popcorn_tid = data->popcorn_tid;
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
 
@@ -291,6 +293,12 @@ gomp_free_thread (void *arg __attribute__((unused)))
       free (task);
     }
 }
+
+/* Keep a counter of all threads launched. */
+#ifndef HAVE_SYNC_BUILTINS
+gomp_mutex_t popcorn_tid_lock;
+#endif
+static size_t popcorn_tid = 0;
 
 /* Launch a team.  */
 
@@ -804,6 +812,11 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->ts.active_level = thr->ts.active_level;
 #ifdef HAVE_SYNC_BUILTINS
       start_data->ts.single_count = 0;
+      start_data->popcorn_tid = __sync_fetch_and_add(&popcorn_tid, 1);
+#else
+      gomp_mutex_lock(&popcorn_tid_lock);
+      start_data->popcorn_tid = popcorn_tid++;
+      gomp_mutex_unlock(&popcorn_tid_lock);
 #endif
       start_data->ts.static_trip = 0;
       start_data->task = &team->implicit_task[i];
