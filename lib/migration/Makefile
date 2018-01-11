@@ -7,6 +7,7 @@ POPCORN_X86     := $(POPCORN)/x86_64
 CC         := $(POPCORN)/bin/clang
 CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -c -g -popcorn-alignment \
               -Wno-unused-variable -D_GNU_SOURCE -mllvm -no-sm-warn
+OPT_LEVEL  := -O3
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE=1
 endif
@@ -15,6 +16,7 @@ CFLAGS     += -D_NATIVE=1
 endif
 ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG=1
+OPT_LEVEL  :=
 endif
 ifneq ($(findstring timing,$(type)),)
 CFLAGS     += -D_TIME_REWRITE=1 -D_TIME_RESPONSE_DELAY=1
@@ -33,8 +35,9 @@ INC_POWERPC := $(INC) -I$(POPCORN_POWERPC)/include
 INC_X86     := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := $(POPCORN)/bin/opt
-OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
-             -insert-stackmaps -no-live-vals
+OPT_FLAGS := $(OPT_LEVEL) -disable-loop-vectorization \
+             -disable-slp-vectorization -insert-stackmaps \
+             -no-live-vals
 
 AR      := ar
 ARFLAGS := -cq

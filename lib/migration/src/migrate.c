@@ -10,6 +10,7 @@
 #include "migrate.h"
 #include "config.h"
 #include "arch.h"
+#include "mapping.h"
 
 #if _SIG_MIGRATION == 1
 #include "trigger.h"
@@ -141,32 +142,6 @@ static inline int do_migrate(void __attribute__((unused)) *fn)
 
 static enum arch archs[MAX_POPCORN_NODES] = { 0 };
 
-static void __attribute__((constructor)) __init_nodes_info(void)
-{
-	int ret;
-	int origin_nid = -1;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni[MAX_POPCORN_NODES];
-
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		archs[i] = ARCH_UNKNOWN;
-	}
-
-	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
-	if (ret) {
-		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
-		return;
-	}
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		if (ni[i].status == 1) {
-			archs[i] = ni[i].arch;
-		}
-	}
-}
-
 int current_nid(void)
 {
 	struct popcorn_thread_status status;
@@ -183,6 +158,33 @@ enum arch current_arch(void)
 	return archs[nid];
 }
 
+static void __attribute__((constructor)) __init_nodes_info(void)
+{
+	int ret;
+	int origin_nid = -1;
+	struct node_info {
+		unsigned int status;
+		int arch;
+		int distance;
+	} ni[MAX_POPCORN_NODES];
+
+	set_default_node(current_nid());
+
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		archs[i] = ARCH_UNKNOWN;
+	}
+
+	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
+	if (ret) {
+		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
+		return;
+	}
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		if (ni[i].status == 1) {
+			archs[i] = ni[i].arch;
+		}
+	}
+}
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -288,10 +290,20 @@ void check_migrate(void (*callback)(void *), void *callback_data)
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Externally-visible function to invoke migration. */
+/* Invoke migration to a particular node if we're not already there. */
 void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
   if (nid != current_nid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
+/* Invoke migration to a particular node according to a thread schedule. */
+void migrate_schedule(size_t region,
+                      int popcorn_tid,
+                      void (*callback)(void *),
+                      void *callback_data)
+{
+  int nid = get_node_mapping(region, popcorn_tid);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
+}
