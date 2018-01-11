@@ -522,69 +522,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         os.chdir(cur_dir)
 
 
-        #=====================================================
-        # CONFIGURE & INSTALL LIBOPENPOP
-        #=====================================================
-    	#TODO: support != installation path
-        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
-
-        if os.path.isfile('Makefile'):
-            try:
-                rv = subprocess.check_call(['make', 'distclean'])
-            except Exception as e:
-                print('ERROR running distclean!')
-                sys.exit(1)
-            else:
-                if rv != 0:
-                    print('Make distclean failed.')
-                    sys.exit(1)
-
-        print("Configuring libopenpop ...")
-        try:
-            rv = subprocess.check_call(" ".join(['./popcorn-config.sh',
-                                        install_path]),
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-           print('Could not configure libopenpop ({})!'.format(e))
-           sys.exit(1)
-        else:
-           if rv != 0:
-               print('libopenpop configure failed.')
-               sys.exit(1)
-
-        print('Making libopenpop...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        print("Installing libopenpop ...")
-        try:
-            rv = subprocess.check_call(" ".join(['./popcorn-install.sh',
-                                        install_path]),
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-           print('Could not configure libopenpop ({})!'.format(e))
-           sys.exit(1)
-        else:
-           if rv != 0:
-               print('libopenpop configure failed.')
-               sys.exit(1)
-
-
-        os.chdir(cur_dir)
-        #=====================================================
-        # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
+    #=====================================================
+    # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
 
     if not st_debug:
         flags = ''
@@ -648,6 +589,67 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         if rv != 0:
             print('Make failed.')
             sys.exit(1)
+
+    os.chdir(cur_dir)
+
+    #=====================================================
+    # CONFIGURE & INSTALL LIBOPENPOP
+    #=====================================================
+    #depends on the migration library
+    return
+    os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+
+    if os.path.isfile('Makefile'):
+        try:
+            rv = subprocess.check_call(['make', 'distclean'])
+        except Exception as e:
+            print('ERROR running distclean!')
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make distclean failed.')
+                sys.exit(1)
+
+    print("Configuring libopenpop ...")
+    try:
+        rv = subprocess.check_call(" ".join(['./popcorn-config.sh',
+                                    install_path]),
+                                    stderr=subprocess.STDOUT,
+                                    shell=True)
+    except Exception as e:
+       print('Could not configure libopenpop ({})!'.format(e))
+       sys.exit(1)
+    else:
+       if rv != 0:
+           print('libopenpop configure failed.')
+           sys.exit(1)
+
+    print('Making libopenpop...')
+    try:
+        print('Running Make...')
+        rv = subprocess.check_call(['make', '-j', str(num_threads)])
+    except Exception as e:
+        print('Could not run Make ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed.')
+            sys.exit(1)
+
+    print("Installing libopenpop ...")
+    try:
+        rv = subprocess.check_call(" ".join(['./popcorn-install.sh',
+                                    install_path]),
+                                    stderr=subprocess.STDOUT,
+                                    shell=True)
+    except Exception as e:
+       print('Could not configure libopenpop ({})!'.format(e))
+       sys.exit(1)
+    else:
+       if rv != 0:
+           print('libopenpop configure failed.')
+           sys.exit(1)
+
 
     os.chdir(cur_dir)
 
@@ -755,11 +757,16 @@ def install_utils(base_path, install_path, num_threads):
     s = os.path.join(os.path.join(install_path, 'bin'), 'ld')
     d = os.path.join(os.path.join(install_path, 'bin'), 'ld.default')
     shutil.copy(s, d)
+    try:
+        os.remove(s)
+    except:
+        pass
     print("Copying util/compilation_scripts/ to {}/bin...".format(install_path))
     for item in os.listdir('./util/compilation_scripts/'):
-        s = os.path.join('./util/compilation_scripts/', item)
-        d = os.path.join(os.path.join(install_path, 'bin'), item)
-        shutil.copy(s, d)
+        if not item.startswith('.'): #don't copy hidden files
+            s = os.path.join('./util/compilation_scripts/', item)
+            d = os.path.join(os.path.join(install_path, 'bin'), item)
+            shutil.copy(s, d)
     
 
 def build_namespace(base_path):
@@ -787,6 +794,9 @@ def main(args):
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
 
+    if not args.skip_tools_install:
+        install_tools(args.base_path, args.install_path, args.threads)
+
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
                           args.install_targets, args.threads,
@@ -794,8 +804,6 @@ def main(args):
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
-    if not args.skip_tools_install:
-        install_tools(args.base_path, args.install_path, args.threads)
 
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,

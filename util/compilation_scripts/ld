@@ -9,6 +9,9 @@ POPCORN=/usr/local/popcorn/bin
 if  [ "$POPCORN_COMPILATION_SCRIPTS" = "1" ]
 then
 	$POPCORN/popcorn-ld $*
+elif  [ "$POPCORN_COMPILATION_SCRIPTS" = "2" ]
+then
+	$POPCORN/popcorn-lib-ld $*
 else
 	$POPCORN/ld.gold $*
 fi

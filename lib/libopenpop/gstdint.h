@@ -1,4 +1,4 @@
-/* generated for  clang version 3.7.1 (tags/RELEASE_371/final 322296) */
+/* generated for  clang version 3.7.1 (tags/RELEASE_371/final 322308) */
 
 #ifndef GCC_GENERATED_STDINT_H
 #define GCC_GENERATED_STDINT_H 1

@@ -2,7 +2,7 @@
 
 POPCORN=${1:-"/usr/local/popcorn"}
 POPCORN_ARM64=$POPCORN/aarch64
-export CC=$POPCORN/bin/popcorn-clang
+export CC=$POPCORN/bin/popcorn-lib-clang
 export AR=$POPCORN/bin/popcorn-ar
 export TARGET="--host=aarch64-linux-gnu"
 export CFLAGS="-O0 -Wno-error -popcorn-migratable"

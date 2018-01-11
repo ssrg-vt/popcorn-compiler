@@ -6,7 +6,7 @@ set -e
 
 POPCORN=/usr/local/popcorn
 LD="$POPCORN/bin/ld.gold"
-ALIGN=$POPCORN/bin/pyalign
+ALIGN="$POPCORN/bin/pyalign --compiler-inst $POPCORN"
 POST_PROCESS=$POPCORN/bin/gen-stackinfo
 X86_64_POPCORN="$POPCORN/x86_64"
 ARM64_POPCORN="$POPCORN/aarch64"
