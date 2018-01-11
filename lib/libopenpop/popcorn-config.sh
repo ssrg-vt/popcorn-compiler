@@ -1,6 +1,6 @@
 #!/bin/bash
 
-POPCORN=/usr/local/popcorn
+POPCORN=${1:-"/usr/local/popcorn"}
 POPCORN_ARM64=$POPCORN/aarch64
 export CC=$POPCORN/bin/popcorn-clang
 export AR=$POPCORN/bin/popcorn-ar
