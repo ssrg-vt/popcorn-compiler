@@ -30,6 +30,7 @@
 #include "pool.h"
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifdef LIBGOMP_USE_PTHREADS
 /* This attribute contains PTHREAD_CREATE_DETACHED.  */
@@ -46,6 +47,11 @@ __thread struct gomp_thread gomp_tls_data;
 pthread_key_t gomp_tls_key;
 #endif
 
+/* Whether or not we're doing Popcorn a profiling run. Activates all associated
+   machinery.  */
+bool popcorn_profiling = false;
+const char *popcorn_prof_fn = "popcorn-profile.txt";
+FILE *popcorn_prof_fp = NULL;
 
 /* This structure is used to communicate across pthread_create.  */
 
@@ -93,6 +99,9 @@ gomp_thread_start (void *xdata)
   thr->popcorn_tid = data->popcorn_tid;
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
+
+  if (popcorn_profiling)
+    fprintf(popcorn_prof_fp, "%d %lu\n", gettid(), thr->popcorn_tid);
 
   /* Make thread pool local. */
   pool = thr->thread_pool;
@@ -974,6 +983,12 @@ team_destructor (void)
   /* Without this dlclose on libgomp could lead to subsequent
      crashes.  */
   pthread_key_delete (gomp_thread_destructor);
+}
+
+static void __attribute__((destructor))
+popcorn_profiling_destructor (void)
+{
+  if(popcorn_profiling) fclose(popcorn_prof_fp);
 }
 #endif
 

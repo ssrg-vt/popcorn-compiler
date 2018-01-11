@@ -1271,6 +1271,16 @@ initialize_env (void)
   if (gomp_throttled_spin_count_var > gomp_spin_count_var)
     gomp_throttled_spin_count_var = gomp_spin_count_var;
 
+  /* Popcorn's page access trace files don't provide a clean mapping of task
+     IDs to user-land threads (including OpenMP threads).  If profiling is
+     enabled, dump a file listing the mapping. */
+  parse_boolean ("POPCORN_PROFILING", &popcorn_profiling);
+  if(popcorn_profiling)
+    {
+      popcorn_prof_fp = fopen(popcorn_prof_fn, "w");
+      if(!popcorn_prof_fp) popcorn_profiling = false;
+    }
+
   /* Not strictly environment related, but ordering constructors is tricky.  */
   pthread_attr_init (&gomp_thread_attr);
   pthread_attr_setdetachstate (&gomp_thread_attr, PTHREAD_CREATE_DETACHED);

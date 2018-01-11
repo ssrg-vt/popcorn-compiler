@@ -50,6 +50,7 @@
 #endif
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdarg.h>
 
 /* Needed for memset in priority_queue.c.  */
@@ -368,6 +369,11 @@ extern unsigned int gomp_num_teams_var;
 extern int gomp_debug_var;
 extern int goacc_device_num;
 extern char *goacc_device_type;
+
+/* Popcorn profiling machinery. */
+extern bool popcorn_profiling;
+extern const char *popcorn_prof_fn;
+extern FILE *popcorn_prof_fp;
 
 enum gomp_task_kind
 {
