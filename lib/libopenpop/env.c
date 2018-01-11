@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #ifdef HAVE_INTTYPES_H
 # include <inttypes.h>	/* For PRIu64.  */
 #endif
@@ -1279,6 +1280,7 @@ initialize_env (void)
     {
       popcorn_prof_fp = fopen(popcorn_prof_fn, "w");
       if(!popcorn_prof_fp) popcorn_profiling = false;
+      else fprintf(popcorn_prof_fp, "%d 0\n", gettid());
     }
 
   /* Not strictly environment related, but ordering constructors is tricky.  */
