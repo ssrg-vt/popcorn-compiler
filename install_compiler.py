@@ -406,6 +406,9 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
     cur_dir = os.getcwd()
 
+    aarch64_install_path = os.path.join(install_path, 'aarch64')
+    x86_64_install_path = os.path.join(install_path, 'x86_64')
+
     # musl-libc & libelf are built individually per target
 
     for target in targets:
