@@ -104,6 +104,12 @@ int isatty(int);
 pid_t tcgetpgrp(int);
 int tcsetpgrp(int, pid_t);
 
+/*
+ * Popcorn: expose gettid() so we don't have to leak ISA-specific syscall
+ * numbers into application source code.
+ */
+pid_t gettid(void);
+
 uid_t getuid(void);
 uid_t geteuid(void);
 gid_t getgid(void);

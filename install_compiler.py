@@ -521,6 +521,61 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
+        #=====================================================
+        # CONFIGURE & INSTALL LIBOPENPOP
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
+
+        print("Configuring libopenpop ({})...".format(target))
+        try:
+            # TODO -popcorn-alignment -> -popcorn-migratable
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu \
+                                    -nostdinc -isystem {}/include \
+                                    -popcorn-alignment'\
+                                    .format(target, target_install_path)
+            args = ['./configure',
+                    '--prefix=' + target_install_path,
+                    '--target={}-linux-gnu'.format(target),
+                    '--host={}-linux-gnu'.format(target),
+                    '--enable-static',
+                    '--disable-shared']
+            rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
+            del os.environ['CC']
+            del os.environ['CFLAGS']
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        os.chdir(cur_dir)
+
     # The build systems for the following already build for all ISAs
 
     #=====================================================
