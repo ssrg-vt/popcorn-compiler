@@ -56,7 +56,7 @@ def getVertexData(vertex, indexes):
         ret += "{} {} ".format(indexes[other], vertex.edges[other])
     return ret[:-1]
 
-def writeGraphToFile(graph, suffix, verbose):
+def writeGraphToFile(graph, ptids, suffix, verbose):
     ''' Write a METIS-formatted graph file.  For a graph G = (V, E) with
         n = |V| vertices and m = |E| edges, the file has n+1 lines.  The first
         line is a header describing the graph configuration, and the remaining
@@ -98,7 +98,16 @@ def writeGraphToFile(graph, suffix, verbose):
 
         # We reference other vertices by their index in the graph file, so
         # assign an ordering to all TIDs & pages
-        vertices = sorted(graph.tids.values()) + sorted(graph.pages.values())
+
+        if ptids: # Order threads by the mapping
+            mapping = sorted(ptids, key=lambda tup:tup[1])
+            vertices = []
+            for pair in mapping: vertices.append(graph.tids[pair[0]])
+            assert len(vertices) == len(graph.tids), \
+                   "Mapping file doesn't cover all TIDs!"
+        else: vertices = sorted(graph.tids.values()) # Sort by increasing TID
+        vertices += sorted(graph.pages.values())
+
         indexes = {}
         idx = 1
         for vertex in vertices:
@@ -116,16 +125,46 @@ def writeGraphToFile(graph, suffix, verbose):
               .format(graph.getNumVertices(), graph.getNumEdges()))
 
     # Return the graph file & indexes for parsing the resulting partitioning
-    return graphfile, { indexes[k] : k for k in graph.tids.keys() }
+    return graphfile, { indexes[k] : k for k in graph.tids }
 
-def printThreadPlacements(indexes, partitioning):
-    ''' Print on which nodes METIS thinks we should place threads. '''
+def writeThreadPlacements(schedule, indexes, partitioning, verbose):
+    ''' Write thread schedule file based on which nodes METIS thinks we should
+        place threads.
+    '''
     threads = sorted(indexes.items(), key=lambda tup:tup[0])
+    regions = { 0 : {} }
     with open(partitioning, 'r') as partition:
         for thread in threads:
             node = partition.readline().strip()
-            print("Thread {} (PID: {}) should be placed on node {}" \
-                  .format(thread[0], thread[1], node))
+            if verbose:
+                print("Thread {} (TID: {}) should be placed on node {}" \
+                      .format(thread[0] - 1, thread[1], node))
+            regions[0][thread[0]] = node
+
+    with open(schedule, 'w') as schedfp:
+        for r in sorted(regions.keys()):
+            schedfp.write("{} {}".format(r, len(regions[r])))
+            for tid in sorted(regions[r].keys()):
+                schedfp.write(" {}".format(regions[r][tid]))
+
+###############################################################################
+# Parsing
+###############################################################################
+
+def parseTIDMapFile(mapFile, verbose):
+    # Format: one mapping per line
+    #   <Linux TID> <Popcorn ID>
+    try:
+        with open(mapFile, 'r') as fp:
+            if verbose:
+                print("-> Parsing mapping file '{}' <-".format(mapFile))
+            ids = []
+            for line in fp:
+                fields = line.split()
+                ids.append((int(fields[0]), int(fields[1])))
+            return ids
+    except Exception as e:
+        return None
 
 ###############################################################################
 # METIS execution
@@ -160,19 +199,21 @@ def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
 # Driver
 ###############################################################################
 
-def placeThreads(graph, nodes, gpmetis, save, verbose):
+def placeThreads(graph, nodes, tidmap, gpmetis, schedule, save, verbose):
     ''' Given a thread/page access graph, place threads across nodes to
         minimize cross-node page accesses.
     '''
     suffix = str(random.randint(0, 65536))
-    graphfile, indexes = writeGraphToFile(graph, suffix, verbose)
+    ptids = parseTIDMapFile(tidmap, verbose)
+    graphfile, indexes = writeGraphToFile(graph, ptids, suffix, verbose)
     # TODO if verbose, run the graphchk tool
     metisOut, partitioning = runPartitioner(gpmetis, graphfile, nodes, suffix,
                                             verbose)
-    printThreadPlacements(indexes, partitioning)
+    writeThreadPlacements(schedule, indexes, partitioning, verbose)
 
     if save:
         dirname = "place-threads-" + suffix + "/"
+        if verbose: print("-> Saving partitioning to '{}' <-".format(dirname))
         os.mkdir(dirname)
         writeReadme(graph, gpmetis, nodes, dirname, suffix)
         os.rename(graphfile, dirname + path.basename(graphfile))
