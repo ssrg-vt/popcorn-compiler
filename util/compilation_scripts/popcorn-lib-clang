@@ -1,82 +1,20 @@
 #!/bin/bash
 set -e
-#set -x
 
-echo "$0: called with $*"
-export POPCORN_COMPILATION_SCRIPTS=1
-#Similar to popcorn-clang but uses the -popcron-alignment flag
-#The complexity come from the need to generate two binaries *explicitly*: arm/x86 binaries.
+
+#echo "$0: called with $*"
+
+#for /usr/local/popcorn/ld
+export POPCORN_COMPILATION_SCRIPTS=2 #2 for popcorn-lib-ld
 
 POPCORN=/usr/local/popcorn
 ARM64_POPCORN=$POPCORN/aarch64
 CC=$POPCORN/bin/clang
-HET_CFLAGS="-nostdinc -nostdlib -popcorn-alignment -fno-common -ftls-model=initial-exec -ffunction-sections -fdata-sections"
+#LINKER="-fuse-ld=/usr/local/popcorn/bin/popcorn-ld"
+#FIXME: let the user use -fopenmp and convert it to -fopenmp=libomp under the hood
+HET_CFLAGS="-nostdinc -nostdlib -popcorn-migratable -fno-common -ftls-model=initial-exec" # -fopenmp=libomp"
+#HET_CFLAGS="-nostdinc -nostdlib -popcorn-migratable -fno-common -fopenmp=libomp"
 ARM64_INC="-isystem $ARM64_POPCORN/include"
 
-CC_AARCH64="$CC -target aarch64-linux-gnu"
-CC_X86_64="$CC -target x86_64-linux-gnu"
 
-DEFAULT_BIN="a.out"
-
-#filter options
-options=()  # the buffer array for the parameters
-eoo=0       # end of options reached
-PRINT_VERSION=0
-BIN=$DEFAULT_BIN
-
-#filter "-o" options and "*.o" files
-while [[ $1 ]]
-do
-    if ! ((eoo)); then
-	case "$1" in
-	  -o)
-	      BIN=$2
-	      echo found -o is: $BIN
-	      shift
-	      shift
-	      ;;
-	  --version|-v|-V)
-	      PRINT_VERSION=1
-	      shift
-	      ;;
-	  --host=aarch64-linux-gnu)
-	      options+=("--target=aarch64-linux-gnu")
-	      shift
-	      ;;
-	  --)
-	      eoo=1
-	      options+=("$1")
-	      shift
-	      ;;
-	  *)
-	      options+=("$1")
-	      shift
-	      ;;
-	esac
-    else
-	options+=("$1")
-	# Another (worse) way of doing the same thing:
-	# options=("${options[@]}" "$1")
-	shift
-    fi
-done
-
-if [ $PRINT_VERSION = "1" ]; then	
-	$CC --version $*
-	exit
-fi
-#echo OPTIONS: ${options[@]}
-
-
-BIN_ARM64=$BIN
-if [ "$BIN" = "$DEFAULT_BIN" ]
-then
-	BIN_x86_64="a_x86_64.out"
-else
-	BIN_x86_64="${BIN//.o/_x86_64.o}"
-fi
-
-$CC_X86_64 $HET_CFLAGS $ARM64_INC ${options[@]} -o $BIN_x86_64
-$CC_AARCH64 $HET_CFLAGS $ARM64_INC ${options[@]} -o $BIN_ARM64
-#echo $CC -B$POPCORN/bin/ $HET_CFLAGS $ARM64_INC ${options[@]}
-#echo $CC $HET_CFLAGS $ARM64_INC ${options[@]}
+$CC $HET_CFLAGS $ARM64_INC $LINKER $*
