@@ -5,8 +5,6 @@
  * Date: 11/11/2015
  */
 
-#include <libelf/gelf.h>
-
 #include "stack_transform.h"
 #include "definitions.h"
 #include "arch_regs.h"

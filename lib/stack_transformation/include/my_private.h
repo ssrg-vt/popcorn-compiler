@@ -377,16 +377,6 @@ extern const size_t _elf_fmsize[2][EV_CURRENT - EV_NONE][ELF_T_NUM][2];
 #define valid_version(v)	((v) > EV_NONE && (v) <= EV_CURRENT)
 #define valid_type(t)		((unsigned)(t) < ELF_T_NUM)
 
-/*
- * Error codes
- */
-enum {
-#define __err__(a,b)	a,
-#include <my_errors.h>		/* include constants from errors.h */
-#undef __err__
-ERROR_NUM
-};
-
 #define seterr(err)	(_elf_errno = (err))
 
 /*
