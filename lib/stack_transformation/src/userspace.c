@@ -100,12 +100,12 @@ void __st_userspace_ctor(void)
   }
 
   /* Prepare libELF. */
-  if(elf_version(EV_CURRENT) == EV_NONE)
+/*  if(elf_version(EV_CURRENT) == EV_NONE)
   {
     ST_WARN("could not prepare libELF for reading binary\n");
     return;
   }
-
+*/
   /*
    * Initialize ST handles - tries the following approaches to finding the
    * binaries:

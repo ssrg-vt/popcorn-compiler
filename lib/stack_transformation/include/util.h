@@ -67,6 +67,8 @@ int64_t my_get_num_entries(Elf* e, const char* sec);
  */
 const void* get_section_data(Elf* e, const char* sec);
 
+const void* my_get_section_data(Elf* e, const char* sec);
+
 /*
  * Return the call site information for the specified return address.
  *

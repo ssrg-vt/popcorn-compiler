@@ -114,7 +114,7 @@ st_handle st_init(const char* fn)
                                               SECTION_ST_UNWIND_ADDR);
   if(handle->unwind_addr_count > 0)
   {
-    handle->unwind_addrs = get_section_data(handle->elf,
+    handle->unwind_addrs = my_get_section_data(handle->elf,
                                             SECTION_ST_UNWIND_ADDR);
     if(!handle->unwind_addrs) goto close_elf;
     ST_INFO("Found %lu per-function unwinding metadata entries\n",
@@ -130,7 +130,7 @@ st_handle st_init(const char* fn)
   handle->unwind_count = my_get_num_entries(handle->elf, SECTION_ST_UNWIND);
   if(handle->unwind_count > 0)
   {
-    handle->unwind_locs = get_section_data(handle->elf, SECTION_ST_UNWIND);
+    handle->unwind_locs = my_get_section_data(handle->elf, SECTION_ST_UNWIND);
     if(!handle->unwind_locs ) goto close_elf;
     ST_INFO("Found %lu callee-saved frame unwinding entries\n",
             handle->unwind_count);
@@ -145,8 +145,8 @@ st_handle st_init(const char* fn)
   handle->sites_count = my_get_num_entries(handle->elf, SECTION_ST_ID);
   if(handle->sites_count > 0)
   {
-    handle->sites_id = get_section_data(handle->elf, SECTION_ST_ID);
-    handle->sites_addr = get_section_data(handle->elf, SECTION_ST_ADDR);
+    handle->sites_id = my_get_section_data(handle->elf, SECTION_ST_ID);
+    handle->sites_addr = my_get_section_data(handle->elf, SECTION_ST_ADDR);
     if(!handle->sites_id || !handle->sites_addr) goto close_elf;
     ST_INFO("Found %lu call sites\n", handle->sites_count);
   }
@@ -160,7 +160,7 @@ st_handle st_init(const char* fn)
   handle->live_vals_count = my_get_num_entries(handle->elf, SECTION_ST_LIVE);
   if(handle->live_vals_count > 0)
   {
-    handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
+    handle->live_vals = my_get_section_data(handle->elf, SECTION_ST_LIVE);
     if(!handle->live_vals) goto close_elf;
     ST_INFO("Found %lu live value location records\n",
             handle->live_vals_count);
@@ -178,7 +178,7 @@ st_handle st_init(const char* fn)
                                                  SECTION_ST_ARCH_LIVE);
   if(handle->arch_live_vals_count > 0)
   {
-    handle->arch_live_vals = get_section_data(handle->elf,
+    handle->arch_live_vals = my_get_section_data(handle->elf,
                                               SECTION_ST_ARCH_LIVE);
     if(!handle->arch_live_vals) goto close_elf;
     ST_INFO("Found %lu architecture-specific live value location records\n",
@@ -196,7 +196,9 @@ st_handle st_init(const char* fn)
   return handle;
 
 close_elf:
-  elf_end(handle->elf);
+//  elf_end(handle->elf);
+  free(handle->elf->e_data);
+  free(handle->elf);
 close_file:
   close(handle->fd);
 free_handle:
@@ -216,7 +218,9 @@ void st_destroy(st_handle handle)
   TIMER_START(st_destroy);
   ST_INFO("Cleaning up handle for '%s'\n", handle->fn);
 
-  elf_end(handle->elf);
+  //elf_end(handle->elf);
+  free(handle->elf->e_data);
+  free(handle->elf);
   close(handle->fd);
   free(handle);
 

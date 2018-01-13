@@ -19,7 +19,8 @@ CFLAGS := -O0 -Wall -Wno-unused-variable -g -nostdinc -nostdlib -static \
 LIBS   := /lib/crt1.o \
           /lib/libc.a \
           /lib/libstack-transform.a \
-          /lib/libelf.a \
+	  /lib/libc.a
+#          /lib/libelf.a \
           /lib/libc.a
 
 OPT       := $(POPCORN)/bin/opt
