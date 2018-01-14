@@ -72,30 +72,35 @@ st_handle st_init(const char* fn)
 
   if(!fn) goto return_null;
 
+printf("1. Here\n");
   TIMER_START(st_init);
   ST_INFO("Initializing handle for '%s'\n", fn);
-
+printf("2. Here\n");
   if(!(handle = (st_handle)malloc(sizeof(struct _st_handle)))) goto return_null;
   handle->fn = fn;
 
   /* Initialize libelf data */
 //  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
+printf("3. Here\n");
   if((handle->fd = open(fn, O_RDONLY, 0)) < 0) 
   {
 	printf("Couldn't open file");
 	goto free_handle;
   }
 
+printf("4. Here\n");
   if(read(handle->fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
         printf("Read Failed\n");
         goto close_file;
   }
 
+printf("5. Here\n");
   if(lseek(handle->fd, 0, SEEK_SET) < 0){
 	printf("lseek failed\n");
 	goto close_file;
   }
 
+printf("6. Here\n");
 //  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
   if(!(handle->elf = my_read_elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
 
@@ -109,11 +114,13 @@ st_handle st_init(const char* fn)
   id = (char*) e_hdr.e_ident;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
+printf("7. Here\n");
   /* Read unwinding addresses */
   handle->unwind_addr_count = my_get_num_entries(handle->elf,
                                               SECTION_ST_UNWIND_ADDR);
   if(handle->unwind_addr_count > 0)
   {
+printf("8. Here\n");
     handle->unwind_addrs = my_get_section_data(handle->elf,
                                             SECTION_ST_UNWIND_ADDR);
     if(!handle->unwind_addrs) goto close_elf;
@@ -126,10 +133,12 @@ st_handle st_init(const char* fn)
     goto close_elf;
   }
 
+printf("9. Here\n");
   /* Read unwinding information */
   handle->unwind_count = my_get_num_entries(handle->elf, SECTION_ST_UNWIND);
   if(handle->unwind_count > 0)
   {
+printf("10. Here\n");
     handle->unwind_locs = my_get_section_data(handle->elf, SECTION_ST_UNWIND);
     if(!handle->unwind_locs ) goto close_elf;
     ST_INFO("Found %lu callee-saved frame unwinding entries\n",
@@ -141,11 +150,14 @@ st_handle st_init(const char* fn)
     goto close_elf;
   }
 
+printf("11. Here\n");
   /* Read call site metadata */
   handle->sites_count = my_get_num_entries(handle->elf, SECTION_ST_ID);
   if(handle->sites_count > 0)
   {
+printf("12. Here\n");
     handle->sites_id = my_get_section_data(handle->elf, SECTION_ST_ID);
+printf("13. Here\n");
     handle->sites_addr = my_get_section_data(handle->elf, SECTION_ST_ADDR);
     if(!handle->sites_id || !handle->sites_addr) goto close_elf;
     ST_INFO("Found %lu call sites\n", handle->sites_count);
@@ -156,10 +168,12 @@ st_handle st_init(const char* fn)
     goto close_elf;
   }
 
+printf("14. Here\n");
   /* Read live value location records */
   handle->live_vals_count = my_get_num_entries(handle->elf, SECTION_ST_LIVE);
   if(handle->live_vals_count > 0)
   {
+printf("15. Here\n");
     handle->live_vals = my_get_section_data(handle->elf, SECTION_ST_LIVE);
     if(!handle->live_vals) goto close_elf;
     ST_INFO("Found %lu live value location records\n",
@@ -174,10 +188,12 @@ st_handle st_init(const char* fn)
   /* Read architecture-specific live value location records */
   // Note: unlike other sections, we may not have any architecture-specific
   // live value records
+printf("16. Here\n");
   handle->arch_live_vals_count = my_get_num_entries(handle->elf,
                                                  SECTION_ST_ARCH_LIVE);
   if(handle->arch_live_vals_count > 0)
   {
+printf("17. Here\n");
     handle->arch_live_vals = my_get_section_data(handle->elf,
                                               SECTION_ST_ARCH_LIVE);
     if(!handle->arch_live_vals) goto close_elf;
@@ -187,21 +203,28 @@ st_handle st_init(const char* fn)
   else
     ST_INFO("no architecture-specific live value location records\n");
 
+printf("18. Here\n");
   /* Get architecture-specific register operations & stack properties. */
   if(!(handle->regops = get_regops(handle->arch))) goto close_elf;
+printf("19. Here\n");
   if(!(handle->props = get_properties(handle->arch))) goto close_elf;
 
+printf("20. Here\n");
   TIMER_STOP(st_init);
 
   return handle;
 
 close_elf:
 //  elf_end(handle->elf);
+printf("21. Here\n");
   free(handle->elf->e_data);
+printf("22. Here\n");
   free(handle->elf);
 close_file:
+printf("23. Here\n");
   close(handle->fd);
 free_handle:
+printf("24. Here\n");
   free(handle);
 return_null:
   return NULL;

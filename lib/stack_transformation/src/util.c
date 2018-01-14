@@ -63,7 +63,7 @@ properties_t get_properties(uint16_t arch)
 }
 
 //str_tbl_off = e_shoff + e_shentsize*e_shstrndx
-char* match_string(Elf* e, char* name, int *str_index)
+int match_string(Elf* e, char* name, int *str_index)
 {
 	Elf64_Ehdr e_hdr;
 	Elf64_Shdr s_hdr;
@@ -118,7 +118,8 @@ char* match_string(Elf* e, char* name, int *str_index)
 			if(!strcmp(entryStr, name))
 			{
 				*str_index = i-j;
-				return stringTable;
+				free(stringTable);
+				return 1;//stringTable;
 			}
 //			printf("\n");
 			j = 0;
@@ -130,7 +131,9 @@ char* match_string(Elf* e, char* name, int *str_index)
 //			printf("%c", stringTable[i]);
 		}
 	}		
- 	return stringTable;
+// 	return stringTable;
+	free(stringTable);
+	return -1;
 }
 
 Elf64_Shdr* grep_e_header(Elf *e, int index)
@@ -214,7 +217,7 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   ASSERT(sec, "invalid arguments to get_section()\n");
   
  // if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
-  if(lseek(e->e_fd, 0, SEEK_SET) < 0){
+	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
         printf("lseek failed\n");
         close(e->e_fd);
     	return NULL;
@@ -227,10 +230,11 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   }
   shdrstrndx = e_hdr.e_shstrndx;
  
-  if(!(strTbl=match_string(e, sec, &str_index)))
+ // if(!(strTbl=match_string(e, sec, &str_index)))
+  if(match_string(e, sec, &str_index) < 0)
 	return NULL;
-  free(strTbl);
-  //printf("Given Index = %d\n", str_index);
+ // free(strTbl);
+  
   s_hdr = grep_e_header(e, str_index);
   return s_hdr; // NULL if not found
 
@@ -255,9 +259,15 @@ int64_t my_get_num_entries(Elf* e, const char* sec)
 {
   Elf64_Shdr *shdr;
   int64_t i;
-  if(!(shdr = my_get_section(e, sec))) return -1;
+  
+  if(!(shdr = my_get_section(e, sec))){
+	printf("shdr failed\n"); 
+	return -1;
+  }
+  else
+	printf("Shdr size = \n");
+
   i = shdr->sh_entsize ? (shdr->sh_size / shdr->sh_entsize) : -1;
-//  printf("Header Index = %d Expected value = %d\n", shdr->sh_name, i);
   free(shdr);
   return i;
 }
