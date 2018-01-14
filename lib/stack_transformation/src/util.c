@@ -62,7 +62,7 @@ properties_t get_properties(uint16_t arch)
   }
 }
 
-//str_tbl_off = e_shoff + e_shentsize*e_shstrndx
+/*Returns 1 if it can find the desired string*/
 int match_string(Elf* e, char* name, int *str_index)
 {
 	Elf64_Ehdr e_hdr;
@@ -104,6 +104,12 @@ int match_string(Elf* e, char* name, int *str_index)
         }
 
 	stringTable = (char*)malloc(s_hdr.sh_size);
+        if(!stringTable)
+	{
+		printf("Couldn't allocate memory\n");
+		return NULL;
+	}
+
         if(read(e->e_fd, (void*)stringTable, sizeof(char)*s_hdr.sh_size) < 0){
                 printf("Read Failed\n");
                 close(e->e_fd);
@@ -118,21 +124,18 @@ int match_string(Elf* e, char* name, int *str_index)
 			if(!strcmp(entryStr, name))
 			{
 				*str_index = i-j;
-				free(stringTable);
-				return 1;//stringTable;
+//				free(stringTable);
+				return 1;
 			}
-//			printf("\n");
 			j = 0;
 		}
 		else
 		{
 			entryStr[j] = stringTable[i];
 			j++; 
-//			printf("%c", stringTable[i]);
 		}
 	}		
-// 	return stringTable;
-	free(stringTable);
+//	free(stringTable);
 	return -1;
 }
 
@@ -172,7 +175,6 @@ Elf64_Shdr* grep_e_header(Elf *e, int index)
 			printf("SHT_NULL\n");
 			return NULL;
 		}
-//		printf("%d Got Index = %d\n ", i, s_hdr.sh_name);
 		return s_hdr;
 	}
 }
@@ -212,7 +214,6 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   Elf64_Ehdr e_hdr;
   Elf64_Shdr *s_hdr;
   int str_index = 0;
-  char* strTbl;
 
   ASSERT(sec, "invalid arguments to get_section()\n");
   
@@ -230,10 +231,8 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   }
   shdrstrndx = e_hdr.e_shstrndx;
  
- // if(!(strTbl=match_string(e, sec, &str_index)))
   if(match_string(e, sec, &str_index) < 0)
 	return NULL;
- // free(strTbl);
   
   s_hdr = grep_e_header(e, str_index);
   return s_hdr; // NULL if not found
