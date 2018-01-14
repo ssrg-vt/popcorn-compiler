@@ -73,47 +73,47 @@ int match_string(Elf* e, char* name, int *str_index)
  	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
         	printf("lseek failed\n");
         	close(e->e_fd);
-        	return NULL;
+        	return -1;
   	}
 
   	if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
         	printf("Read Failed\n");
         	close(e->e_fd);
-        	return NULL;
+        	return -1;
   	}
 
 	if(lseek(e->e_fd, e_hdr.e_shoff + e_hdr.e_shentsize*e_hdr.e_shstrndx, SEEK_SET) < 0){
 		printf("lseek failed\n");
 		close(e->e_fd);
-		return NULL;
+		return -1;
 	}
 
 	if(read(e->e_fd, (void*)&s_hdr, sizeof(Elf64_Shdr)) < 0){
 		printf("Read Failed\n");
 		close(e->e_fd);
-		return NULL;
+		return -1;
 	}
 	//got string header
 	if(e_hdr.e_shstrndx==SHN_UNDEF)
-		return NULL;
+		return -1;
 
         if(lseek(e->e_fd, s_hdr.sh_offset, SEEK_SET) < 0){
                 printf("lseek failed\n");
                 close(e->e_fd);
-                return NULL;
+                return -1;
         }
 
 	stringTable = (char*)malloc(s_hdr.sh_size);
         if(!stringTable)
 	{
 		printf("Couldn't allocate memory\n");
-		return NULL;
+		return -1;
 	}
 
         if(read(e->e_fd, (void*)stringTable, sizeof(char)*s_hdr.sh_size) < 0){
                 printf("Read Failed\n");
                 close(e->e_fd);
-                return NULL;
+                return -1;
         }
 
 	for(int i=0, j=0; i<s_hdr.sh_size; i++)
@@ -231,7 +231,7 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   }
   shdrstrndx = e_hdr.e_shstrndx;
  
-  if(match_string(e, sec, &str_index) < 0)
+  if(match_string(e, (char*)sec, &str_index) < 0)
 	return NULL;
   
   s_hdr = grep_e_header(e, str_index);
@@ -259,12 +259,8 @@ int64_t my_get_num_entries(Elf* e, const char* sec)
   Elf64_Shdr *shdr;
   int64_t i;
   
-  if(!(shdr = my_get_section(e, sec))){
-	printf("shdr failed\n"); 
+  if(!(shdr = my_get_section(e, sec)))
 	return -1;
-  }
-  else
-	printf("Shdr size = \n");
 
   i = shdr->sh_entsize ? (shdr->sh_size / shdr->sh_entsize) : -1;
   free(shdr);

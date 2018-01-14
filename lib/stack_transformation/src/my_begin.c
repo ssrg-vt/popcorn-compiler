@@ -145,7 +145,6 @@ my__elf_check_type(Elf *elf, size_t size) {
 
 Elf*
 my_read_elf_begin(int fd, Elf_Cmd cmd, Elf *ref) {
-    Elf_Arhdr *arhdr = NULL;
     size_t size = 0;
     off_t off;
     Elf *elf;
