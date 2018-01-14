@@ -124,11 +124,6 @@ struct ar_hdr {
 #if HAVE_STRUCT_NLIST_DECLARATION
 # undef nlist
 #endif /* HAVE_STRUCT_NLIST_DECLARATION */
-
-#if __LIBELF64
-#include <gelf.h>
-#endif /* __LIBELF64 */
-
 typedef struct Scn_Data Scn_Data;
 
 /*
