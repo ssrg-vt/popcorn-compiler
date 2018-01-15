@@ -90,6 +90,7 @@ class Linker:
 						for symbolName in Globals.SYMBOLS_BLACKLIST[section]:
 							output_buffer.append("\t*(" + symbolName + ");\n")
 
+					output_buffer.append("\t. = ALIGN(0x1000);\n")
 					# Section "closing" part
 					output_buffer.append("}\n")
 
