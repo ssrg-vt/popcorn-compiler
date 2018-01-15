@@ -31,7 +31,13 @@ static struct builtin_tls {
 	struct pthread pt;
 	void *space[16];
 } builtin_tls[1];
-#define MIN_TLS_ALIGN offsetof(struct builtin_tls, pt)
+
+#define MAX(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+#define MIN_TLS_ALIGN MAX(offsetof(struct builtin_tls, pt), 16)
+//16 : stack alignement for aarch64 (affect stack in pthread_create)
 
 struct tls_image {
 	void *image;
