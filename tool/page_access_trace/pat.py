@@ -6,10 +6,11 @@
 
     Where:
       time: timestamp of fault inside of application's execution
+      nid : ID of node on which fault occurred
       pid: process ID of faulting task
+      addr: faulting memory address
       perm: page access permissions
       ip: instruction address which cause the fault
-      addr: faulting memory address
 '''
 
 import os
@@ -55,7 +56,7 @@ def parsePAT(pat, config, callback, callbackData, verbose):
             elif timestamp > config.end: break # No need to keep parsing
 
             # Filter based on type of memory object accessed
-            addr = int(fields[4], base=16)
+            addr = int(fields[3], base=16)
             if config.symbolTable:
                 symbol = config.symbolTable.getSymbol(addr)
                 if symbol:
@@ -82,7 +83,7 @@ def parsePATtoGraph(pat, config, verbose):
             verbose (bool): print verbose output
     '''
     def graphCallback(fields, timestamp, addr, graph):
-        pid = int(fields[1])
+        pid = int(fields[2])
         # TODO weight read/write accesses differently?
         graph.addMapping(pid, addr & 0xfffffffffffff000)
 
@@ -125,7 +126,7 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
         chunkData[2] = curChunk # Need to maintain across callbacks!
 
         if perthread:
-            pid = int(fields[1])
+            pid = int(fields[2])
             if pid not in chunks: chunks[pid] = [ 0 for i in range(numChunks) ]
             chunks[pid][curChunk] += 1
         else: chunks[curChunk] += 1
