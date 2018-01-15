@@ -282,8 +282,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
         assert(0 && "Unsupported architecture!");
       }
 
-      MIGRATE;
-      assert(0 && "Couldn't migrate!");
+      assert(!MIGRATE && "Couldn't migrate!");
     }
     else *pthread_migrate_args() = NULL;
   }
