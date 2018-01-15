@@ -48,12 +48,16 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
-                              dst_arch, &regs_dst)) \
+      if(dst_arch != ARCH_AARCH64) \
       { \
-        fprintf(stderr, "Could not rewrite stack!\n"); \
-        ret = 0; \
+        if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
+                                dst_arch, &regs_dst)) \
+        { \
+          fprintf(stderr, "Could not rewrite stack!\n"); \
+          ret = 0; \
+        } \
       } \
+      else memcpy(&regs_dst.aarch, &regs_src, sizeof(struct regset_aarch64)); \
       ret; \
     })
 
@@ -61,19 +65,45 @@
     SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
 
 #define MIGRATE \
-    asm volatile ("mov w0, %w0;" \
-                  "mov x1, %1;" \
-                  "mov sp, %2;" \
-                  "mov x29, %3;" \
-                  "mov x8, %4;" \
-                  "svc 0;" \
-                  : /* Outputs */ \
-                  : /* Inputs */ \
-                  "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                  "i"(SYSCALL_SCHED_MIGRATE) \
-                  : /* Clobbered */ \
-                  "w0", "x1", "x8" \
-    )
+    ({ \
+      int ret = 0; \
+      if(dst_arch != ARCH_AARCH64) \
+      { \
+        ret = 1; /* Fail if we don't migrate. */ \
+        asm volatile ("mov w0, %w0;" \
+                      "mov x1, %1;" \
+                      "mov sp, %2;" \
+                      "mov x29, %3;" \
+                      "mov x8, %4;" \
+                      "svc 0;" \
+                      : /* Outputs */ \
+                      : /* Inputs */ \
+                      "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      "w0", "x1", "x8"); \
+      } \
+      else \
+      { \
+        asm volatile ("adr x0, 1f;" \
+                      "str x0, %0;" \
+                      "mov w0, %w2;" \
+                      "mov x1, %3;" \
+                      "mov sp, %4;" \
+                      "mov x29, %5;" \
+                      "mov x8, %6;" \
+                      "svc 0;" \
+                      "1: mov %w1, w0;" \
+                      : /* Outputs */ \
+                      "=m"(regs_dst.aarch.pc), "=r"(ret) \
+                      : /* Inputs */ \
+                      "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      "x0", "x1", "x8"); \
+      } \
+      ret; \
+    })
 
 #endif
 
