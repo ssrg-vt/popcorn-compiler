@@ -118,12 +118,17 @@ static inline int do_migrate(void *addr)
 
 #else /* _ENV_SELECT_MIGRATE */
 
+char __thread __migrate_to_node=-1;
 static inline int do_migrate(void *fn)
 {
+#if 0
 	struct popcorn_thread_status status;
 	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
 
 	return status.proposed_nid;
+#endif
+	/* TODO: use POSIX signal to set the variable */
+	return __migrate_to_node;
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
