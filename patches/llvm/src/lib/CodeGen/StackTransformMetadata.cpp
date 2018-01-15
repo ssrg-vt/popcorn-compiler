@@ -478,7 +478,6 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
   RegValsMap::iterator VregIt;
   StackValsMap::iterator SSIt;
   MachineInstr::const_mop_iterator MOit;
-  CallInst::const_op_iterator IRit;
 
   // Initialize new storage location/IR map objects (i.e., for virtual
   // registers & stack slots) for the stackmap
@@ -486,28 +485,25 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
   SMStackSlots.emplace(MISM, StackValsMap());
 
   // Loop over all operands
-  for(MOit = std::next(MISM->operands_begin(), 2),
-      IRit = std::next(IRSM->op_begin(), 2);
-      MOit != MISM->operands_end() && IRit != (IRSM->op_end() - 1);
-      MOit++, IRit++) {
+  MOit = std::next(MISM->operands_begin(), 2);
+  for(size_t i = 2; i < IRSM->getNumArgOperands(); i++) {
+    const Value *IRVal = IRSM->getArgOperand(i);
     if(MOit->isImm()) { // Map IR values to stack slots
       int FrameIdx = INT32_MAX;
-      const Value *IRVal = IRit->get();
-
       switch(MOit->getImm()) {
       case StackMaps::DirectMemRefOp:
         MOit++;
         assert(MOit->isFI() && "Invalid operand type");
         FrameIdx = MOit->getIndex();
-        MOit++;
+        MOit = std::next(MOit, 2);
         break;
       case StackMaps::IndirectMemRefOp:
-        MOit++; MOit++;
+        MOit = std::next(MOit, 2);
         assert(MOit->isFI() && "Invalid operand type");
         FrameIdx = MOit->getIndex();
-        MOit++;
+        MOit = std::next(MOit, 2);
         break;
-      case StackMaps::ConstantOp: MOit++; continue;
+      case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
       default: llvm_unreachable("Unrecognized stackmap operand type"); break;
       }
 
@@ -526,8 +522,8 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       SSIt->second->push_back(IRVal);
     }
     else if(MOit->isReg()) { // Map IR values to virtual registers
-      const Value *IRVal = IRit->get();
       unsigned Reg = MOit->getReg();
+      MOit++;
 
       assert(IRVal && "Invalid stackmap IR operand");
       assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
@@ -544,7 +540,6 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       llvm_unreachable("Unrecognized stackmap operand type.");
     }
   }
-  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
 }
 
 /// Rather than modifying the backend machinery to prevent hoisting code
@@ -552,9 +547,9 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
 /// real live value locations at the function call.
 void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
                                               const MachineInstr *Call) {
-  bool Changed = false;
+  bool Changed = false, Found;
   const MachineInstr *InB = SM;
-  RegValsMap::iterator VregIt;
+  RegValsMap::iterator VregIt, SrcIt;
   StackValsMap::iterator SSIt;
   CopyLocPtr C;
   RegCopyLoc *RCL;
@@ -569,90 +564,113 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
       default: DEBUG(dbgs() << "    Unhandled copy type\n"); break;
       case CopyLoc::VREG:
         RCL = (RegCopyLoc *)C.get();
+
+        // Replace current vreg with source
+        Found = false;
         for(size_t i = 2; i < SM->getNumOperands(); i++) {
           MachineOperand &MO = SM->getOperand(i);
           if(MO.isReg() && MO.getReg() == RCL->Vreg) {
-            assert(SMVregs[SM].count(RCL->Vreg) &&
-                   "Unhandled register operands in stackmap!");
-
             // TODO if the sibling register is killed/dead in the intervening
             // instruction we probably need to propagate that to the stackmap
             // and remove it from the other instruction.
-
-            // Check if source vreg is already contained in stackmap
-            if(SMVregs[SM].count(RCL->SrcVreg)) SM->RemoveOperand(i);
-            else { // Mutate current vreg to source vreg of copy instruction
-              MO.ChangeToRegister(RCL->SrcVreg, false);
-              VregIt = SMVregs[SM].find(RCL->Vreg);
-              SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
-            }
-            SMVregs[SM].erase(RCL->Vreg);
-            Changed = true;
+            MO.ChangeToRegister(RCL->SrcVreg, false);
+            Found = true;
           }
         }
+
+        // Update operand -> IR mapping to source vreg
+        if(Found) {
+          assert(SMVregs[SM].count(RCL->Vreg) &&
+                 "Unhandled register operand in stackmap!");
+          VregIt = SMVregs[SM].find(RCL->Vreg);
+          SrcIt = SMVregs[SM].find(RCL->SrcVreg);
+          if(SrcIt != SMVregs[SM].end()) {
+            for(auto IRVal : *VregIt->second)
+              SrcIt->second->push_back(IRVal);
+          }
+          else SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
+          SMVregs[SM].erase(RCL->Vreg);
+          Changed = true;
+        }
+
         break;
       case CopyLoc::STACK_LOAD:
         SCL = (StackCopyLoc *)C.get();
+
+        // Replace current vreg with stack slot
+        Found = false;
         for(size_t i = 2; i < SM->getNumOperands(); i++) {
           MachineOperand &MO = SM->getOperand(i);
           if(MO.isReg() && MO.getReg() == SCL->Vreg) {
-            MachineInstr::mop_iterator Next(&MO); Next++;
-            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
-
-            // Check if source frame index is already contained in stackmap
-            if(SMStackSlots[SM].count(SCL->StackSlot)) SM->RemoveOperand(i);
-            else {
-              // There's not a great way to replace what's already there, so
-              // trash all trailing operands up to and including the Vreg, add
-              // the spill slot, and finally add the trailing operands back.
-              while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
-              MachineInstrBuilder Worker(*MF, SM);
-              Worker.addImm(StackMaps::IndirectMemRefOp);
-              Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
-              Worker.addFrameIndex(SCL->StackSlot);
-              Worker.addImm(0);
-              for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
-
-              VregIt = SMVregs[SM].find(SCL->Vreg);
-              SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
-            }
-            SMVregs[SM].erase(SCL->Vreg);
-            Changed = true;
+            // There's not a great way to add new operands, so trash all
+            // trailing operands up to and including the Vreg, add the spill
+            // slot, and finally add the trailing operands back.
+            SmallVector<MachineOperand, 4> TrailOps(std::next(&MO),
+                                                    SM->operands_end());
+            while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
+            MachineInstrBuilder Worker(*MF, SM);
+            Worker.addImm(StackMaps::IndirectMemRefOp);
+            Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
+            Worker.addFrameIndex(SCL->StackSlot);
+            Worker.addImm(0);
+            for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
+            Found = true;
           }
         }
+
+        // Update operand -> IR mapping to source stack slot
+        if(Found) {
+          assert(SMVregs[SM].count(SCL->Vreg) &&
+                 "Unhandled register operand in stackmap!");
+          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
+          VregIt = SMVregs[SM].find(SCL->Vreg);
+          if(SSIt != SMStackSlots[SM].end()) {
+            for(auto IRVal : *VregIt->second)
+              SSIt->second->push_back(IRVal);
+          }
+          else SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
+          SMVregs[SM].erase(SCL->Vreg);
+          Changed = true;
+        }
+
         break;
       case CopyLoc::STACK_STORE:
         SCL = (StackCopyLoc *)C.get();
+
+        // Replace current stack slot with vreg
+        // Note: this *must* be an indirect memory reference (spill slot)
+        // since we're copying to a register!
+        Found = false;
         for(size_t i = 2; i < SM->getNumOperands(); i++) {
           MachineOperand &MO = SM->getOperand(i);
           if(MO.isFI() && MO.getIndex() == SCL->StackSlot) {
-            // Note: this *must* be an indirect memory reference (spill slot)
-            // since we're copying to a register!
-            unsigned StartIdx = i - 2;
-            MachineInstr::mop_iterator Next(&MO); Next++; Next++;
-            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
-
             // TODO if the sibling register is killed/dead in the intervening
             // instruction we probably need to propagate that to the stackmap
             // and remove it from the other instruction.
-
-            if(SMVregs[SM].count(SCL->Vreg)) {
-              for(size_t j = 0; j < 4; j++)
-                SM->RemoveOperand(i - 2 + j);
-            }
-            else {
-              // Mutate the first indirect memory reference operand, then
-              // remove the rest
-              SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
-              for(size_t j = 0; j < 3; j++) SM->RemoveOperand(StartIdx + 1);
-
-              SSIt = SMStackSlots[SM].find(SCL->StackSlot);
-              SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
-            }
-            SMStackSlots[SM].erase(SCL->StackSlot);
-            Changed = true;
+            unsigned StartIdx = i - 2;
+            SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
+            SM->RemoveOperand(StartIdx + 1); // Size
+            SM->RemoveOperand(StartIdx + 1); // Frame index
+            SM->RemoveOperand(StartIdx + 1); // Frame pointer offset
+            Found = true;
           }
         }
+
+        // Update operand -> IR mapping to source vreg
+        if(Found) {
+          assert(SMStackSlots[SM].count(SCL->StackSlot) &&
+                 "Unhandled stack slot operand in stackmap!");
+          VregIt = SMVregs[SM].find(SCL->Vreg);
+          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
+          if(VregIt != SMVregs[SM].end()) {
+            for(auto IRVal : *SSIt->second)
+              VregIt->second->push_back(IRVal);
+          }
+          else SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
+          SMStackSlots[SM].erase(SCL->StackSlot);
+          Changed = true;
+        }
+
         break;
       }
     }
