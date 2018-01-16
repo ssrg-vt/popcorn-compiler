@@ -118,17 +118,21 @@ static inline int do_migrate(void *addr)
 
 #else /* _ENV_SELECT_MIGRATE */
 
-char __thread __migrate_to_node=-1;
+#ifdef MIGRATE_USING_GLOBAL_VARIABLE
+//Need TLS support!
+__thread char __migrate_to_node=-1;
+#endif
 static inline int do_migrate(void *fn)
 {
-#if 0
+#if MIGRATE_USING_GLOBAL_VARIABLE
+	/* TODO: use POSIX signal to set the variable */
+	return __migrate_to_node;
+#else
 	struct popcorn_thread_status status;
 	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
 
 	return status.proposed_nid;
 #endif
-	/* TODO: use POSIX signal to set the variable */
-	return __migrate_to_node;
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
