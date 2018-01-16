@@ -5745,7 +5745,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 ===================================================================
 --- lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(revision 320332)
 +++ lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(working copy)
-@@ -6542,6 +6542,25 @@
+@@ -6542,6 +6542,43 @@
    Callee = getValue(CI.getCalledValue());
    NullPtr = DAG.getIntPtrConstant(0, DL, true);
  
@@ -5761,6 +5761,24 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 +    CSE = CSE->getGluedNode();
 +  }
 +
++  // It's possible the function call that induced this stackmap to be generated
++  // got lowered directly to a machine instruction, which can lead to weird
++  // cases like trying to glue this stackmap to another.  This causes the
++  // instruction scheduler to choke, so avoid that situation.
++  // TODO why does gluing 2 stackmaps cause it to die?  It complains about
++  // NumLiveRegs already being zero for releasing call dependencies in
++  // ScheduleDAGRRList.cpp:759
++  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) {
++    SDNode *Check = CSE;
++    do {
++      if(Check->isMachineOpcode() &&
++         Check->getMachineOpcode() == TargetOpcode::STACKMAP) {
++        CSE = nullptr;
++        break;
++      }
++    } while((Check = Check->getGluedNode()));
++  }
++
 +  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) Chain = SDValue(CSE, 0);
 +  else {
 +    DEBUG(dbgs() << "WARNING: no call node for: "; Chain->dump());
@@ -5771,7 +5789,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
    // The stackmap intrinsic only records the live variables (the arguemnts
    // passed to it) and emits NOPS (if requested). Unlike the patchpoint
    // intrinsic, this won't be lowered to a function call. This means we don't
-@@ -6552,9 +6571,26 @@
+@@ -6552,9 +6589,26 @@
    // chain, flag = STACKMAP(id, nbytes, ..., chain, flag)
    // chain, flag = CALLSEQ_END(chain, 0, 0, flag)
    //
@@ -5799,7 +5817,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
    // Add the <id> and <numBytes> constants.
    SDValue IDVal = getValue(CI.getOperand(PatchPointOpers::IDPos));
    Ops.push_back(DAG.getTargetConstant(
-@@ -6581,9 +6617,30 @@
+@@ -6581,9 +6635,30 @@
    InFlag = Chain.getValue(1);
  
    Chain = DAG.getCALLSEQ_END(Chain, NullPtr, NullPtr, InFlag, DL);
