@@ -170,7 +170,7 @@ class StackTransformMetadata : public MachineFunctionPass {
   const TargetInstrInfo *TII;
   const TargetRegisterInfo *TRI;
   const TargetValues *TVG;
-  const LiveIntervals *LI;
+  LiveIntervals *LI;
   const LiveStacks *LS;
   const SlotIndexes *Indexes;
   const VirtRegMap *VRM;
@@ -212,10 +212,14 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// virtual register/stack slot <-> IR value mappings
   void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 
+  /// Extend the live range for a register to include an instruction.
+  void updateRegisterLiveInterval(MachineOperand &Src,
+                                  const MachineInstr *Inst);
+
   /// Rather than modifying the backend machinery to prevent hoisting code
   /// between the stackmap and call site, unwind instructions in order to get
   /// real live value locations at the function call.
-  void unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
+  bool unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
 
   /// Is a virtual register live across the machine instruction?
   /// Note: returns false if the MI is the last instruction for which the
@@ -255,7 +259,7 @@ class StackTransformMetadata : public MachineFunctionPass {
   void findAlternateVregLocs(const SMInstBundle &SM);
 
   /// Find stackmap operands that have been spilled to alternate locations
-  void findAlternateOpLocs();
+  bool findAlternateOpLocs();
 
   /// Ensure virtual registers used to generate architecture-specific values
   /// are handled by the stackmap & convert to physical registers
@@ -285,13 +289,13 @@ char &llvm::StackTransformMetadataID = StackTransformMetadata::ID;
 const std::string StackTransformMetadata::SMName("llvm.experimental.stackmap");
 
 INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
-  "Gather stack transformation metadata", false, true)
+  "Gather stack transformation metadata", false, false)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
-  "Gather stack transformation metadata", false, true)
+  "Gather stack transformation metadata", false, false)
 
 char StackTransformMetadata::ID = 0;
 
@@ -305,6 +309,8 @@ void StackTransformMetadata::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
+  bool Changed = false;
+
   if(fn.getFrameInfo()->hasStackMap()) {
     MF = &fn;
     MFI = MF->getFrameInfo();
@@ -325,12 +331,12 @@ bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
     );
 
     findStackmapsAndStackSlotCopies();
-    findAlternateOpLocs();
+    Changed = findAlternateOpLocs();
     findArchSpecificLiveVals();
     if(!NoWarnings) warnUnhandled();
   }
 
-  return false;
+  return Changed;
 }
 
 /// Print information about a virtual register and it's associated IR value
@@ -542,18 +548,42 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
   }
 }
 
+/// Extend the live range for a register to include an instruction.
+void
+StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
+                                                   const MachineInstr *SM) {
+  assert(Src.isReg() && "Cannot update live range for non-register operand");
+
+  LiveInterval &Reg = LI->getInterval(Src.getReg());
+  SlotIndex SrcSlot = Indexes->getInstructionIndex(Src.getParent());
+  LiveInterval::iterator Seg = Reg.find(SrcSlot);
+  if(Seg != Reg.end()) {
+    SlotIndex SMSlot = Indexes->getInstructionIndex(SM);
+    if(Seg->end < SMSlot) {
+      // Note: we *should* set the ending slot index to SMSlot.getRegSlot() but
+      // the register scavenger complains about using an undefined register.
+      Reg.addSegment(LiveInterval::Segment(Seg->start, SMSlot, Seg->valno));
+      DEBUG(dbgs() << "    -> Updated register live interval: "; Reg.dump());
+    }
+  }
+}
+
 /// Rather than modifying the backend machinery to prevent hoisting code
 /// between the stackmap and call site, unwind instructions in order to get
 /// real live value locations at the function call.
-void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
+bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
                                               const MachineInstr *Call) {
   bool Changed = false, Found;
-  const MachineInstr *InB = SM;
+  MachineOperand *SrcOp;
+  MachineInstr *InB = SM;
   RegValsMap::iterator VregIt, SrcIt;
   StackValsMap::iterator SSIt;
   CopyLocPtr C;
   RegCopyLoc *RCL;
   StackCopyLoc *SCL;
+
+  // Note: anything named or related to "Src" refers to the source of the
+  // copy operation, i.e., the originating location for the value
 
   DEBUG(dbgs() << "\nUnwinding stackmap back to call site:\n\n");
   while((InB = InB->getPrevNode()) && InB != Call) {
@@ -564,16 +594,18 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
       default: DEBUG(dbgs() << "    Unhandled copy type\n"); break;
       case CopyLoc::VREG:
         RCL = (RegCopyLoc *)C.get();
+        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(RCL->SrcVreg));
 
         // Replace current vreg with source
         Found = false;
         for(size_t i = 2; i < SM->getNumOperands(); i++) {
           MachineOperand &MO = SM->getOperand(i);
           if(MO.isReg() && MO.getReg() == RCL->Vreg) {
-            // TODO if the sibling register is killed/dead in the intervening
-            // instruction we probably need to propagate that to the stackmap
-            // and remove it from the other instruction.
-            MO.ChangeToRegister(RCL->SrcVreg, false);
+            MO.ChangeToRegister(RCL->SrcVreg, false, false, SrcOp->isKill(),
+                                SrcOp->isDead(), false, false);
+            InB->clearRegisterKills(RCL->SrcVreg, TRI);
+            InB->clearRegisterDeads(RCL->SrcVreg);
+            updateRegisterLiveInterval(*SrcOp, SM);
             Found = true;
           }
         }
@@ -597,7 +629,8 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
       case CopyLoc::STACK_LOAD:
         SCL = (StackCopyLoc *)C.get();
 
-        // Replace current vreg with stack slot
+        // Replace current vreg with stack slot.
+        // Note: stack slots don't have liveness information to fix up
         Found = false;
         for(size_t i = 2; i < SM->getNumOperands(); i++) {
           MachineOperand &MO = SM->getOperand(i);
@@ -636,6 +669,7 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
         break;
       case CopyLoc::STACK_STORE:
         SCL = (StackCopyLoc *)C.get();
+        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(SCL->Vreg));
 
         // Replace current stack slot with vreg
         // Note: this *must* be an indirect memory reference (spill slot)
@@ -660,6 +694,12 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
         if(Found) {
           assert(SMStackSlots[SM].count(SCL->StackSlot) &&
                  "Unhandled stack slot operand in stackmap!");
+
+          // Update liveness information to include the stackmap
+          InB->clearRegisterKills(SCL->Vreg, TRI);
+          InB->clearRegisterDeads(SCL->Vreg);
+          updateRegisterLiveInterval(*SrcOp, SM);
+
           VregIt = SMVregs[SM].find(SCL->Vreg);
           SSIt = SMStackSlots[SM].find(SCL->StackSlot);
           if(VregIt != SMVregs[SM].end()) {
@@ -678,6 +718,7 @@ void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
   }
 
   if(Changed) DEBUG(dbgs() << "\n  Transformed stackmap: "; SM->dump());
+  return Changed;
 }
 
 /// Is a virtual register live across the machine instruction?
@@ -896,7 +937,8 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
 }
 
 /// Find alternate storage locations for stackmap operands
-void StackTransformMetadata::findAlternateOpLocs() {
+bool StackTransformMetadata::findAlternateOpLocs() {
+  bool Changed = false;
   RegValsMap::iterator vregIt, vregEnd;
 
   for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
@@ -916,7 +958,7 @@ void StackTransformMetadata::findAlternateOpLocs() {
 
     // Because the CodeGen machinery is wily (and may hoist instructions above
     // the stackmap), unwind copies until the call site.
-    unwindToCallSite(MISM, MICall);
+    Changed |= unwindToCallSite(MISM, MICall);
 
     // Find alternate locations for vregs in stack map.  Note we don't need to
     // find alternate stack slot locations, as allocas *should* already be in
@@ -924,6 +966,8 @@ void StackTransformMetadata::findAlternateOpLocs() {
     // are covered here).
     findAlternateVregLocs(*S);
   }
+
+  return Changed;
 }
 
 /// Ensure virtual registers used to generate architecture-specific values are
