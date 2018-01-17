@@ -6595,7 +6595,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1216 @@
+@@ -0,0 +1,1263 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -6939,7 +6939,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +/// Print information about a virtual register and it's associated IR value
 +void StackTransformMetadata::dumpReg(unsigned Reg, const Value *IRVal) const {
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  if(TargetRegisterInfo::isPhysicalRegister(Reg))
 +    dbgs() << ": in register " << PrintReg(Reg, TRI);
 +  else {
@@ -6954,7 +6954,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Print information about a stack slot and it's associated IR value
 +void StackTransformMetadata::dumpStackSlot(int SS, const Value *IRVal) const {
 +  assert(!MFI->isDeadObjectIndex(SS) && "Invalid stack slot");
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  dbgs() << ": in stack slot " << SS << " (size: " << MFI->getObjectSize(SS)
 +         << ")\n";
 +}
@@ -7150,18 +7150,65 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +void
 +StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
 +                                                   const MachineInstr *SM) {
++  typedef LiveInterval::Segment Segment;
++
 +  assert(Src.isReg() && "Cannot update live range for non-register operand");
 +
-+  LiveInterval &Reg = LI->getInterval(Src.getReg());
-+  SlotIndex SrcSlot = Indexes->getInstructionIndex(Src.getParent());
-+  LiveInterval::iterator Seg = Reg.find(SrcSlot);
-+  if(Seg != Reg.end()) {
-+    SlotIndex SMSlot = Indexes->getInstructionIndex(SM);
-+    if(Seg->end < SMSlot) {
-+      // Note: we *should* set the ending slot index to SMSlot.getRegSlot() but
-+      // the register scavenger complains about using an undefined register.
-+      Reg.addSegment(LiveInterval::Segment(Seg->start, SMSlot, Seg->valno));
-+      DEBUG(dbgs() << "    -> Updated register live interval: "; Reg.dump());
++  unsigned Vreg = Src.getReg();
++  bool hasRegUnit = false;
++  SlotIndex Slots[2] = {
++    Indexes->getInstructionIndex(Src.getParent()),
++    Indexes->getInstructionIndex(SM)
++  };
++
++  LiveInterval &Reg = LI->getInterval(Vreg);
++  LiveInterval::iterator Seg = Reg.find(Slots[0]);
++  assert(Seg != Reg.end() && Seg->contains(Slots[0]) &&
++         "Invalid live interval");
++
++  if(Seg->end < Slots[1]) {
++    // Update the segment to include the stackmap
++    SlotIndex SMRegSlot = Slots[1].getRegSlot();
++    Seg = Reg.addSegment(Segment(Seg->start, SMRegSlot, Seg->valno));
++    DEBUG(dbgs() << "    -> Updated register live interval: "; Seg->dump());
++
++    // We also need to update the physical register's register unit (RU) live
++    // range because LiveIntervals::addKillFlags() will use the RU's live range
++    // to avoid marking a physical register dead if two virtual registers
++    // (mapped to that physical register) have overlapping live ranges.
++    SMRegSlot = SMRegSlot.getNextIndex();
++    MCRegUnitIterator Outer(VRM->getPhys(Vreg), TRI);
++    for(MCRegUnitIterator Unit(Outer); Unit.isValid(); ++Unit) {
++      LiveRange &RURange = LI->getRegUnit(*Unit);
++      LiveRange::iterator RUS;
++
++      for(size_t i = 0; i < 2; i++, RUS = RURange.end()) {
++        RUS = RURange.find(Slots[i]);
++        if(RUS != RURange.end() && RUS->contains(Slots[i])) break;
++      }
++
++      if(RUS != RURange.end()) {
++        hasRegUnit = true;
++        Seg = RURange.addSegment(Segment(RUS->start, SMRegSlot, RUS->valno));
++        DEBUG(
++          dbgs() << "    -> Updated segment for register unit "
++                 << *Unit << ": ";
++          Seg->dump();
++        );
++        break;
++      }
++    }
++
++    // If we can't extend one of the current RU ranges, add a new range.
++    if(!hasRegUnit) {
++      LiveRange &RURange = LI->getRegUnit(*Outer);
++      VNInfo *Valno = RURange.getNextValue(Slots[0], LI->getVNInfoAllocator());
++      Seg = RURange.addSegment(Segment(Slots[0], SMRegSlot, Valno));
++      DEBUG(
++        dbgs() << "    -> Added segment for register unit "
++               << *Outer << ": ";
++        Seg->dump();
++      );
 +    }
 +  }
 +}
