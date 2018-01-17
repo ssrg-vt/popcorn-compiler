@@ -63,12 +63,14 @@ def parseArguments():
     plot.add_argument("--save-plot", type=str,
             help="If specified, save the plot to file")
 
-    problemsym = parser.add_argument_group("Per-symbol Access Options")
+    problemsym = parser.add_argument_group(
+            "Per-symbol Access Options (requires -b/--binary)")
     problemsym.add_argument("-l", "--list", action="store_true",
-                    help="List memory objects that cause the most faults " \
-                         "- requires -b/--binary")
-    problemsym.add_argument("--num-syms", type=int, default=10,
-                    help="Number of symbols to list")
+            help="List memory objects that cause the most faults")
+    problemsym.add_argument("-f", "--false-sharing", action="store_true",
+            help="List memory objects that induce false-sharing across nodes")
+    problemsym.add_argument("--num", type=int, default=10,
+            help="Number of symbols (-l) or pages (-f) to list")
 
     return parser.parse_args()
 
@@ -99,10 +101,10 @@ def sanityCheck(args):
         assert args.chunks > 1, \
             "Number of chunks must be >= 1 ({})".format(args.chunks)
 
-    if args.list:
+    if args.list or args.false_sharing:
         assert args.binary, "Must specify a binary for -l/--list"
-        assert args.num_syms > 0, \
-            "Number of symbols must be >= 1 ({})".format(args.num_syms)
+        assert args.num > 0, \
+            "Number of symbols must be >= 1 ({})".format(args.num)
 
 ###############################################################################
 # Driver
@@ -136,6 +138,30 @@ if __name__ == "__main__":
             pat.parsePATforProblemSymbols(args.input, config, args.verbose)
         print("\n{:30} | Number of Accesses".format("Program Object"))
         print("{:-<30}-|-------------------".format("-"))
-        for sym in sortedSyms[:args.num_syms]:
+        for sym in sortedSyms[:args.num]:
             print("{:30} | {}".format(sym[1], sym[0]))
+
+    if args.false_sharing:
+        pageFaultObjs = pat.parsePATforFalseSharing(args.input, config,
+                                                    args.verbose)
+        end = min(args.num - 1, len(pageFaultObjs) - 1)
+        while end >= 0 and pageFaultObjs[end].falseFaults == 0: end -= 1
+        if end >= 0:
+            trimmed = pageFaultObjs[:end+1]
+
+            print("\n{:>12} | False faults".format("Page"))
+            print("{:->12}-|-------------".format("-"))
+            for page in trimmed:
+                if page.falseFaults == 0: continue
+                print("{:>12x} | {} ".format(page.page, page.falseFaults))
+            print()
+
+            for page in trimmed:
+                if page.falseFaults == 0: continue
+                print("Interfering symbols on page {:x}:".format(page.page))
+                for sym in page.problemSymbols:
+                    if sym == None: continue
+                    print(sym)
+                print()
+        else: print("Didn't detect any false sharing!")
 
