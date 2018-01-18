@@ -8,9 +8,10 @@
       time: timestamp of fault inside of application's execution
       nid : ID of node on which fault occurred
       pid: process ID of faulting task
-      addr: faulting memory address
       perm: page access permissions
       ip: instruction address which cause the fault
+      addr: faulting memory address
+      region: region identifier
 '''
 
 import os
@@ -60,7 +61,7 @@ def parsePAT(pat, config, callback, callbackData, verbose):
             elif timestamp > config.end: break # No need to keep parsing
 
             # Filter based on type of memory object accessed
-            addr = int(fields[3], base=16)
+            addr = int(fields[5], base=16)
             if config.symbolTable:
                 symbol = config.symbolTable.getSymbol(addr)
                 if symbol:
@@ -71,14 +72,14 @@ def parsePAT(pat, config, callback, callbackData, verbose):
             if verbose:
                 lineNum += 1
                 if lineNum % 10000 == 0:
-                    sys.stdout.write("\rParsed {} lines...".format(lineNum))
+                    sys.stdout.write("\rParsed {} faults...".format(lineNum))
                     sys.stdout.flush()
 
             callback(fields, timestamp, addr, symbol, callbackData)
 
-    if verbose: print("\rParsed {} lines".format(lineNum))
+    if verbose: print("\rParsed {} faults".format(lineNum))
 
-def parsePATtoGraph(pat, config, verbose):
+def parsePATtoGraphs(pat, config, verbose):
     ''' Parse a page access trace (PAT) file and return a graph representing
         page fault patterns within a given time window.
 
@@ -90,14 +91,24 @@ def parsePATtoGraph(pat, config, verbose):
         Return:
             graph (Graph): graph containing thread -> page mappings
     '''
-    def graphCallback(fields, timestamp, addr, symbol, graph):
+    def graphCallback(fields, timestamp, addr, symbol, graphData):
+        graphs = graphData[0]
+        region = int(fields[6])
         pid = int(fields[2])
+        if region not in graphs: graphs[region] = Graph(graphData[1], True)
         # TODO weight read/write accesses differently?
-        graph.addMapping(pid, getPage(addr))
+        graphs[region].addMapping(pid, getPage(addr))
 
-    graph = Graph(pat, hasEdgeWeights=True)
-    parsePAT(pat, config, graphCallback, graph, verbose)
-    return graph
+    graphs = {}
+    callbackData = (graphs, pat)
+    parsePAT(pat, config, graphCallback, callbackData, verbose)
+
+    if verbose:
+        regions = ""
+        for region in graphs: regions += "{} ".format(region)
+        print("Found {} regions: {}".format(len(graphs), regions[:-1]))
+
+    return graphs
 
 def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
     ''' Parse page fault into frequencies over the duration of the
@@ -277,7 +288,7 @@ def parsePATforFalseSharing(pat, config, verbose):
         if symbol:
             page = getPage(addr)
             if page not in pagesAccessed: pagesAccessed[page] = PageTracker(page)
-            pagesAccessed[page].track(symbol.name, int(fields[1]), fields[4])
+            pagesAccessed[page].track(symbol.name, int(fields[1]), fields[3])
 
     pagesAccessed = {}
     parsePAT(pat, config, falseSharingCallback, pagesAccessed, verbose)

@@ -5,6 +5,7 @@
 import sys
 from sys import float_info
 import argparse
+import os
 from os import path
 
 import pat
@@ -121,10 +122,12 @@ if __name__ == "__main__":
                              args.no_code, args.no_data)
 
     if args.partition:
-        graph = pat.parsePATtoGraph(args.input, config, args.verbose)
-        metisgraph.placeThreads(graph, args.nodes, args.tid_map, args.gpmetis,
-                                args.schedule, args.save_partition,
-                                args.verbose)
+        graphs = pat.parsePATtoGraphs(args.input, config, args.verbose)
+        if os.path.isfile(args.schedule): os.remove(args.schedule)
+        for region in graphs:
+            metisgraph.placeThreads(graphs[region], region, args.nodes,
+                                    args.tid_map, args.gpmetis, args.schedule,
+                                    args.save_partition, args.verbose)
 
     if args.trend:
         chunks, ranges = pat.parsePATtoTrendline(args.input, config,
