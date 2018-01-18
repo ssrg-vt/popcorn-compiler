@@ -65,7 +65,7 @@ def parseArguments():
             help="If specified, save the plot to file")
 
     problemsym = parser.add_argument_group(
-            "Per-symbol Access Options (requires -b/--binary)")
+            "Per-symbol Fault Options (requires -b/--binary)")
     problemsym.add_argument("-l", "--list", action="store_true",
             help="List memory objects that cause the most faults")
     problemsym.add_argument("-f", "--false-sharing", action="store_true",
@@ -94,16 +94,19 @@ def sanityCheck(args):
         .format(args.start, args.end)
 
     if args.partition:
-        if args.tid_map != None: args.tid_map = path.abspath(args.tid_map)
         assert args.nodes >= 1, \
             "Number of nodes must be >= 1 ({})".format(args.nodes)
+        args.gpmetis = path.abspath(args.gpmetis)
+        assert path.isfile(args.gpmetis), \
+            "Invalid gpmetis '{}'".format(args.gpmetis)
+        if args.tid_map != None: args.tid_map = path.abspath(args.tid_map)
 
     if args.trend:
-        assert args.chunks > 1, \
+        assert args.chunks >= 1, \
             "Number of chunks must be >= 1 ({})".format(args.chunks)
 
     if args.list or args.false_sharing:
-        assert args.binary, "Must specify a binary for -l/--list"
+        assert args.binary, "Must specify a binary for --list/--false-sharing"
         assert args.num > 0, \
             "Number of symbols must be >= 1 ({})".format(args.num)
 
@@ -142,7 +145,7 @@ if __name__ == "__main__":
         print("\n{:30} | Number of Accesses".format("Program Object"))
         print("{:-<30}-|-------------------".format("-"))
         for sym in sortedSyms[:args.num]:
-            print("{:30} | {}".format(sym[1], sym[0]))
+            print("{:30} | {}".format(sym[0], sym[1]))
 
     if args.false_sharing:
         pageFaultObjs = pat.parsePATforFalseSharing(args.input, config,
@@ -155,16 +158,12 @@ if __name__ == "__main__":
             print("\n{:>12} | False faults".format("Page"))
             print("{:->12}-|-------------".format("-"))
             for page in trimmed:
-                if page.falseFaults == 0: continue
                 print("{:>12x} | {} ".format(page.page, page.falseFaults))
             print()
 
             for page in trimmed:
-                if page.falseFaults == 0: continue
                 print("Interfering symbols on page {:x}:".format(page.page))
-                for sym in page.problemSymbols:
-                    if sym == None: continue
-                    print(sym)
+                for sym in page.problemSymbols: print(sym)
                 print()
         else: print("Didn't detect any false sharing!")
 
