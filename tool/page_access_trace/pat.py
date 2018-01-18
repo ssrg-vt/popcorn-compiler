@@ -2,12 +2,12 @@
     for each page fault recorded by the operating system at a given moment in
     the application's execution.  Each line has the following format:
 
-    time nid pid perm ip addr
+    time nid tid perm ip addr
 
     Where:
       time: timestamp of fault inside of application's execution
       nid : ID of node on which fault occurred
-      pid: process ID of faulting task
+      tid: Linux task ID of faulting task
       perm: page access permissions
       ip: instruction address which cause the fault
       addr: faulting memory address
@@ -80,8 +80,9 @@ def parsePAT(pat, config, callback, callbackData, verbose):
     if verbose: print("\rParsed {} faults".format(lineNum))
 
 def parsePATtoGraphs(pat, config, verbose):
-    ''' Parse a page access trace (PAT) file and return a graph representing
-        page fault patterns within a given time window.
+    ''' Parse a page access trace (PAT) file and return graphs representing
+        page fault patterns within a given time window.  Returns a graph per
+        region contained in the PAT.
 
         Arguments:
             pat (str): page access trace file
@@ -89,15 +90,16 @@ def parsePATtoGraphs(pat, config, verbose):
             verbose (bool): print verbose output
 
         Return:
-            graph (Graph): graph containing thread -> page mappings
+            graphs (dict: int -> Graph): dictionary containing per-region
+                                         thread/page access graph
     '''
     def graphCallback(fields, timestamp, addr, symbol, graphData):
         graphs = graphData[0]
         region = int(fields[6])
-        pid = int(fields[2])
+        tid = int(fields[2])
         if region not in graphs: graphs[region] = Graph(graphData[1], True)
         # TODO weight read/write accesses differently?
-        graphs[region].addMapping(pid, getPage(addr))
+        graphs[region].addMapping(tid, getPage(addr))
 
     graphs = {}
     callbackData = (graphs, pat)
@@ -136,10 +138,10 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
     '''
     def getTimeRange(pat):
         with open(pat, 'rb') as fp:
-            start = float(fp.readline().split()[0])
+            start = float(fp.readline().split(maxsplit=1)[0])
             fp.seek(-2, os.SEEK_END)
             while fp.read(1) != b"\n": fp.seek(-2, os.SEEK_CUR)
-            end = float(fp.readline().split()[0])
+            end = float(fp.readline().split(maxsplit=1)[0])
             return start, end
 
     def trendlineCallback(fields, timestamp, addr, symbol, chunkData):
@@ -154,9 +156,9 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
         chunkData[2] = curChunk # Need to maintain across callbacks!
 
         if perthread:
-            pid = int(fields[2])
-            if pid not in chunks: chunks[pid] = [ 0 for i in range(numChunks) ]
-            chunks[pid][curChunk] += 1
+            tid = int(fields[2])
+            if tid not in chunks: chunks[tid] = [ 0 for i in range(numChunks) ]
+            chunks[tid][curChunk] += 1
         else: chunks[curChunk] += 1
 
     start, end = getTimeRange(pat)
@@ -178,19 +180,22 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
     # TODO this should be directly calculated, but we have to specially handle
     # when the user doesn't set the window start/end times
     startChunk = 0
-    endChunk = 99
+    endChunk = numChunks - 1
     for i in reversed(range(numChunks)):
         if ranges[i] >= config.start: startChunk = i
+        else: break
     for i in range(numChunks):
         if ranges[i] <= config.end: endChunk = i
+        else: break
 
     # Note: end number for python slices are not inclusive, but we want to
     # include endChunk so add 1
+    endChunk += 1
     if perthread:
         retChunks = {}
-        for pid in chunks: retChunks[pid] = chunks[pid][startChunk:endChunk+1]
-        return retChunks, ranges[startChunk:endChunk+1]
-    else: return chunks[startChunk:endChunk+1], ranges[startChunk:endChunk+1]
+        for tid in chunks: retChunks[tid] = chunks[tid][startChunk:endChunk]
+        return retChunks, ranges[startChunk:endChunk]
+    else: return chunks[startChunk:endChunk], ranges[startChunk:endChunk]
 
 def parsePATforProblemSymbols(pat, config, verbose):
     ''' Parse PAT for symbols which cause the most faults.  Return a list of
@@ -220,9 +225,7 @@ def parsePATforProblemSymbols(pat, config, verbose):
     parsePAT(pat, config, problemSymbolCallback, objAccessed, verbose)
 
     # Generate list sorted by number of times accessed
-    sortedSyms = [ (objAccessed[sym], sym) for sym in objAccessed ]
-    sortedSyms.sort(reverse=True, key=lambda v: v[0])
-    return sortedSyms
+    return sorted(objAccessed.items(), reverse=True, key=lambda s: s[1])
 
 def parsePATforFalseSharing(pat, config, verbose):
     ''' Parse PAT for symbols which induce false sharing, i.e., two symbols
@@ -240,6 +243,10 @@ def parsePATforFalseSharing(pat, config, verbose):
             false sharing.  False sharing is, by definition, caused when
             faults are induced by accessing separate program objects mapped to
             the same page.
+
+            This implementation is heavily dependent on the fact we're using an
+            MSI protocol and is only applicable for PATs from distributed
+            execution.
         '''
         def __init__(self, page):
             self.page = page
@@ -247,7 +254,7 @@ def parsePATforFalseSharing(pat, config, verbose):
             self.falseFaults = 0
             self.seen = set([0])
             self.hasCopy = set([0])
-            self.lastSym = None
+            self.lastWrite = None
             self.problemSymbols = set()
 
         def track(self, symbol, nid, perm):
@@ -263,22 +270,22 @@ def parsePATforFalseSharing(pat, config, verbose):
 
             if perm == "W":
                 # Either we're upgrading an existing page's permissions from
-                # "R", or we're in an invalid state due to a previous write;
-                # check if it was to the same symbol.
+                # "R", or we're in an invalid state due to a previous write.
+                # If the latter, check if the write was to the same symbol.
                 if nid not in self.hasCopy and \
-                        self.lastSym and symbol != self.lastSym:
+                        self.lastWrite and symbol != self.lastWrite:
                     self.problemSymbols.add(symbol)
-                    self.problemSymbols.add(self.lastSym)
+                    self.problemSymbols.add(self.lastWrite)
                     self.falseFaults += 1
                 self.hasCopy = set([nid])
-                self.lastSym = symbol
+                self.lastWrite = symbol
             else: # perm == "R"
-                # We're in the invalid state (we never need to "downgrade"
-                # permissions) due to a previous write; check if was to the
-                # same symbol.
-                if self.lastSym and symbol != self.lastSym:
+                # We're in the invalid state due to a previous write (we never
+                # need to "downgrade" permissions).  Check if was to the same
+                # symbol.
+                if self.lastWrite and symbol != self.lastWrite:
                     self.problemSymbols.add(symbol)
-                    self.problemSymbols.add(self.lastSym)
+                    self.problemSymbols.add(self.lastWrite)
                     self.falseFaults += 1
                 self.hasCopy.add(nid)
 

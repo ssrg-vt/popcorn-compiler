@@ -51,10 +51,10 @@ def getVertexComment(vertex, idx):
     return "% index {} -- {}".format(idx, vertex)
 
 def getVertexData(vertex, indexes):
-    assert len(vertex.edges) > 0, "No edges for {}".format(str(vertex))
+    assert len(vertex.edges) > 0, "No edges for {}".format(vertex)
     ret = ""
     for other in vertex.edges:
-        ret += "{} {} ".format(indexes[other], vertex.edges[other])
+        ret += "{} {} ".format(indexes[other], vertex[other])
     return ret[:-1]
 
 def writeGraphToFile(graph, ptids, suffix, verbose):
@@ -78,7 +78,7 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
           associated with each vertex in the graph.  If nvweights > 0, then bit
           2 of fmt must be set.
 
-        Vertics:
+        Vertices:
         - Each line after the header represents an adjacency list for a vertex
           in the graph.  Adjacency lists are maintained in <index, weight>
           tuples.
@@ -158,7 +158,7 @@ def parseTIDMapFile(mapFile, verbose):
     try:
         with open(mapFile, 'r') as fp:
             if verbose:
-                print("-> Parsing mapping file '{}' <-".format(mapFile))
+                print("-> Parsing thread mapping file '{}' <-".format(mapFile))
             ids = []
             for line in fp:
                 fields = line.split()
@@ -178,7 +178,7 @@ def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
     ''' Run the gpmetis program to partition a graph. '''
     global prefix
 
-    if verbose: print("-> Placing threads across {} nodes".format(nodes))
+    if verbose: print("-> Placing threads across {} nodes <-".format(nodes))
 
     try:
         args = [ gpmetis, graphfile, str(nodes) ]
@@ -205,8 +205,7 @@ def placeThreads(graph, region, nodes, tidmap, gpmetis,
     ''' Given a thread/page access graph, place threads across nodes to
         minimize cross-node page accesses.
     '''
-    if verbose:
-        print("-> Generating placement for region {} <-".format(region))
+    if verbose: print("-> Generating schedule for region {} <-".format(region))
 
     suffix = str(random.randint(0, 65536))
     ptids = parseTIDMapFile(tidmap, verbose)
