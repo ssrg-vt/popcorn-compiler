@@ -68,8 +68,10 @@ POPCORN_X86_64 := $(POPCORN)/x86_64
 
 BUILD_X86_64 := $(BUILD)/x86_64
 LIB_X86_64   := $(BUILD_X86_64)/libstack-transform.a
-CC_X86_64    := $(CC) -target x86_64-linux-gnu
-LOC_X86_64   := $(LOC) -isystem $(POPCORN_X86_64)/include
+#CC_X86_64    := $(CC) -target x86_64-linux-gnu
+CC_X86_64    := $(CC) -target x86_64-hermit
+#LOC_X86_64   := $(LOC) -isystem $(POPCORN_X86_64)/include
+LOC_X86_64   := $(LOC) -isystem /home/mehrab/hermit/x86_64-hermit/include
 
 LIB_OBJ_X86_64      := $(subst $(SRC),$(BUILD_X86_64),$(LIB_SRC:.c=.o))
 LIB_ARCH_OBJ_X86_64 := $(subst $(SRC),$(BUILD_X86_64),$(LIB_ARCH_SRC:.c=.o))
@@ -204,6 +206,8 @@ $(LIB_X86_64): $(BUILD_X86_64)/arch/aarch64/.dir \
 	@rm -f $(LIB_X86_64)
 	@$(AR) -cq $(LIB_X86_64) $(LIB_OBJ_X86_64) $(LIB_ARCH_OBJ_X86_64)
 
+#modified by mehrab
+#POPCORN_X86_64 = "/home/mehrab/hermit/x86_64-hermit"
 install-x86_64: $(LIB_X86_64)
 	@echo " [INSTALL] $< to $(POPCORN_X86_64)/lib"
 	@cp $< $(POPCORN_X86_64)/lib

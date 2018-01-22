@@ -67,7 +67,7 @@ st_handle st_init(const char* fn)
 {
   const char* id;
   //Elf64_Ehdr* ehdr;
-  Elf64_Ehdr e_hdr;
+  struct Elf64_Ehdr e_hdr;
   st_handle handle;
 
   if(!fn) goto return_null;
@@ -86,7 +86,7 @@ st_handle st_init(const char* fn)
 	goto free_handle;
   }
 
-  if(read(handle->fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
+  if(read(handle->fd, (void*)&e_hdr, sizeof(struct Elf64_Ehdr)) < 0){
         printf("Read Failed\n");
         goto close_file;
   }

@@ -11,7 +11,8 @@
 #endif
 #include <unistd.h>
 #include <sys/resource.h>
-#include <sys/syscall.h>
+#include <stdio.h>
+//#include <sys/syscall.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
