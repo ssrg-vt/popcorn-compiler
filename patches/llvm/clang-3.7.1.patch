@@ -460,7 +460,7 @@ Index: lib/CodeGen/CGStmt.cpp
 ===================================================================
 --- lib/CodeGen/CGStmt.cpp	(revision 320332)
 +++ lib/CodeGen/CGStmt.cpp	(working copy)
-@@ -2147,6 +2147,64 @@
+@@ -2147,6 +2147,69 @@
    }
  }
  
@@ -485,20 +485,24 @@ Index: lib/CodeGen/CGStmt.cpp
 +  DeclContext *TUC = AST.getTranslationUnitDecl();
 +  SourceRange SR = S.getSourceRange();
 +  IdentifierInfo *II = &AST.Idents.get("distr_omp_" +
++      std::string(CurFn->getName()) + "_" +
 +      cast<DeclRefExpr>(I)->getDecl()->getNameAsString());
 +  QualType Ty = I->getType();
++  if(Ty.isLocalConstQualified()) Ty.removeLocalConst();
 +  TypeSourceInfo *TSI = AST.getTrivialTypeSourceInfo(Ty, SR.getBegin());
 +  return VarDecl::Create(AST, TUC, SR.getBegin(), SR.getEnd(),
 +                         II, Ty, TSI, clang::SC_Static);
 +}
 +
 +LValue CodeGenFunction::GetVarDeclLValue(const Expr *I, VarDecl *VD) {
-+  llvm::Type *Ty = CGM.getTypes().ConvertType(I->getType());
++  QualType SrcType = I->getType();
++  if(SrcType.isLocalConstQualified()) SrcType.removeLocalConst();
++  llvm::Type *Ty = CGM.getTypes().ConvertType(SrcType);
 +  llvm::Constant *GV = CGM.GetAddrOfGlobalVar(VD, Ty);
 +  llvm::GlobalVariable *CastGV = cast<llvm::GlobalVariable>(GV);
 +  CastGV->setInitializer(llvm::Constant::getNullValue(Ty));
 +  CastGV->setLinkage(llvm::GlobalValue::InternalLinkage);
-+  return MakeNaturalAlignAddrLValue(GV, I->getType());
++  return MakeNaturalAlignAddrLValue(GV, SrcType);
 +}
 +
 +DeclRefExpr *CodeGenFunction::GetDeclRefForOffload(ValueDecl *VD) {
@@ -516,6 +520,7 @@ Index: lib/CodeGen/CGStmt.cpp
 +  Expr *Global;
 +  const OffloadList &Offloaded = getOffloaded(S);
 +  for(auto Pair : Offloaded) {
++    if(Pair.first->getType().isLocalConstQualified()) continue;
 +    LValue LocalLV(EmitDeclRefLValue(GetDeclRefForOffload(Pair.first)));
 +    Global = GetDeclRefForOffload(Pair.second);
 +    EmitAnyExprToMem(Global, LocalLV.getAddress(), LocalLV.getQuals(), false);
@@ -525,7 +530,7 @@ Index: lib/CodeGen/CGStmt.cpp
  LValue CodeGenFunction::InitCapturedStruct(const CapturedStmt &S) {
    const RecordDecl *RD = S.getCapturedRecordDecl();
    QualType RecordTy = getContext().getRecordType(RD);
-@@ -2155,6 +2213,8 @@
+@@ -2155,6 +2218,8 @@
    LValue SlotLV = MakeNaturalAlignAddrLValue(
        CreateMemTemp(RecordTy, "agg.captured"), RecordTy);
  
@@ -534,7 +539,7 @@ Index: lib/CodeGen/CGStmt.cpp
    RecordDecl::field_iterator CurField = RD->field_begin();
    for (CapturedStmt::capture_init_iterator I = S.capture_init_begin(),
                                             E = S.capture_init_end();
-@@ -2164,7 +2224,18 @@
+@@ -2164,7 +2229,18 @@
        auto VAT = CurField->getCapturedVLAType();
        EmitStoreThroughLValue(RValue::get(VLASizeMap[VAT->getSizeExpr()]), LV);
      } else {
