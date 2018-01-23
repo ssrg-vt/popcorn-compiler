@@ -83,7 +83,8 @@ LIB_ARCH_OBJ_X86_64 := $(subst $(SRC),$(BUILD_X86_64),$(LIB_ARCH_SRC:.c=.o))
 # Common
 
 # $(LIB_POWERPC64)
-all: $(LIB_AARCH64) $(LIB_X86_64)
+#all: $(LIB_AARCH64) $(LIB_X86_64)
+all: $(LIB_X86_64)
 
 clean:
 	@echo " [RM] $(BUILD)"
@@ -207,7 +208,7 @@ $(LIB_X86_64): $(BUILD_X86_64)/arch/aarch64/.dir \
 	@$(AR) -cq $(LIB_X86_64) $(LIB_OBJ_X86_64) $(LIB_ARCH_OBJ_X86_64)
 
 #modified by mehrab
-#POPCORN_X86_64 = "/home/mehrab/hermit/x86_64-hermit"
+POPCORN_X86_64 = "/home/mehrab/hermit/x86_64-hermit"
 install-x86_64: $(LIB_X86_64)
 	@echo " [INSTALL] $< to $(POPCORN_X86_64)/lib"
 	@cp $< $(POPCORN_X86_64)/lib
@@ -223,6 +224,7 @@ install-x86_64: $(LIB_X86_64)
 	@cp $(INC)/arch/x86_64/regs.h $(POPCORN_X86_64)/include/arch/x86_64
 
 # install-powerpc64
-install: install-aarch64 install-x86_64
+#install: install-aarch64 install-x86_64
+install: install-x86_64
 
 .PHONY: all install install-aarch64 install-powerpc64 install-x86_64 clean
