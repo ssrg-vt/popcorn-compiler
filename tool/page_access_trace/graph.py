@@ -119,6 +119,15 @@ class Graph:
         '''
         return
 
+    def addEmptyTID(self, tid):
+        ''' Add an empty tid that accesses each page once. '''
+        self.tids[tid] = Graph.Thread(tid)
+        for page in self.pages:
+            self.tids[tid].addEdge(page, 1)
+            self.pages[page].addEdge(tid, 1)
+            self.numEdges += 1
+        return self.tids[tid]
+
 class InterferenceGraph(Graph):
     ''' A graph that, rather than maintain the raw mappings between TIDS and
         pages, maintains an interference graph directly between threads.
@@ -155,4 +164,15 @@ class InterferenceGraph(Graph):
         # Drop pages so we don't add them to the graph file
         # TODO this seems dirty, need better way to disable...
         self.pages = {}
+
+    def addEmptyTID(self, tid):
+        ''' Add an empty tid that interferes equally with everybody. '''
+        self.tids[tid] = Graph.Thread(tid)
+        for otherTid in self.tids:
+            if otherTid == tid: continue
+            else:
+                self.tids[tid].addEdge(otherTid, 1)
+                self.tids[otherTid].addEdge(tid, 1)
+                self.numEdges += 1
+        return self.tids[tid]
 

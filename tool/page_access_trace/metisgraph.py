@@ -6,6 +6,7 @@ import os
 from os import path
 import sys
 import graph
+from graph import Graph
 import random
 import subprocess
 
@@ -95,8 +96,6 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
     if verbose: print("-> Printing METIS graph file '{}' <-".format(graphfile))
 
     with open(graphfile, 'w') as out:
-        out.write(getHeader(graph) + "\n")
-
         # We reference other vertices by their index in the graph file, so
         # assign an ordering to all TIDs & pages
 
@@ -107,16 +106,14 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
                 # It's possible that we don't see a thread in the mapping file
                 # cause a page fault in this graph
                 if pair[0] in graph.tids: vertices.append(graph.tids[pair[0]])
+                else: vertices.append(graph.addEmptyTID(pair[0]))
 
-            if len(graph.tids) != len(vertices):
-                print("Graph has {} TIDs while mapping file only has {}" \
-                      .format(len(graph.tids.keys()), len(ptids)))
-
-                graphtids = set(graph.tids.keys())
-                mapfiletids = set([ t[0] for t in ptids ])
-                for tid in graphtids.difference(mapfiletids):
+            graphtids = set(graph.tids.keys())
+            mapfiletids = set([ t[0] for t in ptids ])
+            diff = graphtids.difference(mapfiletids)
+            if len(diff) != 0:
+                for tid in diff:
                     print("Missing TID {} from mapping file".format(tid))
-
                 assert False, "Mapping file doesn't cover all TIDs!"
         else: vertices = sorted(graph.tids.values()) # Sort by increasing TID
         vertices += sorted(graph.pages.values())
@@ -127,7 +124,10 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
             indexes[vertex.name] = idx
             idx += 1
 
-        # Finally, write vertices to file
+        # First, write the header
+        out.write(getHeader(graph) + "\n")
+
+        # Next, write vertices to file
         for vertex in vertices:
             if verbose:
                 out.write(getVertexComment(vertex, indexes[vertex.name]) + "\n")
