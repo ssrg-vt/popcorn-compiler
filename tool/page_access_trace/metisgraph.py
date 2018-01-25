@@ -53,7 +53,7 @@ def getVertexComment(vertex, idx):
 def getVertexData(vertex, indexes):
     assert len(vertex.edges) > 0, "No edges for {}".format(vertex)
     ret = ""
-    for other in vertex.edges:
+    for other in sorted(vertex.edges):
         ret += "{} {} ".format(indexes[other], vertex[other])
     return ret[:-1]
 
@@ -103,12 +103,20 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
         if ptids: # Order threads by the mapping
             mapping = sorted(ptids, key=lambda tup:tup[1])
             vertices = []
-            for pair in mapping: vertices.append(graph.tids[pair[0]])
-            if len(vertices) != len(graph.tids):
+            for pair in mapping:
+                # It's possible that we don't see a thread in the mapping file
+                # cause a page fault in this graph
+                if pair[0] in graph.tids: vertices.append(graph.tids[pair[0]])
+
+            if len(graph.tids) != len(vertices):
+                print("Graph has {} TIDs while mapping file only has {}" \
+                      .format(len(graph.tids.keys()), len(ptids)))
+
                 graphtids = set(graph.tids.keys())
                 mapfiletids = set([ t[0] for t in ptids ])
                 for tid in graphtids.difference(mapfiletids):
                     print("Missing TID {} from mapping file".format(tid))
+
                 assert False, "Mapping file doesn't cover all TIDs!"
         else: vertices = sorted(graph.tids.values()) # Sort by increasing TID
         vertices += sorted(graph.pages.values())
@@ -175,17 +183,26 @@ def parseTIDMapFile(mapFile, verbose):
 # METIS execution
 ###############################################################################
 
-def runGraphchk(graphchk, graphfile):
-    assert False, "Not yet implemented!"
+def runGraphchk(metis, graphfile):
+    # We called this function because we're being verbose, no need to check
+    print("-> Verifying graph file '{}' <-".format(graphfile))
 
-def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
+    try:
+        args = [ metis + "/graphchk", graphfile ]
+        out = subprocess.check_output(args, stderr=subprocess.STDOUT)
+    except Exception as e:
+        print("ERROR: generated a bad graph file - {}".format(e))
+        sys.exit(1)
+
+def runPartitioner(metis, graphfile, nodes, suffix, verbose):
     ''' Run the gpmetis program to partition a graph. '''
     global prefix
 
     if verbose: print("-> Placing threads across {} nodes <-".format(nodes))
 
     try:
-        args = [ gpmetis, graphfile, str(nodes), '-ncuts=100' ]
+        args = [ metis + "/gpmetis", graphfile, str(nodes), '-niter=100',
+                 '-ncuts=100' ]
         out = subprocess.check_output(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("ERROR: could not run gpmetis - {}".format(e))
@@ -204,18 +221,22 @@ def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
 # Driver
 ###############################################################################
 
-def placeThreads(graph, region, nodes, tidmap, gpmetis,
+def placeThreads(graph, region, nodes, tidmap, metis,
                  schedule, save, verbose):
     ''' Given a thread/page access graph, place threads across nodes to
         minimize cross-node page accesses.
     '''
     if verbose: print("-> Generating schedule for region {} <-".format(region))
 
+    # Avoid collisions!
     suffix = str(random.randint(0, 65536))
+    while os.path.isdir("place-threads-" + suffix):
+        suffix = str(random.randint(0, 65536))
+
     ptids = parseTIDMapFile(tidmap, verbose)
     graphfile, indexes = writeGraphToFile(graph, ptids, suffix, verbose)
-    # TODO if verbose, run the graphchk tool
-    metisOut, partitioning = runPartitioner(gpmetis, graphfile, nodes, suffix,
+    if verbose: runGraphchk(metis, graphfile)
+    metisOut, partitioning = runPartitioner(metis, graphfile, nodes, suffix,
                                             verbose)
     writeThreadPlacements(schedule, region, indexes, partitioning, verbose)
 
@@ -223,7 +244,7 @@ def placeThreads(graph, region, nodes, tidmap, gpmetis,
         dirname = "place-threads-" + suffix + "/"
         if verbose: print("-> Saving partitioning to '{}' <-".format(dirname))
         os.mkdir(dirname)
-        writeReadme(region, graph, gpmetis, nodes, dirname, suffix)
+        writeReadme(region, graph, metis, nodes, dirname, suffix)
         os.rename(graphfile, dirname + path.basename(graphfile))
         os.rename(metisOut, dirname + path.basename(metisOut))
         os.rename(partitioning, dirname + path.basename(partitioning))

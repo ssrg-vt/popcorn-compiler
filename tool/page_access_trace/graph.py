@@ -5,7 +5,14 @@
     those threads.
 '''
 
+import itertools
+
 class Graph:
+    ''' A graph which maintains the raw mappings between TIDs and the pages
+        they accessed.  Allows the partitioning tool to specify both a thread
+        and page placement.
+    '''
+
     class Vertex:
         ''' A generic vertex in the graph.  An instance maintains the vertex's
             name and edges to other vertexes.  Note that an instance's name
@@ -105,4 +112,47 @@ class Graph:
         if page not in self.pages: self.pages[page] = Graph.Page(page)
         if self.tids[tid].addEdge(page, weight): self.numEdges += 1
         self.pages[page].addEdge(tid, weight) # Don't double-count edges
+
+    def postProcess(self):
+        ''' Nothing to do, the graph is established by construction in
+            Graph.addMapping().
+        '''
+        return
+
+class InterferenceGraph(Graph):
+    ''' A graph that, rather than maintain the raw mappings between TIDS and
+        pages, maintains an interference graph directly between threads.
+    '''
+
+    def getNumVertices(self):
+        return len(self.tids)
+
+    def addMapping(self, tid, page, weight=1):
+        ''' Add an access from a thread to a page.  Note that unlike
+            Graph.addMapping(), we only maintain access counts on the page
+            side.  Thread vertices will be created during post processing.
+        '''
+        if page not in self.pages: self.pages[page] = Graph.Page(page)
+        self.pages[page].addEdge(tid, weight)
+
+    def postProcess(self):
+        ''' Calculate interference between threads based on the number of times
+            each thread accesses a given page.  Two threads interfere on a page
+            if they both accessed it at some point.  The interference is
+            quantified as the minimum between the number of times each of the
+            two threads accessed the page.  This is an O(n^2) operation, since
+            each thread can potentially interfere with each other thread.
+        '''
+        for page in self.pages:
+            curPage = self.pages[page]
+            for t in itertools.combinations(curPage.edges.keys(), 2):
+                if t[0] not in self.tids: self.tids[t[0]] = Graph.Thread(t[0])
+                if t[1] not in self.tids: self.tids[t[1]] = Graph.Thread(t[1])
+                weight = min(curPage[t[0]], curPage[t[1]])
+                if self.tids[t[0]].addEdge(t[1], weight): self.numEdges += 1
+                self.tids[t[1]].addEdge(t[0], weight) # Don't double-count edges
+
+        # Drop pages so we don't add them to the graph file
+        # TODO this seems dirty, need better way to disable...
+        self.pages = {}
 

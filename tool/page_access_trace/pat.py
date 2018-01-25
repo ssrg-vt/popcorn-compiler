@@ -17,6 +17,7 @@
 import os
 import sys
 from graph import Graph
+from graph import InterferenceGraph
 
 def getPage(addr):
     ''' Get the page for an address '''
@@ -79,7 +80,7 @@ def parsePAT(pat, config, callback, callbackData, verbose):
 
     if verbose: print("\rParsed {} faults".format(lineNum))
 
-def parsePATtoGraphs(pat, config, verbose):
+def parsePATtoGraphs(pat, graphType, config, verbose):
     ''' Parse a page access trace (PAT) file and return graphs representing
         page fault patterns within a given time window.  Returns a graph per
         region contained in the PAT.
@@ -97,18 +98,22 @@ def parsePATtoGraphs(pat, config, verbose):
         graphs = graphData[0]
         region = int(fields[6])
         tid = int(fields[2])
-        if region not in graphs: graphs[region] = Graph(graphData[1], True)
+        if region not in graphs:
+            if graphData[1] == "interference":
+                graphs[region] = InterferenceGraph(graphData[2], True)
+            else: graphs[region] = Graph(graphData[2], True)
         # TODO weight read/write accesses differently?
         graphs[region].addMapping(tid, getPage(addr))
 
     graphs = {}
-    callbackData = (graphs, pat)
+    callbackData = (graphs, graphType, pat)
     parsePAT(pat, config, graphCallback, callbackData, verbose)
 
-    if verbose:
-        regions = ""
-        for region in graphs: regions += "{} ".format(region)
-        print("Found {} regions: {}".format(len(graphs), regions[:-1]))
+    if verbose: regions = ""
+    for region in graphs:
+        graphs[region].postProcess()
+        if verbose: regions += "{} ".format(region)
+    if verbose: print("Found {} regions: {}".format(len(graphs), regions[:-1]))
 
     return graphs
 

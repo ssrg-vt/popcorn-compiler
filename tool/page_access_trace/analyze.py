@@ -43,10 +43,14 @@ def parseArguments():
     placement = parser.add_argument_group("Thread Placement Options")
     placement.add_argument("-p", "--partition", action="store_true",
             help="Run the graph partitioning algorithm to place threads")
+    placement.add_argument("--graph-type", choices=["raw", "interference"],
+            help="Partition based on raw TID <-> page mappings or based on " \
+                 "a TID interference graph",
+            default="interference",)
     placement.add_argument("--nodes", type=int, default=1,
             help="Number of nodes over which to distribute threads")
-    placement.add_argument("--gpmetis", type=str, default="gpmetis",
-            help="Location of the 'gpmetis' graph partitioning executable")
+    placement.add_argument("--metis", type=str, default="/usr/local/metis/bin",
+            help="Location of the METIS graph partitioning executables")
     placement.add_argument("--tid-map", type=str,
             help="File containing Linux TID -> userspace mapping")
     placement.add_argument("--schedule", type=str,
@@ -96,9 +100,9 @@ def sanityCheck(args):
     if args.partition:
         assert args.nodes >= 1, \
             "Number of nodes must be >= 1 ({})".format(args.nodes)
-        args.gpmetis = path.abspath(args.gpmetis)
-        assert path.isfile(args.gpmetis), \
-            "Invalid gpmetis '{}'".format(args.gpmetis)
+        args.metis = path.abspath(args.metis)
+        assert path.isdir(args.metis), \
+            "Invalid METIS executable directory '{}'".format(args.metis)
         if args.tid_map != None: args.tid_map = path.abspath(args.tid_map)
 
     if args.trend:
@@ -125,11 +129,12 @@ if __name__ == "__main__":
                              args.no_code, args.no_data)
 
     if args.partition:
-        graphs = pat.parsePATtoGraphs(args.input, config, args.verbose)
+        graphs = pat.parsePATtoGraphs(args.input, args.graph_type,
+                                      config, args.verbose)
         if os.path.isfile(args.schedule): os.remove(args.schedule)
         for region in graphs:
             metisgraph.placeThreads(graphs[region], region, args.nodes,
-                                    args.tid_map, args.gpmetis, args.schedule,
+                                    args.tid_map, args.metis, args.schedule,
                                     args.save_partition, args.verbose)
 
     if args.trend:
