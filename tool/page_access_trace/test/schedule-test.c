@@ -33,7 +33,7 @@
 
 #define NS( ts ) ((ts.tv_sec * 1000000000LU) + ts.tv_nsec)
 
-typedef int page_array_t [ARRSIZE];
+typedef int page_array_t [ARRSIZE] __attribute__((aligned(4096)));
 static page_array_t thearray;
 
 #define helptext \
