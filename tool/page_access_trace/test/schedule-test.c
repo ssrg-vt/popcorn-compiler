@@ -10,15 +10,23 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <time.h>
 #include <omp.h>
 #include <sys/sysinfo.h>
 
-/* Knobs controlling length of OpenMP sections & memory used */
-#define ITERS 2048L
-#define PAGES 1024L
+#define XSTR( x ) STR(x)
+#define STR( x ) #x
 
-#define PAGESZ 4096L
+/*
+ * Knobs controlling length of OpenMP sections & memory used.  The number of
+ * iterations can be set at command line.
+ */
+#define ITERS 2048
+#define PAGES 1024
+
+/* Size definitions */
+#define PAGESZ 4096
 #define INTS_PER_PAGE (PAGESZ / sizeof(int))
 #define ARRSIZE (PAGES * INTS_PER_PAGE)
 #define CHUNKSZ (INTS_PER_PAGE / 4)
@@ -27,6 +35,28 @@
 
 typedef int page_array_t [ARRSIZE];
 static page_array_t thearray;
+
+#define helptext \
+"Generate a predictable page access pattern to sanity check the thread\
+ placement framework.\n\n\
+Usage: thread-schedule [ OPTIONS ]\n\
+Options:\n\
+  -h     : print help & exit\n\
+  -i num : number of iterations to run each access pattern (default: " XSTR(ITERS) ")\n\
+  -t num : number of threads to use\n"
+
+void parse_args(int argc, char** argv, size_t *threads, size_t *iters) {
+  int c;
+
+  while((c = getopt(argc, argv, "hi:t:")) != -1) {
+    switch(c) {
+    default: printf("WARNING: Ignoring unknown argument '%c'\n", c); break;
+    case 'h': printf(helptext); exit(0); break;
+    case 'i': *iters = atoi(optarg); break;
+    case 't': *threads = atoi(optarg); break;
+    }
+  }
+}
 
 void randomize(page_array_t array) {
   size_t i;
@@ -63,8 +93,8 @@ void add2(page_array_t array, const size_t iters) {
   for(iter = 0; iter < iters; iter++) {
     #pragma omp parallel
     {
-      int thread = omp_get_thread_num();
       long offset;
+      int thread = omp_get_thread_num() % 8;
       if(thread % 2) offset = (4 + (thread / 2) - thread) * CHUNKSZ;
       else offset = -((thread / 2) * CHUNKSZ);
 
@@ -75,18 +105,19 @@ void add2(page_array_t array, const size_t iters) {
 }
 
 int main(int argc, char** argv) {
-  size_t threads = get_nprocs_conf();
+  size_t threads = get_nprocs_conf(), iters = ITERS;
   struct timespec start, end;
 
+  parse_args(argc, argv, &threads, &iters);
   omp_set_num_threads(threads);
   randomize(thearray);
 
   printf("--------------------\nTHREAD SCHEDULE TEST\n--------------------\n");
-  printf("Running %lu iterations with %lu threads...\n", ITERS, threads);
+  printf("Running %lu iterations with %lu threads...\n", iters, threads);
 
   clock_gettime(CLOCK_MONOTONIC, &start);
-  add1(thearray, ITERS);
-  add2(thearray, ITERS);
+  add1(thearray, iters);
+  add2(thearray, iters);
   clock_gettime(CLOCK_MONOTONIC, &end);
 
   printf("Total execution time: %lu ms\n", (NS(end) - NS(start)) / 1000000);
