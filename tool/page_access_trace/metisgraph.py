@@ -104,8 +104,12 @@ def writeGraphToFile(graph, ptids, suffix, verbose):
             mapping = sorted(ptids, key=lambda tup:tup[1])
             vertices = []
             for pair in mapping: vertices.append(graph.tids[pair[0]])
-            assert len(vertices) == len(graph.tids), \
-                   "Mapping file doesn't cover all TIDs!"
+            if len(vertices) != len(graph.tids):
+                graphtids = set(graph.tids.keys())
+                mapfiletids = set([ t[0] for t in ptids ])
+                for tid in graphtids.difference(mapfiletids):
+                    print("Missing TID {} from mapping file".format(tid))
+                assert False, "Mapping file doesn't cover all TIDs!"
         else: vertices = sorted(graph.tids.values()) # Sort by increasing TID
         vertices += sorted(graph.pages.values())
 
@@ -181,7 +185,7 @@ def runPartitioner(gpmetis, graphfile, nodes, suffix, verbose):
     if verbose: print("-> Placing threads across {} nodes <-".format(nodes))
 
     try:
-        args = [ gpmetis, graphfile, str(nodes) ]
+        args = [ gpmetis, graphfile, str(nodes), '-ncuts=100' ]
         out = subprocess.check_output(args, stderr=subprocess.STDOUT)
     except Exception as e:
         print("ERROR: could not run gpmetis - {}".format(e))
