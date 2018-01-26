@@ -47,7 +47,7 @@ def parseArguments():
             help="Partition based on raw TID <-> page mappings or based on " \
                  "a TID interference graph",
             default="interference",)
-    placement.add_argument("--nodes", type=int, default=1,
+    placement.add_argument("--nodes", type=int, default=2,
             help="Number of nodes over which to distribute threads")
     placement.add_argument("--metis", type=str, default="/usr/local/metis/bin",
             help="Location of the METIS graph partitioning executables")
@@ -98,8 +98,8 @@ def sanityCheck(args):
         .format(args.start, args.end)
 
     if args.partition:
-        assert args.nodes >= 1, \
-            "Number of nodes must be >= 1 ({})".format(args.nodes)
+        assert args.nodes > 1, \
+            "Number of nodes must be > 1 ({})".format(args.nodes)
         args.metis = path.abspath(args.metis)
         assert path.isdir(args.metis), \
             "Invalid METIS executable directory '{}'".format(args.metis)
