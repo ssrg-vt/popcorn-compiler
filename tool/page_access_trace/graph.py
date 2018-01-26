@@ -38,6 +38,9 @@ class Graph:
                 self.edges[vertex] = weight
                 return True
 
+        def hasEdge(self, vertex):
+            return vertex in self.edges
+
         def __str__(self):
             return str(self.name)
 
@@ -128,6 +131,16 @@ class Graph:
             self.numEdges += 1
         return self.tids[tid]
 
+    @classmethod
+    def supportsAdjacencyPrinting(cls):
+        ''' Trying to print this in adjacency list format is a bad idea because
+            there can be an extremely large number of vertices.
+        '''
+        return False
+
+    def getAdjacencyMatrix(self):
+        assert False, "Not implemented for normal graph!"
+
 class InterferenceGraph(Graph):
     ''' A graph that, rather than maintain the raw mappings between TIDS and
         pages, maintains an interference graph directly between threads.
@@ -175,4 +188,26 @@ class InterferenceGraph(Graph):
                 self.tids[otherTid].addEdge(tid, 1)
                 self.numEdges += 1
         return self.tids[tid]
+
+    @classmethod
+    def supportsAdjacencyPrinting(cls):
+        return True
+
+    def getAdjacencyMatrix(self):
+        ''' Rather than adjacency list form, print the interference graph in
+            adjacency matrix form.
+
+            Return a matrix and label list.
+        '''
+        matrix = []
+        sortedTids = sorted(self.tids.keys())
+        for tid in sortedTids:
+            matrix.append([])
+            for otherTid in sortedTids:
+                if otherTid == tid: matrix[-1].append(0)
+                else:
+                    if self.tids[tid].hasEdge(otherTid):
+                        matrix[-1].append(self.tids[tid][otherTid])
+                    else: matrix[-1].append(0)
+        return matrix, sortedTids
 

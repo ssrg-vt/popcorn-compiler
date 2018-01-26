@@ -29,6 +29,38 @@ def writeReadme(region, graph, gpmetis, nodes, directory, suffix):
                  .format(suffix, nodes))
         fp.write("METIS output: place-threads-{}.metis.out\n".format(suffix))
 
+def writeGraphAsMatrix(directory, graph):
+    ''' Write the graph as an adjacency matrix in nice formatting '''
+    def getLargest(matrix, labels):
+        largest = 0
+        for row in matrix:
+            for col in row:
+                length = len(str(col))
+                if length > largest: largest = length
+
+        for label in labels:
+            length = len(str(label))
+            if length > largest: largest = length
+
+        return largest
+
+    matrix, labels = graph.getAdjacencyMatrix()
+    width = getLargest(matrix, labels)
+    with open(directory + "/matrix.graph", 'w') as fp:
+        # First row is just labels
+        fp.write("{l:>{w}} ".format(l=" ", w=width))
+        for label in labels:
+            fp.write(" {l:>{w}} ".format(l=label, w=width))
+        fp.write("\n\n")
+
+        cur = 0
+        for row in matrix:
+            fp.write("{l:<{w}} ".format(l=labels[cur], w=width))
+            for col in row:
+                fp.write(" {l:>{w}} ".format(l=col, w=width))
+            fp.write("\n\n")
+            cur += 1
+
 def getHeader(graph):
     ''' Get the header for the graph file which contains configuration
         information.
@@ -245,6 +277,7 @@ def placeThreads(graph, region, nodes, tidmap, metis,
         if verbose: print("-> Saving partitioning to '{}' <-".format(dirname))
         os.mkdir(dirname)
         writeReadme(region, graph, metis, nodes, dirname, suffix)
+        if graph.supportsAdjacencyPrinting(): writeGraphAsMatrix(dirname, graph)
         os.rename(graphfile, dirname + path.basename(graphfile))
         os.rename(metisOut, dirname + path.basename(metisOut))
         os.rename(partitioning, dirname + path.basename(partitioning))
