@@ -229,7 +229,7 @@ def placeThreads(graph, region, nodes, tidmap, metis,
     if verbose: print("-> Generating schedule for region {} <-".format(region))
 
     # Avoid collisions!
-    suffix = str(random.randint(0, 65536))
+    suffix = str(region)
     while os.path.isdir("place-threads-" + suffix):
         suffix = str(random.randint(0, 65536))
 
