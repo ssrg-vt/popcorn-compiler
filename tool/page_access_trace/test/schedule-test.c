@@ -70,14 +70,23 @@ void randomize(page_array_t array) {
  */
 void add1(page_array_t array, const size_t iters) {
   size_t iter, i;
+  struct timespec start, end;
 
-  printf("Region 1: consecutive threads access the same page...\n");
+  printf("Region 1: consecutive threads access the same page...");
+  fflush(stdout);
 
-  // TODO make this region 1
-  for(iter = 0; iter < iters; iter++) {
-    #pragma omp parallel for schedule(static, CHUNKSZ)
-    for(i = 0; i < ARRSIZE; i++) array[i] += 1;
-  }
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  #pragma omp parallel private(iter)
+  {
+    // TODO make this region 1
+    for(iter = 0; iter < iters; iter++) {
+      #pragma omp for schedule(static, CHUNKSZ)
+      for(i = 0; i < ARRSIZE; i++) array[i] += 1;
+    }
+  } /* end parallel */
+  clock_gettime(CLOCK_MONOTONIC, &end);
+
+  printf("%lu ms\n", (NS(end) - NS(start)) / 1000000);
 }
 
 /*
@@ -86,22 +95,28 @@ void add1(page_array_t array, const size_t iters) {
  */
 void add2(page_array_t array, const size_t iters) {
   size_t iter, i;
+  struct timespec start, end;
 
-  printf("Region 2: threads with the same parity access the same page...\n");
+  printf("Region 2: threads with the same parity access the same page...");
+  fflush(stdout);
 
-  // TODO make this region 2
-  for(iter = 0; iter < iters; iter++) {
-    #pragma omp parallel
-    {
-      long offset;
-      int thread = omp_get_thread_num() % 8;
-      if(thread % 2) offset = (4 + (thread / 2) - thread) * CHUNKSZ;
-      else offset = -((thread / 2) * CHUNKSZ);
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  #pragma omp parallel private(iter)
+  {
+    long offset;
+    int thread = omp_get_thread_num() % 8;
+    if(thread % 2) offset = (4 + (thread / 2) - thread) * CHUNKSZ;
+    else offset = -((thread / 2) * CHUNKSZ);
 
+    // TODO make this region 2
+    for(iter = 0; iter < iters; iter++) {
       #pragma omp for schedule(static, CHUNKSZ)
       for(i = 0; i < ARRSIZE; i++) array[i + offset] += 2;
     }
-  }
+  } /* end parallel */
+  clock_gettime(CLOCK_MONOTONIC, &end);
+
+  printf("%lu ms\n", (NS(end) - NS(start)) / 1000000);
 }
 
 int main(int argc, char** argv) {
