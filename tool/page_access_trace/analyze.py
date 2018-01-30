@@ -8,6 +8,7 @@ import argparse
 import os
 from os import path
 
+import dwarf
 import pat
 import plot
 import symtab
@@ -35,6 +36,8 @@ def parseArguments():
             help="Ignore code page faults - requires -b/--binary")
     config.add_argument("--no-data", action="store_true",
             help="Ignore data page faults - requires -b/--binary")
+    config.add_argument("--regions", type=str, default=None,
+            help="Only parse regions in the specified comma-separated list")
     # TODO filter by thread
     # TODO filter by access type
     config.add_argument("-v", "--verbose", action="store_true",
@@ -70,12 +73,14 @@ def parseArguments():
 
     problemsym = parser.add_argument_group(
             "Per-symbol Fault Options (requires -b/--binary)")
-    problemsym.add_argument("-l", "--list", action="store_true",
+    problemsym.add_argument("-d", "--data", action="store_true",
             help="List memory objects that cause the most faults")
+    problemsym.add_argument("-l", "--locations", action="store_true",
+            help="List program locations with the most faults")
     problemsym.add_argument("-f", "--false-sharing", action="store_true",
             help="List memory objects that induce false-sharing across nodes")
     problemsym.add_argument("--num", type=int, default=10,
-            help="Number of symbols (-l) or pages (-f) to list")
+            help="Number of symbols (-d), locations (-l) or pages (-f) to list")
 
     return parser.parse_args()
 
@@ -109,8 +114,8 @@ def sanityCheck(args):
         assert args.chunks >= 1, \
             "Number of chunks must be >= 1 ({})".format(args.chunks)
 
-    if args.list or args.false_sharing:
-        assert args.binary, "Must specify a binary for --list/--false-sharing"
+    if args.data or args.locations or args.false_sharing:
+        assert args.binary, "Must specify a binary for -d/-l/-f"
         assert args.num > 0, \
             "Number of symbols must be >= 1 ({})".format(args.num)
 
@@ -123,10 +128,14 @@ if __name__ == "__main__":
     sanityCheck(args)
 
     # Instantiate objects needed for parsing & analysis
-    if args.binary: symbolTable = symtab.SymbolTable(args.binary, args.verbose)
-    else: symbolTable = None
-    config = pat.ParseConfig(args.start, args.end, symbolTable,
-                             args.no_code, args.no_data)
+    if args.binary:
+        symbolTable = symtab.SymbolTable(args.binary, args.verbose)
+        dwarfInfo = dwarf.DwarfInfo(args.binary)
+    else:
+        symbolTable = None
+        dwarfInfo = None
+    config = pat.ParseConfig(args.start, args.end, symbolTable, dwarfInfo,
+                             args.no_code, args.no_data, args.regions)
 
     if args.partition:
         graphs = pat.parsePATtoGraphs(args.input, args.graph_type,
@@ -144,13 +153,20 @@ if __name__ == "__main__":
         plot.plotPageAccessFrequency(chunks, ranges, args.per_thread,
                                      args.save_plot)
 
-    if args.list:
+    if args.data:
         sortedSyms = \
             pat.parsePATforProblemSymbols(args.input, config, args.verbose)
         print("\n{:30} | Number of Accesses".format("Program Object"))
         print("{:-<30}-|-------------------".format("-"))
         for sym in sortedSyms[:args.num]:
             print("{:30} | {}".format(sym[0], sym[1]))
+
+    if args.locations:
+        locations = pat.parsePATforFaultLocs(args.input, config, args.verbose)
+        print("\n{:30} | Number of faults".format("Location"))
+        print("{:-<30}-|-------------------".format("-"))
+        for loc in locations[:args.num]:
+            print("{:30} | {}".format(loc[0], loc[1]))
 
     if args.false_sharing:
         pageFaultObjs = pat.parsePATforFalseSharing(args.input, config,

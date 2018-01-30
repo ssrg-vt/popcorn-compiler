@@ -28,12 +28,18 @@ class ParseConfig:
         parse entries within a given window and for certain types of accessed
         memory.
     '''
-    def __init__(self, start, end, symbolTable, noCode, noData):
+    def __init__(self, start, end, symbolTable, dwarfInfo,
+                 noCode, noData, regions):
         self.start = start
         self.end = end
         self.symbolTable = symbolTable
+        self.dwarfInfo = dwarfInfo
         self.noCode = noCode
         self.noData = noData
+        if regions:
+            self.hasRegions = True
+            self.regions = set(regions.split(','))
+        else: self.hasRegions = False
 
 def parsePAT(pat, config, callback, callbackData, verbose):
     ''' Generic parser.  For each line in the PAT file, determine if it fits
@@ -69,6 +75,10 @@ def parsePAT(pat, config, callback, callbackData, verbose):
                     if symbol.isCode() and config.noCode: continue
                     elif symbol.isData() and config.noData: continue
             else: symbol = None
+
+            # Filter based on region
+            if config.hasRegions:
+                if fields[6] not in config.regions: continue
 
             if verbose:
                 lineNum += 1
@@ -212,7 +222,7 @@ def parsePATforProblemSymbols(pat, config, verbose):
             verbose (bool): print verbose output
 
         Return:
-            sortedSyms (list:tup(int, Symbol)): list of symbols sorted by how
+            sortedSyms (list:tup(string, int)): list of symbols sorted by how
                                                 often they're accessed, in
                                                 descending order
     '''
@@ -231,6 +241,48 @@ def parsePATforProblemSymbols(pat, config, verbose):
 
     # Generate list sorted by number of times accessed
     return sorted(objAccessed.items(), reverse=True, key=lambda s: s[1])
+
+def parsePATforFaultLocs(pat, config, verbose):
+    ''' Parse PAT for locations which cause the most faults.  Return a list of
+        locations sorted by the highest number of faults.
+
+        Arguments:
+            pat (str): page access trace file
+            config (ParseConfig): configuration for filtering PAT entries
+            verbose (bool): print verbose output
+
+        Return:
+            allLocs (list:tup(string, int)): list of locations sorted by how
+                                             many times a page fault occurred
+                                             at that location
+    '''
+    def faultLocCallback(fields, timestamp, addr, symbol, locData):
+        dwarfInfo = locData[1]
+        filename, linenum = dwarfInfo.getFileAndLine(int(fields[4], base=16))
+        if filename:
+            locs = locData[0]
+            if filename not in locs: locs[filename] = { linenum : 1 }
+            elif linenum not in locs[filename]: locs[filename][linenum] = 1
+            else: locs[filename][linenum] += 1
+        else: locData[0]["unknown"] += 1
+
+    def stringifyLoc(filename, linenum):
+        return "{}:{}".format(filename, linenum)
+
+    locs = { "unknown" : 0 }
+    callbackData = (locs, config.dwarfInfo)
+    parsePAT(pat, config, faultLocCallback, callbackData, verbose)
+
+    # Generate list sorted by number of times accessed
+    allLocs = []
+    for name in locs:
+        if name != "unknown":
+            for line in locs[name]:
+                allLocs.append((stringifyLoc(name, line), locs[name][line]))
+        else:
+            allLocs.append((name, locs[name]))
+    allLocs.sort(reverse=True, key=lambda l: l[1])
+    return allLocs
 
 def parsePATforFalseSharing(pat, config, verbose):
     ''' Parse PAT for symbols which induce false sharing, i.e., two symbols
