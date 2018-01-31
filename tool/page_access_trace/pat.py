@@ -2,7 +2,7 @@
     for each page fault recorded by the operating system at a given moment in
     the application's execution.  Each line has the following format:
 
-    time nid tid perm ip addr
+    time nid tid perm ip addr region
 
     Where:
       time: timestamp of fault inside of application's execution
@@ -228,19 +228,25 @@ def parsePATforProblemSymbols(pat, config, verbose):
     '''
 
     def problemSymbolCallback(fields, timestamp, addr, symbol, objAccessed):
+        if fields[3] == "R": idx = 0
+        elif fields[3] == "W": idx = 1
+        else: idx = 2
+
         if symbol:
-            if symbol.name not in objAccessed: objAccessed[symbol.name] = 0
-            objAccessed[symbol.name] += 1
+            if symbol.name not in objAccessed:
+                objAccessed[symbol.name] = [0, 0, 0]
+            objAccessed[symbol.name][idx] += 1
         else:
             # TODO this is only an approximation!
-            if addr > 0x7f0000000000: objAccessed["stack/mmap"] += 1
-            else: objAccessed["heap"] += 1
+            if addr > 0x7f0000000000: objAccessed["stack/mmap"][idx] += 1
+            else: objAccessed["heap"][idx] += 1
 
-    objAccessed = { "stack/mmap" : 0, "heap" : 0 }
+    objAccessed = { "stack/mmap" : [0, 0, 0], "heap" : [0, 0, 0] }
     parsePAT(pat, config, problemSymbolCallback, objAccessed, verbose)
 
     # Generate list sorted by number of times accessed
-    return sorted(objAccessed.items(), reverse=True, key=lambda s: s[1])
+    tuples = [ (tup[0], sum(tup[1]), tup[1]) for tup in objAccessed.items() ]
+    return sorted(tuples, reverse=True, key=lambda s: s[1])
 
 def parsePATforFaultLocs(pat, config, verbose):
     ''' Parse PAT for locations which cause the most faults.  Return a list of
@@ -257,19 +263,24 @@ def parsePATforFaultLocs(pat, config, verbose):
                                              at that location
     '''
     def faultLocCallback(fields, timestamp, addr, symbol, locData):
+        if fields[3] == "R": idx = 0
+        elif fields[3] == "W": idx = 1
+        else: idx = 2
+
         dwarfInfo = locData[1]
         filename, linenum = dwarfInfo.getFileAndLine(int(fields[4], base=16))
         if filename:
             locs = locData[0]
-            if filename not in locs: locs[filename] = { linenum : 1 }
-            elif linenum not in locs[filename]: locs[filename][linenum] = 1
-            else: locs[filename][linenum] += 1
-        else: locData[0]["unknown"] += 1
+            if filename not in locs: locs[filename] = { linenum : [0, 0, 0] }
+            elif linenum not in locs[filename]:
+                locs[filename][linenum] = [0, 0, 0]
+            locs[filename][linenum][idx] += 1
+        else: locData[0]["unknown"][idx] += 1
 
     def stringifyLoc(filename, linenum):
         return "{}:{}".format(filename, linenum)
 
-    locs = { "unknown" : 0 }
+    locs = { "unknown" : [0, 0, 0] }
     callbackData = (locs, config.dwarfInfo)
     parsePAT(pat, config, faultLocCallback, callbackData, verbose)
 
@@ -278,9 +289,11 @@ def parsePATforFaultLocs(pat, config, verbose):
     for name in locs:
         if name != "unknown":
             for line in locs[name]:
-                allLocs.append((stringifyLoc(name, line), locs[name][line]))
+                allLocs.append((stringifyLoc(name, line),
+                                sum(locs[name][line]),
+                                locs[name][line]))
         else:
-            allLocs.append((name, locs[name]))
+            allLocs.append((name, sum(locs[name]), locs[name]))
     allLocs.sort(reverse=True, key=lambda l: l[1])
     return allLocs
 
