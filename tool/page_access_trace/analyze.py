@@ -156,17 +156,21 @@ if __name__ == "__main__":
     if args.data:
         sortedSyms = \
             pat.parsePATforProblemSymbols(args.input, config, args.verbose)
-        print("\n{:30} | Number of Accesses".format("Program Object"))
-        print("{:-<30}-|-------------------".format("-"))
+        print("\n{:^30} | Number of Accesses | {:^10}/{:^10}/{:^10}" \
+              .format("Program Object", "R", "W", "I"))
+        print("{:-<30}-|--------------------|-{:-<32}".format("-", "-"))
         for sym in sortedSyms[:args.num]:
-            print("{:30} | {}".format(sym[0], sym[1]))
+            print(" {:<29} | {:^18} | {:^10} {:^10} {:^10}" \
+                  .format(sym[0], sym[1], sym[2][0], sym[2][1], sym[2][2]))
 
     if args.locations:
         locations = pat.parsePATforFaultLocs(args.input, config, args.verbose)
-        print("\n{:30} | Number of faults".format("Location"))
-        print("{:-<30}-|-------------------".format("-"))
+        print("\n{:^30} | Number of faults | {:^10}/{:^10}/{:^10}" \
+              .format("Location", "R", "W", "I"))
+        print("{:-<30}-|------------------|-{:-<32}".format("-", "-"))
         for loc in locations[:args.num]:
-            print("{:30} | {}".format(loc[0], loc[1]))
+            print(" {:29} | {:^16} | {:^10} {:^10} {:^10}" \
+                  .format(loc[0], loc[1], loc[2][0], loc[2][1], loc[2][2]))
 
     if args.false_sharing:
         pageFaultObjs = pat.parsePATforFalseSharing(args.input, config,
