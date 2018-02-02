@@ -1,0 +1,76 @@
+#!/bin/bash
+set -e
+#set -x
+
+echo $0: called with "$*"
+
+#filter options
+options=()  # the buffer array for the parameters
+eoo=0       # end of options reached
+OBJS=()
+PRINT_VERSION=0
+
+#filter "-o" options and "*.o" files
+while [[ $1 ]]
+do
+    if ! ((eoo)); then
+	case "$1" in
+	  -o)
+	      BIN=$2
+	      echo found -o is: $BIN
+	      shift
+	      shift
+	      ;;
+	  --version)
+	      PRINT_VERSION=1
+	      shift
+	      ;;
+	  *.a)
+	      TARGET=("$1")
+	      shift
+	      ;;
+	  *.o)
+	      OBJS+=("$1")
+	      #echo $1: ${OBJS[@]}
+	      shift
+	      ;;
+	  --)
+	      eoo=1
+	      options+=("$1")
+	      #echo "--$options"
+	      shift
+	      ;;
+	  *)
+	      options+=("$1")
+		#echo "*$options"
+	      shift
+	      ;;
+	esac
+    else
+	options+=("$1")
+		#echo "else$options"
+	# Another (worse) way of doing the same thing:
+	# options=("${options[@]}" "$1")
+	shift
+    fi
+done
+	
+if [ $PRINT_VERSION = "1" ]; then	
+	$LD --version $*
+	exit
+fi
+
+ARM64_TARGET=$TARGET #arms obj have no extension
+X86_64_TARGET="${TARGET//.a/_x86_64.a}"
+
+ARM64_OBJ="${OBJS[@]}" #arms obj have no extension
+X86_64_OBJ="${ARM64_OBJ//.o/_x86_64.o}"
+
+echo OPTIONS: $options
+echo OBJS: "${OBJS[@]}"
+
+
+ar $options $X86_64_TARGET $X86_64_OBJ
+aarch64-linux-gnu-ar $options $ARM64_TARGET $ARM64_OBJ
+
+#cp $ARM64_TARGET $TARGET
