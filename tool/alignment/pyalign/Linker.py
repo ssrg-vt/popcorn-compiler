@@ -90,6 +90,14 @@ class Linker:
 						for symbolName in Globals.SYMBOLS_BLACKLIST[section]:
 							output_buffer.append("\t*(" + symbolName + ");\n")
 
+					# *This solve the problem of compiler inserted function: float function such as __extenddftf2
+					# (these function lands in the default *text section at the end of other function specific fuunctions)
+					# This leads to section with different size on Xeon and ARM(bigger) binaries which in turn leads to
+					# a segfault, since the DSM check the address at origin and when not found, trigger the fault! 
+					# *The solution is to make sure that both section (on ARM and Xeon) have the same size. 
+					# This alignement sould do just that (at least for many cases!)
+					output_buffer.append("\t. = ALIGN(0x100000);\n")
+
 					# Section "closing" part
 					output_buffer.append("}\n")
 
