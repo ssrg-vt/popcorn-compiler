@@ -41,7 +41,7 @@ int current_nid(void);
  * Get the origin node id.
  * @return the node id on which this thread is running
  */
-int get_origin_nid(void)
+int get_origin_nid(void);
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional

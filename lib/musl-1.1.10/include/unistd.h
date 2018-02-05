@@ -35,6 +35,7 @@ extern "C" {
 int pipe(int [2]);
 int pipe2(int [2], int);
 int close(int);
+int __close(int);
 int posix_close(int, int);
 int dup(int);
 int dup2(int, int);
@@ -47,6 +48,12 @@ ssize_t read(int, void *, size_t);
 ssize_t write(int, const void *, size_t);
 ssize_t pread(int, void *, size_t, off_t);
 ssize_t pwrite(int, const void *, size_t, off_t);
+
+/* for popcorn uio  wrapper */
+ssize_t __read(int, void *, size_t);
+ssize_t __write(int, const void *, size_t);
+ssize_t __pread(int, void *, size_t, off_t);
+ssize_t __pwrite(int, const void *, size_t, off_t);
 
 int chown(const char *, uid_t, gid_t);
 int fchown(int, uid_t, gid_t);
