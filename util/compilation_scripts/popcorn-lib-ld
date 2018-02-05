@@ -16,7 +16,7 @@ ARM64_POPCORN="$POPCORN/aarch64"
 CFLAGS="-nostdinc" 
 
 ###LDFLAGS
-LIBS="/lib/crt1.o /lib/libc.a /lib/libmigrate.a /lib/libstack-transform.a 
+LIBS="/lib/crt1.o /lib/libmigrate.a /lib/libc.a /lib/libstack-transform.a 
 	/lib/libelf.a  /lib/libpthread.a  /lib/libc.a  /lib/libm.a"
 X86_64_LIBS=
 ARM64_LIBS=

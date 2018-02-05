@@ -37,6 +37,7 @@ IR := $(SRC:.c=.ll)
 # Linker
 LD      := $(POPCORN)/bin/ld.gold
 LDFLAGS := -z relro --hash-style=gnu --build-id -static
+#order is important (migrate needs to be before libc: uio wrapper)
 LIBS    := /lib/crt1.o \
            /lib/libmigrate.a \
            /lib/libc.a \
