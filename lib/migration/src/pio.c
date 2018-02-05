@@ -6,8 +6,11 @@
 #include <sys/uio.h>
 #include <migrate.h>
 #include <stdarg.h>
+#include <sys/mman.h>
 
-#define __before_io() int __pio_cn = current_nid(); migrate(get_origin_nid(), NULL, NULL)
+#define __before_io_prep() int __pio_cn = current_nid()
+#define __before_io_() migrate(get_origin_nid(), NULL, NULL)
+#define __before_io() __before_io_prep(); __before_io_()
 #define __after_io()  migrate(__pio_cn, NULL, NULL)
 
 int open(const char *filename, int flags, ...)
@@ -32,6 +35,22 @@ int close(int fd)
 	int ret = __close(fd);;
 	__after_io();
 	return ret;
+}
+
+void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
+{
+	__before_io_prep();
+	if(fd != -1)
+	{
+		 __before_io_();
+	}
+	void* ret =__mmap(start, len, prot, flags, fd, off);
+	if(fd != -1)
+	{
+		__after_io();
+	}
+	return ret;
+
 }
 
 int creat(const char *filename, mode_t mode)

@@ -202,6 +202,9 @@ static void inline __migrate_shim_internal(int nid,
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
 
+  if(nid==current_nid())
+	return;
+
   if(data_ptr) // Post-migration
   {
 #ifdef _DEBUG

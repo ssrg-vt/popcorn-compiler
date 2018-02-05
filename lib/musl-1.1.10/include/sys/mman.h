@@ -19,6 +19,7 @@ extern "C" {
 #include <bits/mman.h>
 
 void *mmap (void *, size_t, int, int, int, off_t);
+void *__mmap (void *, size_t, int, int, int, off_t);
 int munmap (void *, size_t);
 
 int mprotect (void *, size_t, int);
