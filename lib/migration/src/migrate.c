@@ -173,6 +173,10 @@ enum arch current_arch(void)
 	return archs[nid];
 }
 
+int get_origin_nid(void)
+{
+	return origin_nid;
+}
 
 /* Data needed post-migration. */
 struct shim_data {
