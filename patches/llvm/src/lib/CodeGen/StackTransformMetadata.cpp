@@ -1051,28 +1051,38 @@ void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
   }
 }
 
+/// Filter out register definitions we've previously seen.
+static void
+getUnseenDefinitions(MachineRegisterInfo::def_instr_iterator DefIt,
+                     const SmallPtrSet<const MachineInstr *, 4> &Seen,
+                     SmallPtrSet<const MachineInstr *, 4> &NewDefs) {
+  NewDefs.clear();
+  do { if(!Seen.count(&*DefIt)) NewDefs.insert(&*DefIt);
+  } while((++DefIt) != MachineRegisterInfo::def_instr_end());
+}
+
 /// Try to find the best defining instruction.
 static const MachineInstr *
 tryToBreakDefMITie(const MachineInstr *MICall,
-                   MachineRegisterInfo::def_instr_iterator Def) {
+                   const SmallPtrSet<const MachineInstr *, 4> &Definitions) {
   // First heuristic -- find closest preceding defining instruction in the same
   // machine basic block.
   const MachineInstr *Cur, *BestDef = nullptr;
   unsigned Distance, Best = UINT32_MAX;
-  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> Defs;
-  do {
+  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> SearchDefs;
+  for(auto Def : Definitions) {
     Cur = MICall;
     Distance = 1;
     while((Cur = Cur->getPrevNode())) {
-      if(Cur == &*Def) {
-        Defs.emplace_back(&*Def, Distance);
+      if(Cur == Def) {
+        SearchDefs.emplace_back(Def, Distance);
         break;
       }
       Distance++;
     }
-  } while((++Def) != MachineRegisterInfo::def_instr_end());
+  }
 
-  for(auto Pair : Defs) {
+  for(auto Pair : SearchDefs) {
     if(Pair.second < Best) {
       BestDef = Pair.first;
       Best = Pair.second;
@@ -1121,15 +1131,23 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
         DEBUG(dbgs() << "    + vreg" << i
                      << " is live in register but not in stackmap\n";);
 
-        // Walk the use-def chain to see if we can find a valid value
+        // Walk the use-def chain to see if we can find a valid value.  Note we
+        // keep track of seen definitions because even though we're supposed to
+        // be in SSA form it's possible to find definition cycles.
         const MachineInstr *DefMI;
         unsigned ChainVreg = Vreg;
+        SmallPtrSet<const MachineInstr *, 4> SeenDefs, NewDefs;
         do {
+          getUnseenDefinitions(MRI->def_instr_begin(ChainVreg),
+                               SeenDefs, NewDefs);
+
           // Try to find a suitable defining instruction
-          MachineRegisterInfo::def_instr_iterator DefIt;
-          DefIt = MRI->def_instr_begin(ChainVreg);
-          if(MRI->hasOneDef(ChainVreg)) DefMI = &*DefIt;
-          else if(!(DefMI = tryToBreakDefMITie(MICall, DefIt))) {
+          if(NewDefs.size() == 0) {
+            DEBUG(dbgs() << "WARNING: no unseen definition\n");
+            break;
+          }
+          else if(NewDefs.size() == 1) DefMI = *NewDefs.begin();
+          else if(!(DefMI = tryToBreakDefMITie(MICall, NewDefs))) {
             // No suitable defining instruction, not much we can do...
             DEBUG(
               dbgs() << "WARNING: multiple definitions for virtual "
@@ -1141,6 +1159,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
             break;
           }
 
+          SeenDefs.insert(DefMI);
           MLV = TVG->getMachineValue(DefMI);
           sanitizeVregs(MLV, MISM);
 
