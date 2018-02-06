@@ -2,16 +2,19 @@
     for each page fault recorded by the operating system at a given moment in
     the application's execution.  Each line has the following format:
 
-    time nid tid perm ip addr region
+      0   1   2    3   4   5            6
+    time nid tid perm ip addr <region | node bitmap>
 
     Where:
       time: timestamp of fault inside of application's execution
       nid : ID of node on which fault occurred
       tid: Linux task ID of faulting task
-      perm: page access permissions
+      perm: page access permissions (R/W/I)
       ip: instruction address which cause the fault
       addr: faulting memory address
       region: region identifier
+      node bitmap: if perm = I, then this is a bitmask specifying to which
+                   nodes invalidation messages were sent
 '''
 
 import os
@@ -212,6 +215,13 @@ def parsePATtoTrendline(pat, config, numChunks, perthread, verbose):
         return retChunks, ranges[startChunk:endChunk]
     else: return chunks[startChunk:endChunk], ranges[startChunk:endChunk]
 
+def getNumInvalidateMessages(bitmask):
+    num = 0
+    while bitmask > 0:
+        num += bitmask & 1
+        bitmask >>= 1
+    return num
+
 def parsePATforProblemSymbols(pat, config, verbose):
     ''' Parse PAT for symbols which cause the most faults.  Return a list of
         symbols sorted by the highest number of faults.
@@ -228,18 +238,24 @@ def parsePATforProblemSymbols(pat, config, verbose):
     '''
 
     def problemSymbolCallback(fields, timestamp, addr, symbol, objAccessed):
-        if fields[3] == "R": idx = 0
-        elif fields[3] == "W": idx = 1
-        else: idx = 2
+        if fields[3] == "R":
+            idx = 0
+            amount = 1
+        elif fields[3] == "W":
+            idx = 1
+            amount = 1
+        else:
+            idx = 2
+            amount = getNumInvalidateMessages(int(fields[6]))
 
         if symbol:
             if symbol.name not in objAccessed:
                 objAccessed[symbol.name] = [0, 0, 0]
-            objAccessed[symbol.name][idx] += 1
+            objAccessed[symbol.name][idx] += amount
         else:
             # TODO this is only an approximation!
-            if addr > 0x7f0000000000: objAccessed["stack/mmap"][idx] += 1
-            else: objAccessed["heap"][idx] += 1
+            if addr > 0x7f0000000000: objAccessed["stack/mmap"][idx] += amount
+            else: objAccessed["heap"][idx] += amount
 
     objAccessed = { "stack/mmap" : [0, 0, 0], "heap" : [0, 0, 0] }
     parsePAT(pat, config, problemSymbolCallback, objAccessed, verbose)
@@ -263,9 +279,15 @@ def parsePATforFaultLocs(pat, config, verbose):
                                              at that location
     '''
     def faultLocCallback(fields, timestamp, addr, symbol, locData):
-        if fields[3] == "R": idx = 0
-        elif fields[3] == "W": idx = 1
-        else: idx = 2
+        if fields[3] == "R":
+            idx = 0
+            amount = 1
+        elif fields[3] == "W":
+            idx = 1
+            amount = 1
+        else:
+            idx = 2
+            amount = getNumInvalidateMessages(int(fields[6]))
 
         dwarfInfo = locData[1]
         filename, linenum = dwarfInfo.getFileAndLine(int(fields[4], base=16))
@@ -274,8 +296,8 @@ def parsePATforFaultLocs(pat, config, verbose):
             if filename not in locs: locs[filename] = { linenum : [0, 0, 0] }
             elif linenum not in locs[filename]:
                 locs[filename][linenum] = [0, 0, 0]
-            locs[filename][linenum][idx] += 1
-        else: locData[0]["unknown"][idx] += 1
+            locs[filename][linenum][idx] += amount
+        else: locData[0]["unknown"][idx] += amount
 
     def stringifyLoc(filename, linenum):
         return "{}:{}".format(filename, linenum)
