@@ -146,10 +146,10 @@ but may require installing alternate packages and some extra hacking.  It is
   - v3 is needed for scripts in util/scripts
   - Both are pre-installed on Ubuntu 16.04 and up
 + Cmake
-  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
+  - On Ubuntu 16.04 & higher, x86-64, install the following packages:
       cmake
 + SVN
-  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
+  - On Ubuntu 16.04 & higher, x86-64, install the following packages:
       subversion
 
 -----------
