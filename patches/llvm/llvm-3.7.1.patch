@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,276 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -657,6 +657,10 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  SmallPtrSet<const BasicBlock *, 4> Latches;
 +  BlockSet SubLoopBlocks;
 +
++  /// Set if analysis had to bail out because there are too many paths through
++  /// the function.
++  bool TooManyPaths;
++
 +  /// Depth-first search information for the current path being explored.
 +  struct LoopDFSInfo {
 +  public:
@@ -664,6 +668,16 @@ Index: include/llvm/Analysis/LoopPaths.h
 +    std::vector<PathNode> PathNodes;
 +    bool StartsAtHeader;
 +  };
++
++  /// Empty all data structures.
++  void reset() {
++    Paths.clear();
++    HasSpPath.clear();
++    HasEqPointPath.clear();
++    CurLoop = nullptr;
++    Latches.clear();
++    SubLoopBlocks.clear();
++  }
 +
 +  /// Search exit blocks of the loop containing Successor.  Add the terminating
 +  /// instruction of the block to either of the two vectors, depending if there
@@ -675,13 +689,14 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Run a depth-first search for paths in the loop starting at an instruction.
 +  /// Any paths found are added to the vector of paths, and new paths to explore
 +  /// are added to the search list.
-+  void loopDFS(const Instruction *I,
++  bool loopDFS(const Instruction *I,
 +               LoopDFSInfo &DFSI,
 +               std::vector<LoopPath> &CurPaths,
 +               std::list<const Instruction *> &NewPaths);
 +
-+  /// Enumerate all paths within a loop, stored in the vector argument.
-+  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
++  /// Enumerate all paths within a loop, stored in the vector argument.  Return
++  /// true if the analysis was successful or false otherwise.
++  bool analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
 +
 +public:
 +  static char ID;
@@ -694,6 +709,9 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
 +  /// below which populate containers with paths (for this loop only).
 +  void rerunOnLoop(Loop *L);
++
++  /// Query whether there were too many paths to enumerate in the function.
++  bool tooManyPaths() const { return TooManyPaths; }
 +
 +  bool hasPaths(const Loop *L) const { return Paths.count(L); }
 +
@@ -2968,7 +2986,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,511 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2994,12 +3012,17 @@ Index: lib/Analysis/LoopPaths.cpp
 +#include <queue>
 +#include "llvm/Analysis/LoopPaths.h"
 +#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/Support/CommandLine.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
 +
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "looppaths"
++
++const static cl::opt<unsigned>
++MaxNumPaths("max-num-paths", cl::Hidden, cl::init(10000),
++  cl::desc("Max number of paths to analyze"));
 +
 +void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
 +  std::queue<Loop *> ToVisit;
@@ -3142,7 +3165,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +  Path.print(O);
 +}
 +
-+void EnumerateLoopPaths::loopDFS(const Instruction *I,
++bool EnumerateLoopPaths::loopDFS(const Instruction *I,
 +                                 LoopDFSInfo &DFSI,
 +                                 std::vector<LoopPath> &CurPaths,
 +                                 std::list<const Instruction *> &NewPaths) {
@@ -3155,6 +3178,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    if((EqPoint = hasEquivalencePoint(I))) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
 +                            DFSI.StartsAtHeader, false);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      for(auto Node : DFSI.PathNodes) {
 +        PathBlock = Node.getBlock();
 +        if(!SubLoopBlocks.count(PathBlock))
@@ -3176,7 +3200,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
 +            for(auto SLE : SpanningInsts)
-+              loopDFS(SLE, DFSI, CurPaths, NewPaths);
++              if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +          }
 +        }
 +      }
@@ -3186,6 +3210,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else if(Latches.count(BB)) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
 +                            DFSI.StartsAtHeader, true);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      if(DFSI.StartsAtHeader) {
 +        for(auto Node : DFSI.PathNodes) {
 +          PathBlock = Node.getBlock();
@@ -3206,8 +3231,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else {
 +      for(auto Succ : successors(BB)) {
 +        if(!CurLoop->contains(Succ)) continue;
-+        else if(!SubLoopBlocks.count(Succ))
-+          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++        else if(!SubLoopBlocks.count(Succ)) {
++          if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++            return false;
++        }
 +        else {
 +          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +          for(auto SLE : EqPointInsts) {
@@ -3220,10 +3247,12 @@ Index: lib/Analysis/LoopPaths.cpp
 +            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                  BB->getTerminator(),
 +                                  DFSI.StartsAtHeader, false);
++            if(CurPaths.size() > MaxNumPaths) return false;
 +            pushIfNotPresent(SLE, NewPaths);
 +            DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          }
-+          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++          for(auto SLE : SpanningInsts)
++            if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +        }
 +      }
 +    }
@@ -3236,8 +3265,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    const Loop *WeedOutLoop = LI->getLoopFor(BB);
 +    for(auto Succ : successors(BB)) {
 +      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
-+      else if(!SubLoopBlocks.count(Succ))
-+        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++      else if(!SubLoopBlocks.count(Succ)) {
++        if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++          return false;
++      }
 +      else {
 +        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +        for(auto SLE : EqPointInsts) {
@@ -3247,17 +3278,21 @@ Index: lib/Analysis/LoopPaths.cpp
 +          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                BB->getTerminator(),
 +                                DFSI.StartsAtHeader, false);
++          if(CurPaths.size() > MaxNumPaths) return false;
 +          DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          pushIfNotPresent(SLE, NewPaths);
 +        }
-+        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++        for(auto SLE: SpanningInsts)
++          if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +      }
 +    }
 +    DFSI.PathNodes.pop_back();
 +  }
++
++  return true;
 +}
 +
-+void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
++bool EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 +  std::list<const Instruction *> NewPaths;
 +  SmallVector<BasicBlock *, 4> LatchVec;
 +  LoopDFSInfo DFSI;
@@ -3288,23 +3323,26 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +  DFSI.Start = &L->getHeader()->front();
 +  DFSI.StartsAtHeader = true;
-+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +
 +  DFSI.StartsAtHeader = false;
 +  while(!NewPaths.empty()) {
 +    DFSI.Start = NewPaths.front();
 +    NewPaths.pop_front();
-+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +  }
++
++  return true;
 +}
 +
 +bool EnumerateLoopPaths::runOnFunction(Function &F) {
 +  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
 +               << "********** Function: " << F.getName() << "\n\n");
 +
-+  Paths.clear();
++  reset();
++  TooManyPaths = false;
 +  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 +  std::vector<LoopNest> Nests;
 +
@@ -3323,8 +3361,18 @@ Index: lib/Analysis/LoopPaths.cpp
 +    for(auto L : Nest) {
 +      std::vector<LoopPath> &CurPaths = Paths[L];
 +      assert(CurPaths.size() == 0 && "Re-processing loop?");
-+      analyzeLoop(L, CurPaths);
++      if(!analyzeLoop(L, CurPaths)) {
++        TooManyPaths = true;
++        break;
++      }
 +    }
++
++    if(TooManyPaths) break;
++  }
++
++  if(TooManyPaths) {
++    DEBUG(dbgs() << "WARNING: too many paths, bailing on analysis\n");
++    reset();
 +  }
 +
 +  return false;
@@ -3334,7 +3382,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +  // We *should* be analyzing a loop for the 2+ time
 +  std::vector<LoopPath> &CurPaths = Paths[L];
 +  DEBUG(if(!CurPaths.size()) dbgs() << "  -> No previous analysis?\n");
-+  analyzeLoop(L, CurPaths);
++  if(!analyzeLoop(L, CurPaths)) {
++    reset();
++    TooManyPaths = true;
++  }
 +}
 +
 +void EnumerateLoopPaths::getPaths(const Loop *L,
@@ -3451,7 +3502,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 ===================================================================
 --- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
 +++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1807 @@
+@@ -0,0 +1,1816 @@
 +//===- SelectMigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3499,6 +3550,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +#include "llvm/Analysis/ScalarEvolution.h"
 +#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 +#include "llvm/IR/CallSite.h"
++#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/Intrinsics.h"
 +#include "llvm/IR/Instructions.h"
@@ -4104,7 +4156,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      if(AddedMigPoint) LP->runOnFunction(F);
 +    }
 +
-+    if(MoreMigPoints) {
++    if(MoreMigPoints && !LP->tooManyPaths()) {
 +      StringRef FuncName = F.getName();
 +      StringMap<unsigned>::const_iterator It;
 +      if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
@@ -4156,6 +4208,14 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
 +    }
 +    else {
++      if(MoreMigPoints) {
++        std::string Msg = "too many paths to instrument function with more "
++                          "migration points -- falling back to instrumenting "
++                          "function entry/exit";
++        DiagnosticInfoOptimizationFailure DI(F, nullptr, Msg);
++        F.getContext().diagnose(DI);
++      }
++
 +      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
 +      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +
