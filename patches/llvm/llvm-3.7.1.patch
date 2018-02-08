@@ -2016,6 +2016,20 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +}
 +
 +#endif
+Index: include/llvm/IR/ModuleSlotTracker.h
+===================================================================
+--- include/llvm/IR/ModuleSlotTracker.h	(revision 320332)
++++ include/llvm/IR/ModuleSlotTracker.h	(working copy)
+@@ -61,6 +61,9 @@
+   /// Purge the currently incorporated function and incorporate \c F.  If \c F
+   /// is currently incorporated, this is a no-op.
+   void incorporateFunction(const Function &F);
++
++  /// Get a local value's slot.
++  int getLocalSlot(const Value *);
+ };
+ 
+ } // end namespace llvm
 Index: include/llvm/InitializePasses.h
 ===================================================================
 --- include/llvm/InitializePasses.h	(revision 320332)
@@ -8421,6 +8435,22 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +  }
 +}
 +
+Index: lib/IR/AsmWriter.cpp
+===================================================================
+--- lib/IR/AsmWriter.cpp	(revision 320332)
++++ lib/IR/AsmWriter.cpp	(working copy)
+@@ -691,6 +691,11 @@
+   this->F = &F;
+ }
+ 
++int ModuleSlotTracker::getLocalSlot(const Value *V) {
++  assert(F && "No function incorporated");
++  return Machine->getLocalSlot(V);
++}
++
+ static SlotTracker *createSlotTracker(const Module *M) {
+   return new SlotTracker(M);
+ }
 Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
 --- lib/MC/MCCodeGenInfo.cpp	(revision 320332)
@@ -9520,7 +9550,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,361 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -9533,6 +9563,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
 +#include "llvm/IR/Module.h"
++#include "llvm/IR/ModuleSlotTracker.h"
 +#include "llvm/IR/Type.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -9548,6 +9579,26 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +           cl::Hidden);
 +
 +namespace {
++
++/* Track slots for unnamed values */
++static ModuleSlotTracker *SlotTracker = nullptr;
++
++/* Sort values based on name */
++struct ValueComp
++{
++  bool operator ()(const Value *a, const Value *b)
++  {
++    if(a->hasName() && b->hasName())
++      return a->getName().compare(b->getName()) < 0;
++    else if(a->hasName()) return true;
++    else if(b->hasName()) return false;
++    else {
++      int slot_a = SlotTracker->getLocalSlot(a),
++          slot_b = SlotTracker->getLocalSlot(b);
++      return slot_a < slot_b;
++    }
++  }
++};
 +
 +/**
 + * This class instruments equivalence points in the IR with LLVM's stackmap
@@ -9585,6 +9636,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  virtual bool runOnModule(Module &M)
 +  {
 +    bool modified = false;
++
 +    std::set<const Value *> *live;
 +    std::set<const Value *, ValueComp> sortedLive;
 +    std::set<const Instruction *> hiddenInst;
@@ -9595,6 +9647,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +    this->createSMType(M);
 +    if(this->addSMDeclaration(M)) modified = true;
++    SlotTracker = new ModuleSlotTracker(&M);
 +
 +    modified |= this->removeOldStackmaps(M);
 +
@@ -9608,6 +9661,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
++      SlotTracker->incorporateFunction(*f);
 +      std::set<const Value *>::const_iterator v, ve;
 +      getHiddenVals(*f, hiddenInst, hiddenArgs);
 +
@@ -9703,6 +9757,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    );
 +
 +    if(numInstrumented > 0) modified = true;
++    delete SlotTracker;
 +
 +    return modified;
 +  }
@@ -9714,18 +9769,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  /* Stack map instruction creation */
 +  Function *SMFunc;
 +  FunctionType *SMTy; // Used for creating function declaration
-+
-+  /* Sort values based on name */
-+  struct ValueComp {
-+    bool operator() (const Value *a, const Value *b) const
-+    {
-+      if(a->hasName() && b->hasName())
-+        return a->getName().compare(b->getName()) < 0;
-+      else if(a->hasName()) return true;
-+      else if(b->hasName()) return false;
-+      else return a < b;
-+    }
-+  };
 +
 +  /**
 +   * Create the function type for the stack map intrinsic.
