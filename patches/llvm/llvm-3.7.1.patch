@@ -5900,10 +5900,38 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,109 @@
+@@ -84,32 +98,145 @@
    return (unsigned)RegNum;
  }
  
++/// If the instruction is simply casting a pointer to another type, return
++/// the value used as the source of the cast.  This is required because allocas
++/// may be cast to different pointer types (which appear as non-allocas) but
++/// may still be represented by a direct memory reference in the stackmap.
++static inline const Value *getPointerCastSrc(const Value *Inst) {
++  assert(Inst->getType()->isPointerTy() && "Not a pointer type");
++
++  if(isa<BitCastInst>(Inst)) {
++    // Ensure that we're casting to another pointer type
++    const BitCastInst *BC = cast<BitCastInst>(Inst);
++    if(!BC->getSrcTy()->isPointerTy()) return nullptr;
++    else return BC->getOperand(0);
++  }
++  else if(isa<GetElementPtrInst>(Inst)) {
++    // Ensure that all indexes are 0, meaning we're only referencing the start
++    // of the storage location
++    const GetElementPtrInst *GEP = cast<GetElementPtrInst>(Inst);
++    GetElementPtrInst::const_op_iterator it, e;
++    for(it = GEP->idx_begin(), e = GEP->idx_end(); it != e; it++) {
++      if(!isa<ConstantInt>(it->get())) return nullptr;
++      const ConstantInt *Idx = cast<ConstantInt>(it->get());
++      if(Idx->getSExtValue() != 0) return nullptr;
++    }
++    return GEP->getOperand(0);
++  }
++  else return nullptr;
++}
++
 +/// Get pointer typing information for a stackmap operand
 +void StackMaps::getPointerInfo(const Value *Op, const DataLayout &DL,
 +                               bool &isPtr, bool &isAlloca,
@@ -5917,8 +5945,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +  if(Ty->isPointerTy())
 +  {
 +    isPtr = true;
-+    PointerType *PTy = cast<PointerType>(Ty);
-+    if(PTy->getElementType()->isSized() && isa<AllocaInst>(Op)) {
++
++    // Walk through cast operations that potentially hide allocas
++    while(!isa<AllocaInst>(Op) && (Op = getPointerCastSrc(Op)));
++    if(Op && isa<AllocaInst>(Op)) {
++      PointerType *PTy = cast<PointerType>(Ty);
++      assert(PTy->getElementType()->isSized() && "Alloca of unknown size?");
 +      isAlloca = true;
 +      AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
 +    }
@@ -5991,6 +6023,8 @@ Index: lib/CodeGen/StackMaps.cpp
        llvm_unreachable("Unrecognized operand type.");
      case StackMaps::DirectMemRefOp: {
 -      unsigned Size = AP.TM.getDataLayout()->getPointerSizeInBits();
++      assert(isAlloca &&
++             "Did not find alloca value for direct memory reference");
 +      unsigned Size = DL.getPointerSizeInBits();
        assert((Size % 8) == 0 && "Need pointer size in bytes.");
        Size /= 8;
@@ -6003,6 +6037,8 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::IndirectMemRefOp: {
++      assert(!isAlloca &&
++             "Alloca lowered to indirect memory reference operand");
        int64_t Size = (++MOI)->getImm();
        assert(Size > 0 && "Need a valid size for indirect memory locations.");
 +      Size = DL.getTypeAllocSize(IROp->getType());
@@ -6016,7 +6052,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +207,24 @@
+@@ -116,17 +243,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6044,7 +6080,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +232,16 @@
+@@ -134,17 +268,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6069,7 +6105,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +258,7 @@
+@@ -161,6 +294,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6077,7 +6113,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +292,7 @@
+@@ -194,7 +328,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6086,7 +6122,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +301,15 @@
+@@ -203,8 +337,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -6104,7 +6140,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +326,78 @@
+@@ -221,6 +362,78 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6183,7 +6219,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +454,135 @@
+@@ -277,6 +490,135 @@
    return LiveOuts;
  }
  
@@ -6319,7 +6355,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +591,46 @@
+@@ -285,21 +627,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6368,7 +6404,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +654,21 @@
+@@ -323,12 +690,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6393,7 +6429,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +751,11 @@
+@@ -411,8 +787,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6406,7 +6442,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +763,15 @@
+@@ -420,6 +799,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6422,7 +6458,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +791,20 @@
+@@ -439,14 +827,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6447,7 +6483,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +813,25 @@
+@@ -455,6 +849,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6473,7 +6509,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +847,29 @@
+@@ -470,23 +883,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6504,7 +6540,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +877,13 @@
+@@ -494,10 +913,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6519,7 +6555,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +895,31 @@
+@@ -509,6 +931,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -6551,7 +6587,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +926,7 @@
+@@ -515,7 +962,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -6560,7 +6596,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +950,7 @@
+@@ -539,7 +986,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
