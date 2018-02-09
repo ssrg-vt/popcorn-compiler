@@ -40,7 +40,9 @@ LDFLAGS := -z relro --hash-style=gnu --build-id -static
 #order is important (migrate needs to be before libc: uio wrapper)
 LIBS    := /lib/crt1.o \
            /lib/libmigrate.a \
+           /lib/liboffload.a \
            /lib/libc.a \
+           /lib/liboffload.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
            /lib/libpthread.a \

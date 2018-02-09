@@ -4,23 +4,15 @@ POPCORN_X86 := $(POPCORN)/x86_64
 
 # Although we disable IR optimizations, use -O3 to get backend optimizations
 CC         := $(POPCORN)/bin/clang
-CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
+CFLAGS     := -O0 -nostdinc -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-migratable \
               -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE -mllvm \
-              -no-sm-warn -D__MUSL_LOCAL__=1
-ifneq ($(findstring env_select,$(type)),)
-CFLAGS     += -D_ENV_SELECT_MIGRATE
-endif
-ifneq ($(findstring native,$(type)),)
-CFLAGS     += -D_NATIVE
-endif
+              -no-sm-warn -fno-common -ftls-model=initial-exec
+
 ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG
 endif
-ifneq ($(findstring timing,$(type)),)
-CFLAGS     += -D_TIME_REWRITE
-endif
-CFLAGS_ARM := $(CFLAGS) -target aarch64-linux-gnu
-CFLAGS_X86 := $(CFLAGS) -target x86_64-linux-gnu
+CFLAGS_ARM := $(CFLAGS) 
+CFLAGS_X86 := $(CFLAGS)
 
 INC     := -I./include
 INC_ARM := $(INC) -I$(POPCORN_ARM)/include
@@ -47,7 +39,7 @@ OBJ := $(SRC:.c=.o)
 OBJ_ARM := $(subst src,$(BUILD_ARM),$(OBJ))
 OBJ_X86 := $(subst src,$(BUILD_X86),$(OBJ))
 
-LIB := libmigrate.a
+LIB := liboffload.a
 LIB_ARM := $(BUILD_ARM)/$(LIB)
 LIB_X86 := $(BUILD_X86)/$(LIB)
 
@@ -60,9 +52,7 @@ all: $(LIB_ARM) $(LIB_X86)
 
 $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@echo " [CC] $< (aarch64)"
-	@$(CC) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC) $(CFLAGS_ARM) -o $@ $@.bc
+	@$(CC) $(CFLAGS_ARM) $(INC_ARM) -o $@ $<
 
 $(LIB_ARM): $(BUILD_ARM)/.dir $(HDR_ARM) $(OBJ_ARM)
 	@echo " [AR] $(LIB_ARM)"
@@ -71,9 +61,10 @@ $(LIB_ARM): $(BUILD_ARM)/.dir $(HDR_ARM) $(OBJ_ARM)
 
 $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@echo " [CC] $< (x86-64)"
-	@$(CC) $(CFLAGS_X86) $(INC_X86) -emit-llvm -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
+	@$(CC) $(CFLAGS_X86) $(INC_X86) -o $@ $<
+	@#what an ugly hack :)
+	@cp $(BUILD_X86)/*x86_64.o $@
+	@rm $(BUILD_X86)/*x86_64.o
 
 $(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
 	@echo " [AR] $(LIB_X86)"

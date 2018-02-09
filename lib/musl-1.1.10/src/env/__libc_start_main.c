@@ -73,6 +73,8 @@ void __init_libc(char **envp, char *pn)
  */
 void *__popcorn_stack_base = NULL;
 
+int offloading_init(int argc, char **argv , char **envp);
+
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
 	char **envp = argv+argc+1;
@@ -86,7 +88,16 @@ int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 		(*(void (**)())a)();
 #endif
 
+	
 	/* Pass control to the application */
-	exit(main(argc, argv, envp));
+	int ret = offloading_init(argc, argv, envp);
+	//int ret = main(argc, argv, envp);
+	//offloading_destroy();
+	exit(ret);
 	return 0;
 }
+
+void __offloading_destroy(void){};
+void __offloading_init(void){};
+//weak_alias(__offloading_destroy, offloading_destroy);
+//weak_alias(__offloading_init, offloading_init);

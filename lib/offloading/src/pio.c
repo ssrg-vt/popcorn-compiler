@@ -8,8 +8,11 @@
 #include <stdarg.h>
 #include <sys/mman.h>
 
+#ifdef __PIO__
+
 #define __before_io_prep() int __pio_cn = current_nid()
 #define __before_io_() migrate(get_origin_nid(), NULL, NULL)
+//following macro contains two insructions: be careful
 #define __before_io() __before_io_prep(); __before_io_()
 #define __after_io()  migrate(__pio_cn, NULL, NULL)
 
@@ -24,7 +27,8 @@ int open(const char *filename, int flags, ...)
 		va_end(ap);
 	}
 	__before_io();
-	int ret = __open_(filename, flags, mode);;
+	//printf("%s: opening %s file request from node %d to node %d\n", __func__, filename, __pio_cn, current_nid());
+	int ret = __open_(filename, flags, mode);
 	__after_io();
 	return ret;
 }
@@ -32,7 +36,7 @@ int open(const char *filename, int flags, ...)
 int close(int fd)
 {
 	__before_io();
-	int ret = __close(fd);;
+	int ret = __close(fd);
 	__after_io();
 	return ret;
 }
@@ -56,7 +60,7 @@ void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 int creat(const char *filename, mode_t mode)
 {
 	__before_io();
-	int ret = __creat(filename, mode);;
+	int ret = __creat(filename, mode);
 	__after_io();
 	return ret;
 }
@@ -65,7 +69,7 @@ inline ssize_t pread(int fd, void *buf, size_t size, off_t ofs)
 { 
 	
 	__before_io();
-	ssize_t ret = __pread(fd, buf, size, ofs);;
+	ssize_t ret = __pread(fd, buf, size, ofs);
 	__after_io();
 	return ret;
 }
@@ -120,4 +124,4 @@ inline ssize_t writev(int fd, const struct iovec *iov, int count)
 	__after_io();
 	return ret;
 }
-
+#endif

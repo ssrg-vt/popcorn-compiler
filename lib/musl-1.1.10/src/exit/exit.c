@@ -19,6 +19,7 @@ extern void (*const __fini_array_end)() __attribute__((weak));
 
 _Noreturn void exit(int code)
 {
+
 	__funcs_on_exit();
 
 #ifndef SHARED
