@@ -20,7 +20,9 @@ build/%.o: %.cpp $(HDR)
 	@echo " [CXX] $<"
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(BIN): $(BUILD)/.dir $(OBJ)
+$(OBJ): $(BUILD)/.dir
+
+$(BIN): $(OBJ)
 	@rm -f $(BIN)
 	@echo " [AR] $@"
 	@ar -cq $(BIN) $(OBJ)
