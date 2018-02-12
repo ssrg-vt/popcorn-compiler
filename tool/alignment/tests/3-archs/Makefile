@@ -16,8 +16,6 @@ ARM64_LIBGCC := $(shell dirname \
 POWERPC64_LIBGCC := $(shell dirname \
                     $(shell powerpc64le-linux-gnu-gcc -print-libgcc-file-name))
 
-#POWERPC64_LIBGCC :=/usr/lib/gcc-cross/powerpc64le-linux-gnu/5.4.0
-
 # FIXME name of the generated executable
 BIN := test
 

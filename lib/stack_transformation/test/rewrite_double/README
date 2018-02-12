@@ -3,7 +3,6 @@ the call chain in recurse().  Similarly to rewrite_copy, this tests the
 runtime's ability to transfer live values from source to destination, but for
 floating-point registers.
 
-Note: this is broken on x86-64 due to instruction scheduling issues
 Note: this *may* be broken on PowerPC -- it segfaults when running inside QEMU
       but runs correctly natively
 

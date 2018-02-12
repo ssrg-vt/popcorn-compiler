@@ -70,6 +70,7 @@ int main(int argc, char** argv)
   if(argc > 1)
     max_depth = atoi(argv[1]);
 
+  srand(0);
   return recurse(1, rand(), rand(), rand(), rand());
 }
 

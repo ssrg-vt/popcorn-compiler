@@ -113,11 +113,12 @@ build/powerpc64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-powerpc64] $<"
 	@$(CC_POWERPC64) $(CFLAGS) $(LOC_POWERPC64) -o $@ -c $<
 
-$(LIB_POWERPC64): $(BUILD_POWERPC64)/arch/powerpc64/.dir \
-                  $(BUILD_POWERPC64)/arch/x86_64/.dir \
-                  $(BUILD_POWERPC64)/arch/aarch64/.dir \
-                  $(LIB_OBJ_POWERPC64) \
-                  $(LIB_ARCH_OBJ_POWERPC64)
+$(LIB_OBJ_POWERPC64): $(BUILD_POWERPC64)/.dir
+$(LIB_ARCH_OBJ_POWERPC64): $(BUILD_POWERPC64)/arch/powerpc64/.dir \
+                           $(BUILD_POWERPC64)/arch/x86_64/.dir \
+                           $(BUILD_POWERPC64)/arch/aarch64/.dir
+
+$(LIB_POWERPC64): $(LIB_OBJ_POWERPC64) $(LIB_ARCH_OBJ_POWERPC64)
 	@echo " [AR-powerpc64] $@"
 	@rm -f $(LIB_POWERPC64)
 	@$(AR) -cq $(LIB_POWERPC64) $(LIB_OBJ_POWERPC64) $(LIB_ARCH_OBJ_POWERPC64)
@@ -154,11 +155,12 @@ build/aarch64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
 	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
-$(LIB_AARCH64): $(BUILD_AARCH64)/arch/aarch64/.dir \
-                $(BUILD_AARCH64)/arch/powerpc64/.dir \
-                $(BUILD_AARCH64)/arch/x86_64/.dir \
-                $(LIB_OBJ_AARCH64) \
-                $(LIB_ARCH_OBJ_AARCH64)
+$(LIB_OBJ_AARCH64): $(BUILD_AARCH64)/.dir
+$(LIB_ARCH_OBJ_AARCH64): $(BUILD_AARCH64)/arch/powerpc64/.dir \
+                         $(BUILD_AARCH64)/arch/x86_64/.dir \
+                         $(BUILD_AARCH64)/arch/aarch64/.dir
+
+$(LIB_AARCH64): $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
 	@echo " [AR-aarch64] $@"
 	@rm -f $(LIB_AARCH64)
 	@$(AR) -cq $(LIB_AARCH64) $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
@@ -195,11 +197,12 @@ build/x86_64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-x86_64] $<"
 	@$(CC_X86_64) $(CFLAGS) $(LOC_X86_64) -o $@ -c $<
 
-$(LIB_X86_64): $(BUILD_X86_64)/arch/aarch64/.dir \
-               $(BUILD_X86_64)/arch/powerpc64/.dir \
-               $(BUILD_X86_64)/arch/x86_64/.dir \
-                $(LIB_OBJ_X86_64) \
-                $(LIB_ARCH_OBJ_X86_64)
+$(LIB_OBJ_X86_64): $(BUILD_X86_64)/.dir
+$(LIB_ARCH_OBJ_X86_64): $(BUILD_X86_64)/arch/powerpc64/.dir \
+                        $(BUILD_X86_64)/arch/x86_64/.dir \
+                        $(BUILD_X86_64)/arch/aarch64/.dir
+
+$(LIB_X86_64): $(LIB_OBJ_X86_64) $(LIB_ARCH_OBJ_X86_64)
 	@echo " [AR-x86_64] $@"
 	@rm -f $(LIB_X86_64)
 	@$(AR) -cq $(LIB_X86_64) $(LIB_OBJ_X86_64) $(LIB_ARCH_OBJ_X86_64)

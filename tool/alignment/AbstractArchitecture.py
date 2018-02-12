@@ -122,6 +122,7 @@ class AbstractArchitecture():
 				break
 
 			#FIXME: Since the TLS fix, the hack below should probabaly be removed
+
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):

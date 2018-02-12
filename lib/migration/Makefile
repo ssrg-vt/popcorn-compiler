@@ -7,6 +7,7 @@ POPCORN_X86     := $(POPCORN)/x86_64
 CC         := $(POPCORN)/bin/clang
 CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -c -g -popcorn-alignment \
               -Wno-unused-variable -D_GNU_SOURCE -mllvm -no-sm-warn
+OPT_LEVEL  := -O3
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE=1
 endif
@@ -15,6 +16,7 @@ CFLAGS     += -D_NATIVE=1
 endif
 ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG=1
+OPT_LEVEL  :=
 endif
 ifneq ($(findstring timing,$(type)),)
 CFLAGS     += -D_TIME_REWRITE=1 -D_TIME_RESPONSE_DELAY=1
@@ -33,8 +35,9 @@ INC_POWERPC := $(INC) -I$(POPCORN_POWERPC)/include
 INC_X86     := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := $(POPCORN)/bin/opt
-OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
-             -insert-stackmaps -no-live-vals
+OPT_FLAGS := $(OPT_LEVEL) -disable-loop-vectorization \
+             -disable-slp-vectorization -insert-stackmaps \
+             -no-live-vals
 
 AR      := ar
 ARFLAGS := -cq
@@ -75,7 +78,8 @@ $(BUILD_POWERPC)/%.o: src/%.c $(HDR_POWERPC)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_POWERPC) -o $@ $@.bc
 
-$(LIB_POWERPC): $(BUILD_POWERPC)/.dir $(HDR_POWERPC) $(OBJ_POWERPC)
+$(OBJ_POWERPC): $(BUILD_POWERPC)/.dir
+$(LIB_POWERPC): $(HDR_POWERPC) $(OBJ_POWERPC)
 	@echo " [AR] $(LIB_POWERPC)"
 	@rm -f $(LIB_POWERPC)
 	@$(AR) $(ARFLAGS) $(LIB_POWERPC) $(OBJ_POWERPC) &> /dev/null
@@ -86,7 +90,8 @@ $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_ARM) -o $@ $@.bc
 
-$(LIB_ARM): $(BUILD_ARM)/.dir $(HDR_ARM) $(OBJ_ARM)
+$(OBJ_ARM): $(BUILD_ARM)/.dir
+$(LIB_ARM): $(HDR_ARM) $(OBJ_ARM)
 	@echo " [AR] $(LIB_ARM)"
 	@rm -f $(LIB_ARM)
 	@$(AR) $(ARFLAGS) $(LIB_ARM) $(OBJ_ARM) &> /dev/null
@@ -97,7 +102,8 @@ $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
 
-$(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
+$(OBJ_X86): $(BUILD_X86)/.dir
+$(LIB_X86): $(HDR_X86) $(OBJ_X86)
 	@echo " [AR] $(LIB_X86)"
 	@rm -f $(LIB_X86)
 	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null

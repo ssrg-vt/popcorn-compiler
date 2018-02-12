@@ -1,6 +1,6 @@
 Index: include/llvm/ADT/SetVector.h
 ===================================================================
---- include/llvm/ADT/SetVector.h	(revision 277823)
+--- include/llvm/ADT/SetVector.h	(revision 320332)
 +++ include/llvm/ADT/SetVector.h	(working copy)
 @@ -85,6 +85,12 @@
      return vector_.end();
@@ -17,7 +17,7 @@ Index: include/llvm/ADT/SetVector.h
      assert(!empty() && "Cannot call back() on empty SetVector!");
 Index: include/llvm/ADT/StringSet.h
 ===================================================================
---- include/llvm/ADT/StringSet.h	(revision 277823)
+--- include/llvm/ADT/StringSet.h	(revision 320332)
 +++ include/llvm/ADT/StringSet.h	(working copy)
 @@ -23,7 +23,16 @@
    class StringSet : public llvm::StringMap<char, AllocatorTy> {
@@ -38,7 +38,7 @@ Index: include/llvm/ADT/StringSet.h
        return base::insert(std::make_pair(Key, '\0'));
 Index: include/llvm/ADT/ilist_node.h
 ===================================================================
---- include/llvm/ADT/ilist_node.h	(revision 277823)
+--- include/llvm/ADT/ilist_node.h	(revision 320332)
 +++ include/llvm/ADT/ilist_node.h	(working copy)
 @@ -70,7 +70,7 @@
      const NodeTy *Prev = this->getPrev();
@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,276 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -657,6 +657,10 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  SmallPtrSet<const BasicBlock *, 4> Latches;
 +  BlockSet SubLoopBlocks;
 +
++  /// Set if analysis had to bail out because there are too many paths through
++  /// the function.
++  bool TooManyPaths;
++
 +  /// Depth-first search information for the current path being explored.
 +  struct LoopDFSInfo {
 +  public:
@@ -664,6 +668,16 @@ Index: include/llvm/Analysis/LoopPaths.h
 +    std::vector<PathNode> PathNodes;
 +    bool StartsAtHeader;
 +  };
++
++  /// Empty all data structures.
++  void reset() {
++    Paths.clear();
++    HasSpPath.clear();
++    HasEqPointPath.clear();
++    CurLoop = nullptr;
++    Latches.clear();
++    SubLoopBlocks.clear();
++  }
 +
 +  /// Search exit blocks of the loop containing Successor.  Add the terminating
 +  /// instruction of the block to either of the two vectors, depending if there
@@ -675,13 +689,14 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Run a depth-first search for paths in the loop starting at an instruction.
 +  /// Any paths found are added to the vector of paths, and new paths to explore
 +  /// are added to the search list.
-+  void loopDFS(const Instruction *I,
++  bool loopDFS(const Instruction *I,
 +               LoopDFSInfo &DFSI,
 +               std::vector<LoopPath> &CurPaths,
 +               std::list<const Instruction *> &NewPaths);
 +
-+  /// Enumerate all paths within a loop, stored in the vector argument.
-+  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
++  /// Enumerate all paths within a loop, stored in the vector argument.  Return
++  /// true if the analysis was successful or false otherwise.
++  bool analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
 +
 +public:
 +  static char ID;
@@ -694,6 +709,9 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
 +  /// below which populate containers with paths (for this loop only).
 +  void rerunOnLoop(Loop *L);
++
++  /// Query whether there were too many paths to enumerate in the function.
++  bool tooManyPaths() const { return TooManyPaths; }
 +
 +  bool hasPaths(const Loop *L) const { return Paths.count(L); }
 +
@@ -733,7 +751,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 +
 Index: include/llvm/Analysis/Passes.h
 ===================================================================
---- include/llvm/Analysis/Passes.h	(revision 277823)
+--- include/llvm/Analysis/Passes.h	(revision 320332)
 +++ include/llvm/Analysis/Passes.h	(working copy)
 @@ -173,6 +173,26 @@
    //
@@ -766,7 +784,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 ===================================================================
 --- include/llvm/Analysis/PopcornUtil.h	(nonexistent)
 +++ include/llvm/Analysis/PopcornUtil.h	(working copy)
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,188 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -784,6 +802,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +#define LLVM_ANALYSIS_POPCORNUTIL_H
 +
 +#include "llvm/ADT/SmallVector.h"
++#include "llvm/IR/CallSite.h"
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/Module.h"
@@ -846,11 +865,13 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +}
 +
 +/// Return whether the instruction is a "true" call site, i.e., not an LLVM
-+/// IR-level intrinsic.
++/// IR-level intrinsic or inline assembly.
 +static inline bool isCallSite(const Instruction *I) {
-+  if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I))
-+    return true;
-+  else return false;
++  if((isa<CallInst>(I) || isa<InvokeInst>(I)) && !isa<IntrinsicInst>(I)) {
++    ImmutableCallSite CS(I);
++    if(!CS.isInlineAsm()) return true;
++  }
++  return false;
 +}
 +
 +/// Add metadata to an instruction marking it as an equivalence point.
@@ -954,7 +975,7 @@ Index: include/llvm/Analysis/PopcornUtil.h
 +
 Index: include/llvm/CodeGen/AsmPrinter.h
 ===================================================================
---- include/llvm/CodeGen/AsmPrinter.h	(revision 277823)
+--- include/llvm/CodeGen/AsmPrinter.h	(revision 320332)
 +++ include/llvm/CodeGen/AsmPrinter.h	(working copy)
 @@ -199,9 +199,10 @@
  
@@ -999,7 +1020,7 @@ Index: include/llvm/CodeGen/AsmPrinter.h
    //===------------------------------------------------------------------===//
 Index: include/llvm/CodeGen/MachineFunction.h
 ===================================================================
---- include/llvm/CodeGen/MachineFunction.h	(revision 277823)
+--- include/llvm/CodeGen/MachineFunction.h	(revision 320332)
 +++ include/llvm/CodeGen/MachineFunction.h	(working copy)
 @@ -20,6 +20,8 @@
  
@@ -1075,7 +1096,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
  //===--------------------------------------------------------------------===//
 Index: include/llvm/CodeGen/Passes.h
 ===================================================================
---- include/llvm/CodeGen/Passes.h	(revision 277823)
+--- include/llvm/CodeGen/Passes.h	(revision 320332)
 +++ include/llvm/CodeGen/Passes.h	(working copy)
 @@ -123,6 +123,15 @@
    /// Default setting for -enable-shrink-wrap on this target.
@@ -1143,7 +1164,7 @@ Index: include/llvm/CodeGen/Passes.h
    extern char &VirtRegRewriterID;
 Index: include/llvm/CodeGen/StackMaps.h
 ===================================================================
---- include/llvm/CodeGen/StackMaps.h	(revision 277823)
+--- include/llvm/CodeGen/StackMaps.h	(revision 320332)
 +++ include/llvm/CodeGen/StackMaps.h	(working copy)
 @@ -13,6 +13,8 @@
  #include "llvm/ADT/MapVector.h"
@@ -1995,9 +2016,23 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +}
 +
 +#endif
+Index: include/llvm/IR/ModuleSlotTracker.h
+===================================================================
+--- include/llvm/IR/ModuleSlotTracker.h	(revision 320332)
++++ include/llvm/IR/ModuleSlotTracker.h	(working copy)
+@@ -61,6 +61,9 @@
+   /// Purge the currently incorporated function and incorporate \c F.  If \c F
+   /// is currently incorporated, this is a no-op.
+   void incorporateFunction(const Function &F);
++
++  /// Get a local value's slot.
++  int getLocalSlot(const Value *);
+ };
+ 
+ } // end namespace llvm
 Index: include/llvm/InitializePasses.h
 ===================================================================
---- include/llvm/InitializePasses.h	(revision 277823)
+--- include/llvm/InitializePasses.h	(revision 320332)
 +++ include/llvm/InitializePasses.h	(working copy)
 @@ -119,6 +119,7 @@
  void initializeDominatorTreeWrapperPassPass(PassRegistry&);
@@ -2070,7 +2105,7 @@ Index: include/llvm/InitializePasses.h
  void initializeStripDeadPrototypesPassPass(PassRegistry&);
 Index: include/llvm/LinkAllPasses.h
 ===================================================================
---- include/llvm/LinkAllPasses.h	(revision 277823)
+--- include/llvm/LinkAllPasses.h	(revision 320332)
 +++ include/llvm/LinkAllPasses.h	(working copy)
 @@ -33,6 +33,7 @@
  #include "llvm/Transforms/Instrumentation.h"
@@ -2132,7 +2167,7 @@ Index: include/llvm/LinkAllPasses.h
        (void) llvm::createRewriteSymbolsPass();
 Index: include/llvm/MC/MCCodeGenInfo.h
 ===================================================================
---- include/llvm/MC/MCCodeGenInfo.h	(revision 277823)
+--- include/llvm/MC/MCCodeGenInfo.h	(revision 320332)
 +++ include/llvm/MC/MCCodeGenInfo.h	(working copy)
 @@ -32,6 +32,11 @@
    ///
@@ -2161,7 +2196,7 @@ Index: include/llvm/MC/MCCodeGenInfo.h
  
 Index: include/llvm/MC/MCObjectFileInfo.h
 ===================================================================
---- include/llvm/MC/MCObjectFileInfo.h	(revision 277823)
+--- include/llvm/MC/MCObjectFileInfo.h	(revision 320332)
 +++ include/llvm/MC/MCObjectFileInfo.h	(working copy)
 @@ -135,6 +135,10 @@
    /// Null if this target doesn't support a BSS section. ELF and MachO only.
@@ -2185,7 +2220,7 @@ Index: include/llvm/MC/MCObjectFileInfo.h
  
 Index: include/llvm/Target/TargetFrameLowering.h
 ===================================================================
---- include/llvm/Target/TargetFrameLowering.h	(revision 277823)
+--- include/llvm/Target/TargetFrameLowering.h	(revision 320332)
 +++ include/llvm/Target/TargetFrameLowering.h	(working copy)
 @@ -227,6 +227,14 @@
      return 0;
@@ -2204,7 +2239,7 @@ Index: include/llvm/Target/TargetFrameLowering.h
    /// The default implementation checks populates the \p SavedRegs bitset with
 Index: include/llvm/Target/TargetMachine.h
 ===================================================================
---- include/llvm/Target/TargetMachine.h	(revision 277823)
+--- include/llvm/Target/TargetMachine.h	(revision 320332)
 +++ include/llvm/Target/TargetMachine.h	(working copy)
 @@ -171,6 +171,13 @@
    /// \brief Overrides the optimization level.
@@ -2222,7 +2257,7 @@ Index: include/llvm/Target/TargetMachine.h
    bool shouldPrintMachineCode() const { return Options.PrintMachineCode; }
 Index: include/llvm/Target/TargetRegisterInfo.h
 ===================================================================
---- include/llvm/Target/TargetRegisterInfo.h	(revision 277823)
+--- include/llvm/Target/TargetRegisterInfo.h	(revision 320332)
 +++ include/llvm/Target/TargetRegisterInfo.h	(working copy)
 @@ -869,6 +869,17 @@
    /// getFrameRegister - This method should return the register used as a base
@@ -2244,7 +2279,7 @@ Index: include/llvm/Target/TargetRegisterInfo.h
  
 Index: include/llvm/Target/TargetSubtargetInfo.h
 ===================================================================
---- include/llvm/Target/TargetSubtargetInfo.h	(revision 277823)
+--- include/llvm/Target/TargetSubtargetInfo.h	(revision 320332)
 +++ include/llvm/Target/TargetSubtargetInfo.h	(working copy)
 @@ -32,6 +32,7 @@
  class TargetRegisterInfo;
@@ -2272,7 +2307,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,59 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2320,6 +2355,12 @@ Index: include/llvm/Target/TargetValues.h
 +
 +protected:
 +  TargetValues() {}
++
++  /// Return whether or not the operand is some type of symbol reference.
++  static bool isSymbolValue(const MachineOperand &MO)
++  { return MO.isGlobal() || MO.isSymbol() || MO.isMCSymbol(); }
++  static bool isSymbolValue(const MachineOperand *MO)
++  { return isSymbolValue(*MO); }
 +};
 +
 +} // End llvm namespace
@@ -2328,7 +2369,7 @@ Index: include/llvm/Target/TargetValues.h
 +
 Index: include/llvm/Transforms/Instrumentation.h
 ===================================================================
---- include/llvm/Transforms/Instrumentation.h	(revision 277823)
+--- include/llvm/Transforms/Instrumentation.h	(revision 320332)
 +++ include/llvm/Transforms/Instrumentation.h	(working copy)
 @@ -136,6 +136,17 @@
  /// protect against stack-based overflow vulnerabilities.
@@ -2371,7 +2412,7 @@ Index: include/llvm/Transforms/Utils.h
 +}
 Index: lib/Analysis/Analysis.cpp
 ===================================================================
---- lib/Analysis/Analysis.cpp	(revision 277823)
+--- lib/Analysis/Analysis.cpp	(revision 320332)
 +++ lib/Analysis/Analysis.cpp	(working copy)
 @@ -42,6 +42,7 @@
    initializeDomViewerPass(Registry);
@@ -2399,7 +2440,7 @@ Index: lib/Analysis/Analysis.cpp
    initializeScopedNoAliasAAPass(Registry);
 Index: lib/Analysis/CMakeLists.txt
 ===================================================================
---- lib/Analysis/CMakeLists.txt	(revision 277823)
+--- lib/Analysis/CMakeLists.txt	(revision 320332)
 +++ lib/Analysis/CMakeLists.txt	(working copy)
 @@ -34,10 +34,13 @@
    LibCallAliasAnalysis.cpp
@@ -2959,7 +3000,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,511 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2985,12 +3026,17 @@ Index: lib/Analysis/LoopPaths.cpp
 +#include <queue>
 +#include "llvm/Analysis/LoopPaths.h"
 +#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/Support/CommandLine.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
 +
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "looppaths"
++
++const static cl::opt<unsigned>
++MaxNumPaths("max-num-paths", cl::Hidden, cl::init(10000),
++  cl::desc("Max number of paths to analyze"));
 +
 +void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
 +  std::queue<Loop *> ToVisit;
@@ -3133,7 +3179,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +  Path.print(O);
 +}
 +
-+void EnumerateLoopPaths::loopDFS(const Instruction *I,
++bool EnumerateLoopPaths::loopDFS(const Instruction *I,
 +                                 LoopDFSInfo &DFSI,
 +                                 std::vector<LoopPath> &CurPaths,
 +                                 std::list<const Instruction *> &NewPaths) {
@@ -3146,6 +3192,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    if((EqPoint = hasEquivalencePoint(I))) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
 +                            DFSI.StartsAtHeader, false);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      for(auto Node : DFSI.PathNodes) {
 +        PathBlock = Node.getBlock();
 +        if(!SubLoopBlocks.count(PathBlock))
@@ -3167,7 +3214,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
 +            for(auto SLE : SpanningInsts)
-+              loopDFS(SLE, DFSI, CurPaths, NewPaths);
++              if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +          }
 +        }
 +      }
@@ -3177,6 +3224,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else if(Latches.count(BB)) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
 +                            DFSI.StartsAtHeader, true);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      if(DFSI.StartsAtHeader) {
 +        for(auto Node : DFSI.PathNodes) {
 +          PathBlock = Node.getBlock();
@@ -3197,8 +3245,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else {
 +      for(auto Succ : successors(BB)) {
 +        if(!CurLoop->contains(Succ)) continue;
-+        else if(!SubLoopBlocks.count(Succ))
-+          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++        else if(!SubLoopBlocks.count(Succ)) {
++          if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++            return false;
++        }
 +        else {
 +          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +          for(auto SLE : EqPointInsts) {
@@ -3211,10 +3261,12 @@ Index: lib/Analysis/LoopPaths.cpp
 +            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                  BB->getTerminator(),
 +                                  DFSI.StartsAtHeader, false);
++            if(CurPaths.size() > MaxNumPaths) return false;
 +            pushIfNotPresent(SLE, NewPaths);
 +            DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          }
-+          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++          for(auto SLE : SpanningInsts)
++            if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +        }
 +      }
 +    }
@@ -3227,8 +3279,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    const Loop *WeedOutLoop = LI->getLoopFor(BB);
 +    for(auto Succ : successors(BB)) {
 +      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
-+      else if(!SubLoopBlocks.count(Succ))
-+        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++      else if(!SubLoopBlocks.count(Succ)) {
++        if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++          return false;
++      }
 +      else {
 +        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +        for(auto SLE : EqPointInsts) {
@@ -3238,17 +3292,21 @@ Index: lib/Analysis/LoopPaths.cpp
 +          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                BB->getTerminator(),
 +                                DFSI.StartsAtHeader, false);
++          if(CurPaths.size() > MaxNumPaths) return false;
 +          DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          pushIfNotPresent(SLE, NewPaths);
 +        }
-+        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++        for(auto SLE: SpanningInsts)
++          if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +      }
 +    }
 +    DFSI.PathNodes.pop_back();
 +  }
++
++  return true;
 +}
 +
-+void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
++bool EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 +  std::list<const Instruction *> NewPaths;
 +  SmallVector<BasicBlock *, 4> LatchVec;
 +  LoopDFSInfo DFSI;
@@ -3279,23 +3337,26 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +  DFSI.Start = &L->getHeader()->front();
 +  DFSI.StartsAtHeader = true;
-+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +
 +  DFSI.StartsAtHeader = false;
 +  while(!NewPaths.empty()) {
 +    DFSI.Start = NewPaths.front();
 +    NewPaths.pop_front();
-+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +  }
++
++  return true;
 +}
 +
 +bool EnumerateLoopPaths::runOnFunction(Function &F) {
 +  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
 +               << "********** Function: " << F.getName() << "\n\n");
 +
-+  Paths.clear();
++  reset();
++  TooManyPaths = false;
 +  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 +  std::vector<LoopNest> Nests;
 +
@@ -3314,8 +3375,18 @@ Index: lib/Analysis/LoopPaths.cpp
 +    for(auto L : Nest) {
 +      std::vector<LoopPath> &CurPaths = Paths[L];
 +      assert(CurPaths.size() == 0 && "Re-processing loop?");
-+      analyzeLoop(L, CurPaths);
++      if(!analyzeLoop(L, CurPaths)) {
++        TooManyPaths = true;
++        break;
++      }
 +    }
++
++    if(TooManyPaths) break;
++  }
++
++  if(TooManyPaths) {
++    DEBUG(dbgs() << "WARNING: too many paths, bailing on analysis\n");
++    reset();
 +  }
 +
 +  return false;
@@ -3325,7 +3396,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +  // We *should* be analyzing a loop for the 2+ time
 +  std::vector<LoopPath> &CurPaths = Paths[L];
 +  DEBUG(if(!CurPaths.size()) dbgs() << "  -> No previous analysis?\n");
-+  analyzeLoop(L, CurPaths);
++  if(!analyzeLoop(L, CurPaths)) {
++    reset();
++    TooManyPaths = true;
++  }
 +}
 +
 +void EnumerateLoopPaths::getPaths(const Loop *L,
@@ -3442,7 +3516,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 ===================================================================
 --- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
 +++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1807 @@
+@@ -0,0 +1,1816 @@
 +//===- SelectMigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3490,6 +3564,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +#include "llvm/Analysis/ScalarEvolution.h"
 +#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 +#include "llvm/IR/CallSite.h"
++#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/Intrinsics.h"
 +#include "llvm/IR/Instructions.h"
@@ -4095,7 +4170,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      if(AddedMigPoint) LP->runOnFunction(F);
 +    }
 +
-+    if(MoreMigPoints) {
++    if(MoreMigPoints && !LP->tooManyPaths()) {
 +      StringRef FuncName = F.getName();
 +      StringMap<unsigned>::const_iterator It;
 +      if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
@@ -4147,6 +4222,14 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
 +    }
 +    else {
++      if(MoreMigPoints) {
++        std::string Msg = "too many paths to instrument function with more "
++                          "migration points -- falling back to instrumenting "
++                          "function entry/exit";
++        DiagnosticInfoOptimizationFailure DI(F, nullptr, Msg);
++        F.getContext().diagnose(DI);
++      }
++
 +      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
 +      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +
@@ -5252,7 +5335,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +
 Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
---- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 277823)
+--- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 320332)
 +++ lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(working copy)
 @@ -1160,6 +1160,41 @@
    return CurExceptionSym;
@@ -5298,7 +5381,7 @@ Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
    // Get the function symbol.
 Index: lib/CodeGen/CMakeLists.txt
 ===================================================================
---- lib/CodeGen/CMakeLists.txt	(revision 277823)
+--- lib/CodeGen/CMakeLists.txt	(revision 320332)
 +++ lib/CodeGen/CMakeLists.txt	(working copy)
 @@ -111,6 +111,8 @@
    StackSlotColoring.cpp
@@ -5319,7 +5402,7 @@ Index: lib/CodeGen/CMakeLists.txt
  
 Index: lib/CodeGen/CodeGen.cpp
 ===================================================================
---- lib/CodeGen/CodeGen.cpp	(revision 277823)
+--- lib/CodeGen/CodeGen.cpp	(revision 320332)
 +++ lib/CodeGen/CodeGen.cpp	(working copy)
 @@ -68,6 +68,7 @@
    initializeStackMapLivenessPass(Registry);
@@ -5331,7 +5414,7 @@ Index: lib/CodeGen/CodeGen.cpp
    initializeTwoAddressInstructionPassPass(Registry);
 Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
---- lib/CodeGen/LLVMTargetMachine.cpp	(revision 277823)
+--- lib/CodeGen/LLVMTargetMachine.cpp	(revision 320332)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
 @@ -42,6 +42,26 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
@@ -5392,7 +5475,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
    PassConfig->addIRPasses();
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
---- lib/CodeGen/MachineFunction.cpp	(revision 277823)
+--- lib/CodeGen/MachineFunction.cpp	(revision 320332)
 +++ lib/CodeGen/MachineFunction.cpp	(working copy)
 @@ -253,6 +253,15 @@
                                 MMO->getBaseAlignment());
@@ -5577,7 +5660,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  //===----------------------------------------------------------------------===//
 Index: lib/CodeGen/Passes.cpp
 ===================================================================
---- lib/CodeGen/Passes.cpp	(revision 277823)
+--- lib/CodeGen/Passes.cpp	(revision 320332)
 +++ lib/CodeGen/Passes.cpp	(working copy)
 @@ -217,7 +217,9 @@
      : ImmutablePass(ID), PM(&pm), StartBefore(nullptr), StartAfter(nullptr),
@@ -5666,7 +5749,7 @@ Index: lib/CodeGen/Passes.cpp
  
 Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
---- lib/CodeGen/RegAllocFast.cpp	(revision 277823)
+--- lib/CodeGen/RegAllocFast.cpp	(revision 320332)
 +++ lib/CodeGen/RegAllocFast.cpp	(working copy)
 @@ -1078,6 +1078,13 @@
  /// runOnMachineFunction - Register allocate the whole function
@@ -5684,7 +5767,7 @@ Index: lib/CodeGen/RegAllocFast.cpp
    MF = &Fn;
 Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
 ===================================================================
---- lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(revision 277823)
+--- lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(revision 320332)
 +++ lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp	(working copy)
 @@ -886,6 +886,9 @@
    case ISD::SRL:
@@ -5722,7 +5805,7 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
    SDValue Ch = N->getChain(), Ptr = N->getBasePtr();
 Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
 ===================================================================
---- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 277823)
+--- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 320332)
 +++ lib/CodeGen/SelectionDAG/LegalizeTypes.h	(working copy)
 @@ -288,6 +288,7 @@
    SDValue PromoteIntOp_Shift(SDNode *N);
@@ -5732,9 +5815,116 @@ Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
    SDValue PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo);
    SDValue PromoteIntOp_TRUNCATE(SDNode *N);
    SDValue PromoteIntOp_UINT_TO_FP(SDNode *N);
+Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+===================================================================
+--- lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(revision 320332)
++++ lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(working copy)
+@@ -6542,6 +6542,43 @@
+   Callee = getValue(CI.getCalledValue());
+   NullPtr = DAG.getIntPtrConstant(0, DL, true);
+ 
++  // Popcorn: we need to insert the stackmap directly after the call
++  // instruction, so grab the chain from the CALLSEQ_END node.  Note that
++  // although we're moving the stackmap between the call & return value
++  // copy-out, the stackmap doesn't generate code so we're not clobbering
++  // return values.
++  Chain = getRoot();
++  SDNode *CSE = Chain.getNode(), *RetCopyOut = nullptr;
++  while(CSE && CSE->getOpcode() != ISD::CALLSEQ_END) {
++    RetCopyOut = CSE;
++    CSE = CSE->getGluedNode();
++  }
++
++  // It's possible the function call that induced this stackmap to be generated
++  // got lowered directly to a machine instruction, which can lead to weird
++  // cases like trying to glue this stackmap to another.  This causes the
++  // instruction scheduler to choke, so avoid that situation.
++  // TODO why does gluing 2 stackmaps cause it to die?  It complains about
++  // NumLiveRegs already being zero for releasing call dependencies in
++  // ScheduleDAGRRList.cpp:759
++  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) {
++    SDNode *Check = CSE;
++    do {
++      if(Check->isMachineOpcode() &&
++         Check->getMachineOpcode() == TargetOpcode::STACKMAP) {
++        CSE = nullptr;
++        break;
++      }
++    } while((Check = Check->getGluedNode()));
++  }
++
++  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) Chain = SDValue(CSE, 0);
++  else {
++    DEBUG(dbgs() << "WARNING: no call node for: "; Chain->dump());
++    RetCopyOut = nullptr;
++  }
++  assert(Chain.getSimpleValueType() == MVT::Other && "Invalid chain");
++
+   // The stackmap intrinsic only records the live variables (the arguemnts
+   // passed to it) and emits NOPS (if requested). Unlike the patchpoint
+   // intrinsic, this won't be lowered to a function call. This means we don't
+@@ -6552,9 +6589,26 @@
+   // chain, flag = STACKMAP(id, nbytes, ..., chain, flag)
+   // chain, flag = CALLSEQ_END(chain, 0, 0, flag)
+   //
+-  Chain = DAG.getCALLSEQ_START(getRoot(), NullPtr, DL);
++  Chain = DAG.getCALLSEQ_START(Chain, NullPtr, DL);
+   InFlag = Chain.getValue(1);
+ 
++  // Popcorn: add glue operand to CALLSEQ_START to tie the stackmap to the
++  // call sequence (note that it already produces a glue value).
++  if(CSE) {
++    SmallVector<EVT, 2> VTs(Chain->value_begin(), Chain->value_end());
++    SDVTList VTList = DAG.getVTList(VTs);
++    for(auto &Op : Chain->ops()) Ops.push_back(Op);
++    assert(Ops.back().getSimpleValueType() != MVT::Glue &&
++           "Already have glue");
++    Ops.push_back(SDValue(CSE, 1));
++    assert(Ops.back().getSimpleValueType() == MVT::Glue &&
++           "Invalid glue operand");
++    Chain.setNode(DAG.MorphNodeTo(Chain.getNode(), Chain->getOpcode(),
++                                  VTList, Ops));
++    InFlag = Chain.getValue(1);
++    Ops.clear();
++  }
++
+   // Add the <id> and <numBytes> constants.
+   SDValue IDVal = getValue(CI.getOperand(PatchPointOpers::IDPos));
+   Ops.push_back(DAG.getTargetConstant(
+@@ -6581,9 +6635,30 @@
+   InFlag = Chain.getValue(1);
+ 
+   Chain = DAG.getCALLSEQ_END(Chain, NullPtr, NullPtr, InFlag, DL);
++  InFlag = Chain.getValue(1);
+ 
+   // Stackmaps don't generate values, so nothing goes into the NodeMap.
+ 
++  // Popcorn: fix-up the glue so the return-value copy outs happen after
++  // the stackmap's CALLSEQ_END.  Note that this is *required*, otherwise
++  // the backend won't correctly track physical register outputs from call.
++  if(RetCopyOut) {
++    unsigned NOpts = RetCopyOut->getNumOperands();
++    Ops.clear();
++    for(size_t i = 0; i < NOpts; i++) {
++      if(RetCopyOut->getOperand(i).getSimpleValueType() == MVT::Other)
++        Ops.push_back(Chain);
++      else if(RetCopyOut->getOperand(i).getSimpleValueType() == MVT::Glue)
++        Ops.push_back(InFlag);
++      else Ops.push_back(RetCopyOut->getOperand(i));
++    }
++    RetCopyOut = DAG.UpdateNodeOperands(RetCopyOut, Ops);
++
++    while(RetCopyOut->getGluedUser()) RetCopyOut = RetCopyOut->getGluedUser();
++    Chain = SDValue(RetCopyOut, NOpts - 2);
++    assert(Chain.getSimpleValueType() == MVT::Other && "Invalid chain");
++  }
++
+   // Set the root to the target-lowered call chain.
+   DAG.setRoot(Chain);
+ 
 Index: lib/CodeGen/StackColoring.cpp
 ===================================================================
---- lib/CodeGen/StackColoring.cpp	(revision 277823)
+--- lib/CodeGen/StackColoring.cpp	(revision 320332)
 +++ lib/CodeGen/StackColoring.cpp	(working copy)
 @@ -713,7 +713,7 @@
  
@@ -5747,7 +5937,7 @@ Index: lib/CodeGen/StackColoring.cpp
  
 Index: lib/CodeGen/StackMaps.cpp
 ===================================================================
---- lib/CodeGen/StackMaps.cpp	(revision 277823)
+--- lib/CodeGen/StackMaps.cpp	(revision 320332)
 +++ lib/CodeGen/StackMaps.cpp	(working copy)
 @@ -12,13 +12,18 @@
  #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -5784,10 +5974,38 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,109 @@
+@@ -84,32 +98,145 @@
    return (unsigned)RegNum;
  }
  
++/// If the instruction is simply casting a pointer to another type, return
++/// the value used as the source of the cast.  This is required because allocas
++/// may be cast to different pointer types (which appear as non-allocas) but
++/// may still be represented by a direct memory reference in the stackmap.
++static inline const Value *getPointerCastSrc(const Value *Inst) {
++  assert(Inst->getType()->isPointerTy() && "Not a pointer type");
++
++  if(isa<BitCastInst>(Inst)) {
++    // Ensure that we're casting to another pointer type
++    const BitCastInst *BC = cast<BitCastInst>(Inst);
++    if(!BC->getSrcTy()->isPointerTy()) return nullptr;
++    else return BC->getOperand(0);
++  }
++  else if(isa<GetElementPtrInst>(Inst)) {
++    // Ensure that all indexes are 0, meaning we're only referencing the start
++    // of the storage location
++    const GetElementPtrInst *GEP = cast<GetElementPtrInst>(Inst);
++    GetElementPtrInst::const_op_iterator it, e;
++    for(it = GEP->idx_begin(), e = GEP->idx_end(); it != e; it++) {
++      if(!isa<ConstantInt>(it->get())) return nullptr;
++      const ConstantInt *Idx = cast<ConstantInt>(it->get());
++      if(Idx->getSExtValue() != 0) return nullptr;
++    }
++    return GEP->getOperand(0);
++  }
++  else return nullptr;
++}
++
 +/// Get pointer typing information for a stackmap operand
 +void StackMaps::getPointerInfo(const Value *Op, const DataLayout &DL,
 +                               bool &isPtr, bool &isAlloca,
@@ -5801,8 +6019,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +  if(Ty->isPointerTy())
 +  {
 +    isPtr = true;
-+    PointerType *PTy = cast<PointerType>(Ty);
-+    if(PTy->getElementType()->isSized() && isa<AllocaInst>(Op)) {
++
++    // Walk through cast operations that potentially hide allocas
++    while(!isa<AllocaInst>(Op) && (Op = getPointerCastSrc(Op)));
++    if(Op && isa<AllocaInst>(Op)) {
++      PointerType *PTy = cast<PointerType>(Ty);
++      assert(PTy->getElementType()->isSized() && "Alloca of unknown size?");
 +      isAlloca = true;
 +      AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
 +    }
@@ -5875,6 +6097,8 @@ Index: lib/CodeGen/StackMaps.cpp
        llvm_unreachable("Unrecognized operand type.");
      case StackMaps::DirectMemRefOp: {
 -      unsigned Size = AP.TM.getDataLayout()->getPointerSizeInBits();
++      assert(isAlloca &&
++             "Did not find alloca value for direct memory reference");
 +      unsigned Size = DL.getPointerSizeInBits();
        assert((Size % 8) == 0 && "Need pointer size in bytes.");
        Size /= 8;
@@ -5887,6 +6111,8 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::IndirectMemRefOp: {
++      assert(!isAlloca &&
++             "Alloca lowered to indirect memory reference operand");
        int64_t Size = (++MOI)->getImm();
        assert(Size > 0 && "Need a valid size for indirect memory locations.");
 +      Size = DL.getTypeAllocSize(IROp->getType());
@@ -5900,7 +6126,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +207,24 @@
+@@ -116,17 +243,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -5928,7 +6154,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +232,16 @@
+@@ -134,17 +268,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -5953,7 +6179,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +258,7 @@
+@@ -161,6 +294,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -5961,7 +6187,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +292,7 @@
+@@ -194,7 +328,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -5970,7 +6196,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +301,15 @@
+@@ -203,8 +337,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -5988,7 +6214,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +326,78 @@
+@@ -221,6 +362,78 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6067,7 +6293,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +454,135 @@
+@@ -277,6 +490,135 @@
    return LiveOuts;
  }
  
@@ -6203,7 +6429,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +591,46 @@
+@@ -285,21 +627,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6252,7 +6478,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +654,21 @@
+@@ -323,12 +690,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6277,7 +6503,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +751,11 @@
+@@ -411,8 +787,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6290,7 +6516,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +763,15 @@
+@@ -420,6 +799,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6306,7 +6532,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +791,20 @@
+@@ -439,14 +827,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6331,7 +6557,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +813,25 @@
+@@ -455,6 +849,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6357,7 +6583,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +847,29 @@
+@@ -470,23 +883,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6388,7 +6614,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +877,13 @@
+@@ -494,10 +913,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6403,7 +6629,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +895,31 @@
+@@ -509,6 +931,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -6435,7 +6661,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +926,7 @@
+@@ -515,7 +962,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -6444,7 +6670,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +950,7 @@
+@@ -539,7 +986,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -6455,7 +6681,7 @@ Index: lib/CodeGen/StackMaps.cpp
    OS.AddBlankLine();
 Index: lib/CodeGen/StackSlotColoring.cpp
 ===================================================================
---- lib/CodeGen/StackSlotColoring.cpp	(revision 277823)
+--- lib/CodeGen/StackSlotColoring.cpp	(revision 320332)
 +++ lib/CodeGen/StackSlotColoring.cpp	(working copy)
 @@ -278,6 +278,7 @@
    SmallVector<int, 16> SlotMapping(NumObjs, -1);
@@ -6479,7 +6705,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,978 @@
+@@ -0,0 +1,1282 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -6502,6 +6728,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +#include "llvm/CodeGen/LiveStackAnalysis.h"
 +#include "llvm/CodeGen/MachineFrameInfo.h"
 +#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/CodeGen/MachineInstrBuilder.h"
 +#include "llvm/CodeGen/MachineRegisterInfo.h"
 +#include "llvm/CodeGen/Passes.h"
 +#include "llvm/CodeGen/StackMaps.h"
@@ -6543,13 +6770,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  /// machine instruction and the call machine instruction that caused the
 +  /// stackmap to be emitted in the IR, respectively
 +  typedef std::tuple<const CallInst *,
-+                     const MachineInstr *,
++                     MachineInstr *,
 +                     const MachineInstr *> SMInstBundle;
 +
 +  /// Getters for individual elements of instruction bundles
 +  static inline const
 +  CallInst *getIRSM(const SMInstBundle &B) { return std::get<0>(B); }
-+  static inline const
++  static inline
 +  MachineInstr *getMISM(const SMInstBundle &B) { return std::get<1>(B); }
 +  static inline const
 +  MachineInstr *getMICall(const SMInstBundle &B) { return std::get<2>(B); }
@@ -6651,7 +6878,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  const TargetInstrInfo *TII;
 +  const TargetRegisterInfo *TRI;
 +  const TargetValues *TVG;
-+  const LiveIntervals *LI;
++  LiveIntervals *LI;
 +  const LiveStacks *LS;
 +  const SlotIndexes *Indexes;
 +  const VirtRegMap *VRM;
@@ -6693,6 +6920,15 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  /// virtual register/stack slot <-> IR value mappings
 +  void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 +
++  /// Extend the live range for a register to include an instruction.
++  void updateRegisterLiveInterval(MachineOperand &Src,
++                                  const MachineInstr *Inst);
++
++  /// Rather than modifying the backend machinery to prevent hoisting code
++  /// between the stackmap and call site, unwind instructions in order to get
++  /// real live value locations at the function call.
++  bool unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
++
 +  /// Is a virtual register live across the machine instruction?
 +  /// Note: returns false if the MI is the last instruction for which the
 +  /// virtual register is alive
@@ -6731,7 +6967,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  void findAlternateVregLocs(const SMInstBundle &SM);
 +
 +  /// Find stackmap operands that have been spilled to alternate locations
-+  void findAlternateOpLocs();
++  bool findAlternateOpLocs();
 +
 +  /// Ensure virtual registers used to generate architecture-specific values
 +  /// are handled by the stackmap & convert to physical registers
@@ -6761,13 +6997,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +const std::string StackTransformMetadata::SMName("llvm.experimental.stackmap");
 +
 +INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
-+  "Gather stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, false)
 +INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 +INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 +INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 +INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 +INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
-+  "Gather stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, false)
 +
 +char StackTransformMetadata::ID = 0;
 +
@@ -6781,6 +7017,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
++  bool Changed = false;
++
 +  if(fn.getFrameInfo()->hasStackMap()) {
 +    MF = &fn;
 +    MFI = MF->getFrameInfo();
@@ -6801,17 +7039,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    );
 +
 +    findStackmapsAndStackSlotCopies();
-+    findAlternateOpLocs();
++    Changed = findAlternateOpLocs();
 +    findArchSpecificLiveVals();
 +    if(!NoWarnings) warnUnhandled();
 +  }
 +
-+  return false;
++  return Changed;
 +}
 +
 +/// Print information about a virtual register and it's associated IR value
 +void StackTransformMetadata::dumpReg(unsigned Reg, const Value *IRVal) const {
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  if(TargetRegisterInfo::isPhysicalRegister(Reg))
 +    dbgs() << ": in register " << PrintReg(Reg, TRI);
 +  else {
@@ -6826,7 +7064,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Print information about a stack slot and it's associated IR value
 +void StackTransformMetadata::dumpStackSlot(int SS, const Value *IRVal) const {
 +  assert(!MFI->isDeadObjectIndex(SS) && "Invalid stack slot");
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  dbgs() << ": in stack slot " << SS << " (size: " << MFI->getObjectSize(SS)
 +         << ")\n";
 +}
@@ -6927,11 +7165,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        enum CopyLoc::Type type = loc->getType();
 +        if(type == CopyLoc::STACK_LOAD || type == CopyLoc::STACK_STORE) {
 +          StackCopyLoc *SCL = (StackCopyLoc *)loc.get();
-+          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end()) {
-+            StackSlotCopyPair ins(SCL->StackSlot,
-+                                  CopyLocVecPtr(new CopyLocVec));
-+            it = SSUses.insert(std::move(ins)).first;
-+          }
++          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end())
++            it = SSUses.emplace(SCL->StackSlot,
++                                CopyLocVecPtr(new CopyLocVec)).first;
 +          it->second->push_back(loc);
 +        }
 +      }
@@ -6956,36 +7192,32 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  RegValsMap::iterator VregIt;
 +  StackValsMap::iterator SSIt;
 +  MachineInstr::const_mop_iterator MOit;
-+  CallInst::const_op_iterator IRit;
 +
 +  // Initialize new storage location/IR map objects (i.e., for virtual
 +  // registers & stack slots) for the stackmap
-+  SMVregs.insert(SMVregsPair(MISM, RegValsMap()));
-+  SMStackSlots.insert(SMStackSlotPair(MISM, StackValsMap()));
++  SMVregs.emplace(MISM, RegValsMap());
++  SMStackSlots.emplace(MISM, StackValsMap());
 +
 +  // Loop over all operands
-+  for(MOit = std::next(MISM->operands_begin(), 2),
-+      IRit = std::next(IRSM->op_begin(), 2);
-+      MOit != MISM->operands_end() && IRit != (IRSM->op_end() - 1);
-+      MOit++, IRit++) {
++  MOit = std::next(MISM->operands_begin(), 2);
++  for(size_t i = 2; i < IRSM->getNumArgOperands(); i++) {
++    const Value *IRVal = IRSM->getArgOperand(i);
 +    if(MOit->isImm()) { // Map IR values to stack slots
 +      int FrameIdx = INT32_MAX;
-+      const Value *IRVal = IRit->get();
-+
 +      switch(MOit->getImm()) {
 +      case StackMaps::DirectMemRefOp:
 +        MOit++;
 +        assert(MOit->isFI() && "Invalid operand type");
 +        FrameIdx = MOit->getIndex();
-+        MOit++;
++        MOit = std::next(MOit, 2);
 +        break;
 +      case StackMaps::IndirectMemRefOp:
-+        MOit++; MOit++;
++        MOit = std::next(MOit, 2);
 +        assert(MOit->isFI() && "Invalid operand type");
 +        FrameIdx = MOit->getIndex();
-+        MOit++;
++        MOit = std::next(MOit, 2);
 +        break;
-+      case StackMaps::ConstantOp: MOit++; continue;
++      case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
 +      default: llvm_unreachable("Unrecognized stackmap operand type"); break;
 +      }
 +
@@ -6998,15 +7230,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      // Update the list of IR values mapped to the stack slot (multiple IR
 +      // values may be mapped to a single stack slot).
 +      SSIt = SMStackSlots[MISM].find(FrameIdx);
-+      if(SSIt == SMStackSlots[MISM].end()) {
-+        StackValsPair OpMap(FrameIdx, ValueVecPtr(new ValueVec));
-+        SSIt = SMStackSlots[MISM].insert(std::move(OpMap)).first;
-+      }
++      if(SSIt == SMStackSlots[MISM].end())
++        SSIt = SMStackSlots[MISM].emplace(FrameIdx,
++                                          ValueVecPtr(new ValueVec)).first;
 +      SSIt->second->push_back(IRVal);
 +    }
 +    else if(MOit->isReg()) { // Map IR values to virtual registers
-+      const Value *IRVal = IRit->get();
 +      unsigned Reg = MOit->getReg();
++      MOit++;
 +
 +      assert(IRVal && "Invalid stackmap IR operand");
 +      assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
@@ -7016,16 +7247,233 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      // Update the list of IR values mapped to the virtual register (multiple
 +      // IR values may be mapped to a single virtual register).
 +      VregIt = SMVregs[MISM].find(Reg);
-+      if(VregIt == SMVregs[MISM].end()) {
-+        RegValsPair OpMap(Reg, ValueVecPtr(new ValueVec));
-+        VregIt = SMVregs[MISM].insert(std::move(OpMap)).first;
-+      }
++      if(VregIt == SMVregs[MISM].end())
++        VregIt = SMVregs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
 +      VregIt->second->push_back(IRVal);
 +    } else {
 +      llvm_unreachable("Unrecognized stackmap operand type.");
 +    }
 +  }
-+  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
++}
++
++/// Extend the live range for a register to include an instruction.
++void
++StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
++                                                   const MachineInstr *SM) {
++  typedef LiveInterval::Segment Segment;
++
++  assert(Src.isReg() && "Cannot update live range for non-register operand");
++
++  unsigned Vreg = Src.getReg();
++  bool hasRegUnit = false;
++  SlotIndex Slots[2] = {
++    Indexes->getInstructionIndex(Src.getParent()),
++    Indexes->getInstructionIndex(SM)
++  };
++
++  LiveInterval &Reg = LI->getInterval(Vreg);
++  LiveInterval::iterator Seg = Reg.find(Slots[0]);
++  assert(Seg != Reg.end() && Seg->contains(Slots[0]) &&
++         "Invalid live interval");
++
++  if(Seg->end < Slots[1]) {
++    // Update the segment to include the stackmap
++    SlotIndex SMRegSlot = Slots[1].getRegSlot();
++    Seg = Reg.addSegment(Segment(Seg->start, SMRegSlot, Seg->valno));
++    DEBUG(dbgs() << "    -> Updated register live interval: "; Seg->dump());
++
++    // We also need to update the physical register's register unit (RU) live
++    // range because LiveIntervals::addKillFlags() will use the RU's live range
++    // to avoid marking a physical register dead if two virtual registers
++    // (mapped to that physical register) have overlapping live ranges.
++    SMRegSlot = SMRegSlot.getNextIndex();
++    MCRegUnitIterator Outer(VRM->getPhys(Vreg), TRI);
++    for(MCRegUnitIterator Unit(Outer); Unit.isValid(); ++Unit) {
++      LiveRange &RURange = LI->getRegUnit(*Unit);
++      LiveRange::iterator RUS;
++
++      for(size_t i = 0; i < 2; i++, RUS = RURange.end()) {
++        RUS = RURange.find(Slots[i]);
++        if(RUS != RURange.end() && RUS->contains(Slots[i])) break;
++      }
++
++      if(RUS != RURange.end()) {
++        hasRegUnit = true;
++        Seg = RURange.addSegment(Segment(RUS->start, SMRegSlot, RUS->valno));
++        DEBUG(
++          dbgs() << "    -> Updated segment for register unit "
++                 << *Unit << ": ";
++          Seg->dump();
++        );
++        break;
++      }
++    }
++
++    // If we can't extend one of the current RU ranges, add a new range.
++    if(!hasRegUnit) {
++      LiveRange &RURange = LI->getRegUnit(*Outer);
++      VNInfo *Valno = RURange.getNextValue(Slots[0], LI->getVNInfoAllocator());
++      Seg = RURange.addSegment(Segment(Slots[0], SMRegSlot, Valno));
++      DEBUG(
++        dbgs() << "    -> Added segment for register unit "
++               << *Outer << ": ";
++        Seg->dump();
++      );
++    }
++  }
++}
++
++/// Rather than modifying the backend machinery to prevent hoisting code
++/// between the stackmap and call site, unwind instructions in order to get
++/// real live value locations at the function call.
++bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
++                                              const MachineInstr *Call) {
++  bool Changed = false, Found;
++  MachineOperand *SrcOp;
++  MachineInstr *InB = SM;
++  RegValsMap::iterator VregIt, SrcIt;
++  StackValsMap::iterator SSIt;
++  CopyLocPtr C;
++  RegCopyLoc *RCL;
++  StackCopyLoc *SCL;
++
++  // Note: anything named or related to "Src" refers to the source of the
++  // copy operation, i.e., the originating location for the value
++
++  DEBUG(dbgs() << "\nUnwinding stackmap back to call site:\n\n");
++  while((InB = InB->getPrevNode()) && InB != Call) {
++    if((C = getCopyLocation(InB))) {
++      DEBUG(dbgs() << "  + Copy instruction: "; InB->dump());
++
++      switch(C->getType()) {
++      default: DEBUG(dbgs() << "    Unhandled copy type\n"); break;
++      case CopyLoc::VREG:
++        RCL = (RegCopyLoc *)C.get();
++        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(RCL->SrcVreg));
++
++        // Replace current vreg with source
++        Found = false;
++        for(size_t i = 2; i < SM->getNumOperands(); i++) {
++          MachineOperand &MO = SM->getOperand(i);
++          if(MO.isReg() && MO.getReg() == RCL->Vreg) {
++            MO.ChangeToRegister(RCL->SrcVreg, false, false, SrcOp->isKill(),
++                                SrcOp->isDead(), false, false);
++            InB->clearRegisterKills(RCL->SrcVreg, TRI);
++            InB->clearRegisterDeads(RCL->SrcVreg);
++            updateRegisterLiveInterval(*SrcOp, SM);
++            Found = true;
++          }
++        }
++
++        // Update operand -> IR mapping to source vreg
++        if(Found) {
++          assert(SMVregs[SM].count(RCL->Vreg) &&
++                 "Unhandled register operand in stackmap!");
++          VregIt = SMVregs[SM].find(RCL->Vreg);
++          SrcIt = SMVregs[SM].find(RCL->SrcVreg);
++          if(SrcIt != SMVregs[SM].end()) {
++            for(auto IRVal : *VregIt->second)
++              SrcIt->second->push_back(IRVal);
++          }
++          else SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
++          SMVregs[SM].erase(RCL->Vreg);
++          Changed = true;
++        }
++
++        break;
++      case CopyLoc::STACK_LOAD:
++        SCL = (StackCopyLoc *)C.get();
++
++        // Replace current vreg with stack slot.
++        // Note: stack slots don't have liveness information to fix up
++        Found = false;
++        for(size_t i = 2; i < SM->getNumOperands(); i++) {
++          MachineOperand &MO = SM->getOperand(i);
++          if(MO.isReg() && MO.getReg() == SCL->Vreg) {
++            // There's not a great way to add new operands, so trash all
++            // trailing operands up to and including the Vreg, add the spill
++            // slot, and finally add the trailing operands back.
++            SmallVector<MachineOperand, 4> TrailOps(std::next(&MO),
++                                                    SM->operands_end());
++            while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
++            MachineInstrBuilder Worker(*MF, SM);
++            Worker.addImm(StackMaps::IndirectMemRefOp);
++            Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
++            Worker.addFrameIndex(SCL->StackSlot);
++            Worker.addImm(0);
++            for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
++            Found = true;
++          }
++        }
++
++        // Update operand -> IR mapping to source stack slot
++        if(Found) {
++          assert(SMVregs[SM].count(SCL->Vreg) &&
++                 "Unhandled register operand in stackmap!");
++          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
++          VregIt = SMVregs[SM].find(SCL->Vreg);
++          if(SSIt != SMStackSlots[SM].end()) {
++            for(auto IRVal : *VregIt->second)
++              SSIt->second->push_back(IRVal);
++          }
++          else SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
++          SMVregs[SM].erase(SCL->Vreg);
++          Changed = true;
++        }
++
++        break;
++      case CopyLoc::STACK_STORE:
++        SCL = (StackCopyLoc *)C.get();
++        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(SCL->Vreg));
++
++        // Replace current stack slot with vreg
++        // Note: this *must* be an indirect memory reference (spill slot)
++        // since we're copying to a register!
++        Found = false;
++        for(size_t i = 2; i < SM->getNumOperands(); i++) {
++          MachineOperand &MO = SM->getOperand(i);
++          if(MO.isFI() && MO.getIndex() == SCL->StackSlot) {
++            // TODO if the sibling register is killed/dead in the intervening
++            // instruction we probably need to propagate that to the stackmap
++            // and remove it from the other instruction.
++            unsigned StartIdx = i - 2;
++            SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
++            SM->RemoveOperand(StartIdx + 1); // Size
++            SM->RemoveOperand(StartIdx + 1); // Frame index
++            SM->RemoveOperand(StartIdx + 1); // Frame pointer offset
++            Found = true;
++          }
++        }
++
++        // Update operand -> IR mapping to source vreg
++        if(Found) {
++          assert(SMStackSlots[SM].count(SCL->StackSlot) &&
++                 "Unhandled stack slot operand in stackmap!");
++
++          // Update liveness information to include the stackmap
++          InB->clearRegisterKills(SCL->Vreg, TRI);
++          InB->clearRegisterDeads(SCL->Vreg);
++          updateRegisterLiveInterval(*SrcOp, SM);
++
++          VregIt = SMVregs[SM].find(SCL->Vreg);
++          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
++          if(VregIt != SMVregs[SM].end()) {
++            for(auto IRVal : *SSIt->second)
++              VregIt->second->push_back(IRVal);
++          }
++          else SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
++          SMStackSlots[SM].erase(SCL->StackSlot);
++          Changed = true;
++        }
++
++        break;
++      }
++    }
++    else DEBUG(dbgs() << "  - Skipping "; InB->dump());
++  }
++
++  if(Changed) DEBUG(dbgs() << "\n  Transformed stackmap: "; SM->dump());
++  return Changed;
 +}
 +
 +/// Is a virtual register live across the machine instruction?
@@ -7069,15 +7517,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                                             ValueVecPtr IRVals,
 +                                             const SMInstBundle &SM) {
 +  const CallInst *IRSM = getIRSM(SM);
-+  const MachineInstr *MISM = getMISM(SM);
 +  const MachineInstr *MICall = getMICall(SM);
-+  RegValsMap &Vregs = SMVregs[MISM];
++  RegValsMap &Vregs = SMVregs[getMISM(SM)];
 +
 +  assert(TargetRegisterInfo::isVirtualRegister(Vreg) && VRM->hasPhys(Vreg) &&
 +         "Cannot add virtual register metadata -- invalid virtual register");
 +
-+  if(Vregs.find(Vreg) == Vregs.end() &&
-+     (isVregLiveAcrossInstr(Vreg, MISM) || isVregLiveAcrossInstr(Vreg, MICall)))
++  if(Vregs.find(Vreg) == Vregs.end() && isVregLiveAcrossInstr(Vreg, MICall))
 +  {
 +    unsigned Phys = VRM->getPhys(Vreg);
 +    for(size_t sz = 0; sz < IRVals->size(); sz++) {
@@ -7095,15 +7541,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                                           ValueVecPtr IRVals,
 +                                           const SMInstBundle &SM) {
 +  const CallInst *IRSM = getIRSM(SM);
-+  const MachineInstr *MISM = getMISM(SM);
 +  const MachineInstr *MICall = getMICall(SM);
-+  StackValsMap &SSlots = SMStackSlots[MISM];
++  StackValsMap &SSlots = SMStackSlots[getMISM(SM)];
 +
 +  assert(!MFI->isDeadObjectIndex(SS) &&
 +         "Cannot add stack slot metadata -- invalid stack slot");
 +
-+  if(SSlots.find(SS) == SSlots.end() &&
-+     (isSSLiveAcrossInstr(SS, MISM) || isSSLiveAcrossInstr(SS, MICall)))
++  if(SSlots.find(SS) == SSlots.end() && isSSLiveAcrossInstr(SS, MICall))
 +  {
 +    for(size_t sz = 0; sz < IRVals->size(); sz++) {
 +      DEBUG(dumpStackSlot(SS, (*IRVals)[sz]););
@@ -7248,12 +7692,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +/// Find alternate storage locations for stackmap operands
-+void StackTransformMetadata::findAlternateOpLocs() {
++bool StackTransformMetadata::findAlternateOpLocs() {
++  bool Changed = false;
 +  RegValsMap::iterator vregIt, vregEnd;
 +
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
 +    const CallInst *IRSM = getIRSM(*S);
-+    const MachineInstr *MISM = getMISM(*S);
++    const MachineInstr *MICall = getMICall(*S);
++    MachineInstr *MISM = getMISM(*S);
 +
 +    DEBUG(
 +      dbgs() << "\nStackmap " << MISM->getOperand(0).getImm() << ":\n";
@@ -7265,12 +7711,18 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // values
 +    mapOpsToIR(IRSM, MISM);
 +
++    // Because the CodeGen machinery is wily (and may hoist instructions above
++    // the stackmap), unwind copies until the call site.
++    Changed |= unwindToCallSite(MISM, MICall);
++
 +    // Find alternate locations for vregs in stack map.  Note we don't need to
 +    // find alternate stack slot locations, as allocas *should* already be in
 +    // the stackmap, so the remaining stack slots are spilled registers (which
 +    // are covered here).
 +    findAlternateVregLocs(*S);
 +  }
++
++  return Changed;
 +}
 +
 +/// Ensure virtual registers used to generate architecture-specific values are
@@ -7305,6 +7757,49 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      }
 +    }
 +  }
++}
++
++/// Filter out register definitions we've previously seen.
++static void
++getUnseenDefinitions(MachineRegisterInfo::def_instr_iterator DefIt,
++                     const SmallPtrSet<const MachineInstr *, 4> &Seen,
++                     SmallPtrSet<const MachineInstr *, 4> &NewDefs) {
++  NewDefs.clear();
++  do { if(!Seen.count(&*DefIt)) NewDefs.insert(&*DefIt);
++  } while((++DefIt) != MachineRegisterInfo::def_instr_end());
++}
++
++/// Try to find the best defining instruction.
++static const MachineInstr *
++tryToBreakDefMITie(const MachineInstr *MICall,
++                   const SmallPtrSet<const MachineInstr *, 4> &Definitions) {
++  // First heuristic -- find closest preceding defining instruction in the same
++  // machine basic block.
++  const MachineInstr *Cur, *BestDef = nullptr;
++  unsigned Distance, Best = UINT32_MAX;
++  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> SearchDefs;
++  for(auto Def : Definitions) {
++    Cur = MICall;
++    Distance = 1;
++    while((Cur = Cur->getPrevNode())) {
++      if(Cur == Def) {
++        SearchDefs.emplace_back(Def, Distance);
++        break;
++      }
++      Distance++;
++    }
++  }
++
++  for(auto Pair : SearchDefs) {
++    if(Pair.second < Best) {
++      BestDef = Pair.first;
++      Best = Pair.second;
++    }
++  }
++
++  if(BestDef)
++    DEBUG(dbgs() << "Choosing defining instruction"; BestDef->dump());
++  return BestDef;
 +}
 +
 +/// Find architecture-specific live values added by the backend
@@ -7344,19 +7839,54 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        DEBUG(dbgs() << "    + vreg" << i
 +                     << " is live in register but not in stackmap\n";);
 +
-+        if(!MRI->hasOneDef(Vreg)) {
-+          DEBUG(
-+            dbgs() << "WARNING: multiple definitions for virtual "
-+                      "register, missed in live-value analysis?\n";
-+            for(auto d = MRI->def_instr_begin(Vreg), e = MRI->def_instr_end();
-+                d != e; d++)
-+              d->dump();
-+          );
-+          continue;
-+        }
++        // Walk the use-def chain to see if we can find a valid value.  Note we
++        // keep track of seen definitions because even though we're supposed to
++        // be in SSA form it's possible to find definition cycles.
++        const MachineInstr *DefMI;
++        unsigned ChainVreg = Vreg;
++        SmallPtrSet<const MachineInstr *, 4> SeenDefs, NewDefs;
++        do {
++          getUnseenDefinitions(MRI->def_instr_begin(ChainVreg),
++                               SeenDefs, NewDefs);
 +
-+        MLV = TVG->getMachineValue(&*MRI->def_instr_begin(Vreg));
-+        sanitizeVregs(MLV, MISM);
++          // Try to find a suitable defining instruction
++          if(NewDefs.size() == 0) {
++            DEBUG(dbgs() << "WARNING: no unseen definition\n");
++            break;
++          }
++          else if(NewDefs.size() == 1) DefMI = *NewDefs.begin();
++          else if(!(DefMI = tryToBreakDefMITie(MICall, NewDefs))) {
++            // No suitable defining instruction, not much we can do...
++            DEBUG(
++              dbgs() << "WARNING: multiple definitions for virtual "
++                        "register, missed in live-value analysis?\n";
++              for(auto d = MRI->def_instr_begin(ChainVreg),
++                  e = MRI->def_instr_end(); d != e; d++)
++                d->dump();
++            );
++            break;
++          }
++
++          SeenDefs.insert(DefMI);
++          MLV = TVG->getMachineValue(DefMI);
++          sanitizeVregs(MLV, MISM);
++
++          if(MLV) break; // We got a value!
++          else {
++            // Couldn't get a value, follow the use-def chain
++            CopyLocPtr Copy = getCopyLocation(DefMI);
++            if(Copy) {
++              switch(Copy->getType()) {
++              default: ChainVreg = 0; break;
++              case CopyLoc::VREG:
++                ChainVreg = ((RegCopyLoc *)Copy.get())->SrcVreg;
++                break;
++              }
++            }
++            else ChainVreg = 0;
++          }
++        } while(TargetRegisterInfo::isVirtualRegister(ChainVreg));
++
 +        if(MLV) {
 +          DEBUG(dbgs() << "      Defining instruction: ";
 +                MLV->getDefiningInst()->print(dbgs());
@@ -7364,7 +7894,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +          MLR.setReg(VRM->getPhys(Vreg));
 +          MF->addSMArchSpecificLocation(IRSM, MLR, *MLV);
-+          CurVregs.insert(RegValsPair(Vreg, ValueVecPtr(nullptr)));
++          CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
 +        }
 +        else {
 +          DEBUG(dbgs() << "      Unhandled defining instruction: ";
@@ -7905,9 +8435,25 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +  }
 +}
 +
+Index: lib/IR/AsmWriter.cpp
+===================================================================
+--- lib/IR/AsmWriter.cpp	(revision 320332)
++++ lib/IR/AsmWriter.cpp	(working copy)
+@@ -691,6 +691,11 @@
+   this->F = &F;
+ }
+ 
++int ModuleSlotTracker::getLocalSlot(const Value *V) {
++  assert(F && "No function incorporated");
++  return Machine->getLocalSlot(V);
++}
++
+ static SlotTracker *createSlotTracker(const Module *M) {
+   return new SlotTracker(M);
+ }
 Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
---- lib/MC/MCCodeGenInfo.cpp	(revision 277823)
+--- lib/MC/MCCodeGenInfo.cpp	(revision 320332)
 +++ lib/MC/MCCodeGenInfo.cpp	(working copy)
 @@ -20,4 +20,5 @@
    RelocationModel = RM;
@@ -7917,7 +8463,7 @@ Index: lib/MC/MCCodeGenInfo.cpp
  }
 Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
---- lib/MC/MCObjectFileInfo.cpp	(revision 277823)
+--- lib/MC/MCObjectFileInfo.cpp	(revision 320332)
 +++ lib/MC/MCObjectFileInfo.cpp	(working copy)
 @@ -519,6 +519,15 @@
    DwarfAddrSection =
@@ -7937,7 +8483,7 @@ Index: lib/MC/MCObjectFileInfo.cpp
  
 Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 277823)
+--- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64AsmPrinter.cpp	(working copy)
 @@ -28,6 +28,7 @@
  #include "llvm/CodeGen/MachineModuleInfoImpls.h"
@@ -7986,7 +8532,7 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  MachineLocation
 Index: lib/Target/AArch64/AArch64FrameLowering.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64FrameLowering.cpp	(revision 277823)
+--- lib/Target/AArch64/AArch64FrameLowering.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64FrameLowering.cpp	(working copy)
 @@ -655,6 +655,15 @@
    return resolveFrameIndexReference(MF, FI, FrameReg);
@@ -8006,7 +8552,7 @@ Index: lib/Target/AArch64/AArch64FrameLowering.cpp
                                                       bool PreferFP) const {
 Index: lib/Target/AArch64/AArch64FrameLowering.h
 ===================================================================
---- lib/Target/AArch64/AArch64FrameLowering.h	(revision 277823)
+--- lib/Target/AArch64/AArch64FrameLowering.h	(revision 320332)
 +++ lib/Target/AArch64/AArch64FrameLowering.h	(working copy)
 @@ -40,6 +40,8 @@
    int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
@@ -8019,7 +8565,7 @@ Index: lib/Target/AArch64/AArch64FrameLowering.h
                                   bool PreferFP = false) const;
 Index: lib/Target/AArch64/AArch64ISelLowering.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 277823)
+--- lib/Target/AArch64/AArch64ISelLowering.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64ISelLowering.cpp	(working copy)
 @@ -2032,6 +2032,8 @@
      return LowerFSINCOS(Op, DAG);
@@ -8030,9 +8576,22 @@ Index: lib/Target/AArch64/AArch64ISelLowering.cpp
    }
  }
  
+Index: lib/Target/AArch64/AArch64InstrInfo.td
+===================================================================
+--- lib/Target/AArch64/AArch64InstrInfo.td	(revision 320332)
++++ lib/Target/AArch64/AArch64InstrInfo.td	(working copy)
+@@ -123,7 +123,7 @@
+ def AArch64LOADgot       : SDNode<"AArch64ISD::LOADgot", SDTIntUnaryOp>;
+ def AArch64callseq_start : SDNode<"ISD::CALLSEQ_START",
+                                 SDCallSeqStart<[ SDTCisVT<0, i32> ]>,
+-                                [SDNPHasChain, SDNPOutGlue]>;
++                                [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+ def AArch64callseq_end   : SDNode<"ISD::CALLSEQ_END",
+                                 SDCallSeqEnd<[ SDTCisVT<0, i32>,
+                                                SDTCisVT<1, i32> ]>,
 Index: lib/Target/AArch64/AArch64RegisterInfo.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64RegisterInfo.cpp	(revision 277823)
+--- lib/Target/AArch64/AArch64RegisterInfo.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64RegisterInfo.cpp	(working copy)
 @@ -215,6 +215,23 @@
    return TFI->hasFP(MF) ? AArch64::FP : AArch64::SP;
@@ -8060,7 +8619,7 @@ Index: lib/Target/AArch64/AArch64RegisterInfo.cpp
    return true;
 Index: lib/Target/AArch64/AArch64RegisterInfo.h
 ===================================================================
---- lib/Target/AArch64/AArch64RegisterInfo.h	(revision 277823)
+--- lib/Target/AArch64/AArch64RegisterInfo.h	(revision 320332)
 +++ lib/Target/AArch64/AArch64RegisterInfo.h	(working copy)
 @@ -91,6 +91,9 @@
    // Debug information queries.
@@ -8074,7 +8633,7 @@ Index: lib/Target/AArch64/AArch64RegisterInfo.h
    // Base pointer (stack realignment) support.
 Index: lib/Target/AArch64/AArch64Subtarget.h
 ===================================================================
---- lib/Target/AArch64/AArch64Subtarget.h	(revision 277823)
+--- lib/Target/AArch64/AArch64Subtarget.h	(revision 320332)
 +++ lib/Target/AArch64/AArch64Subtarget.h	(working copy)
 @@ -19,6 +19,7 @@
  #include "AArch64InstrInfo.h"
@@ -8104,7 +8663,7 @@ Index: lib/Target/AArch64/AArch64Subtarget.h
    bool enablePostRAScheduler() const override {
 Index: lib/Target/AArch64/AArch64TargetMachine.cpp
 ===================================================================
---- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 277823)
+--- lib/Target/AArch64/AArch64TargetMachine.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64TargetMachine.cpp	(working copy)
 @@ -220,16 +220,20 @@
    // Cmpxchg instructions are often used with a subsequent comparison to
@@ -8160,7 +8719,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,195 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8173,6 +8732,8 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +#include "AArch64Values.h"
 +#include "AArch64.h"
 +#include "MCTargetDesc/AArch64AddressingModes.h"
++#include "llvm/CodeGen/MachineConstantPool.h"
++#include "llvm/IR/Constants.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -8252,8 +8813,52 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  return nullptr;
 +}
 +
++MachineLiveVal *
++AArch64Values::genLoadRegValue(const MachineInstr *MI) const {
++  switch(MI->getOpcode()) {
++  case AArch64::LDRDui:
++    if(MI->getOperand(2).isCPI()) {
++      int Idx = MI->getOperand(2).getIndex();
++      const MachineFunction *MF = MI->getParent()->getParent();
++      const MachineConstantPool *MCP = MF->getConstantPool();
++      const std::vector<MachineConstantPoolEntry> &CP = MCP->getConstants();
++      if(CP[Idx].isMachineConstantPoolEntry()) {
++        // TODO unhandled for now
++      }
++      else {
++        const Constant *Val = CP[Idx].Val.ConstVal;
++        if(isa<ConstantFP>(Val)) {
++          const ConstantFP *FPVal = cast<ConstantFP>(Val);
++          const APFloat &Flt = FPVal->getValueAPF();
++          switch(APFloat::getSizeInBits(Flt.getSemantics())) {
++          case 32: {
++            IntFloat32 I2F = { Flt.convertToFloat() };
++            return new MachineImmediate(4, I2F.i, MI, false);
++          }
++          case 64: {
++            IntFloat64 I2D = { Flt.convertToDouble() };
++            return new MachineImmediate(8, I2D.i, MI, false);
++          }
++          default: break;
++          }
++        }
++      }
++    }
++    break;
++  case AArch64::LDRXui:
++    // Note: if this is of the form %vreg, <ga:...>, then the compiler has
++    // emitted multiple instructions in order to form the full address.  We,
++    // however, don't have the instruction encoding limitations.
++    // TODO verify this note above is true, maybe using MO::getTargetFlags?
++    if(TargetValues::isSymbolValue(MI->getOperand(2)))
++      return new MachineSymbolRef(MI->getOperand(2), MI, true);
++    break;
++  default: break;
++  }
++  return nullptr;
++}
++
 +MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
-+  unsigned Size;
 +  IntFloat64 Conv64;
 +  MachineLiveVal* Val = nullptr;
 +  const MachineOperand *MO;
@@ -8268,17 +8873,34 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    MO = &MI->getOperand(1);
 +    if(MO->isCPI())
 +      Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
-+    else if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
++    else if(TargetValues::isSymbolValue(MO))
 +      Val = new MachineSymbolRef(*MO, MI, true);
 +    break;
 +  case AArch64::COPY:
 +    MO = &MI->getOperand(1);
 +    if(MO->isReg() && MO->getReg() == AArch64::LR) Val = new ReturnAddress(MI);
 +    break;
++  case AArch64::FMOVD0:
++    Conv64.d = 0.0;
++    Val = new MachineImmediate(8, Conv64.i, MI, false);
++    break;
 +  case AArch64::FMOVDi:
-+    Size = 8;
 +    Conv64.d = (double)AArch64_AM::getFPImmFloat(MI->getOperand(1).getImm());
-+    Val = new MachineImmediate(Size, Conv64.i, MI, false);
++    Val = new MachineImmediate(8, Conv64.i, MI, false);
++    break;
++  case AArch64::LDRXui:
++  case AArch64::LDRDui:
++    Val = genLoadRegValue(MI);
++    break;
++  case AArch64::MOVi32imm:
++    MO = &MI->getOperand(1);
++    assert(MO->isImm() && "Invalid immediate for MOVi32imm");
++    Val = new MachineImmediate(4, MO->getImm(), MI, false);
++    break;
++  case AArch64::MOVi64imm:
++    MO = &MI->getOperand(1);
++    assert(MO->isImm() && "Invalid immediate for MOVi64imm");
++    Val = new MachineImmediate(8, MO->getImm(), MI, false);
 +    break;
 +  case AArch64::UBFMXri:
 +    Val = genBitfieldInstructions(MI);
@@ -8297,7 +8919,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.h	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.h	(working copy)
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8319,13 +8941,14 @@ Index: lib/Target/AArch64/AArch64Values.h
 +private:
 +  MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
 +  MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
++  MachineLiveVal *genLoadRegValue(const MachineInstr *MI) const;
 +};
 +
 +}
 +
 Index: lib/Target/AArch64/CMakeLists.txt
 ===================================================================
---- lib/Target/AArch64/CMakeLists.txt	(revision 277823)
+--- lib/Target/AArch64/CMakeLists.txt	(revision 320332)
 +++ lib/Target/AArch64/CMakeLists.txt	(working copy)
 @@ -43,6 +43,7 @@
    AArch64TargetMachine.cpp
@@ -8337,7 +8960,7 @@ Index: lib/Target/AArch64/CMakeLists.txt
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
 Index: lib/Target/PowerPC/CMakeLists.txt
 ===================================================================
---- lib/Target/PowerPC/CMakeLists.txt	(revision 277823)
+--- lib/Target/PowerPC/CMakeLists.txt	(revision 320332)
 +++ lib/Target/PowerPC/CMakeLists.txt	(working copy)
 @@ -34,6 +34,7 @@
    PPCTargetTransformInfo.cpp
@@ -8349,7 +8972,7 @@ Index: lib/Target/PowerPC/CMakeLists.txt
    PPCVSXSwapRemoval.cpp
 Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 ===================================================================
---- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 277823)
+--- lib/Target/PowerPC/PPCAsmPrinter.cpp	(revision 320332)
 +++ lib/Target/PowerPC/PPCAsmPrinter.cpp	(working copy)
 @@ -36,6 +36,7 @@
  #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -8438,9 +9061,22 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  /// EmitInstruction -- Print out a single PowerPC MI in Darwin syntax to
  /// the current output stream.
  ///
+Index: lib/Target/PowerPC/PPCInstrInfo.td
+===================================================================
+--- lib/Target/PowerPC/PPCInstrInfo.td	(revision 320332)
++++ lib/Target/PowerPC/PPCInstrInfo.td	(working copy)
+@@ -162,7 +162,7 @@
+ 
+ // These are target-independent nodes, but have target-specific formats.
+ def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_PPCCallSeqStart,
+-                           [SDNPHasChain, SDNPOutGlue]>;
++                           [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+ def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_PPCCallSeqEnd,
+                            [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+ 
 Index: lib/Target/PowerPC/PPCSubtarget.h
 ===================================================================
---- lib/Target/PowerPC/PPCSubtarget.h	(revision 277823)
+--- lib/Target/PowerPC/PPCSubtarget.h	(revision 320332)
 +++ lib/Target/PowerPC/PPCSubtarget.h	(working copy)
 @@ -17,6 +17,7 @@
  #include "PPCFrameLowering.h"
@@ -8548,7 +9184,7 @@ Index: lib/Target/PowerPC/PPCValues.h
 +
 Index: lib/Target/TargetMachine.cpp
 ===================================================================
---- lib/Target/TargetMachine.cpp	(revision 277823)
+--- lib/Target/TargetMachine.cpp	(revision 320332)
 +++ lib/Target/TargetMachine.cpp	(working copy)
 @@ -149,6 +149,17 @@
      CodeGenInfo->setOptLevel(Level);
@@ -8570,7 +9206,7 @@ Index: lib/Target/TargetMachine.cpp
      return TargetTransformInfo(F.getParent()->getDataLayout());
 Index: lib/Target/X86/CMakeLists.txt
 ===================================================================
---- lib/Target/X86/CMakeLists.txt	(revision 277823)
+--- lib/Target/X86/CMakeLists.txt	(revision 320332)
 +++ lib/Target/X86/CMakeLists.txt	(working copy)
 @@ -34,6 +34,7 @@
    X86VZeroUpper.cpp
@@ -8582,7 +9218,7 @@ Index: lib/Target/X86/CMakeLists.txt
  if( CMAKE_CL_64 )
 Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
---- lib/Target/X86/X86AsmPrinter.cpp	(revision 277823)
+--- lib/Target/X86/X86AsmPrinter.cpp	(revision 320332)
 +++ lib/Target/X86/X86AsmPrinter.cpp	(working copy)
 @@ -24,6 +24,7 @@
  #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
@@ -8635,7 +9271,7 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
  
 Index: lib/Target/X86/X86AsmPrinter.h
 ===================================================================
---- lib/Target/X86/X86AsmPrinter.h	(revision 277823)
+--- lib/Target/X86/X86AsmPrinter.h	(revision 320332)
 +++ lib/Target/X86/X86AsmPrinter.h	(working copy)
 @@ -14,6 +14,7 @@
  #include "llvm/CodeGen/AsmPrinter.h"
@@ -8666,7 +9302,7 @@ Index: lib/Target/X86/X86AsmPrinter.h
      return "X86 Assembly / Object Emitter";
 Index: lib/Target/X86/X86ISelLowering.cpp
 ===================================================================
---- lib/Target/X86/X86ISelLowering.cpp	(revision 277823)
+--- lib/Target/X86/X86ISelLowering.cpp	(revision 320332)
 +++ lib/Target/X86/X86ISelLowering.cpp	(working copy)
 @@ -18621,6 +18621,8 @@
    case ISD::GC_TRANSITION_START:
@@ -8677,9 +9313,22 @@ Index: lib/Target/X86/X86ISelLowering.cpp
    }
  }
  
+Index: lib/Target/X86/X86InstrInfo.td
+===================================================================
+--- lib/Target/X86/X86InstrInfo.td	(revision 320332)
++++ lib/Target/X86/X86InstrInfo.td	(working copy)
+@@ -169,7 +169,7 @@
+                          SDNPMemOperand]>;
+ def X86callseq_start :
+                  SDNode<"ISD::CALLSEQ_START", SDT_X86CallSeqStart,
+-                        [SDNPHasChain, SDNPOutGlue]>;
++                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+ def X86callseq_end :
+                  SDNode<"ISD::CALLSEQ_END",   SDT_X86CallSeqEnd,
+                         [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 Index: lib/Target/X86/X86RegisterInfo.cpp
 ===================================================================
---- lib/Target/X86/X86RegisterInfo.cpp	(revision 277823)
+--- lib/Target/X86/X86RegisterInfo.cpp	(revision 320332)
 +++ lib/Target/X86/X86RegisterInfo.cpp	(working copy)
 @@ -596,6 +596,13 @@
    return FrameReg;
@@ -8697,7 +9346,7 @@ Index: lib/Target/X86/X86RegisterInfo.cpp
                                        bool High) {
 Index: lib/Target/X86/X86RegisterInfo.h
 ===================================================================
---- lib/Target/X86/X86RegisterInfo.h	(revision 277823)
+--- lib/Target/X86/X86RegisterInfo.h	(revision 320332)
 +++ lib/Target/X86/X86RegisterInfo.h	(working copy)
 @@ -126,6 +126,9 @@
    unsigned getBaseRegister() const { return BasePtr; }
@@ -8711,7 +9360,7 @@ Index: lib/Target/X86/X86RegisterInfo.h
  /// Returns the sub or super register of a specific X86 register.
 Index: lib/Target/X86/X86Subtarget.h
 ===================================================================
---- lib/Target/X86/X86Subtarget.h	(revision 277823)
+--- lib/Target/X86/X86Subtarget.h	(revision 320332)
 +++ lib/Target/X86/X86Subtarget.h	(working copy)
 @@ -18,6 +18,7 @@
  #include "X86ISelLowering.h"
@@ -8742,7 +9391,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,107 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8777,17 +9426,25 @@ Index: lib/Target/X86/X86Values.cpp
 +  case X86::LEA64r:
 +    Size = 8;
 +
-+    // Initialize to index register * scale if indexing, or zero otherwise
-+    Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
-+    if(Reg) {
-+      Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
-+      IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
-+      IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
++    if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
++      assert(MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
++             MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1 &&
++             "Invalid scale amount for frame index");
++      return new
++        MachineStackObject(MI->getOperand(1 + X86::AddrBaseReg).getIndex(),
++                           false, MI, true);
 +    }
-+    else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
++    else {
++      // Initialize to index register * scale if indexing, or zero otherwise
++      Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
++      if(Reg) {
++        Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
++        IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
++        IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
++      }
++      else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
 +
-+    // Add the base register & displacement
-+    if(!MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
++      // Add the base register & displacement
 +      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
 +             MI->getOperand(1 + X86::AddrDisp).isImm());
 +
@@ -8797,9 +9454,6 @@ Index: lib/Target/X86/X86Values.cpp
 +      IL.emplace_back(new ImmInstruction<InstType::Add>(Size, Imm));
 +      return new MachineGeneratedVal(IL, MI, true);
 +    }
-+    // TODO what if we're referencing a frame? The frame index becomes the base
-+    // register + displacement after register rewriting & stack slot allocation
-+    //Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
 +
 +    break;
 +  default:
@@ -8811,17 +9465,29 @@ Index: lib/Target/X86/X86Values.cpp
 +
 +MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
 +  MachineLiveVal* Val = nullptr;
-+  const MachineOperand *MO;
++  const MachineOperand *MO, *MO2;
 +  const TargetInstrInfo *TII;
 +
 +  switch(MI->getOpcode()) {
 +  case X86::LEA64r:
 +    Val = genLEAInstructions(MI);
 +    break;
++  case X86::MOV32ri:
++    MO = &MI->getOperand(1);
++    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
 +  case X86::MOV64ri:
 +    MO = &MI->getOperand(1);
-+    if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
++    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
++    else if(TargetValues::isSymbolValue(MO))
 +      Val = new MachineSymbolRef(*MO, MI, true);
++    break;
++  case X86::MOV64rm:
++    // Note: codegen'd a PC relative symbol reference
++    MO = &MI->getOperand(1 + X86::AddrBaseReg);
++    MO2 = &MI->getOperand(1 + X86::AddrDisp);
++    if(MO->isReg() && MO->getReg() == X86::RIP &&
++       TargetValues::isSymbolValue(MO2))
++      Val = new MachineSymbolRef(*MO2, MI, true);
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();
@@ -8864,7 +9530,7 @@ Index: lib/Target/X86/X86Values.h
 +
 Index: lib/Transforms/Instrumentation/CMakeLists.txt
 ===================================================================
---- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 277823)
+--- lib/Transforms/Instrumentation/CMakeLists.txt	(revision 320332)
 +++ lib/Transforms/Instrumentation/CMakeLists.txt	(working copy)
 @@ -2,10 +2,13 @@
    AddressSanitizer.cpp
@@ -8884,18 +9550,20 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,353 @@
+@@ -0,0 +1,361 @@
 +#include <map>
 +#include <set>
 +#include <vector>
 +#include "llvm/Pass.h"
 +#include "llvm/Analysis/LiveValues.h"
++#include "llvm/Analysis/PopcornUtil.h"
 +#include "llvm/IR/Dominators.h"
 +#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/InstIterator.h"
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
 +#include "llvm/IR/Module.h"
++#include "llvm/IR/ModuleSlotTracker.h"
 +#include "llvm/IR/Type.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -8911,6 +9579,26 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +           cl::Hidden);
 +
 +namespace {
++
++/* Track slots for unnamed values */
++static ModuleSlotTracker *SlotTracker = nullptr;
++
++/* Sort values based on name */
++struct ValueComp
++{
++  bool operator ()(const Value *a, const Value *b)
++  {
++    if(a->hasName() && b->hasName())
++      return a->getName().compare(b->getName()) < 0;
++    else if(a->hasName()) return true;
++    else if(b->hasName()) return false;
++    else {
++      int slot_a = SlotTracker->getLocalSlot(a),
++          slot_b = SlotTracker->getLocalSlot(b);
++      return slot_a < slot_b;
++    }
++  }
++};
 +
 +/**
 + * This class instruments equivalence points in the IR with LLVM's stackmap
@@ -8948,6 +9636,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  virtual bool runOnModule(Module &M)
 +  {
 +    bool modified = false;
++
 +    std::set<const Value *> *live;
 +    std::set<const Value *, ValueComp> sortedLive;
 +    std::set<const Instruction *> hiddenInst;
@@ -8958,6 +9647,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +    this->createSMType(M);
 +    if(this->addSMDeclaration(M)) modified = true;
++    SlotTracker = new ModuleSlotTracker(&M);
 +
 +    modified |= this->removeOldStackmaps(M);
 +
@@ -8971,6 +9661,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
++      SlotTracker->incorporateFunction(*f);
 +      std::set<const Value *>::const_iterator v, ve;
 +      getHiddenVals(*f, hiddenInst, hiddenArgs);
 +
@@ -8985,11 +9676,9 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +        for(BasicBlock::iterator i = b->begin(), ie = b->end(); i != ie; i++)
 +        {
-+          CallInst *CI;
-+          if((CI = dyn_cast<CallInst>(&*i)) &&
-+             !CI->isInlineAsm() &&
-+             !isa<IntrinsicInst>(CI))
++          if(Popcorn::isCallSite(&*i))
 +          {
++            CallInst *CI = cast<CallInst>(&*i);
 +            IRBuilder<> builder(CI->getNextNode());
 +            std::vector<Value *> args(2);
 +            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
@@ -9021,10 +9710,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +                sortedLive.insert(val);
 +            }
 +            delete live;
-+
-+            /* If the call's value is used, add it to the stackmap */
-+            if(CI->use_begin() != CI->use_end())
-+              sortedLive.insert(CI);
 +
 +            DEBUG(
 +              const Function *calledFunc;
@@ -9072,6 +9757,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    );
 +
 +    if(numInstrumented > 0) modified = true;
++    delete SlotTracker;
 +
 +    return modified;
 +  }
@@ -9083,18 +9769,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  /* Stack map instruction creation */
 +  Function *SMFunc;
 +  FunctionType *SMTy; // Used for creating function declaration
-+
-+  /* Sort values based on name */
-+  struct ValueComp {
-+    bool operator() (const Value *a, const Value *b) const
-+    {
-+      if(a->hasName() && b->hasName())
-+        return a->getName().compare(b->getName()) < 0;
-+      else if(a->hasName()) return true;
-+      else if(b->hasName()) return false;
-+      else return a < b;
-+    }
-+  };
 +
 +  /**
 +   * Create the function type for the stack map intrinsic.
@@ -9240,7 +9914,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 Index: lib/Transforms/Instrumentation/Instrumentation.cpp
 ===================================================================
---- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 277823)
+--- lib/Transforms/Instrumentation/Instrumentation.cpp	(revision 320332)
 +++ lib/Transforms/Instrumentation/Instrumentation.cpp	(working copy)
 @@ -24,8 +24,11 @@
    initializeAddressSanitizerPass(Registry);
@@ -9985,7 +10659,7 @@ Index: lib/Transforms/Instrumentation/MigrationPoints.cpp
 +
 Index: lib/Transforms/Utils/CMakeLists.txt
 ===================================================================
---- lib/Transforms/Utils/CMakeLists.txt	(revision 277823)
+--- lib/Transforms/Utils/CMakeLists.txt	(revision 320332)
 +++ lib/Transforms/Utils/CMakeLists.txt	(working copy)
 @@ -28,6 +28,7 @@
    Mem2Reg.cpp
@@ -10240,7 +10914,7 @@ Index: lib/Transforms/Utils/StaticVarSections.cpp
 +
 Index: lib/Transforms/Utils/Utils.cpp
 ===================================================================
---- lib/Transforms/Utils/Utils.cpp	(revision 277823)
+--- lib/Transforms/Utils/Utils.cpp	(revision 320332)
 +++ lib/Transforms/Utils/Utils.cpp	(working copy)
 @@ -28,7 +28,9 @@
    initializeLoopSimplifyPass(Registry);

@@ -45,6 +45,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CallSite.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Instructions.h"
@@ -650,7 +651,7 @@ public:
       if(AddedMigPoint) LP->runOnFunction(F);
     }
 
-    if(MoreMigPoints) {
+    if(MoreMigPoints && !LP->tooManyPaths()) {
       StringRef FuncName = F.getName();
       StringMap<unsigned>::const_iterator It;
       if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
@@ -702,6 +703,14 @@ public:
       else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
     }
     else {
+      if(MoreMigPoints) {
+        std::string Msg = "too many paths to instrument function with more "
+                          "migration points -- falling back to instrumenting "
+                          "function entry/exit";
+        DiagnosticInfoOptimizationFailure DI(F, nullptr, Msg);
+        F.getContext().diagnose(DI);
+      }
+
       DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
       markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 

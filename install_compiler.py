@@ -97,10 +97,10 @@ def setup_argument_parsing():
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
-    process_opts.add_argument("--skip-namespace",
-                        help="Skip building namespace tools (deprecated)",
+    process_opts.add_argument("--install-namespace",
+                        help="Install namespace tools (deprecated)",
                         action="store_true",
-                        dest="skip_namespace")
+                        dest="install_namespace")
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
@@ -530,7 +530,62 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
-    # THE BUILD SYSTEMS FOR THE FOLLOWING ALREADY BUILD FOR ALL ISAS
+        #=====================================================
+        # CONFIGURE & INSTALL LIBOPENPOP
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
+
+        print("Configuring libopenpop ({})...".format(target))
+        try:
+            # TODO -popcorn-alignment -> -popcorn-migratable
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu \
+                                    -nostdinc -isystem {}/include \
+                                    -popcorn-alignment'\
+                                    .format(target, target_install_path)
+            args = ['./configure',
+                    '--prefix=' + target_install_path,
+                    '--target={}-linux-gnu'.format(target),
+                    '--host={}-linux-gnu'.format(target),
+                    '--enable-static',
+                    '--disable-shared']
+            rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
+            del os.environ['CC']
+            del os.environ['CFLAGS']
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        os.chdir(cur_dir)
+
+    # The build systems for the following already build for all ISAs
 
     #=====================================================
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
@@ -774,7 +829,7 @@ def main(args):
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_namespace:
+    if args.install_namespace:
         build_namespace(args.base_path)
 
 if __name__ == '__main__':

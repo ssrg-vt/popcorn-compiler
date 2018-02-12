@@ -32,17 +32,25 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
   case X86::LEA64r:
     Size = 8;
 
-    // Initialize to index register * scale if indexing, or zero otherwise
-    Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
-    if(Reg) {
-      Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
-      IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
-      IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
+    if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
+      assert(MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
+             MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1 &&
+             "Invalid scale amount for frame index");
+      return new
+        MachineStackObject(MI->getOperand(1 + X86::AddrBaseReg).getIndex(),
+                           false, MI, true);
     }
-    else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
+    else {
+      // Initialize to index register * scale if indexing, or zero otherwise
+      Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
+      if(Reg) {
+        Imm = MI->getOperand(1 + X86::AddrScaleAmt).getImm();
+        IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
+        IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
+      }
+      else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
 
-    // Add the base register & displacement
-    if(!MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
+      // Add the base register & displacement
       assert(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
              MI->getOperand(1 + X86::AddrDisp).isImm());
 
@@ -52,9 +60,6 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
       IL.emplace_back(new ImmInstruction<InstType::Add>(Size, Imm));
       return new MachineGeneratedVal(IL, MI, true);
     }
-    // TODO what if we're referencing a frame? The frame index becomes the base
-    // register + displacement after register rewriting & stack slot allocation
-    //Index = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
 
     break;
   default:
@@ -66,17 +71,29 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
 
 MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   MachineLiveVal* Val = nullptr;
-  const MachineOperand *MO;
+  const MachineOperand *MO, *MO2;
   const TargetInstrInfo *TII;
 
   switch(MI->getOpcode()) {
   case X86::LEA64r:
     Val = genLEAInstructions(MI);
     break;
+  case X86::MOV32ri:
+    MO = &MI->getOperand(1);
+    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
   case X86::MOV64ri:
     MO = &MI->getOperand(1);
-    if(MO->isGlobal() || MO->isSymbol() || MO->isMCSymbol())
+    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
+    else if(TargetValues::isSymbolValue(MO))
       Val = new MachineSymbolRef(*MO, MI, true);
+    break;
+  case X86::MOV64rm:
+    // Note: codegen'd a PC relative symbol reference
+    MO = &MI->getOperand(1 + X86::AddrBaseReg);
+    MO2 = &MI->getOperand(1 + X86::AddrDisp);
+    if(MO->isReg() && MO->getReg() == X86::RIP &&
+       TargetValues::isSymbolValue(MO2))
+      Val = new MachineSymbolRef(*MO2, MI, true);
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

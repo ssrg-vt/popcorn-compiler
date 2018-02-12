@@ -1,0 +1,18 @@
+--------
+Overview
+--------
+
+The Popcorn Distributed OpenMP runtime ("libopenpop") is an OpenMP 4.5
+compliant runtime for multithreading on Popcorn Linux.  In particular
+libopenpop is designed to allow developers to seamlessly scale threads out
+across multiple machines in a cluster using the familiar OpenMP API [1].
+
+The library is a fork of the GNU OpenMP Library ("libgomp") released with GCC
+version 7.2.0 -- see the COPYING files for license information.  While the
+library supports all OpenMP 4.5 features (including offloading), not all OpenMP
+4.5 features are allowed when used on Popcorn Linux; for example, threads
+cannot use offloading features.
+
+[1] "Specifications - OpenMP". http://www.openmp.org/specifications/
+[2] "GNU libgomp: Top". https://gcc.gnu.org/onlinedocs/libgomp/index.html
+

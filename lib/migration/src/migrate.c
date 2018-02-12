@@ -10,12 +10,13 @@
 #include "migrate.h"
 #include "config.h"
 #include "arch.h"
+#include "mapping.h"
 
 #if _SIG_MIGRATION == 1
 #include "trigger.h"
 #endif
 
-#if _TIME_REWRITE
+#if _TIME_REWRITE == 1
 #include "timer.h"
 #endif
 
@@ -141,32 +142,6 @@ static inline int do_migrate(void __attribute__((unused)) *fn)
 
 static enum arch archs[MAX_POPCORN_NODES] = { 0 };
 
-static void __attribute__((constructor)) __init_nodes_info(void)
-{
-	int ret;
-	int origin_nid = -1;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni[MAX_POPCORN_NODES];
-
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		archs[i] = ARCH_UNKNOWN;
-	}
-
-	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
-	if (ret) {
-		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
-		return;
-	}
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		if (ni[i].status == 1) {
-			archs[i] = ni[i].arch;
-		}
-	}
-}
-
 int current_nid(void)
 {
 	struct popcorn_thread_status status;
@@ -183,6 +158,33 @@ enum arch current_arch(void)
 	return archs[nid];
 }
 
+static void __attribute__((constructor)) __init_nodes_info(void)
+{
+	int ret;
+	int origin_nid = -1;
+	struct node_info {
+		unsigned int status;
+		int arch;
+		int distance;
+	} ni[MAX_POPCORN_NODES];
+
+	set_default_node(current_nid());
+
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		archs[i] = ARCH_UNKNOWN;
+	}
+
+	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
+	if (ret) {
+		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
+		return;
+	}
+	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
+		if (ni[i].status == 1) {
+			archs[i] = ni[i].arch;
+		}
+	}
+}
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -284,36 +286,24 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
-  if (nid >= 0)
+  if (nid >= 0 && nid != current_nid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Externally-visible function to invoke migration. */
+/* Invoke migration to a particular node if we're not already there. */
 void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
-  __migrate_shim_internal(nid, callback, callback_data);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Callback function & data for migration points inserted via compiler. */
-static void (*migrate_callback)(void *) = NULL;
-static void *migrate_callback_data = NULL;
-
-/* Register callback function for compiler-inserted migration points. */
-void register_migrate_callback(void (*callback)(void*), void *callback_data)
+/* Invoke migration to a particular node according to a thread schedule. */
+void migrate_schedule(size_t region,
+                      int popcorn_tid,
+                      void (*callback)(void *),
+                      void *callback_data)
 {
-  migrate_callback = callback;
-  migrate_callback_data = callback_data;
+  int nid = get_node_mapping(region, popcorn_tid);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
 }
-
-/* Hook inserted by compiler at the beginning of a function. */
-void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
-
-/* Hook inserted by compiler at the end of a function. */
-void __attribute__((alias("__cyg_profile_func_enter")))
-__cyg_profile_func_exit(void *this_fn, void *call_site);
-

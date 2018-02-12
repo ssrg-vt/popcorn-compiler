@@ -8,11 +8,11 @@ POPCORN        := /usr/local/popcorn
 POPCORN_X86_64 := $(POPCORN)/x86_64
 COMMON         := $(shell readlink -f ../../common)
 
-CC     := gcc
-CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include \
-          -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
-LDFLAGS=-static
-LIB    := -lelf
+CC			:= gcc
+CFLAGS		:= -O3 -g -Wall -Iinclude -I$(COMMON)/include \
+		   -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
+LDFLAGS	:= -static
+LIB    	:= -lelf
 
 HDR := $(shell ls include/*.h) $(shell ls $(COMMON)/include/*.h)
 SRC := $(shell ls src/*.c)
@@ -21,7 +21,7 @@ OBJ := $(subst src,$(BUILD),$(SRC:.c=.o))
 UTIL_OBJ  := $(BUILD)/bin.o $(BUILD)/util.o $(BUILD)/strings.o
 CHECK_OBJ := $(UTIL_OBJ) $(BUILD)/stackmap.o
 
-all: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
+all: $(BIN) util check
 
 %/.dir:
 	@echo " [MK] $*"
@@ -32,7 +32,11 @@ build/%.o: src/%.c $(HDR)
 	@echo " [CC] $<"
 	@$(CC) $(CFLAGS) -o $@ -c $<
 
-$(BIN): $(BUILD)/.dir $(OBJ)
+$(OBJ): $(BUILD)/.dir
+$(UTIL_OBJ): $(BUILD)/.dir
+$(CHECK_OBJ): $(BUILD)/.dir
+
+$(BIN): $(OBJ)
 	@echo " [CC] $@"
 	@$(CC) $(CFLAGS) -o $(@) $(OBJ) $(LDFLAGS) $(LIB)
 

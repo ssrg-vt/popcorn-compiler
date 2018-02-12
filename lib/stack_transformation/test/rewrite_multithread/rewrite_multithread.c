@@ -42,6 +42,7 @@ int main(int argc, char** argv)
   int i;
   pthread_t* children;
 
+  srand(0);
   if(!(handle = st_init(argv[0]))) {
     printf("Couldn't initialize stack transformation handle\n");
     exit(1);
