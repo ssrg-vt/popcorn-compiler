@@ -38,6 +38,7 @@ TargetOptionsPtr Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
     break;
   case Triple::ArchType::x86_64:
     Opts->CPU = "x86-64";
+    Opts->FPMath = "sse";
     Opts->FeaturesAsWritten.push_back("+sse");
     Opts->FeaturesAsWritten.push_back("+sse2");
     Opts->FeaturesAsWritten.push_back("+rtm");

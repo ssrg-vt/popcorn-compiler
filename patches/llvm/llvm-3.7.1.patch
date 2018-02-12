@@ -472,7 +472,7 @@ Index: include/llvm/Analysis/LoopPaths.h
 ===================================================================
 --- include/llvm/Analysis/LoopPaths.h	(nonexistent)
 +++ include/llvm/Analysis/LoopPaths.h	(working copy)
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,276 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -657,6 +657,10 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  SmallPtrSet<const BasicBlock *, 4> Latches;
 +  BlockSet SubLoopBlocks;
 +
++  /// Set if analysis had to bail out because there are too many paths through
++  /// the function.
++  bool TooManyPaths;
++
 +  /// Depth-first search information for the current path being explored.
 +  struct LoopDFSInfo {
 +  public:
@@ -664,6 +668,16 @@ Index: include/llvm/Analysis/LoopPaths.h
 +    std::vector<PathNode> PathNodes;
 +    bool StartsAtHeader;
 +  };
++
++  /// Empty all data structures.
++  void reset() {
++    Paths.clear();
++    HasSpPath.clear();
++    HasEqPointPath.clear();
++    CurLoop = nullptr;
++    Latches.clear();
++    SubLoopBlocks.clear();
++  }
 +
 +  /// Search exit blocks of the loop containing Successor.  Add the terminating
 +  /// instruction of the block to either of the two vectors, depending if there
@@ -675,13 +689,14 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Run a depth-first search for paths in the loop starting at an instruction.
 +  /// Any paths found are added to the vector of paths, and new paths to explore
 +  /// are added to the search list.
-+  void loopDFS(const Instruction *I,
++  bool loopDFS(const Instruction *I,
 +               LoopDFSInfo &DFSI,
 +               std::vector<LoopPath> &CurPaths,
 +               std::list<const Instruction *> &NewPaths);
 +
-+  /// Enumerate all paths within a loop, stored in the vector argument.
-+  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
++  /// Enumerate all paths within a loop, stored in the vector argument.  Return
++  /// true if the analysis was successful or false otherwise.
++  bool analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
 +
 +public:
 +  static char ID;
@@ -694,6 +709,9 @@ Index: include/llvm/Analysis/LoopPaths.h
 +  /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
 +  /// below which populate containers with paths (for this loop only).
 +  void rerunOnLoop(Loop *L);
++
++  /// Query whether there were too many paths to enumerate in the function.
++  bool tooManyPaths() const { return TooManyPaths; }
 +
 +  bool hasPaths(const Loop *L) const { return Paths.count(L); }
 +
@@ -1998,6 +2016,20 @@ Index: include/llvm/CodeGen/UnwindInfo.h
 +}
 +
 +#endif
+Index: include/llvm/IR/ModuleSlotTracker.h
+===================================================================
+--- include/llvm/IR/ModuleSlotTracker.h	(revision 320332)
++++ include/llvm/IR/ModuleSlotTracker.h	(working copy)
+@@ -61,6 +61,9 @@
+   /// Purge the currently incorporated function and incorporate \c F.  If \c F
+   /// is currently incorporated, this is a no-op.
+   void incorporateFunction(const Function &F);
++
++  /// Get a local value's slot.
++  int getLocalSlot(const Value *);
+ };
+ 
+ } // end namespace llvm
 Index: include/llvm/InitializePasses.h
 ===================================================================
 --- include/llvm/InitializePasses.h	(revision 320332)
@@ -2968,7 +3000,7 @@ Index: lib/Analysis/LoopPaths.cpp
 ===================================================================
 --- lib/Analysis/LoopPaths.cpp	(nonexistent)
 +++ lib/Analysis/LoopPaths.cpp	(working copy)
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,511 @@
 +//===- LoopPaths.h - Enumerate paths in loops -------------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2994,12 +3026,17 @@ Index: lib/Analysis/LoopPaths.cpp
 +#include <queue>
 +#include "llvm/Analysis/LoopPaths.h"
 +#include "llvm/Analysis/PopcornUtil.h"
++#include "llvm/Support/CommandLine.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
 +
 +using namespace llvm;
 +
 +#define DEBUG_TYPE "looppaths"
++
++const static cl::opt<unsigned>
++MaxNumPaths("max-num-paths", cl::Hidden, cl::init(10000),
++  cl::desc("Max number of paths to analyze"));
 +
 +void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
 +  std::queue<Loop *> ToVisit;
@@ -3142,7 +3179,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +  Path.print(O);
 +}
 +
-+void EnumerateLoopPaths::loopDFS(const Instruction *I,
++bool EnumerateLoopPaths::loopDFS(const Instruction *I,
 +                                 LoopDFSInfo &DFSI,
 +                                 std::vector<LoopPath> &CurPaths,
 +                                 std::list<const Instruction *> &NewPaths) {
@@ -3155,6 +3192,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    if((EqPoint = hasEquivalencePoint(I))) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
 +                            DFSI.StartsAtHeader, false);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      for(auto Node : DFSI.PathNodes) {
 +        PathBlock = Node.getBlock();
 +        if(!SubLoopBlocks.count(PathBlock))
@@ -3176,7 +3214,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +            getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +            for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
 +            for(auto SLE : SpanningInsts)
-+              loopDFS(SLE, DFSI, CurPaths, NewPaths);
++              if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +          }
 +        }
 +      }
@@ -3186,6 +3224,7 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else if(Latches.count(BB)) {
 +      CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
 +                            DFSI.StartsAtHeader, true);
++      if(CurPaths.size() > MaxNumPaths) return false;
 +      if(DFSI.StartsAtHeader) {
 +        for(auto Node : DFSI.PathNodes) {
 +          PathBlock = Node.getBlock();
@@ -3206,8 +3245,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    else {
 +      for(auto Succ : successors(BB)) {
 +        if(!CurLoop->contains(Succ)) continue;
-+        else if(!SubLoopBlocks.count(Succ))
-+          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++        else if(!SubLoopBlocks.count(Succ)) {
++          if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++            return false;
++        }
 +        else {
 +          getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +          for(auto SLE : EqPointInsts) {
@@ -3220,10 +3261,12 @@ Index: lib/Analysis/LoopPaths.cpp
 +            CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                  BB->getTerminator(),
 +                                  DFSI.StartsAtHeader, false);
++            if(CurPaths.size() > MaxNumPaths) return false;
 +            pushIfNotPresent(SLE, NewPaths);
 +            DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          }
-+          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++          for(auto SLE : SpanningInsts)
++            if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +        }
 +      }
 +    }
@@ -3236,8 +3279,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +    const Loop *WeedOutLoop = LI->getLoopFor(BB);
 +    for(auto Succ : successors(BB)) {
 +      if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
-+      else if(!SubLoopBlocks.count(Succ))
-+        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
++      else if(!SubLoopBlocks.count(Succ)) {
++        if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
++          return false;
++      }
 +      else {
 +        getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
 +        for(auto SLE : EqPointInsts) {
@@ -3247,17 +3292,21 @@ Index: lib/Analysis/LoopPaths.cpp
 +          CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
 +                                BB->getTerminator(),
 +                                DFSI.StartsAtHeader, false);
++          if(CurPaths.size() > MaxNumPaths) return false;
 +          DEBUG(printNewPath(dbgs(), CurPaths.back()));
 +          pushIfNotPresent(SLE, NewPaths);
 +        }
-+        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
++        for(auto SLE: SpanningInsts)
++          if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
 +      }
 +    }
 +    DFSI.PathNodes.pop_back();
 +  }
++
++  return true;
 +}
 +
-+void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
++bool EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 +  std::list<const Instruction *> NewPaths;
 +  SmallVector<BasicBlock *, 4> LatchVec;
 +  LoopDFSInfo DFSI;
@@ -3288,23 +3337,26 @@ Index: lib/Analysis/LoopPaths.cpp
 +
 +  DFSI.Start = &L->getHeader()->front();
 +  DFSI.StartsAtHeader = true;
-+  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++  if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +  assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +
 +  DFSI.StartsAtHeader = false;
 +  while(!NewPaths.empty()) {
 +    DFSI.Start = NewPaths.front();
 +    NewPaths.pop_front();
-+    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
++    if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
 +    assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 +  }
++
++  return true;
 +}
 +
 +bool EnumerateLoopPaths::runOnFunction(Function &F) {
 +  DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
 +               << "********** Function: " << F.getName() << "\n\n");
 +
-+  Paths.clear();
++  reset();
++  TooManyPaths = false;
 +  LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 +  std::vector<LoopNest> Nests;
 +
@@ -3323,8 +3375,18 @@ Index: lib/Analysis/LoopPaths.cpp
 +    for(auto L : Nest) {
 +      std::vector<LoopPath> &CurPaths = Paths[L];
 +      assert(CurPaths.size() == 0 && "Re-processing loop?");
-+      analyzeLoop(L, CurPaths);
++      if(!analyzeLoop(L, CurPaths)) {
++        TooManyPaths = true;
++        break;
++      }
 +    }
++
++    if(TooManyPaths) break;
++  }
++
++  if(TooManyPaths) {
++    DEBUG(dbgs() << "WARNING: too many paths, bailing on analysis\n");
++    reset();
 +  }
 +
 +  return false;
@@ -3334,7 +3396,10 @@ Index: lib/Analysis/LoopPaths.cpp
 +  // We *should* be analyzing a loop for the 2+ time
 +  std::vector<LoopPath> &CurPaths = Paths[L];
 +  DEBUG(if(!CurPaths.size()) dbgs() << "  -> No previous analysis?\n");
-+  analyzeLoop(L, CurPaths);
++  if(!analyzeLoop(L, CurPaths)) {
++    reset();
++    TooManyPaths = true;
++  }
 +}
 +
 +void EnumerateLoopPaths::getPaths(const Loop *L,
@@ -3451,7 +3516,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 ===================================================================
 --- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
 +++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1807 @@
+@@ -0,0 +1,1816 @@
 +//===- SelectMigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3499,6 +3564,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +#include "llvm/Analysis/ScalarEvolution.h"
 +#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 +#include "llvm/IR/CallSite.h"
++#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
 +#include "llvm/IR/Intrinsics.h"
 +#include "llvm/IR/Instructions.h"
@@ -4104,7 +4170,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      if(AddedMigPoint) LP->runOnFunction(F);
 +    }
 +
-+    if(MoreMigPoints) {
++    if(MoreMigPoints && !LP->tooManyPaths()) {
 +      StringRef FuncName = F.getName();
 +      StringMap<unsigned>::const_iterator It;
 +      if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
@@ -4156,6 +4222,14 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +      else { DEBUG(dbgs() << "-> Eliding instrumenting function entry <-\n"); }
 +    }
 +    else {
++      if(MoreMigPoints) {
++        std::string Msg = "too many paths to instrument function with more "
++                          "migration points -- falling back to instrumenting "
++                          "function entry/exit";
++        DiagnosticInfoOptimizationFailure DI(F, nullptr, Msg);
++        F.getContext().diagnose(DI);
++      }
++
 +      DEBUG(dbgs() << "-> Marking function entry as a migration point <-\n");
 +      markAsMigPoint(F.getEntryBlock().getFirstInsertionPt(), true, true);
 +
@@ -5745,7 +5819,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 ===================================================================
 --- lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(revision 320332)
 +++ lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(working copy)
-@@ -6542,6 +6542,25 @@
+@@ -6542,6 +6542,43 @@
    Callee = getValue(CI.getCalledValue());
    NullPtr = DAG.getIntPtrConstant(0, DL, true);
  
@@ -5761,6 +5835,24 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 +    CSE = CSE->getGluedNode();
 +  }
 +
++  // It's possible the function call that induced this stackmap to be generated
++  // got lowered directly to a machine instruction, which can lead to weird
++  // cases like trying to glue this stackmap to another.  This causes the
++  // instruction scheduler to choke, so avoid that situation.
++  // TODO why does gluing 2 stackmaps cause it to die?  It complains about
++  // NumLiveRegs already being zero for releasing call dependencies in
++  // ScheduleDAGRRList.cpp:759
++  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) {
++    SDNode *Check = CSE;
++    do {
++      if(Check->isMachineOpcode() &&
++         Check->getMachineOpcode() == TargetOpcode::STACKMAP) {
++        CSE = nullptr;
++        break;
++      }
++    } while((Check = Check->getGluedNode()));
++  }
++
 +  if(CSE && CSE->getOpcode() == ISD::CALLSEQ_END) Chain = SDValue(CSE, 0);
 +  else {
 +    DEBUG(dbgs() << "WARNING: no call node for: "; Chain->dump());
@@ -5771,7 +5863,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
    // The stackmap intrinsic only records the live variables (the arguemnts
    // passed to it) and emits NOPS (if requested). Unlike the patchpoint
    // intrinsic, this won't be lowered to a function call. This means we don't
-@@ -6552,9 +6571,26 @@
+@@ -6552,9 +6589,26 @@
    // chain, flag = STACKMAP(id, nbytes, ..., chain, flag)
    // chain, flag = CALLSEQ_END(chain, 0, 0, flag)
    //
@@ -5799,7 +5891,7 @@ Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
    // Add the <id> and <numBytes> constants.
    SDValue IDVal = getValue(CI.getOperand(PatchPointOpers::IDPos));
    Ops.push_back(DAG.getTargetConstant(
-@@ -6581,9 +6617,30 @@
+@@ -6581,9 +6635,30 @@
    InFlag = Chain.getValue(1);
  
    Chain = DAG.getCALLSEQ_END(Chain, NullPtr, NullPtr, InFlag, DL);
@@ -5882,10 +5974,38 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,109 @@
+@@ -84,32 +98,145 @@
    return (unsigned)RegNum;
  }
  
++/// If the instruction is simply casting a pointer to another type, return
++/// the value used as the source of the cast.  This is required because allocas
++/// may be cast to different pointer types (which appear as non-allocas) but
++/// may still be represented by a direct memory reference in the stackmap.
++static inline const Value *getPointerCastSrc(const Value *Inst) {
++  assert(Inst->getType()->isPointerTy() && "Not a pointer type");
++
++  if(isa<BitCastInst>(Inst)) {
++    // Ensure that we're casting to another pointer type
++    const BitCastInst *BC = cast<BitCastInst>(Inst);
++    if(!BC->getSrcTy()->isPointerTy()) return nullptr;
++    else return BC->getOperand(0);
++  }
++  else if(isa<GetElementPtrInst>(Inst)) {
++    // Ensure that all indexes are 0, meaning we're only referencing the start
++    // of the storage location
++    const GetElementPtrInst *GEP = cast<GetElementPtrInst>(Inst);
++    GetElementPtrInst::const_op_iterator it, e;
++    for(it = GEP->idx_begin(), e = GEP->idx_end(); it != e; it++) {
++      if(!isa<ConstantInt>(it->get())) return nullptr;
++      const ConstantInt *Idx = cast<ConstantInt>(it->get());
++      if(Idx->getSExtValue() != 0) return nullptr;
++    }
++    return GEP->getOperand(0);
++  }
++  else return nullptr;
++}
++
 +/// Get pointer typing information for a stackmap operand
 +void StackMaps::getPointerInfo(const Value *Op, const DataLayout &DL,
 +                               bool &isPtr, bool &isAlloca,
@@ -5899,8 +6019,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +  if(Ty->isPointerTy())
 +  {
 +    isPtr = true;
-+    PointerType *PTy = cast<PointerType>(Ty);
-+    if(PTy->getElementType()->isSized() && isa<AllocaInst>(Op)) {
++
++    // Walk through cast operations that potentially hide allocas
++    while(!isa<AllocaInst>(Op) && (Op = getPointerCastSrc(Op)));
++    if(Op && isa<AllocaInst>(Op)) {
++      PointerType *PTy = cast<PointerType>(Ty);
++      assert(PTy->getElementType()->isSized() && "Alloca of unknown size?");
 +      isAlloca = true;
 +      AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
 +    }
@@ -5973,6 +6097,8 @@ Index: lib/CodeGen/StackMaps.cpp
        llvm_unreachable("Unrecognized operand type.");
      case StackMaps::DirectMemRefOp: {
 -      unsigned Size = AP.TM.getDataLayout()->getPointerSizeInBits();
++      assert(isAlloca &&
++             "Did not find alloca value for direct memory reference");
 +      unsigned Size = DL.getPointerSizeInBits();
        assert((Size % 8) == 0 && "Need pointer size in bytes.");
        Size /= 8;
@@ -5985,6 +6111,8 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::IndirectMemRefOp: {
++      assert(!isAlloca &&
++             "Alloca lowered to indirect memory reference operand");
        int64_t Size = (++MOI)->getImm();
        assert(Size > 0 && "Need a valid size for indirect memory locations.");
 +      Size = DL.getTypeAllocSize(IROp->getType());
@@ -5998,7 +6126,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +207,24 @@
+@@ -116,17 +243,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6026,7 +6154,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +232,16 @@
+@@ -134,17 +268,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6051,7 +6179,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +258,7 @@
+@@ -161,6 +294,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6059,7 +6187,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +292,7 @@
+@@ -194,7 +328,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6068,7 +6196,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +301,15 @@
+@@ -203,8 +337,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -6086,7 +6214,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +326,78 @@
+@@ -221,6 +362,78 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6165,7 +6293,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +454,135 @@
+@@ -277,6 +490,135 @@
    return LiveOuts;
  }
  
@@ -6301,7 +6429,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +591,46 @@
+@@ -285,21 +627,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6350,7 +6478,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +654,21 @@
+@@ -323,12 +690,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6375,7 +6503,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +751,11 @@
+@@ -411,8 +787,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6388,7 +6516,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +763,15 @@
+@@ -420,6 +799,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6404,7 +6532,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +791,20 @@
+@@ -439,14 +827,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6429,7 +6557,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +813,25 @@
+@@ -455,6 +849,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6455,7 +6583,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +847,29 @@
+@@ -470,23 +883,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6486,7 +6614,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +877,13 @@
+@@ -494,10 +913,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6501,7 +6629,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +895,31 @@
+@@ -509,6 +931,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -6533,7 +6661,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +926,7 @@
+@@ -515,7 +962,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -6542,7 +6670,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +950,7 @@
+@@ -539,7 +986,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -6577,7 +6705,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1154 @@
+@@ -0,0 +1,1282 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -6750,7 +6878,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  const TargetInstrInfo *TII;
 +  const TargetRegisterInfo *TRI;
 +  const TargetValues *TVG;
-+  const LiveIntervals *LI;
++  LiveIntervals *LI;
 +  const LiveStacks *LS;
 +  const SlotIndexes *Indexes;
 +  const VirtRegMap *VRM;
@@ -6792,10 +6920,14 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  /// virtual register/stack slot <-> IR value mappings
 +  void mapOpsToIR(const CallInst *IRSM, const MachineInstr *MISM);
 +
++  /// Extend the live range for a register to include an instruction.
++  void updateRegisterLiveInterval(MachineOperand &Src,
++                                  const MachineInstr *Inst);
++
 +  /// Rather than modifying the backend machinery to prevent hoisting code
 +  /// between the stackmap and call site, unwind instructions in order to get
 +  /// real live value locations at the function call.
-+  void unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
++  bool unwindToCallSite(MachineInstr *SM, const MachineInstr *Call);
 +
 +  /// Is a virtual register live across the machine instruction?
 +  /// Note: returns false if the MI is the last instruction for which the
@@ -6835,7 +6967,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  void findAlternateVregLocs(const SMInstBundle &SM);
 +
 +  /// Find stackmap operands that have been spilled to alternate locations
-+  void findAlternateOpLocs();
++  bool findAlternateOpLocs();
 +
 +  /// Ensure virtual registers used to generate architecture-specific values
 +  /// are handled by the stackmap & convert to physical registers
@@ -6865,13 +6997,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +const std::string StackTransformMetadata::SMName("llvm.experimental.stackmap");
 +
 +INITIALIZE_PASS_BEGIN(StackTransformMetadata, "stacktransformmetadata",
-+  "Gather stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, false)
 +INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 +INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 +INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 +INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 +INITIALIZE_PASS_END(StackTransformMetadata, "stacktransformmetadata",
-+  "Gather stack transformation metadata", false, true)
++  "Gather stack transformation metadata", false, false)
 +
 +char StackTransformMetadata::ID = 0;
 +
@@ -6885,6 +7017,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +bool StackTransformMetadata::runOnMachineFunction(MachineFunction &fn) {
++  bool Changed = false;
++
 +  if(fn.getFrameInfo()->hasStackMap()) {
 +    MF = &fn;
 +    MFI = MF->getFrameInfo();
@@ -6905,17 +7039,17 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    );
 +
 +    findStackmapsAndStackSlotCopies();
-+    findAlternateOpLocs();
++    Changed = findAlternateOpLocs();
 +    findArchSpecificLiveVals();
 +    if(!NoWarnings) warnUnhandled();
 +  }
 +
-+  return false;
++  return Changed;
 +}
 +
 +/// Print information about a virtual register and it's associated IR value
 +void StackTransformMetadata::dumpReg(unsigned Reg, const Value *IRVal) const {
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  if(TargetRegisterInfo::isPhysicalRegister(Reg))
 +    dbgs() << ": in register " << PrintReg(Reg, TRI);
 +  else {
@@ -6930,7 +7064,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +/// Print information about a stack slot and it's associated IR value
 +void StackTransformMetadata::dumpStackSlot(int SS, const Value *IRVal) const {
 +  assert(!MFI->isDeadObjectIndex(SS) && "Invalid stack slot");
-+  IRVal->printAsOperand(dbgs());
++  if(IRVal) IRVal->printAsOperand(dbgs());
 +  dbgs() << ": in stack slot " << SS << " (size: " << MFI->getObjectSize(SS)
 +         << ")\n";
 +}
@@ -7058,7 +7192,6 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  RegValsMap::iterator VregIt;
 +  StackValsMap::iterator SSIt;
 +  MachineInstr::const_mop_iterator MOit;
-+  CallInst::const_op_iterator IRit;
 +
 +  // Initialize new storage location/IR map objects (i.e., for virtual
 +  // registers & stack slots) for the stackmap
@@ -7066,28 +7199,25 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  SMStackSlots.emplace(MISM, StackValsMap());
 +
 +  // Loop over all operands
-+  for(MOit = std::next(MISM->operands_begin(), 2),
-+      IRit = std::next(IRSM->op_begin(), 2);
-+      MOit != MISM->operands_end() && IRit != (IRSM->op_end() - 1);
-+      MOit++, IRit++) {
++  MOit = std::next(MISM->operands_begin(), 2);
++  for(size_t i = 2; i < IRSM->getNumArgOperands(); i++) {
++    const Value *IRVal = IRSM->getArgOperand(i);
 +    if(MOit->isImm()) { // Map IR values to stack slots
 +      int FrameIdx = INT32_MAX;
-+      const Value *IRVal = IRit->get();
-+
 +      switch(MOit->getImm()) {
 +      case StackMaps::DirectMemRefOp:
 +        MOit++;
 +        assert(MOit->isFI() && "Invalid operand type");
 +        FrameIdx = MOit->getIndex();
-+        MOit++;
++        MOit = std::next(MOit, 2);
 +        break;
 +      case StackMaps::IndirectMemRefOp:
-+        MOit++; MOit++;
++        MOit = std::next(MOit, 2);
 +        assert(MOit->isFI() && "Invalid operand type");
 +        FrameIdx = MOit->getIndex();
-+        MOit++;
++        MOit = std::next(MOit, 2);
 +        break;
-+      case StackMaps::ConstantOp: MOit++; continue;
++      case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
 +      default: llvm_unreachable("Unrecognized stackmap operand type"); break;
 +      }
 +
@@ -7106,8 +7236,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      SSIt->second->push_back(IRVal);
 +    }
 +    else if(MOit->isReg()) { // Map IR values to virtual registers
-+      const Value *IRVal = IRit->get();
 +      unsigned Reg = MOit->getReg();
++      MOit++;
 +
 +      assert(IRVal && "Invalid stackmap IR operand");
 +      assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
@@ -7124,21 +7254,91 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      llvm_unreachable("Unrecognized stackmap operand type.");
 +    }
 +  }
-+  assert(IRit == (IRSM->op_end() - 1) && "Did not search all stackmap operands");
++}
++
++/// Extend the live range for a register to include an instruction.
++void
++StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
++                                                   const MachineInstr *SM) {
++  typedef LiveInterval::Segment Segment;
++
++  assert(Src.isReg() && "Cannot update live range for non-register operand");
++
++  unsigned Vreg = Src.getReg();
++  bool hasRegUnit = false;
++  SlotIndex Slots[2] = {
++    Indexes->getInstructionIndex(Src.getParent()),
++    Indexes->getInstructionIndex(SM)
++  };
++
++  LiveInterval &Reg = LI->getInterval(Vreg);
++  LiveInterval::iterator Seg = Reg.find(Slots[0]);
++  assert(Seg != Reg.end() && Seg->contains(Slots[0]) &&
++         "Invalid live interval");
++
++  if(Seg->end < Slots[1]) {
++    // Update the segment to include the stackmap
++    SlotIndex SMRegSlot = Slots[1].getRegSlot();
++    Seg = Reg.addSegment(Segment(Seg->start, SMRegSlot, Seg->valno));
++    DEBUG(dbgs() << "    -> Updated register live interval: "; Seg->dump());
++
++    // We also need to update the physical register's register unit (RU) live
++    // range because LiveIntervals::addKillFlags() will use the RU's live range
++    // to avoid marking a physical register dead if two virtual registers
++    // (mapped to that physical register) have overlapping live ranges.
++    SMRegSlot = SMRegSlot.getNextIndex();
++    MCRegUnitIterator Outer(VRM->getPhys(Vreg), TRI);
++    for(MCRegUnitIterator Unit(Outer); Unit.isValid(); ++Unit) {
++      LiveRange &RURange = LI->getRegUnit(*Unit);
++      LiveRange::iterator RUS;
++
++      for(size_t i = 0; i < 2; i++, RUS = RURange.end()) {
++        RUS = RURange.find(Slots[i]);
++        if(RUS != RURange.end() && RUS->contains(Slots[i])) break;
++      }
++
++      if(RUS != RURange.end()) {
++        hasRegUnit = true;
++        Seg = RURange.addSegment(Segment(RUS->start, SMRegSlot, RUS->valno));
++        DEBUG(
++          dbgs() << "    -> Updated segment for register unit "
++                 << *Unit << ": ";
++          Seg->dump();
++        );
++        break;
++      }
++    }
++
++    // If we can't extend one of the current RU ranges, add a new range.
++    if(!hasRegUnit) {
++      LiveRange &RURange = LI->getRegUnit(*Outer);
++      VNInfo *Valno = RURange.getNextValue(Slots[0], LI->getVNInfoAllocator());
++      Seg = RURange.addSegment(Segment(Slots[0], SMRegSlot, Valno));
++      DEBUG(
++        dbgs() << "    -> Added segment for register unit "
++               << *Outer << ": ";
++        Seg->dump();
++      );
++    }
++  }
 +}
 +
 +/// Rather than modifying the backend machinery to prevent hoisting code
 +/// between the stackmap and call site, unwind instructions in order to get
 +/// real live value locations at the function call.
-+void StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
++bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
 +                                              const MachineInstr *Call) {
-+  bool Changed = false;
-+  const MachineInstr *InB = SM;
-+  RegValsMap::iterator VregIt;
++  bool Changed = false, Found;
++  MachineOperand *SrcOp;
++  MachineInstr *InB = SM;
++  RegValsMap::iterator VregIt, SrcIt;
 +  StackValsMap::iterator SSIt;
 +  CopyLocPtr C;
 +  RegCopyLoc *RCL;
 +  StackCopyLoc *SCL;
++
++  // Note: anything named or related to "Src" refers to the source of the
++  // copy operation, i.e., the originating location for the value
 +
 +  DEBUG(dbgs() << "\nUnwinding stackmap back to call site:\n\n");
 +  while((InB = InB->getPrevNode()) && InB != Call) {
@@ -7149,90 +7349,123 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      default: DEBUG(dbgs() << "    Unhandled copy type\n"); break;
 +      case CopyLoc::VREG:
 +        RCL = (RegCopyLoc *)C.get();
++        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(RCL->SrcVreg));
++
++        // Replace current vreg with source
++        Found = false;
 +        for(size_t i = 2; i < SM->getNumOperands(); i++) {
 +          MachineOperand &MO = SM->getOperand(i);
 +          if(MO.isReg() && MO.getReg() == RCL->Vreg) {
-+            assert(SMVregs[SM].count(RCL->Vreg) &&
-+                   "Unhandled register operands in stackmap!");
-+
-+            // TODO if the sibling register is killed/dead in the intervening
-+            // instruction we probably need to propagate that to the stackmap
-+            // and remove it from the other instruction.
-+
-+            // Check if source vreg is already contained in stackmap
-+            if(SMVregs[SM].count(RCL->SrcVreg)) SM->RemoveOperand(i);
-+            else { // Mutate current vreg to source vreg of copy instruction
-+              MO.ChangeToRegister(RCL->SrcVreg, false);
-+              VregIt = SMVregs[SM].find(RCL->Vreg);
-+              SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
-+            }
-+            SMVregs[SM].erase(RCL->Vreg);
-+            Changed = true;
++            MO.ChangeToRegister(RCL->SrcVreg, false, false, SrcOp->isKill(),
++                                SrcOp->isDead(), false, false);
++            InB->clearRegisterKills(RCL->SrcVreg, TRI);
++            InB->clearRegisterDeads(RCL->SrcVreg);
++            updateRegisterLiveInterval(*SrcOp, SM);
++            Found = true;
 +          }
 +        }
++
++        // Update operand -> IR mapping to source vreg
++        if(Found) {
++          assert(SMVregs[SM].count(RCL->Vreg) &&
++                 "Unhandled register operand in stackmap!");
++          VregIt = SMVregs[SM].find(RCL->Vreg);
++          SrcIt = SMVregs[SM].find(RCL->SrcVreg);
++          if(SrcIt != SMVregs[SM].end()) {
++            for(auto IRVal : *VregIt->second)
++              SrcIt->second->push_back(IRVal);
++          }
++          else SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
++          SMVregs[SM].erase(RCL->Vreg);
++          Changed = true;
++        }
++
 +        break;
 +      case CopyLoc::STACK_LOAD:
 +        SCL = (StackCopyLoc *)C.get();
++
++        // Replace current vreg with stack slot.
++        // Note: stack slots don't have liveness information to fix up
++        Found = false;
 +        for(size_t i = 2; i < SM->getNumOperands(); i++) {
 +          MachineOperand &MO = SM->getOperand(i);
 +          if(MO.isReg() && MO.getReg() == SCL->Vreg) {
-+            MachineInstr::mop_iterator Next(&MO); Next++;
-+            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
-+
-+            // Check if source frame index is already contained in stackmap
-+            if(SMStackSlots[SM].count(SCL->StackSlot)) SM->RemoveOperand(i);
-+            else {
-+              // There's not a great way to replace what's already there, so
-+              // trash all trailing operands up to and including the Vreg, add
-+              // the spill slot, and finally add the trailing operands back.
-+              while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
-+              MachineInstrBuilder Worker(*MF, SM);
-+              Worker.addImm(StackMaps::IndirectMemRefOp);
-+              Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
-+              Worker.addFrameIndex(SCL->StackSlot);
-+              Worker.addImm(0);
-+              for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
-+
-+              VregIt = SMVregs[SM].find(SCL->Vreg);
-+              SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
-+            }
-+            SMVregs[SM].erase(SCL->Vreg);
-+            Changed = true;
++            // There's not a great way to add new operands, so trash all
++            // trailing operands up to and including the Vreg, add the spill
++            // slot, and finally add the trailing operands back.
++            SmallVector<MachineOperand, 4> TrailOps(std::next(&MO),
++                                                    SM->operands_end());
++            while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
++            MachineInstrBuilder Worker(*MF, SM);
++            Worker.addImm(StackMaps::IndirectMemRefOp);
++            Worker.addImm(MFI->getObjectSize(SCL->StackSlot));
++            Worker.addFrameIndex(SCL->StackSlot);
++            Worker.addImm(0);
++            for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
++            Found = true;
 +          }
 +        }
++
++        // Update operand -> IR mapping to source stack slot
++        if(Found) {
++          assert(SMVregs[SM].count(SCL->Vreg) &&
++                 "Unhandled register operand in stackmap!");
++          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
++          VregIt = SMVregs[SM].find(SCL->Vreg);
++          if(SSIt != SMStackSlots[SM].end()) {
++            for(auto IRVal : *VregIt->second)
++              SSIt->second->push_back(IRVal);
++          }
++          else SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
++          SMVregs[SM].erase(SCL->Vreg);
++          Changed = true;
++        }
++
 +        break;
 +      case CopyLoc::STACK_STORE:
 +        SCL = (StackCopyLoc *)C.get();
++        SrcOp = &InB->getOperand(InB->findRegisterUseOperandIdx(SCL->Vreg));
++
++        // Replace current stack slot with vreg
++        // Note: this *must* be an indirect memory reference (spill slot)
++        // since we're copying to a register!
++        Found = false;
 +        for(size_t i = 2; i < SM->getNumOperands(); i++) {
 +          MachineOperand &MO = SM->getOperand(i);
 +          if(MO.isFI() && MO.getIndex() == SCL->StackSlot) {
-+            // Note: this *must* be an indirect memory reference (spill slot)
-+            // since we're copying to a register!
-+            unsigned StartIdx = i - 2;
-+            MachineInstr::mop_iterator Next(&MO); Next++; Next++;
-+            SmallVector<MachineOperand, 4> TrailOps(Next, SM->operands_end());
-+
 +            // TODO if the sibling register is killed/dead in the intervening
 +            // instruction we probably need to propagate that to the stackmap
 +            // and remove it from the other instruction.
-+
-+            if(SMVregs[SM].count(SCL->Vreg)) {
-+              for(size_t j = 0; j < 4; j++)
-+                SM->RemoveOperand(i - 2 + j);
-+            }
-+            else {
-+              // Mutate the first indirect memory reference operand, then
-+              // remove the rest
-+              SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
-+              for(size_t j = 0; j < 3; j++) SM->RemoveOperand(StartIdx + 1);
-+
-+              SSIt = SMStackSlots[SM].find(SCL->StackSlot);
-+              SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
-+            }
-+            SMStackSlots[SM].erase(SCL->StackSlot);
-+            Changed = true;
++            unsigned StartIdx = i - 2;
++            SM->getOperand(StartIdx).ChangeToRegister(SCL->Vreg, false);
++            SM->RemoveOperand(StartIdx + 1); // Size
++            SM->RemoveOperand(StartIdx + 1); // Frame index
++            SM->RemoveOperand(StartIdx + 1); // Frame pointer offset
++            Found = true;
 +          }
 +        }
++
++        // Update operand -> IR mapping to source vreg
++        if(Found) {
++          assert(SMStackSlots[SM].count(SCL->StackSlot) &&
++                 "Unhandled stack slot operand in stackmap!");
++
++          // Update liveness information to include the stackmap
++          InB->clearRegisterKills(SCL->Vreg, TRI);
++          InB->clearRegisterDeads(SCL->Vreg);
++          updateRegisterLiveInterval(*SrcOp, SM);
++
++          VregIt = SMVregs[SM].find(SCL->Vreg);
++          SSIt = SMStackSlots[SM].find(SCL->StackSlot);
++          if(VregIt != SMVregs[SM].end()) {
++            for(auto IRVal : *SSIt->second)
++              VregIt->second->push_back(IRVal);
++          }
++          else SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
++          SMStackSlots[SM].erase(SCL->StackSlot);
++          Changed = true;
++        }
++
 +        break;
 +      }
 +    }
@@ -7240,6 +7473,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  }
 +
 +  if(Changed) DEBUG(dbgs() << "\n  Transformed stackmap: "; SM->dump());
++  return Changed;
 +}
 +
 +/// Is a virtual register live across the machine instruction?
@@ -7458,7 +7692,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +/// Find alternate storage locations for stackmap operands
-+void StackTransformMetadata::findAlternateOpLocs() {
++bool StackTransformMetadata::findAlternateOpLocs() {
++  bool Changed = false;
 +  RegValsMap::iterator vregIt, vregEnd;
 +
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
@@ -7478,7 +7713,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +    // Because the CodeGen machinery is wily (and may hoist instructions above
 +    // the stackmap), unwind copies until the call site.
-+    unwindToCallSite(MISM, MICall);
++    Changed |= unwindToCallSite(MISM, MICall);
 +
 +    // Find alternate locations for vregs in stack map.  Note we don't need to
 +    // find alternate stack slot locations, as allocas *should* already be in
@@ -7486,6 +7721,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // are covered here).
 +    findAlternateVregLocs(*S);
 +  }
++
++  return Changed;
 +}
 +
 +/// Ensure virtual registers used to generate architecture-specific values are
@@ -7522,28 +7759,38 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  }
 +}
 +
++/// Filter out register definitions we've previously seen.
++static void
++getUnseenDefinitions(MachineRegisterInfo::def_instr_iterator DefIt,
++                     const SmallPtrSet<const MachineInstr *, 4> &Seen,
++                     SmallPtrSet<const MachineInstr *, 4> &NewDefs) {
++  NewDefs.clear();
++  do { if(!Seen.count(&*DefIt)) NewDefs.insert(&*DefIt);
++  } while((++DefIt) != MachineRegisterInfo::def_instr_end());
++}
++
 +/// Try to find the best defining instruction.
 +static const MachineInstr *
 +tryToBreakDefMITie(const MachineInstr *MICall,
-+                   MachineRegisterInfo::def_instr_iterator Def) {
++                   const SmallPtrSet<const MachineInstr *, 4> &Definitions) {
 +  // First heuristic -- find closest preceding defining instruction in the same
 +  // machine basic block.
 +  const MachineInstr *Cur, *BestDef = nullptr;
 +  unsigned Distance, Best = UINT32_MAX;
-+  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> Defs;
-+  do {
++  SmallVector<std::pair<const MachineInstr *, unsigned>, 4> SearchDefs;
++  for(auto Def : Definitions) {
 +    Cur = MICall;
 +    Distance = 1;
 +    while((Cur = Cur->getPrevNode())) {
-+      if(Cur == &*Def) {
-+        Defs.emplace_back(&*Def, Distance);
++      if(Cur == Def) {
++        SearchDefs.emplace_back(Def, Distance);
 +        break;
 +      }
 +      Distance++;
 +    }
-+  } while((++Def) != MachineRegisterInfo::def_instr_end());
++  }
 +
-+  for(auto Pair : Defs) {
++  for(auto Pair : SearchDefs) {
 +    if(Pair.second < Best) {
 +      BestDef = Pair.first;
 +      Best = Pair.second;
@@ -7592,15 +7839,23 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        DEBUG(dbgs() << "    + vreg" << i
 +                     << " is live in register but not in stackmap\n";);
 +
-+        // Walk the use-def chain to see if we can find a valid value
++        // Walk the use-def chain to see if we can find a valid value.  Note we
++        // keep track of seen definitions because even though we're supposed to
++        // be in SSA form it's possible to find definition cycles.
 +        const MachineInstr *DefMI;
 +        unsigned ChainVreg = Vreg;
++        SmallPtrSet<const MachineInstr *, 4> SeenDefs, NewDefs;
 +        do {
++          getUnseenDefinitions(MRI->def_instr_begin(ChainVreg),
++                               SeenDefs, NewDefs);
++
 +          // Try to find a suitable defining instruction
-+          MachineRegisterInfo::def_instr_iterator DefIt;
-+          DefIt = MRI->def_instr_begin(ChainVreg);
-+          if(MRI->hasOneDef(ChainVreg)) DefMI = &*DefIt;
-+          else if(!(DefMI = tryToBreakDefMITie(MICall, DefIt))) {
++          if(NewDefs.size() == 0) {
++            DEBUG(dbgs() << "WARNING: no unseen definition\n");
++            break;
++          }
++          else if(NewDefs.size() == 1) DefMI = *NewDefs.begin();
++          else if(!(DefMI = tryToBreakDefMITie(MICall, NewDefs))) {
 +            // No suitable defining instruction, not much we can do...
 +            DEBUG(
 +              dbgs() << "WARNING: multiple definitions for virtual "
@@ -7612,6 +7867,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +            break;
 +          }
 +
++          SeenDefs.insert(DefMI);
 +          MLV = TVG->getMachineValue(DefMI);
 +          sanitizeVregs(MLV, MISM);
 +
@@ -8179,6 +8435,22 @@ Index: lib/CodeGen/UnwindInfo.cpp
 +  }
 +}
 +
+Index: lib/IR/AsmWriter.cpp
+===================================================================
+--- lib/IR/AsmWriter.cpp	(revision 320332)
++++ lib/IR/AsmWriter.cpp	(working copy)
+@@ -691,6 +691,11 @@
+   this->F = &F;
+ }
+ 
++int ModuleSlotTracker::getLocalSlot(const Value *V) {
++  assert(F && "No function incorporated");
++  return Machine->getLocalSlot(V);
++}
++
+ static SlotTracker *createSlotTracker(const Module *M) {
+   return new SlotTracker(M);
+ }
 Index: lib/MC/MCCodeGenInfo.cpp
 ===================================================================
 --- lib/MC/MCCodeGenInfo.cpp	(revision 320332)
@@ -9278,7 +9550,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,361 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -9291,6 +9563,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +#include "llvm/IR/Instructions.h"
 +#include "llvm/IR/IRBuilder.h"
 +#include "llvm/IR/Module.h"
++#include "llvm/IR/ModuleSlotTracker.h"
 +#include "llvm/IR/Type.h"
 +#include "llvm/Support/Debug.h"
 +#include "llvm/Support/raw_ostream.h"
@@ -9306,6 +9579,26 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +           cl::Hidden);
 +
 +namespace {
++
++/* Track slots for unnamed values */
++static ModuleSlotTracker *SlotTracker = nullptr;
++
++/* Sort values based on name */
++struct ValueComp
++{
++  bool operator ()(const Value *a, const Value *b)
++  {
++    if(a->hasName() && b->hasName())
++      return a->getName().compare(b->getName()) < 0;
++    else if(a->hasName()) return true;
++    else if(b->hasName()) return false;
++    else {
++      int slot_a = SlotTracker->getLocalSlot(a),
++          slot_b = SlotTracker->getLocalSlot(b);
++      return slot_a < slot_b;
++    }
++  }
++};
 +
 +/**
 + * This class instruments equivalence points in the IR with LLVM's stackmap
@@ -9343,6 +9636,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  virtual bool runOnModule(Module &M)
 +  {
 +    bool modified = false;
++
 +    std::set<const Value *> *live;
 +    std::set<const Value *, ValueComp> sortedLive;
 +    std::set<const Instruction *> hiddenInst;
@@ -9353,6 +9647,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +    this->createSMType(M);
 +    if(this->addSMDeclaration(M)) modified = true;
++    SlotTracker = new ModuleSlotTracker(&M);
 +
 +    modified |= this->removeOldStackmaps(M);
 +
@@ -9366,6 +9661,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +      LiveValues &liveVals = getAnalysis<LiveValues>(*f);
 +      DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
++      SlotTracker->incorporateFunction(*f);
 +      std::set<const Value *>::const_iterator v, ve;
 +      getHiddenVals(*f, hiddenInst, hiddenArgs);
 +
@@ -9461,6 +9757,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    );
 +
 +    if(numInstrumented > 0) modified = true;
++    delete SlotTracker;
 +
 +    return modified;
 +  }
@@ -9472,18 +9769,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +  /* Stack map instruction creation */
 +  Function *SMFunc;
 +  FunctionType *SMTy; // Used for creating function declaration
-+
-+  /* Sort values based on name */
-+  struct ValueComp {
-+    bool operator() (const Value *a, const Value *b) const
-+    {
-+      if(a->hasName() && b->hasName())
-+        return a->getName().compare(b->getName()) < 0;
-+      else if(a->hasName()) return true;
-+      else if(b->hasName()) return false;
-+      else return a < b;
-+    }
-+  };
 +
 +  /**
 +   * Create the function type for the stack map intrinsic.

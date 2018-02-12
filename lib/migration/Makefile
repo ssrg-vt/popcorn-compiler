@@ -78,7 +78,8 @@ $(BUILD_POWERPC)/%.o: src/%.c $(HDR_POWERPC)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_POWERPC) -o $@ $@.bc
 
-$(LIB_POWERPC): $(BUILD_POWERPC)/.dir $(HDR_POWERPC) $(OBJ_POWERPC)
+$(OBJ_POWERPC): $(BUILD_POWERPC)/.dir
+$(LIB_POWERPC): $(HDR_POWERPC) $(OBJ_POWERPC)
 	@echo " [AR] $(LIB_POWERPC)"
 	@rm -f $(LIB_POWERPC)
 	@$(AR) $(ARFLAGS) $(LIB_POWERPC) $(OBJ_POWERPC) &> /dev/null
@@ -89,7 +90,8 @@ $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_ARM) -o $@ $@.bc
 
-$(LIB_ARM): $(BUILD_ARM)/.dir $(HDR_ARM) $(OBJ_ARM)
+$(OBJ_ARM): $(BUILD_ARM)/.dir
+$(LIB_ARM): $(HDR_ARM) $(OBJ_ARM)
 	@echo " [AR] $(LIB_ARM)"
 	@rm -f $(LIB_ARM)
 	@$(AR) $(ARFLAGS) $(LIB_ARM) $(OBJ_ARM) &> /dev/null
@@ -100,7 +102,8 @@ $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
 
-$(LIB_X86): $(BUILD_X86)/.dir $(HDR_X86) $(OBJ_X86)
+$(OBJ_X86): $(BUILD_X86)/.dir
+$(LIB_X86): $(HDR_X86) $(OBJ_X86)
 	@echo " [AR] $(LIB_X86)"
 	@rm -f $(LIB_X86)
 	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null

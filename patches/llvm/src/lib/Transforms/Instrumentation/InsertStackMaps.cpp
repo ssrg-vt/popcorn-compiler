@@ -10,6 +10,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -25,6 +26,26 @@ NoLiveVals("no-live-vals",
            cl::Hidden);
 
 namespace {
+
+/* Track slots for unnamed values */
+static ModuleSlotTracker *SlotTracker = nullptr;
+
+/* Sort values based on name */
+struct ValueComp
+{
+  bool operator ()(const Value *a, const Value *b)
+  {
+    if(a->hasName() && b->hasName())
+      return a->getName().compare(b->getName()) < 0;
+    else if(a->hasName()) return true;
+    else if(b->hasName()) return false;
+    else {
+      int slot_a = SlotTracker->getLocalSlot(a),
+          slot_b = SlotTracker->getLocalSlot(b);
+      return slot_a < slot_b;
+    }
+  }
+};
 
 /**
  * This class instruments equivalence points in the IR with LLVM's stackmap
@@ -62,6 +83,7 @@ public:
   virtual bool runOnModule(Module &M)
   {
     bool modified = false;
+
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
     std::set<const Instruction *> hiddenInst;
@@ -72,6 +94,7 @@ public:
 
     this->createSMType(M);
     if(this->addSMDeclaration(M)) modified = true;
+    SlotTracker = new ModuleSlotTracker(&M);
 
     modified |= this->removeOldStackmaps(M);
 
@@ -85,6 +108,7 @@ public:
 
       LiveValues &liveVals = getAnalysis<LiveValues>(*f);
       DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>(*f).getDomTree();
+      SlotTracker->incorporateFunction(*f);
       std::set<const Value *>::const_iterator v, ve;
       getHiddenVals(*f, hiddenInst, hiddenArgs);
 
@@ -180,6 +204,7 @@ public:
     );
 
     if(numInstrumented > 0) modified = true;
+    delete SlotTracker;
 
     return modified;
   }
@@ -191,18 +216,6 @@ private:
   /* Stack map instruction creation */
   Function *SMFunc;
   FunctionType *SMTy; // Used for creating function declaration
-
-  /* Sort values based on name */
-  struct ValueComp {
-    bool operator() (const Value *a, const Value *b) const
-    {
-      if(a->hasName() && b->hasName())
-        return a->getName().compare(b->getName()) < 0;
-      else if(a->hasName()) return true;
-      else if(b->hasName()) return false;
-      else return a < b;
-    }
-  };
 
   /**
    * Create the function type for the stack map intrinsic.

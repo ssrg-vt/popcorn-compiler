@@ -810,7 +810,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 ===================================================================
 --- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
 +++ lib/CodeGen/PopcornUtil.cpp	(working copy)
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,87 @@
 +//===--- PopcornUtil.cpp - LLVM Popcorn Linux Utilities -------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -851,6 +851,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +    break;
 +  case Triple::ArchType::x86_64:
 +    Opts->CPU = "x86-64";
++    Opts->FPMath = "sse";
 +    Opts->FeaturesAsWritten.push_back("+sse");
 +    Opts->FeaturesAsWritten.push_back("+sse2");
 +    Opts->FeaturesAsWritten.push_back("+rtm");

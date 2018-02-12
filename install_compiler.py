@@ -93,10 +93,10 @@ def setup_argument_parsing():
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
-    process_opts.add_argument("--skip-namespace",
-                        help="Skip building namespace tools (deprecated)",
-                        action="store_false",
-                        dest="skip_namespace")
+    process_opts.add_argument("--install-namespace",
+                        help="Install namespace tools (deprecated)",
+                        action="store_true",
+                        dest="install_namespace")
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
@@ -782,7 +782,7 @@ def main(args):
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_namespace:
+    if args.install_namespace:
         build_namespace(args.base_path)
 
 if __name__ == '__main__':
