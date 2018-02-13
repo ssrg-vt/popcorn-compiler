@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <stack_transform.h>
 #include <sys/prctl.h>
+#include "platform.h"
 #include "migrate.h"
 #include "config.h"
 #include "arch.h"

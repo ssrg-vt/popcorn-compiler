@@ -111,17 +111,17 @@ $(LIB_X86): $(HDR_X86) $(OBJ_X86)
 # $(LIB_POWERPC)
 #	@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
 #	@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
-#	@cp $(HDR) $(POPCORN_POWERPC)/include
+#	@cp include/migrate.h $(POPCORN_POWERPC)/include
 install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
 	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
-	@cp $(HDR) $(POPCORN_ARM)/include
+	@cp include/migrate.h $(POPCORN_ARM)/include
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
 	@cp $(LIB_X86) $(POPCORN_X86)/lib
-	@cp $(HDR) $(POPCORN_X86)/include
+	@cp include/migrate.h $(POPCORN_X86)/include
 
 clean:
 	@echo " [RM] $(BUILD)"
 	@rm -rf $(BUILD)
 
-.PHONY: all clean
+.PHONY: all install clean
