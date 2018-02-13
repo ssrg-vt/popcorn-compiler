@@ -38,6 +38,21 @@ class Kernel(utils.Prereqs):
         ''' Return the name of the kernel repository for an architecture. '''
         return self.repo.name + "." + target
 
+    def setKernelImage(self, target, img, repoCheck=True):
+        ''' Set the kernel image for an architecture.  Provides more stringent
+            checking, and also records the repository, if appropriate.
+        '''
+        if not os.path.isfile(img):
+            raise FileNotFoundError(errno.ENOENT,
+                                    os.strerror(errno.ENOENT),
+                                    img)
+        self.targetImg[target] = img
+
+        repoName = self.getRepoName(target)
+        if repoCheck and repoName in img:
+            bare = self.getImageName(target)
+            self.targetRepo[target] = utils.sanitizeDir(img.replace(bare, ""))
+
     def buildKernelForTarget(self, target):
         ''' Build the Popcorn kernel for a target architecture. '''
         print("-> BUILDING POPCORN KERNEL FOR {} <-".format(target))
@@ -61,11 +76,7 @@ class Kernel(utils.Prereqs):
 
         # Record the kernel image filename
         theImg = os.path.join(destination, self.getImageName(target))
-        if not os.path.isfile(theImg):
-            raise FileNotFoundError(errno.ENOENT,
-                                    os.strerror(errno.ENOENT),
-                                    theImg)
-        self.targetImg[target] = theImg
+        self.setKernelImage(target, theImg)
 
     def buildKernelForAllTargets(self, forceCompile=False):
         ''' Build the Popcorn kernel for all architectures, if necessary.  If
@@ -78,13 +89,17 @@ class Kernel(utils.Prereqs):
             if not os.path.isfile(img) or forceCompile:
                 self.buildKernelForTarget(target)
             else:
-                self.targetImg[target] = img
+                self.setKernelImage(target, img)
                 print("Found {} kernel image '{}'".format(target, img))
 
-    def getKernelImage(self, target):
+    def __getitem__(self, target):
         ''' Return the kernel image for an architecture.  If not available,
             build the kernel.
         '''
-        if target not in self.targetImg: self.buildKernelForTarget(target)
+        if target not in self.targetImg:
+            img = utils.sanitizeDir(os.path.join(self.getRepoName(target),
+                                                 self.getImageName(target)))
+            if os.path.isfile(img): self.setKernelImage(target, img)
+            else: self.buildKernelForTarget(target)
         return self.targetImg[target]
 

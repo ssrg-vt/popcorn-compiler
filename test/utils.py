@@ -95,7 +95,7 @@ def warn(msg):
     ''' Print warning message. '''
     print("WARNING: {}".format(msg))
 
-def runCmd(args, wait=False, output=False, environment=None):
+def runCmd(args, wait=False, interactive=False, environment=None, sh=False):
     ''' Run a command.  The function returns different values based on whether
         wait=True or wait=False.
 
@@ -110,15 +110,25 @@ def runCmd(args, wait=False, output=False, environment=None):
 
         Additionally, raises a FileNotFoundException if the executable is not
         found in the user's path.
+
+        If interactive=True, users see output/send input from the command line;
+        otherwise, the caller can programmatically interact with the process.
      '''
     if not environment: environment = os.environ
-    if output: out = None
-    else: out = subprocess.PIPE
+    if interactive:
+        outs = None
+        ins = None
+        errs = subprocess.STDOUT
+    else:
+        outs = subprocess.PIPE
+        ins = subprocess.PIPE
+        errs = subprocess.PIPE
 
-    if wait: return subprocess.check_call(args, env=environment,  stdout=out,
-                                          stderr=subprocess.STDOUT)
-    else: return subprocess.Popen(args, env=environment, stdout=out,
-                                  stderr=subprocess.STDOUT)
+    if wait:
+        return subprocess.run(args, shell=sh, env=environment, stdin=ins,
+                              stdout=outs, stderr=errs, check=True).returncode
+    else: return subprocess.Popen(args, shell=sh, env=environment, stdin=ins,
+                                  stdout=outs, stderr=errs)
 
 def getCommandOutput(args):
     ''' Run a command and return any output. If the process doesn't exist or
