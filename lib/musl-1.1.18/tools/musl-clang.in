@@ -1,15 +1,21 @@
 #!/bin/sh
 cc="@CC@"
+target="@TARGET@"
+triple="${target}-linux-gnu"
 libc="@PREFIX@"
 libc_inc="@INCDIR@"
 libc_lib="@LIBDIR@"
 thisdir="`cd "$(dirname "$0")"; pwd`"
+libgcc="`${triple}-gcc -print-libgcc-file-name`"
+libgcc_dir="`dirname $libgcc`"
+crt_files="$libc_lib/crt1.o $libgcc_dir/crtbeginT.o $libgcc_dir/crtend.o"
 
 # prevent clang from running the linker (and erroring) on no input.
 sflags=
 eflags=
 for x ; do
     case "$x" in
+        -E | -S | -c) crt_files= ;; # only keep crt*.o if linking
         -l*) input=1 ;;
         *) input= ;;
     esac
@@ -21,15 +27,20 @@ for x ; do
 done
 
 exec $cc \
+    -target $triple \
     -B"$thisdir" \
     -fuse-ld=musl-clang \
+    -Qunused-arguments \
     -static-libgcc \
     -nostdinc \
+    -nostartfiles \
     --sysroot "$libc" \
     -isystem "$libc_inc" \
     -L-user-start \
     $sflags \
     "$@" \
+    $crt_files \
     $eflags \
     -L"$libc_lib" \
+    -L"$libgcc_dir" \
     -L-user-end
