@@ -196,7 +196,7 @@ class Symbol:
 
 					# First handle the special case of user object files that
 					# differs by name because they are for different archs
-					# but are the result of the compilation of the same user 
+					# but are the result of the compilation of the same user
 					# source file
 					# FIXME this is hardcoded for x86-ARM for now, we need a
 					# convention for the user object files created by the
@@ -204,7 +204,7 @@ class Symbol:
 					# we get to power8
 					if cmpstr1.endswith("_x86_64.o"):   # s1 is x86
 						s1_base = cmpstr1.replace("_x86_64.o", "")
-						if (s1_base == cmpstr2.replace(".o", "")): 
+						if (s1_base == cmpstr2.replace(".o", "")):
 							# s2 is arm (v1)
 							res = True
 							continue
@@ -212,7 +212,7 @@ class Symbol:
 							# s2 is arm (v2)
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
 							# s2 is ppc
 							res = True
 							continue
@@ -223,7 +223,7 @@ class Symbol:
 							# s2 is x86
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
 							# s2 is ppc
 							res = True
 							continue
@@ -234,11 +234,11 @@ class Symbol:
 							# s2 is x86
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace(".o", "")): 
+						elif (s1_base == cmpstr2.replace(".o", "")):
 							# s2 is arm (v1)
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace("_aarch64.o", "")): 
+						elif (s1_base == cmpstr2.replace("_aarch64.o", "")):
 							# s2 is arm (v2)
 							res = True
 							continue
@@ -249,7 +249,7 @@ class Symbol:
 							# s2 is x86
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
 							# s2 is ppc
 							res = True
 							continue
