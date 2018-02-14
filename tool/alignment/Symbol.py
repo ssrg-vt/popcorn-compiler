@@ -179,14 +179,13 @@ class Symbol:
 		are the same if the name is the same AND if they correspond to the
 		same original object file
 		"""
-
 		# Quick path: first check the name
 		if self.getName() != anotherSymbol.getName():
 			return False
 
-            # Then check the object paths
+		# Then check the object paths
 		res = None
-		otherObjs = [anotherSymbol.getObjectFile(Arch.X86),
+		otherObjs = [   anotherSymbol.getObjectFile(Arch.X86),
 						anotherSymbol.getObjectFile(Arch.ARM),
 						anotherSymbol.getObjectFile(Arch.POWER)]
 		for objf1 in self._objectFiles.values():
@@ -197,7 +196,7 @@ class Symbol:
 
 					# First handle the special case of user object files that
 					# differs by name because they are for different archs
-					# but are the result of the compilation of the same user
+					# but are the result of the compilation of the same user 
 					# source file
 					# FIXME this is hardcoded for x86-ARM for now, we need a
 					# convention for the user object files created by the
@@ -205,7 +204,7 @@ class Symbol:
 					# we get to power8
 					if cmpstr1.endswith("_x86_64.o"):   # s1 is x86
 						s1_base = cmpstr1.replace("_x86_64.o", "")
-						if (s1_base == cmpstr2.replace(".o", "")):
+						if (s1_base == cmpstr2.replace(".o", "")): 
 							# s2 is arm (v1)
 							res = True
 							continue
@@ -213,52 +212,52 @@ class Symbol:
 							# s2 is arm (v2)
 							res = True
 							continue
-						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
 							# s2 is ppc
 							res = True
 							continue
 
-						elif cmpstr1.endswith("_aarch64.o"):   # s1 is arm (v1)
-							s1_base = cmpstr1.replace("_aarch64.o", "")
-							if (s1_base == cmpstr2.replace("_x86_64.o", "")):
-								# s2 is x86
-								res = True
-								continue
-							elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
-								# s2 is ppc
-								res = True
-								continue
-
-						elif cmpstr1.endswith("_powerpc64le.o"):   # s1 is ppc
-							s1_base = cmpstr1.replace("_powerpc64le.o", "")
-							if (s1_base == cmpstr2.replace("_x86_64.o", "")):
-								# s2 is x86
-								res = True
-								continue
-							elif (s1_base == cmpstr2.replace(".o", "")):
-								# s2 is arm (v1)
-								res = True
-								continue
-							elif (s1_base == cmpstr2.replace("_aarch64.o", "")):
-								# s2 is arm (v2)
-								res = True
-								continue
-
-						elif cmpstr1.endswith(".o"):   # s1 is arm (v2)
-							s1_base = cmpstr1.replace(".o", "")
-							if (s1_base == cmpstr2.replace("_x86_64.o", "")):
-								# s2 is x86
-								res = True
-								continue
-							elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
-								# s2 is ppc
-								res = True
-								continue
-
-						if cmpstr1 != cmpstr2:
-							return False
-						else:
+					elif cmpstr1.endswith("_aarch64.o"):   # s1 is arm (v1)
+						s1_base = cmpstr1.replace("_aarch64.o", "")
+						if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+							# s2 is x86
 							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+							# s2 is ppc
+							res = True
+							continue
+
+					elif cmpstr1.endswith("_powerpc64le.o"):   # s1 is ppc
+						s1_base = cmpstr1.replace("_powerpc64le.o", "")
+						if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+							# s2 is x86
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace(".o", "")): 
+							# s2 is arm (v1)
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_aarch64.o", "")): 
+							# s2 is arm (v2)
+							res = True
+							continue
+
+					elif cmpstr1.endswith(".o"):   # s1 is arm (v2)
+						s1_base = cmpstr1.replace(".o", "")
+						if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+							# s2 is x86
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")): 
+							# s2 is ppc
+							res = True
+							continue
+
+					if cmpstr1 != cmpstr2:
+						return False
+					else:
+						res = True
 
 		if res == None:
 			er("Could not find object files to compare...\n")
