@@ -4,7 +4,7 @@ attributes are per-architecture (ex: size, etc.) so they are arrays indexed
 by the Arch enum (see Arch.py)
 """
 
-import re
+import sys, re
 from Arch import Arch
 from Globals import er
 
