@@ -26,18 +26,18 @@ def buildArgParser():
 	res = argparse.ArgumentParser(description="Align symbols in binaries from" +
 		" multiple ISAs")
 
-        res.add_argument("--compiler-inst", help="Path to the compiler installation",
-                required=True)
+	res.add_argument("--compiler-inst", help="Path to the compiler installation",
+	    required=True)
 	res.add_argument("--x86-bin", help="Path to the input x86 executable")
 	res.add_argument("--arm-bin", help="Path to the input ARM executable")
-        res.add_argument("--ppc-bin", help = "Path to the input PPC64 " + 
-                "executable")
+	res.add_argument("--ppc-bin", help = "Path to the input PPC64 " +
+	    "executable")
 	res.add_argument("--x86-map", help="Path to the x86 memory map file " +
 		"corresponding to the x86 binary (generated through ld -MAP)")
 	res.add_argument("--arm-map", help="Path to the ARM memory map file " +
 		"corresponding to the ARM binary (generated through ld -MAP)")
 	res.add_argument("--ppc-map", help="Path to the PPC64 memory map "
-                "file corresponding to the PPC64 binary (generated through " + 
+                "file corresponding to the PPC64 binary (generated through " +
                 "ld -MAP)")
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")
@@ -47,87 +47,85 @@ def buildArgParser():
 	"script", default="linker_script_x86.x")
 	res.add_argument("--output-arm-ls", help="Path to the output ARM linker " +
 	"script", default="linker_script_arm.x")
-        res.add_argument("--output-ppc-ls", help="Path to the output PPC64 " + 
-        "linker script", default="linker_script_ppc.x")
+	res.add_argument("--output-ppc-ls", help="Path to the output PPC64 " +
+	    "linker script", default="linker_script_ppc.x")
 
 	return res
 
 def checkFilesExistence(fileList):
-    """ Check for the existence of each file which path is in the list fileList
-    and exit if the file does not exist
-    """
-    for f in fileList:
-        if not os.path.isfile(f):
-            er("File '" + f + "' does not exist/is not a file")
-            exit(-1)
+	""" Check for the existence of each file which path is in the list fileList
+	and exit if the file does not exist
+	"""
+	for f in fileList:
+		if not os.path.isfile(f):
+			er("File '" + f + "' does not exist/is not a file")
+			exit(-1)
 
 def parseAndCheckArgs(parser):
-    """ Parse command line arguments and perform some sanity checks """
-    args = parser.parse_args()
-    
-    if args.x86_bin and args.arm_bin and not args.ppc_bin:
-        if (not args.x86_map) or (not args.arm_map):
-            er("Mapfile parameter missing for some/all archs\n")
-            sys.exit(-1)
-        filesToCheck = [args.x86_bin, args.x86_map, args.arm_bin, args.arm_map]
+	""" Parse command line arguments and perform some sanity checks """
+	args = parser.parse_args()
 
-    elif args.x86_bin and args.ppc_bin and not args.arm_bin:
-        if (not args.x86_map) or (not args.ppc_map):
-            er("Mapfile parameter missing for some/all archs\n")
-            sys.exit(-1)
-        filesToCheck = [args.x86_bin, args.x86_map, args.ppc_bin, args.ppc_map]
+	if args.x86_bin and args.arm_bin and not args.ppc_bin:
+		if (not args.x86_map) or (not args.arm_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.x86_bin, args.x86_map, args.arm_bin, args.arm_map]
 
-    elif args.arm_bin and args.ppc_bin and not args.x86_bin:
-        if (not args.arm_map) or (not args.ppc_map):
-            er("Mapfile parameter missing for some/all archs\n")
-            sys.exit(-1)
-        filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map]
+	elif args.x86_bin and args.ppc_bin and not args.arm_bin:
+		if (not args.x86_map) or (not args.ppc_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.x86_bin, args.x86_map, args.ppc_bin, args.ppc_map]
 
-    elif args.arm_bin and args.ppc_bin and args.x86_bin:
-        if (not args.arm_map) or (not args.ppc_map) or (not args.x86_map):
-            er("Mapfile parameter missing for some/all archs\n")
-            sys.exit(-1)
-        filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map,
-                args.x86_bin, args.x86_map]
+	elif args.arm_bin and args.ppc_bin and not args.x86_bin:
+		if (not args.arm_map) or (not args.ppc_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map]
 
-    else:
-        er("Please provide at least 2 of --x86-bin/--arm-bin/--ppc-bin\n")
-        exit(-1)
-    
-    checkFilesExistence(filesToCheck)
-    return args
+	elif args.arm_bin and args.ppc_bin and args.x86_bin:
+		if (not args.arm_map) or (not args.ppc_map) or (not args.x86_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map,
+			args.x86_bin, args.x86_map]
+
+	else:
+		er("Please provide at least 2 of --x86-bin/--arm-bin/--ppc-bin\n")
+		exit(-1)
+
+	checkFilesExistence(filesToCheck)
+	return args
 
 def setConsideredArchs(args):
-    """ Set the considered arch pair from the command line argument"""
-    # No need to perform sanity checks as this function is supposed to be called
-    # after parseAndCheckArgs
+	""" Set the considered arch pair from the command line argument"""
 
-    if args.x86_bin:
-        considered_archs.append(archs[Arch.X86])
+	if args.x86_bin:
+		considered_archs.append(archs[Arch.X86])
 
-    if args.arm_bin:
-        considered_archs.append(archs[Arch.ARM])
+	if args.arm_bin:
+		considered_archs.append(archs[Arch.ARM])
 
-    if args.ppc_bin:
-        considered_archs.append(archs[Arch.POWER])
+	if args.ppc_bin:
+		considered_archs.append(archs[Arch.POWER])
 
-    return considered_archs
+	return considered_archs
 
 def setInputOutputs(args):
-    """ Fill internal data structures with info about input and ouput files """
-    
-    bins = {Arch.X86 : args.x86_bin, Arch.ARM : args.arm_bin, 
-            Arch.POWER : args.ppc_bin}
-    maps = {Arch.X86 : args.x86_map, Arch.ARM : args.arm_map, 
-            Arch.POWER : args.ppc_map}
-    lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : args.output_arm_ls, 
-            Arch.POWER : args.output_ppc_ls}
+	""" Fill internal data structures with info about input and ouput files """
 
-    for k, arch in archs.iteritems():
-        if arch in considered_archs:
-            arch.setExecutable(os.path.abspath(bins[k]))
-            arch.setMapFile(os.path.abspath(maps[k]))
-            arch.setLinkerScript(os.path.abspath(lss[k]))
+	bins = {Arch.X86 : args.x86_bin, Arch.ARM : args.arm_bin,
+		Arch.POWER : args.ppc_bin}
+	maps = {Arch.X86 : args.x86_map, Arch.ARM : args.arm_map,
+		Arch.POWER : args.ppc_map}
+	lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : args.output_arm_ls,
+		Arch.POWER : args.output_ppc_ls}
+
+	for k, arch in archs.iteritems():
+		if arch in considered_archs:
+			arch.setExecutable(os.path.abspath(bins[k]))
+			arch.setMapFile(os.path.abspath(maps[k]))
+			arch.setLinkerScript(os.path.abspath(lss[k]))
 
 def orderSymbolList(sl):
 	"""In each section, the symbols will be ordered by number of architectures
@@ -138,7 +136,7 @@ def orderSymbolList(sl):
 	res = []
 
 	# Order the list of symbols based on the number of referencing architectures
-	# (for each symbol). 
+	# (for each symbol).
 	for order in list(reversed(range(1, len(considered_archs)+1))):
 		for symbol in sl:
 
@@ -178,7 +176,7 @@ def align(sl):
 
 	"pad before" automatically added by the linker to satisfy the alignment
 	constraint we put on the symobl (we choose the largest alignment constaint
-	of 	all referencing architectures. We need to add it by hand on each
+	of all referencing architectures. We need to add it by hand on each
 	architecture that is not referencing the symbol, though.
 	"pad after" is added by us so that the next symbol to be processed starts at
 	the same address on each architecture
@@ -221,11 +219,11 @@ if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
 	args = parseAndCheckArgs(parser)
-        Globals.POPCORN_LOCATION = args.compiler_inst
+	Globals.POPCORN_LOCATION = args.compiler_inst
 
-	# Set the considered architectures then grab input/output files from the 
+	# Set the considered architectures then grab input/output files from the
         # command line arguments
-        considered_archs = setConsideredArchs(args)
+	considered_archs = setConsideredArchs(args)
 	setInputOutputs(args)
 
 	# List of per-section symbols that we are going to fill and manipulate
