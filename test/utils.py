@@ -95,7 +95,7 @@ def warn(msg):
     ''' Print warning message. '''
     print("WARNING: {}".format(msg))
 
-def runCmd(args, wait=False, interactive=False, environment=None, sh=False):
+def runCmd(args, wait=False, interactive=False, environment=None):
     ''' Run a command.  The function returns different values based on whether
         wait=True or wait=False.
 
@@ -125,9 +125,9 @@ def runCmd(args, wait=False, interactive=False, environment=None, sh=False):
         errs = subprocess.PIPE
 
     if wait:
-        return subprocess.run(args, shell=sh, env=environment, stdin=ins,
-                              stdout=outs, stderr=errs, check=True).returncode
-    else: return subprocess.Popen(args, shell=sh, env=environment, stdin=ins,
+        return subprocess.run(args, env=environment, stdin=ins, stdout=outs,
+                              stderr=errs, check=True).returncode
+    else: return subprocess.Popen(args, env=environment, stdin=ins,
                                   stdout=outs, stderr=errs)
 
 def getCommandOutput(args):
@@ -144,6 +144,10 @@ def getCommandOutput(args):
 ###############################################################################
 # Platform
 ###############################################################################
+
+def distribution():
+    output = getCommandOutput(["lsb_release", "-i"])
+    return output.split()[2]
 
 def arch():
     ''' Return the architecture of the current system. '''
@@ -207,7 +211,8 @@ def sanitizeFile(filePath, checkExists=False):
     return sanitized
 
 def createBackup(filePath):
-    ''' Create a backup of a file '''
+    ''' Create a backup of a file.  Return the name of the created backup. '''
     backup = sanitizeFile(filePath, checkExists=True) + ".bak"
     shutil.copy(filePath, backup)
+    return backup
 
