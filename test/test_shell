@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Opens up a python interpreter with relevant imports and environments for
+# running pieces of the testing framework.  Useful for running small pieces or
+# testing functionality.
+
+CUR=$(pwd)
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+if [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "--help" ]; then
+  echo "$0: start a python shell with testing framework pre-loaded"
+  exit 0
+fi
+
+cd $DIR
+/usr/bin/python3 -i $DIR/env.py
+cd $CUR
+
