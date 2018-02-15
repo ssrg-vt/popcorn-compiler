@@ -99,7 +99,7 @@ def runCmd(args, wait=False, interactive=False, environment=None):
     ''' Run a command.  The function returns different values based on whether
         wait=True or wait=False.
 
-        wait=True:  wait for the process to exit and return it's code.  Raises
+        wait=True:  wait for the process to exit and return its code.  Raises
                     a subprocess.CalledProcessError if the executable returns
                     non-zero.  Use this to run tests and catch failures.
 
@@ -135,7 +135,8 @@ def getCommandOutput(args):
         returns non-zero, return None.
     '''
     try:
-        out = subprocess.check_output(args, stderr=subprocess.PIPE)
+        out = subprocess.run(args, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT).stdout
     except subprocess.CalledProcessError as e:
         return None
 
