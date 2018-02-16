@@ -104,15 +104,16 @@ def runCmd(args, wait=False, interactive=False, environment=None):
                     non-zero.  Use this to run tests and catch failures.
 
         wait=False: don't wait for the process to finish, but instead return
-                    a handle for the underlying process.  The user is
-                    responsible for reaping the child, checking error codes,
-                    etc.
+                    a handle for the process.  The user is responsible for
+                    checking error codes & reaping the child.
 
-        Additionally, raises a FileNotFoundException if the executable is not
-        found in the user's path.
+        Raises a FileNotFoundException if the executable is not found in the
+        user's path.
 
         If interactive=True, users see output/send input from the command line;
         otherwise, the caller can programmatically interact with the process.
+
+        If environment=None, the interpreter's environment is used.
      '''
     if not environment: environment = os.environ
     if interactive:
@@ -136,7 +137,7 @@ def getCommandOutput(args):
     '''
     try:
         out = subprocess.run(args, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT).stdout
+                             stderr=subprocess.STDOUT, check=True).stdout
     except subprocess.CalledProcessError as e:
         return None
 

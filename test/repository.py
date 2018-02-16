@@ -24,7 +24,7 @@ class GitRepo(utils.Prereqs):
                 self.clonedLocations.append(destination)
         else:
             args = [ "git", "clone", self.url, destination ]
-            utils.runCmd(args, wait=True, output=True)
+            utils.runCmd(args, wait=True, interactive=True)
             self.clonedLocations.append(destination)
 
 def getPopcornKernelRepo():
