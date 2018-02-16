@@ -32,8 +32,8 @@ static void __attribute__((constructor)) prefetch_initialize_lists()
   size_t i;
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
-    list_init(&requests[i].read);
-    list_init(&requests[i].write);
+    list_init(&requests[i].read, i);
+    list_init(&requests[i].write, i);
   }
 }
 

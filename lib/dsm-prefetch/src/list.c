@@ -6,9 +6,7 @@
  */
 
 #include <stdlib.h>
-#ifdef _DEBUG
 #include <stdio.h>
-#endif
 #include <assert.h>
 #include <stdbool.h>
 #include "list.h"
@@ -18,9 +16,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /* Allocate & initialize a new linked list node. */
-static node_t *node_create(memory_span_t *mem)
+static node_t *node_create(const memory_span_t *mem, int nid)
 {
   assert(mem && "Invalid memory span pointer");
+  // TODO use node-aware memory allocator
   node_t *n = (node_t *)malloc(sizeof(node_t));
   assert(n && "Invalid node pointer");
   n->mem = *mem;
@@ -45,56 +44,77 @@ static void node_free(node_t *n)
 // List API
 ///////////////////////////////////////////////////////////////////////////////
 
-void list_init(list_t *list)
+void list_init(list_t *l, int nid)
 {
   pthread_mutexattr_t attr;
-  assert(list && "Invalid list pointer");
-  list->head = list->tail = NULL;
-  list->size = 0;
+  assert(l && "Invalid list pointer");
+  l->head = l->tail = NULL;
+  l->size = 0;
+  l->nid = nid;
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init(&list->lock, &attr);
+  pthread_mutex_init(&l->lock, &attr);
   pthread_mutexattr_destroy(&attr);
 }
 
-size_t list_size(list_t *l)
+size_t list_size(const list_t *l)
 {
   assert(l && "Invalid list pointer");
   return l->size;
 }
 
 /*
- * Return whether two nodes should be merged, i.e., they contain overlapping
- * memory regions.  Note: a *must* be directly before b in sorted ordering in
- * the list.
+ * Return whether two nodes should be merged, i.e., they contain adjacent or
+ * overlapping memory regions.
  *
- * @param a a linked list node
- * @param b another linked list node
- * @return whether a & b overlap and should thus be merged
+ * Note: a *must* be before b in sorted ordering.
+ *
+ * @param a a memory span
+ * @param b a memory span
+ * @return whether a & b overlap/are adjacent and should be merged
  */
-static bool list_check_merge(node_t *a, node_t *b)
+static inline bool
+list_check_merge(const memory_span_t *a, const memory_span_t *b)
 {
-  assert(a && b &&
-         a->mem.low < b->mem.low &&
-         a->next == b && b->prev == a &&
-         "Invalid arguments to merge checking");
-  return a->mem.high >= b->mem.low;
+  assert(a && b && a->low <= b->low && "Invalid arguments to merge checking");
+  return (a->low == b->low) || (a->high >= b->low);
 }
 
 /*
- * Merge two nodes.  Merges b in to a and returns the merged node.  Note: a
- * *must* be directly before b in sorted ordering in the list.
+ * Return whether two nodes overlap.  This is slightly different from merge
+ * checking -- two spans overlap only if the high edge of the earlier span (in
+ * a sorted ordering) crosses the low edge of the later span, and do not
+ * overlap if they are only equal.  This is because memory spans denote memory
+ * regions up to but *not including* the high address.
+ *
+ * Note: a *must* be before b in sorted ordering.
+ *
+ * @param a a memory span
+ * @param b a memory span
+ * @return whether a & b overlap
+ */
+static inline bool
+list_check_overlap(const memory_span_t *a, const memory_span_t *b)
+{
+  assert(a && b && a->low <= b->low && "Invalid arguments to overlap checking");
+  return (a->low == b->low) || (a->high > b->low);
+}
+
+/*
+ * Merge two nodes.  Merges b in to a and returns the merged node.
+ *
+ * Note: a *must* be directly before b in sorted ordering in the list.
  *
  * @param a a linked list node
- * @param b another linked list node
+ * @param b a linked list node
  * @return the new merged node
  */
 static node_t *list_merge(list_t *l, node_t *a, node_t *b)
 {
   assert(l && a && b &&
-         a->mem.low < b->mem.low &&
+         a->mem.low <= b->mem.low &&
          a->next == b && b->prev == a &&
-         "Invalid arguments to merge checking");
+         "Invalid arguments to node merge");
 
 #ifdef _DEBUG
   printf("Merging 0x%lx - 0x%lx and 0x%lx - 0x%lx to 0x%lx - 0x%lx\n",
@@ -102,7 +122,6 @@ static node_t *list_merge(list_t *l, node_t *a, node_t *b)
          MIN(a->mem.low, b->mem.low), MAX(a->mem.high, b->mem.high));
 #endif
 
-  a->mem.low = MIN(a->mem.low, b->mem.low);
   a->mem.high = MAX(a->mem.high, b->mem.high);
   a->next = b->next;
   if(a->next) a->next->prev = a;
@@ -112,12 +131,13 @@ static node_t *list_merge(list_t *l, node_t *a, node_t *b)
   return a;
 }
 
-void list_insert(list_t *l, memory_span_t *mem)
+void list_insert(list_t *l, const memory_span_t *mem)
 {
-  node_t *cur, *prev, *next, *n = node_create(mem);
+  node_t *cur, *prev, *next, *n = node_create(mem, l->nid);
 
   assert(l && mem && "Invalid arguments to list_insert()");
   assert(n && "Invalid pointer returned by node_create()");
+  assert(mem->low < mem->high && "Invalid memory span");
 
   pthread_mutex_lock(&l->lock);
   if(!l->head)
@@ -141,7 +161,6 @@ void list_insert(list_t *l, memory_span_t *mem)
       n->next = cur;
       n->prev = NULL;
       l->head = n;
-      l->size++;
     }
     else if(!cur) // Last element in the list
     {
@@ -150,14 +169,9 @@ void list_insert(list_t *l, memory_span_t *mem)
       n->prev = cur;
       n->next = NULL;
       l->tail = n;
-      l->size++;
     }
     else if(cur->mem.low == n->mem.low) // Overlapping, merge cur & n
-    {
-      cur->mem.high = MAX(cur->mem.high, n->mem.high);
-      node_free(n);
-      n = cur;
-    }
+      n = list_merge(l, cur, n);
     else // In the middle of the list
     {
       next = cur;
@@ -166,25 +180,48 @@ void list_insert(list_t *l, memory_span_t *mem)
       n->prev = cur;
       next->prev = n;
       n->next = next;
-      l->size++;
     }
+    l->size++;
 
-    // Merge with neighbors
+    // Merge with predecessor span; can merge at most once.
     prev = n->prev;
-    while(prev && list_check_merge(prev, n))
-    {
-      n = list_merge(l, prev, n);
-      prev = n->prev;
-    }
+    if(list_check_merge(&n->prev->mem, &n->mem)) n = list_merge(l, prev, n);
 
+    // Merge with successor spans; can merge an arbitrary number of times.
     next = n->next;
-    while(next && list_check_merge(n, next))
+    while(next && list_check_merge(&n->mem, &next->mem))
     {
       n = list_merge(l, n, next);
       next = n->next;
     }
   }
   pthread_mutex_unlock(&l->lock);
+}
+
+bool list_overlaps(list_t *l, const memory_span_t *mem)
+{
+  bool overlaps = false;
+  node_t *next;
+
+  assert(l && mem && "Invalid arguments to list_overlaps()");
+
+  pthread_mutex_lock(&l->lock);
+  if(l->head)
+  {
+    // Seek to the location in the list where it could potentially overlap
+    next = l->head;
+    while(next && next->mem.low < mem->low) next = next->next;
+
+    if(!next) overlaps = list_check_overlap(&l->tail->mem, mem);
+    else
+    {
+      overlaps = list_check_overlap(&next->prev->mem, mem) ||
+                 list_check_overlap(mem, &next->mem);
+    }
+  }
+  pthread_mutex_unlock(&l->lock);
+
+  return overlaps;
 }
 
 void list_clear(list_t *l)
@@ -208,4 +245,21 @@ void list_clear(list_t *l)
 void list_atomic_start(list_t *l) { pthread_mutex_lock(&l->lock); }
 
 void list_atomic_end(list_t *l) { pthread_mutex_unlock(&l->lock); }
+
+void list_print(list_t *l)
+{
+  node_t *cur;
+
+  assert(l && "Invalid arguments to list_print()");
+
+  pthread_mutex_lock(&l->lock);
+  printf("List for node %d (%p) contains %lu spans\n", l->nid, l, l->size);
+  cur = l->head;
+  while(cur)
+  {
+    printf("  0x%lu - 0x%lu\n", cur->mem.low, cur->mem.high);
+    cur = cur->next;
+  }
+  pthread_mutex_unlock(&l->lock);
+}
 
