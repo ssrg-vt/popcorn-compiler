@@ -236,7 +236,7 @@ int st_userspace_rewrite(void* sp,
 
   if(!src_handle)
   {
-    ST_WARN("Could not load rewriting information for source!");
+    ST_WARN("Could not load rewriting information for source!\n");
     return 1;
   }
 
@@ -250,7 +250,7 @@ int st_userspace_rewrite(void* sp,
 
   if(!dest_handle)
   {
-    ST_WARN("Could not rewriting information for destination!");
+    ST_WARN("Could not rewriting information for destination!\n");
     return 1;
   }
 
