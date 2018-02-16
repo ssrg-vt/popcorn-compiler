@@ -280,6 +280,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
       MIGRATE;
       assert(0 && "Couldn't migrate!");
     }
+    else *pthread_migrate_args() = NULL;
   }
 }
 
