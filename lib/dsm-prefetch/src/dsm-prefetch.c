@@ -37,18 +37,31 @@ static void __attribute__((constructor)) prefetch_initialize_lists()
   }
 }
 
-void prefetch(access_type_t type, void *low, void *high)
+void popcorn_prefetch(access_type_t type, const void *low, const void *high)
 {
-  int nid = current_nid();
-  prefetch_node(nid, type, low, high);
+  popcorn_prefetch_node(current_nid(), type, low, high);
 }
 
-void prefetch_node(int nid, access_type_t type, void *low, void *high)
+void popcorn_prefetch_node(int nid,
+                           access_type_t type,
+                           const void *low,
+                           const void *high)
 {
   memory_span_t span;
 
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
-  assert(low < high && "Invalid memory span");
+
+  // Rather than using an assert, print warning (if type=debug) and return.
+  // This is because expressions used to calculate bounds may produce zero or
+  // high < low bounds based on an application's runtime values.
+  if(low >= high)
+  {
+#ifdef _DEBUG
+    printf("WARNING: invalid bounds %p - %p: %s", low, high,
+           low == high ? "zero-sized span" : "inverted bounds");
+#endif
+    return;
+  }
 
   span.low = (uint64_t)low;
   span.high = (uint64_t)high;
@@ -66,7 +79,7 @@ void prefetch_node(int nid, access_type_t type, void *low, void *high)
   }
 }
 
-size_t prefetch_num_requests(int nid, access_type_t type)
+size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
 {
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
 
@@ -80,13 +93,42 @@ size_t prefetch_num_requests(int nid, access_type_t type)
   return UINT64_MAX;
 }
 
-static inline void
-prefetch_span(int nid, access_type_t type, memory_span_t *span)
+static void
+prefetch_span(int nid, access_type_t type, const memory_span_t *span)
 {
   int current = current_nid();
   if(current != nid) migrate(nid, NULL, NULL);
 #ifdef _MANUAL_PREFETCH
-  // TODO manually prefetch that crap
+  volatile char *mem
+  char c = 0, c2;
+  for(mem = span->low; mem < span->high; mem += PAGESZ)
+  {
+    switch(type)
+    {
+    case READ: c += *(char *)mem; break;
+    case WRITE:
+      c2 = *(char *)mem;
+      c += c2;
+      *(char *)mem = c2;
+      break;
+    default: assert(false && "Unknown access type"); break;
+    }
+  }
+
+  // Make sure we touch the last page
+  mem &= ~0xfffUL;
+  if(mem > span->low && mem < span->high)
+  {
+    switch(type)
+    {
+    case READ: c += *(char *)mem; break;
+    case WRITE:
+      c2 = *(char *)mem;
+      c += c2;
+      *(char *)mem = c2;
+    default: assert(false && "Unknown access type"); break;
+    }
+  }
 #else
   switch(type)
   {
@@ -98,40 +140,54 @@ prefetch_span(int nid, access_type_t type, memory_span_t *span)
   if(current != nid) migrate(current, NULL, NULL);
 }
 
-void prefetch_execute(int nid)
+size_t popcorn_prefetch_execute(int nid)
 {
-  node_t *n;
+  size_t executed = 0;
+  const node_t *n;
+  const memory_span_t *span;
 
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
 
-  /* Send read prefetch requests. */
   list_atomic_start(&requests[nid].read);
+  list_atomic_start(&requests[nid].write);
+
+  // Send write requests
+  n = list_begin(&requests[nid].write);
+  while(n != list_end(&requests[nid].write))
+  {
+    span = list_get_span(n);
+
+    // Rather than prefetching the same region for both reading and writing,
+    // delete regions requested for writing from the read list
+    list_remove(&requests[nid].read, span);
+#ifdef _DEBUG
+    printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
+           nid, span->low, span->high);
+#endif
+    prefetch_span(nid, WRITE, span);
+    executed++;
+    n = list_next(n);
+  }
+  list_clear(&requests[nid].write);
+
+  // Send read requests
   n = requests[nid].read.head;
   while(n)
   {
+    span = list_get_span(n);
 #ifdef _DEBUG
     printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for reading\n",
-           nid, n->mem.low, n->mem.high);
+           nid, span->low, span->high);
 #endif
-    prefetch_span(nid, READ, &n->mem);
-    n = n->next;
+    prefetch_span(nid, READ, span);
+    executed++;
+    n = list_next(n);
   }
   list_clear(&requests[nid].read);
+
+  list_atomic_end(&requests[nid].write);
   list_atomic_end(&requests[nid].read);
 
-  /* Send write prefetch requests. */
-  list_atomic_start(&requests[nid].write);
-  n = requests[nid].write.head;
-  while(n)
-  {
-#ifdef _DEBUG
-    printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
-           nid, n->mem.low, n->mem.high);
-#endif
-    prefetch_span(nid, WRITE, &n->mem);
-    n = n->next;
-  }
-  list_clear(&requests[nid].write);
-  list_atomic_end(&requests[nid].write);
+  return executed;
 }
 

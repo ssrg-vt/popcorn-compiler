@@ -18,7 +18,8 @@
 typedef enum {
   READ,
   WRITE,
-  EXECUTE
+  EXECUTE,
+  RELEASE
 } access_type_t;
 
 /*
@@ -31,7 +32,7 @@ typedef enum {
  * @param low the lowest address of the memory span
  * @param high the highest address of the memory span
  */
-void prefetch(access_type_t type, void *low, void *high);
+void popcorn_prefetch(access_type_t type, const void *low, const void *high);
 
 /*
  * Request prefetching for a contiguous span of memory on a node.  Prefetch up
@@ -43,7 +44,10 @@ void prefetch(access_type_t type, void *low, void *high);
  * @param low the lowest address of the memory span
  * @param high the highest address of the memory span
  */
-void prefetch_node(int nid, access_type_t type, void *low, void *high);
+void popcorn_prefetch_node(int nid,
+                           access_type_t type,
+                           const void *low,
+                           const void *high);
 
 /*
  * Return the number of prefetch requests currently batched for a given
@@ -53,15 +57,16 @@ void prefetch_node(int nid, access_type_t type, void *low, void *high);
  * @param type access type
  * @return the number of prefetch requests batched
  */
-size_t prefetch_num_requests(int nid, access_type_t type);
+size_t popcorn_prefetch_num_requests(int nid, access_type_t type);
 
 /*
  * Inform the DSM of all outstanding prefetch requests for the specified node.
  * Thread safe, but really only needs to be called by one thread per node.
  *
  * @param nid the node for which to prefetch data
+ * @return the number of prefetch requests executed
  */
-void prefetch_execute(int nid);
+size_t popcorn_prefetch_execute(int nid);
 
 #endif
 
