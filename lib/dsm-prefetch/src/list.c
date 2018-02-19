@@ -29,7 +29,7 @@ static node_t *node_create(const memory_span_t *mem, int nid)
   node_t *n = (node_t *)malloc(sizeof(node_t));
   assert(n && "Invalid node pointer");
   n->mem = *mem;
-#ifdef _DEBUG
+#ifdef _CHECKS
   n->prev = n->next = NULL;
 #endif
   return n;
@@ -39,7 +39,7 @@ static node_t *node_create(const memory_span_t *mem, int nid)
 static void node_free(node_t *n)
 {
   assert(n && "Invalid node pointer");
-#ifdef _DEBUG
+#ifdef _CHECKS
   n->prev = n->next = NULL;
   n->mem.low = n->mem.high = 0;
 #endif
@@ -156,13 +156,11 @@ static node_t *list_merge(list_t *l, node_t *a, node_t *b)
          a->mem.low <= b->mem.low &&
          a->next == b && b->prev == a &&
          "Invalid arguments to node merge");
-
 #ifdef _DEBUG
   printf("Merging 0x%lx - 0x%lx and 0x%lx - 0x%lx to 0x%lx - 0x%lx\n",
          a->mem.low, a->mem.high, b->mem.low, b->mem.high,
          MIN(a->mem.low, b->mem.low), MAX(a->mem.high, b->mem.high));
 #endif
-
   a->mem.high = MAX(a->mem.high, b->mem.high);
   a->next = b->next;
   if(a->next) a->next->prev = a;
@@ -184,7 +182,9 @@ static node_t *list_delete(list_t *l, node_t *n)
   node_t *prev, *next = NULL;
 
   assert(l && n && "Invalid arguments to list_delete()");
-
+#ifdef _DEBUG
+  printf("Deleting 0x%lx - 0x%lx\n", n->mem.low, n->mem.high);
+#endif
   if(l->size == 1)
   {
     l->head = l->tail = NULL;
@@ -340,11 +340,23 @@ void list_remove(list_t *l, const memory_span_t *mem)
     else prev = l->tail;
     if(prev && list_check_overlap(&prev->mem, mem))
     {
-      if(prev->mem.high <= mem->high) prev->mem.high = mem->low;
+      if(prev->mem.high <= mem->high)
+      {
+#ifdef _DEBUG
+        printf("Resizing 0x%lx - 0x%lx to 0x%lx - 0x%lx\n",
+               prev->mem.low, prev->mem.high, prev->mem.low, mem->low);
+#endif
+        prev->mem.high = mem->low;
+      }
       else
       {
         // The memory region being removed is a strict subset of prev -- split
         // prev into two new nodes with mem removed.
+#ifdef _DEBUG
+        printf("Replacing 0x%lx - 0x%lx with 0x%lx - 0x%lx & 0x%lx - 0x%lx\n",
+               prev->mem.low, prev->mem.high, prev->mem.low, mem->low,
+               mem->high, prev->mem.high);
+#endif
         cur_span = prev->mem;
         list_delete(l, prev);
 
@@ -365,7 +377,14 @@ void list_remove(list_t *l, const memory_span_t *mem)
     while(cur && list_check_overlap(mem, &cur->mem))
     {
       if(list_check_contained(mem, &cur->mem)) cur = list_delete(l, cur);
-      else cur->mem.low = mem->high;
+      else
+      {
+#ifdef _DEBUG
+        printf("Resizing 0x%lx - 0x%lx to 0x%lx - 0x%lx\n",
+               cur->mem.low, cur->mem.high, mem->high, cur->mem.high);
+#endif
+        cur->mem.low = mem->high;
+      }
     }
   }
   pthread_mutex_unlock(&l->lock);

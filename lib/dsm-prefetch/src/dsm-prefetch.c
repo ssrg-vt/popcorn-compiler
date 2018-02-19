@@ -93,15 +93,12 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
   return UINT64_MAX;
 }
 
-static void
-prefetch_span(int nid, access_type_t type, const memory_span_t *span)
+static inline void __attribute__((optnone, unused))
+prefetch_span_manual(access_type_t type, const memory_span_t *span)
 {
-  int current = current_nid();
-  if(current != nid) migrate(nid, NULL, NULL);
-#ifdef _MANUAL_PREFETCH
-  volatile char *mem
+  volatile char *mem;
   char c = 0, c2;
-  for(mem = span->low; mem < span->high; mem += PAGESZ)
+  for(mem = (char *)span->low; mem < (char *)span->high; mem += PAGESZ)
   {
     switch(type)
     {
@@ -116,8 +113,8 @@ prefetch_span(int nid, access_type_t type, const memory_span_t *span)
   }
 
   // Make sure we touch the last page
-  mem &= ~0xfffUL;
-  if(mem > span->low && mem < span->high)
+  mem = (char *)((uint64_t)mem & ~0xfffUL);
+  if(mem > (char *)span->low && mem < (char *)span->high)
   {
     switch(type)
     {
@@ -129,6 +126,12 @@ prefetch_span(int nid, access_type_t type, const memory_span_t *span)
     default: assert(false && "Unknown access type"); break;
     }
   }
+}
+
+static void prefetch_span(access_type_t type, const memory_span_t *span)
+{
+#ifdef _MANUAL_PREFETCH
+  prefetch_span_manual(type, span);
 #else
   switch(type)
   {
@@ -137,16 +140,18 @@ prefetch_span(int nid, access_type_t type, const memory_span_t *span)
   default: assert(false && "Unknown access type"); break;
   }
 #endif
-  if(current != nid) migrate(current, NULL, NULL);
 }
 
 size_t popcorn_prefetch_execute(int nid)
 {
+  int current = current_nid();
   size_t executed = 0;
   const node_t *n;
   const memory_span_t *span;
 
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
+
+  if(current != nid) migrate(nid, NULL, NULL);
 
   list_atomic_start(&requests[nid].read);
   list_atomic_start(&requests[nid].write);
@@ -164,7 +169,7 @@ size_t popcorn_prefetch_execute(int nid)
     printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
            nid, span->low, span->high);
 #endif
-    prefetch_span(nid, WRITE, span);
+    prefetch_span(WRITE, span);
     executed++;
     n = list_next(n);
   }
@@ -179,7 +184,7 @@ size_t popcorn_prefetch_execute(int nid)
     printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for reading\n",
            nid, span->low, span->high);
 #endif
-    prefetch_span(nid, READ, span);
+    prefetch_span(READ, span);
     executed++;
     n = list_next(n);
   }
@@ -187,6 +192,8 @@ size_t popcorn_prefetch_execute(int nid)
 
   list_atomic_end(&requests[nid].write);
   list_atomic_end(&requests[nid].read);
+
+  if(current != nid) migrate(current, NULL, NULL);
 
   return executed;
 }
