@@ -85,15 +85,27 @@ MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
     MO = &MI->getOperand(1);
     if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
     else if(TargetValues::isSymbolValue(MO))
-      Val = new MachineSymbolRef(*MO, MI, true);
+      Val = new MachineSymbolRef(*MO, false, MI);
     break;
   case X86::MOV64rm:
-    // Note: codegen'd a PC relative symbol reference
     MO = &MI->getOperand(1 + X86::AddrBaseReg);
     MO2 = &MI->getOperand(1 + X86::AddrDisp);
+    // Note: codegen'd a PC relative symbol reference
+    // Note 2: we *must* ensure the symbol is const-qualified, otherwise we
+    // risk creating a new value if the symbol's value changes between when the
+    // initial load would have occurred and the transformation, e.g.,
+    //
+    //   movq <ga:mysym>, %rax
+    //   ... (somebody changes mysym's value) ...
+    //   callq <ga:myfunc>
+    //
+    // In this situation, the transformation occurs at the call site and
+    // retrieves the updated value rather than the value that would have been
+    // loaded at the ldr instruction.
     if(MO->isReg() && MO->getReg() == X86::RIP &&
-       TargetValues::isSymbolValue(MO2))
-      Val = new MachineSymbolRef(*MO2, MI, true);
+       TargetValues::isSymbolValue(MO2) &&
+       TargetValues::isSymbolValueConstant(MO2))
+        Val = new MachineSymbolRef(*MO2, true, MI);
     break;
   default:
     TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

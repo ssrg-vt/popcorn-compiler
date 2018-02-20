@@ -29,6 +29,8 @@
   X(RightShiftLog)   /* Right-shift (logical) the destination */ \
   X(RightShiftArith) /* Right-shift (arithmetic) the destination */ \
   X(Mask)            /* Apply bit mask to the destination */ \
+  X(Load32)          /* Load 32 bits from memory */ \
+  X(Load64)          /* Load 64 bits from memory */
 
 #endif
 

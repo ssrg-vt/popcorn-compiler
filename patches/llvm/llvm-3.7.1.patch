@@ -1315,7 +1315,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.def	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.def	(working copy)
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,36 @@
 +//===-- llvm/Target/StackTransformTypes.def - Generator Opcodes -*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1347,6 +1347,8 @@ Index: include/llvm/CodeGen/StackTransformTypes.def
 +  X(RightShiftLog)   /* Right-shift (logical) the destination */ \
 +  X(RightShiftArith) /* Right-shift (arithmetic) the destination */ \
 +  X(Mask)            /* Apply bit mask to the destination */ \
++  X(Load32)          /* Load 32 bits from memory */ \
++  X(Load64)          /* Load 64 bits from memory */
 +
 +#endif
 +
@@ -1354,7 +1356,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,544 @@
+@@ -0,0 +1,551 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1574,9 +1576,12 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  /// Get a symbol reference for label generation
 +  virtual MCSymbol *getReference(AsmPrinter &AP) const = 0;
 +
++  /// Return whether we are to load the reference's value
++  virtual bool isLoad() const { return false; }
++
 +protected:
-+  MachineReference(const MachineInstr *DefMI, bool Ptr)
-+    : MachineLiveVal(DefMI, Ptr) {}
++  MachineReference(const MachineInstr *DefMI)
++    : MachineLiveVal(DefMI, true) {}
 +  MachineReference(const MachineReference &C) : MachineLiveVal(C) {}
 +};
 +
@@ -1584,11 +1589,11 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +class MachineSymbolRef : public MachineReference {
 +public:
 +  MachineSymbolRef(const MachineOperand &Symbol,
-+                   const MachineInstr *DefMI,
-+                   bool Ptr)
-+    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
++                   bool Load,
++                   const MachineInstr *DefMI)
++    : MachineReference(DefMI), Symbol(Symbol), Load(Load) {}
 +  MachineSymbolRef(const MachineSymbolRef &C)
-+    : MachineReference(C), Symbol(C.Symbol) {}
++    : MachineReference(C), Symbol(C.Symbol), Load(C.Load) {}
 +  virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 +
 +  virtual enum Type getType() const { return SymbolRef; }
@@ -1597,6 +1602,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual bool operator==(const MachineLiveVal &RHS) const;
 +  virtual std::string toString() const;
 +  virtual MCSymbol *getReference(AsmPrinter &AP) const;
++  virtual bool isLoad() const { return Load; }
 +
 +private:
 +  // MCSymbols may not exist yet, so instead store the operand to look up the
@@ -1604,13 +1610,16 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  // Note: store hard-copy (not reference) because optimizations may convert
 +  // symbol reference to a different type, e.g., register
 +  const MachineOperand Symbol;
++
++  // Should we load the reference's value?
++  bool Load;
 +};
 +
 +/// MachineConstPoolRef - a reference to a constant pool entry
 +class MachineConstPoolRef : public MachineReference {
 +public:
-+  MachineConstPoolRef(int Index, const MachineInstr *DefMI, bool Ptr = false)
-+    : MachineReference(DefMI, Ptr), Index(Index) {}
++  MachineConstPoolRef(int Index, const MachineInstr *DefMI)
++    : MachineReference(DefMI), Index(Index) {}
 +  MachineConstPoolRef(const MachineConstPoolRef &C)
 +    : MachineReference(C), Index(C.Index) {}
 +  virtual MachineLiveVal *copy() const
@@ -2307,7 +2316,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,62 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2361,6 +2370,9 @@ Index: include/llvm/Target/TargetValues.h
 +  { return MO.isGlobal() || MO.isSymbol() || MO.isMCSymbol(); }
 +  static bool isSymbolValue(const MachineOperand *MO)
 +  { return isSymbolValue(*MO); }
++  static bool isSymbolValueConstant(const MachineOperand &MO);
++  static bool isSymbolValueConstant(const MachineOperand *MO)
++  { return isSymbolValueConstant(*MO); }
 +};
 +
 +} // End llvm namespace
@@ -6293,7 +6305,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +490,135 @@
+@@ -277,6 +490,136 @@
    return LiveOuts;
  }
  
@@ -6389,6 +6401,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +      Op.isGenerated = false;
 +      if(Val.second->isReference()) {
 +        const MachineReference &MR = (const MachineReference &)*Val.second;
++        if(MR.isLoad()) Op.InstType = ValueGenInst::Load64;
 +        Op.OperandType = Location::Constant;
 +        Op.Size = PtrSize;
 +        Op.isSymbol = true;
@@ -6429,7 +6442,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +627,46 @@
+@@ -285,21 +628,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6478,7 +6491,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +690,21 @@
+@@ -323,12 +691,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6503,7 +6516,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +787,11 @@
+@@ -411,8 +788,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6516,7 +6529,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +799,15 @@
+@@ -420,6 +800,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6532,7 +6545,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +827,20 @@
+@@ -439,14 +828,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6557,7 +6570,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +849,25 @@
+@@ -455,6 +850,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6583,7 +6596,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +883,29 @@
+@@ -470,23 +884,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6614,7 +6627,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +913,13 @@
+@@ -494,10 +914,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6629,7 +6642,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +931,31 @@
+@@ -509,6 +932,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -6661,7 +6674,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +962,7 @@
+@@ -515,7 +963,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -6670,7 +6683,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +986,7 @@
+@@ -539,7 +987,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -7992,7 +8005,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformTypes.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformTypes.cpp	(working copy)
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,258 @@
 +//===-- llvm/Target/TargetValueGenerator.cpp - Value Generator --*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8052,13 +8065,15 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
 +  if(RHS.isSymbolRef()) {
 +    const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
-+    if(&MSR.Symbol == &Symbol) return true;
++    if(&MSR.Symbol == &Symbol && MSR.Load == Load) return true;
 +  }
 +  return false;
 +}
 +
 +std::string MachineSymbolRef::toString() const {
-+  std::string buf = "reference to symbol '";
++  std::string buf;
++  if(Load) buf = "dereference symbol '";
++  else buf = "reference to symbol '";
 +  switch(Symbol.getType()) {
 +  case MachineOperand::MO_GlobalAddress:
 +    buf += Symbol.getGlobal()->getName();
@@ -8719,7 +8734,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,207 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8850,8 +8865,20 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    // emitted multiple instructions in order to form the full address.  We,
 +    // however, don't have the instruction encoding limitations.
 +    // TODO verify this note above is true, maybe using MO::getTargetFlags?
-+    if(TargetValues::isSymbolValue(MI->getOperand(2)))
-+      return new MachineSymbolRef(MI->getOperand(2), MI, true);
++    // Note 2: we *must* ensure the symbol is const-qualified, otherwise we
++    // risk creating a new value if the symbol's value changes between when the
++    // initial load would have occurred and the transformation, e.g.,
++    //
++    //   ldr x20, <ga:mysym>
++    //   ... (somebody changes mysym's value) ...
++    //   bl <ga:myfunc>
++    //
++    // In this situation, the transformation occurs at the call site and
++    // retrieves the updated value rather than the value that would have been
++    // loaded at the ldr instruction.
++    if(TargetValues::isSymbolValue(MI->getOperand(2)) &&
++       TargetValues::isSymbolValueConstant(MI->getOperand(2)))
++      return new MachineSymbolRef(MI->getOperand(2), true, MI);
 +    break;
 +  default: break;
 +  }
@@ -8872,9 +8899,9 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  case AArch64::MOVaddr:
 +    MO = &MI->getOperand(1);
 +    if(MO->isCPI())
-+      Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
++      Val = new MachineConstPoolRef(MO->getIndex(), MI);
 +    else if(TargetValues::isSymbolValue(MO))
-+      Val = new MachineSymbolRef(*MO, MI, true);
++      Val = new MachineSymbolRef(*MO, false, MI);
 +    break;
 +  case AArch64::COPY:
 +    MO = &MI->getOperand(1);
@@ -8958,6 +8985,18 @@ Index: lib/Target/AArch64/CMakeLists.txt
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
+Index: lib/Target/CMakeLists.txt
+===================================================================
+--- lib/Target/CMakeLists.txt	(revision 320332)
++++ lib/Target/CMakeLists.txt	(working copy)
+@@ -8,6 +8,7 @@
+   TargetMachineC.cpp
+   TargetRecip.cpp
+   TargetSubtargetInfo.cpp
++  TargetValues.cpp
+ 
+   ADDITIONAL_HEADER_DIRS
+   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Target
 Index: lib/Target/PowerPC/CMakeLists.txt
 ===================================================================
 --- lib/Target/PowerPC/CMakeLists.txt	(revision 320332)
@@ -9138,7 +9177,7 @@ Index: lib/Target/PowerPC/PPCValues.cpp
 +                                          const CallInst *IRStackMap) const {
 +  if(!MF->getRegInfo().use_empty(PPC::X2)) {
 +    MachineOperand TOCRef = MachineOperand::CreateES(".TOC.");
-+    MachineSymbolRef TOCSym(TOCRef, MIStackMap, true);
++    MachineSymbolRef TOCSym(TOCRef, false, MIStackMap);
 +
 +    DEBUG(dbgs() << "   + Setting R2 to be TOC pointer\n");
 +    MachineLiveReg TOCPtr(PPC::X2);
@@ -9204,6 +9243,52 @@ Index: lib/Target/TargetMachine.cpp
  TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
    return TargetIRAnalysis([this](Function &F) {
      return TargetTransformInfo(F.getParent()->getDataLayout());
+Index: lib/Target/TargetValues.cpp
+===================================================================
+--- lib/Target/TargetValues.cpp	(nonexistent)
++++ lib/Target/TargetValues.cpp	(working copy)
+@@ -0,0 +1,41 @@
++//===--------- TargetValues.cpp - Target value generator helpers ----------===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++
++#include "llvm/IR/GlobalVariable.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Target/TargetValues.h"
++
++#define DEBUG_TYPE "stacktransform"
++
++using namespace llvm;
++
++bool TargetValues::isSymbolValueConstant(const MachineOperand &MO) {
++  const GlobalValue *GV;
++  const GlobalVariable *GVar;
++
++  switch(MO.getType()) {
++  case MachineOperand::MO_GlobalAddress:
++    GV = MO.getGlobal();
++    if(isa<Function>(GV)) return true;
++    else if((GVar = dyn_cast<GlobalVariable>(GV)) && GVar->isConstant())
++      return true;
++    break;
++  case MachineOperand::MO_ExternalSymbol:
++    // TODO
++    break;
++  case MachineOperand::MO_MCSymbol:
++    // TODO
++    break;
++  default:
++    DEBUG(dbgs() << "Unhandled reference type\n");
++    break;
++  }
++  return false;
++}
++
 Index: lib/Target/X86/CMakeLists.txt
 ===================================================================
 --- lib/Target/X86/CMakeLists.txt	(revision 320332)
@@ -9391,7 +9476,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,119 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9479,15 +9564,27 @@ Index: lib/Target/X86/X86Values.cpp
 +    MO = &MI->getOperand(1);
 +    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
 +    else if(TargetValues::isSymbolValue(MO))
-+      Val = new MachineSymbolRef(*MO, MI, true);
++      Val = new MachineSymbolRef(*MO, false, MI);
 +    break;
 +  case X86::MOV64rm:
-+    // Note: codegen'd a PC relative symbol reference
 +    MO = &MI->getOperand(1 + X86::AddrBaseReg);
 +    MO2 = &MI->getOperand(1 + X86::AddrDisp);
++    // Note: codegen'd a PC relative symbol reference
++    // Note 2: we *must* ensure the symbol is const-qualified, otherwise we
++    // risk creating a new value if the symbol's value changes between when the
++    // initial load would have occurred and the transformation, e.g.,
++    //
++    //   movq <ga:mysym>, %rax
++    //   ... (somebody changes mysym's value) ...
++    //   callq <ga:myfunc>
++    //
++    // In this situation, the transformation occurs at the call site and
++    // retrieves the updated value rather than the value that would have been
++    // loaded at the ldr instruction.
 +    if(MO->isReg() && MO->getReg() == X86::RIP &&
-+       TargetValues::isSymbolValue(MO2))
-+      Val = new MachineSymbolRef(*MO2, MI, true);
++       TargetValues::isSymbolValue(MO2) &&
++       TargetValues::isSymbolValueConstant(MO2))
++        Val = new MachineSymbolRef(*MO2, true, MI);
 +    break;
 +  default:
 +    TII =  MI->getParent()->getParent()->getSubtarget().getInstrInfo();

@@ -190,7 +190,7 @@ obj/musl-gcc: config.mak
 	chmod +x $@
 
 obj/%-clang: $(srcdir)/tools/%-clang.in config.mak
-	sed -e 's!@CC@!$(WRAPCC_CLANG)!g' -e 's!@PREFIX@!$(prefix)!g' -e 's!@INCDIR@!$(includedir)!g' -e 's!@LIBDIR@!$(libdir)!g' -e 's!@LDSO@!$(LDSO_PATHNAME)!g' $< > $@
+	sed -e 's!@CC@!$(WRAPCC_CLANG)!g' -e 's!@TARGET@!$(ARCH)!g' -e 's!@PREFIX@!$(prefix)!g' -e 's!@INCDIR@!$(includedir)!g' -e 's!@LIBDIR@!$(libdir)!g' -e 's!@LDSO@!$(LDSO_PATHNAME)!g' $< > $@
 	chmod +x $@
 
 $(DESTDIR)$(bindir)/%: obj/%
