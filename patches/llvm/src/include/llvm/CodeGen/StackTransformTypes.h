@@ -217,9 +217,12 @@ public:
   /// Get a symbol reference for label generation
   virtual MCSymbol *getReference(AsmPrinter &AP) const = 0;
 
+  /// Return whether we are to load the reference's value
+  virtual bool isLoad() const { return false; }
+
 protected:
-  MachineReference(const MachineInstr *DefMI, bool Ptr)
-    : MachineLiveVal(DefMI, Ptr) {}
+  MachineReference(const MachineInstr *DefMI)
+    : MachineLiveVal(DefMI, true) {}
   MachineReference(const MachineReference &C) : MachineLiveVal(C) {}
 };
 
@@ -227,11 +230,11 @@ protected:
 class MachineSymbolRef : public MachineReference {
 public:
   MachineSymbolRef(const MachineOperand &Symbol,
-                   const MachineInstr *DefMI,
-                   bool Ptr)
-    : MachineReference(DefMI, Ptr), Symbol(Symbol) {}
+                   bool Load,
+                   const MachineInstr *DefMI)
+    : MachineReference(DefMI), Symbol(Symbol), Load(Load) {}
   MachineSymbolRef(const MachineSymbolRef &C)
-    : MachineReference(C), Symbol(C.Symbol) {}
+    : MachineReference(C), Symbol(C.Symbol), Load(C.Load) {}
   virtual MachineLiveVal *copy() const { return new MachineSymbolRef(*this); }
 
   virtual enum Type getType() const { return SymbolRef; }
@@ -240,6 +243,7 @@ public:
   virtual bool operator==(const MachineLiveVal &RHS) const;
   virtual std::string toString() const;
   virtual MCSymbol *getReference(AsmPrinter &AP) const;
+  virtual bool isLoad() const { return Load; }
 
 private:
   // MCSymbols may not exist yet, so instead store the operand to look up the
@@ -247,13 +251,16 @@ private:
   // Note: store hard-copy (not reference) because optimizations may convert
   // symbol reference to a different type, e.g., register
   const MachineOperand Symbol;
+
+  // Should we load the reference's value?
+  bool Load;
 };
 
 /// MachineConstPoolRef - a reference to a constant pool entry
 class MachineConstPoolRef : public MachineReference {
 public:
-  MachineConstPoolRef(int Index, const MachineInstr *DefMI, bool Ptr = false)
-    : MachineReference(DefMI, Ptr), Index(Index) {}
+  MachineConstPoolRef(int Index, const MachineInstr *DefMI)
+    : MachineReference(DefMI), Index(Index) {}
   MachineConstPoolRef(const MachineConstPoolRef &C)
     : MachineReference(C), Index(C.Index) {}
   virtual MachineLiveVal *copy() const

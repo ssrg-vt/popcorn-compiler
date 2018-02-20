@@ -128,8 +128,20 @@ AArch64Values::genLoadRegValue(const MachineInstr *MI) const {
     // emitted multiple instructions in order to form the full address.  We,
     // however, don't have the instruction encoding limitations.
     // TODO verify this note above is true, maybe using MO::getTargetFlags?
-    if(TargetValues::isSymbolValue(MI->getOperand(2)))
-      return new MachineSymbolRef(MI->getOperand(2), MI, true);
+    // Note 2: we *must* ensure the symbol is const-qualified, otherwise we
+    // risk creating a new value if the symbol's value changes between when the
+    // initial load would have occurred and the transformation, e.g.,
+    //
+    //   ldr x20, <ga:mysym>
+    //   ... (somebody changes mysym's value) ...
+    //   bl <ga:myfunc>
+    //
+    // In this situation, the transformation occurs at the call site and
+    // retrieves the updated value rather than the value that would have been
+    // loaded at the ldr instruction.
+    if(TargetValues::isSymbolValue(MI->getOperand(2)) &&
+       TargetValues::isSymbolValueConstant(MI->getOperand(2)))
+      return new MachineSymbolRef(MI->getOperand(2), true, MI);
     break;
   default: break;
   }
@@ -150,9 +162,9 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
   case AArch64::MOVaddr:
     MO = &MI->getOperand(1);
     if(MO->isCPI())
-      Val = new MachineConstPoolRef(MO->getIndex(), MI, true);
+      Val = new MachineConstPoolRef(MO->getIndex(), MI);
     else if(TargetValues::isSymbolValue(MO))
-      Val = new MachineSymbolRef(*MO, MI, true);
+      Val = new MachineSymbolRef(*MO, false, MI);
     break;
   case AArch64::COPY:
     MO = &MI->getOperand(1);

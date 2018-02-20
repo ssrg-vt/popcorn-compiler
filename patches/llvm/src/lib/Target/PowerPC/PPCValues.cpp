@@ -29,7 +29,7 @@ void PPCValues::addRequiredArchLiveValues(MachineFunction *MF,
                                           const CallInst *IRStackMap) const {
   if(!MF->getRegInfo().use_empty(PPC::X2)) {
     MachineOperand TOCRef = MachineOperand::CreateES(".TOC.");
-    MachineSymbolRef TOCSym(TOCRef, MIStackMap, true);
+    MachineSymbolRef TOCSym(TOCRef, false, MIStackMap);
 
     DEBUG(dbgs() << "   + Setting R2 to be TOC pointer\n");
     MachineLiveReg TOCPtr(PPC::X2);

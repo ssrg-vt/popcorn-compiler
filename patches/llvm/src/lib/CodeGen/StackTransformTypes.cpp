@@ -57,13 +57,15 @@ std::string ValueGenInst::getInstNameStr(enum InstType Type) {
 bool MachineSymbolRef::operator==(const MachineLiveVal &RHS) const {
   if(RHS.isSymbolRef()) {
     const MachineSymbolRef &MSR = (const MachineSymbolRef &)RHS;
-    if(&MSR.Symbol == &Symbol) return true;
+    if(&MSR.Symbol == &Symbol && MSR.Load == Load) return true;
   }
   return false;
 }
 
 std::string MachineSymbolRef::toString() const {
-  std::string buf = "reference to symbol '";
+  std::string buf;
+  if(Load) buf = "dereference symbol '";
+  else buf = "reference to symbol '";
   switch(Symbol.getType()) {
   case MachineOperand::MO_GlobalAddress:
     buf += Symbol.getGlobal()->getName();
