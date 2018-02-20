@@ -5,9 +5,6 @@
  * Date: February 13th, 2018
  */
 
-#ifdef _DEBUG
-#include <stdio.h>
-#endif
 #include <stdbool.h>
 #include <assert.h>
 #include <migrate.h>
@@ -16,6 +13,18 @@
 #include "list.h"
 #include "dsm-prefetch.h"
 #include "sys/mman.h"
+
+/* Get a human-readable string for the access type. */
+static inline const char *access_type_str(access_type_t type)
+{
+  switch(type)
+  {
+  case READ: return "reading";
+  case WRITE: return "writing";
+  case RELEASE: return "release";
+  default: return "(unknown)";
+  }
+}
 
 /* Per-node lists containing read, write & release prefetch requests. */
 typedef struct {
@@ -57,20 +66,16 @@ void popcorn_prefetch_node(int nid,
   // high < low bounds based on an application's runtime values.
   if(low >= high)
   {
-#ifdef _DEBUG
-    printf("WARNING: invalid bounds %p - %p: %s", low, high,
-           low == high ? "zero-sized span" : "inverted bounds");
-#endif
+    debug("WARNING: invalid bounds %p - %p: %s", low, high,
+          low == high ? "zero-sized span" : "inverted bounds");
     return;
   }
 
   span.low = PAGE_ROUND_DOWN((uint64_t)low);
   span.high = PAGE_ROUND_UP((uint64_t)high);
 
-#ifdef _DEBUG
-  printf("Node %d: queueing prefetch of 0x%lx -> 0x%lx for %s\n",
-         nid, span.low, span.high, type == READ ? "reading" : "writing");
-#endif
+  debug("Node %d: queueing span 0x%lx -> 0x%lx for %s\n",
+        nid, span.low, span.high, access_type_str(type));
 
   switch(type)
   {
@@ -182,10 +187,10 @@ size_t popcorn_prefetch_execute_node(int nid)
     // If we're prefetching a region, it doesn't make sense to release
     // ownership.  Remove any prefetched regions from the release list.
     list_remove(&requests[nid].release, span);
-#ifdef _DEBUG
-    printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
-           nid, span->low, span->high);
-#endif
+
+    debug("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
+          nid, span->low, span->high);
+
     prefetch_span(WRITE, span);
     executed++;
     n = list_next(n);
@@ -201,10 +206,10 @@ size_t popcorn_prefetch_execute_node(int nid)
     // If we're prefetching a region, it doesn't make sense to release
     // ownership.  Remove any prefetched regions from the release list.
     list_remove(&requests[nid].release, span);
-#ifdef _DEBUG
-    printf("Node %d: executing prefetch of 0x%lx -> 0x%lx for reading\n",
-           nid, span->low, span->high);
-#endif
+
+    debug("Node %d: executing prefetch of 0x%lx -> 0x%lx for reading\n",
+          nid, span->low, span->high);
+
     prefetch_span(READ, span);
     executed++;
     n = list_next(n);
@@ -216,10 +221,10 @@ size_t popcorn_prefetch_execute_node(int nid)
   while(n != list_end(&requests[nid].release))
   {
     span = list_get_span(n);
-#ifdef _DEBUG
-    printf("Node %d: executing release of 0x%lx -> 0x%lx\n",
-           nid, span->low, span->high);
-#endif
+
+    debug("Node %d: executing release of 0x%lx -> 0x%lx\n",
+          nid, span->low, span->high);
+
     prefetch_span(RELEASE, span);
     executed++;
     n = list_next(n);

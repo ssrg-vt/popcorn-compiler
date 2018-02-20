@@ -27,5 +27,13 @@ typedef struct {
 #define MADV_WRITE -256 // Request read permissions
 #define MADV_RELEASE -255 // Forfeit current permissions
 
+/* Enable/disable printing debugging messages */
+#ifdef _DEBUG
+#include <stdio.h>
+#define debug( ... ) fprintf(stderr, __VA_ARGS__)
+#else
+#define debug( ... )
+#endif
+
 #endif
 
