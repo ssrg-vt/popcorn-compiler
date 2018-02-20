@@ -12,21 +12,25 @@
 #ifndef _DSM_PREFETCH_H
 #define _DSM_PREFETCH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 /* How a thread will access memory. */
 typedef enum {
-  READ,
-  WRITE,
-  EXECUTE,
-  RELEASE
+  READ,    /* Read/replicated permissions */
+  WRITE,   /* Write/exclusive permissions */
+  EXECUTE, /* Execution permissions -- currently unimplemented! */
+  RELEASE  /* Release current permissions */
 } access_type_t;
 
 /*
  * Request prefetching for a contiguous span of memory for the node on which
- * the thread is currently executing.  Prefetch up to but excluding the highest
- * address.  Note this API does not prefetch anything, but only queues a
- * request to be sent by prefetch_execute().
+ * the thread is currently executing.  Prefetch the pages containing up to but
+ * excluding the highest address.  Note this API does not prefetch anything,
+ * but only queues a request to be sent by popcorn_prefetch_execute().
  *
  * @param type how the thread will be accessing the memory
  * @param low the lowest address of the memory span
@@ -35,9 +39,10 @@ typedef enum {
 void popcorn_prefetch(access_type_t type, const void *low, const void *high);
 
 /*
- * Request prefetching for a contiguous span of memory on a node.  Prefetch up
- * to but excluding the highest address.  Note this API does not prefetch
- * anything, but only queues a request to be sent by prefetch_execute().
+ * Request prefetching for a contiguous span of memory on a node.  Prefetch the
+ * pages containing up to but excluding the highest address.  Note this API
+ * does not prefetch anything, but only queues a request to be sent by
+ * popcorn_prefetch_execute().
  *
  * @param nid the node on which the thread will be accessing the memory
  * @param type how the thread will be accessing the memory
@@ -50,8 +55,8 @@ void popcorn_prefetch_node(int nid,
                            const void *high);
 
 /*
- * Return the number of prefetch requests currently batched for a given
- * node & access type.
+ * Return the number of prefetch requests currently batched for a given node &
+ * access type.
  *
  * @param nid the node for the prefetch requests
  * @param type access type
@@ -60,13 +65,26 @@ void popcorn_prefetch_node(int nid,
 size_t popcorn_prefetch_num_requests(int nid, access_type_t type);
 
 /*
- * Inform the DSM of all outstanding prefetch requests for the specified node.
- * Thread safe, but really only needs to be called by one thread per node.
+ * Inform the DSM of all outstanding prefetch requests for the node on which
+ * the thread is currently executing and clear the queued requests.  Only needs
+ * to be called once per node.
+ *
+ * @return the number of prefetch requests executed
+ */
+size_t popcorn_prefetch_execute();
+
+/*
+ * Inform the DSM of all outstanding prefetch requests for the specified node
+ * and clear the queued requests.  Only needs to be called once per node.
  *
  * @param nid the node for which to prefetch data
  * @return the number of prefetch requests executed
  */
-size_t popcorn_prefetch_execute(int nid);
+size_t popcorn_prefetch_execute_node(int nid);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 
