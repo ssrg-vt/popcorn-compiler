@@ -175,10 +175,22 @@ class VM(utils.Prereqs):
             return True
         except subprocess.CalledProcessError as e: return False
 
+    def responding(self):
+        ''' Send a basic command to the VM to see if it's responding.  Return
+            true if so or false otherwise.
+        '''
+        try:
+            run = [ "ssh", "popcorn@{}".format(self.ip), "uname" ]
+            utils.runCmd(run, wait=True)
+            return True
+        except Exception as e:
+            sleep(1)
+            return False
+
     def alive(self):
         ''' Return true if the VM is alive and responding, or false otherwise.
         '''
-        return self.process.alive() and self.ping()
+        return self.process.alive() and self.ping() and self.responding()
 
     # VM management APIs
 
