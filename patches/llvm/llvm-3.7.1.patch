@@ -5970,6 +5970,16 @@ Index: lib/CodeGen/Passes.cpp
    // Finally rewrite virtual registers.
    addPass(&VirtRegRewriterID);
  
+@@ -766,7 +797,8 @@
+   // Run post-ra machine LICM to hoist reloads / remats.
+   //
+   // FIXME: can this move into MachineLateOptimization?
+-  addPass(&PostRAMachineLICMID);
++  if(getOptLevel() != CodeGenOpt::None)
++    addPass(&PostRAMachineLICMID);
+ }
+ 
+ //===---------------------------------------------------------------------===//
 Index: lib/CodeGen/RegAllocFast.cpp
 ===================================================================
 --- lib/CodeGen/RegAllocFast.cpp	(revision 320332)
