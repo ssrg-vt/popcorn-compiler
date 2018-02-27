@@ -40,7 +40,8 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
         MachineStackObject(MI->getOperand(1 + X86::AddrBaseReg).getIndex(),
                            false, MI, true);
     }
-    else {
+    else if(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
+            MI->getOperand(1 + X86::AddrDisp).isImm()) {
       // Initialize to index register * scale if indexing, or zero otherwise
       Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
       if(Reg) {
@@ -51,9 +52,6 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
       else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
 
       // Add the base register & displacement
-      assert(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
-             MI->getOperand(1 + X86::AddrDisp).isImm());
-
       Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
       Imm = MI->getOperand(1 + X86::AddrDisp).getImm();
       IL.emplace_back(new RegInstruction<InstType::Add>(Reg));
