@@ -83,8 +83,8 @@ class StackTransformMetadata : public MachineFunctionPass {
   typedef std::map<unsigned, ValueVecPtr> RegValsMap;
 
   /// Mapping between stackmaps and virtual registers referenced by the stackmap
-  typedef std::pair<const MachineInstr *, RegValsMap> SMVregsPair;
-  typedef std::map<const MachineInstr *, RegValsMap> SMVregsMap;
+  typedef std::pair<const MachineInstr *, RegValsMap> SMRegPair;
+  typedef std::map<const MachineInstr *, RegValsMap> SMRegMap;
 
   /// Mapping between stack slots and IR operands
   typedef std::pair<int, ValueVecPtr> StackValsPair;
@@ -178,7 +178,7 @@ class StackTransformMetadata : public MachineFunctionPass {
   /// Stackmap/call instructions, mapping of virtual registers & stack slots to
   /// IR values, list of instructions that copy to/from the stack
   SmallVector<SMInstBundle, 32> SM;
-  SMVregsMap SMVregs;
+  SMRegMap SMRegs;
   SMStackSlotMap SMStackSlots;
   StackSlotCopies SSUses;
 
@@ -187,7 +187,7 @@ class StackTransformMetadata : public MachineFunctionPass {
   // Reset the analysis for a new function
   void reset() {
     SM.clear();
-    SMVregs.clear();
+    SMRegs.clear();
     SMStackSlots.clear();
     SSUses.clear();
   }
@@ -481,19 +481,21 @@ void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
 /// virtual register/stack slot <-> IR value mappings
 void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
                                         const MachineInstr *MISM) {
-  RegValsMap::iterator VregIt;
+  RegValsMap::iterator RegIt;
   StackValsMap::iterator SSIt;
   MachineInstr::const_mop_iterator MOit;
 
   // Initialize new storage location/IR map objects (i.e., for virtual
   // registers & stack slots) for the stackmap
-  SMVregs.emplace(MISM, RegValsMap());
+  SMRegs.emplace(MISM, RegValsMap());
   SMStackSlots.emplace(MISM, StackValsMap());
 
   // Loop over all operands
   MOit = std::next(MISM->operands_begin(), 2);
   for(size_t i = 2; i < IRSM->getNumArgOperands(); i++) {
     const Value *IRVal = IRSM->getArgOperand(i);
+    assert(IRVal && "Invalid stackmap IR operand");
+
     if(MOit->isImm()) { // Map IR values to stack slots
       int FrameIdx = INT32_MAX;
       switch(MOit->getImm()) {
@@ -513,7 +515,6 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       default: llvm_unreachable("Unrecognized stackmap operand type"); break;
       }
 
-      assert(IRVal && "Invalid stackmap IR operand");
       assert(MFI->getObjectIndexBegin() <= FrameIdx &&
              FrameIdx <= MFI->getObjectIndexEnd() && "Invalid frame index");
       assert(!MFI->isDeadObjectIndex(FrameIdx) && "Dead frame index");
@@ -531,17 +532,14 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
       unsigned Reg = MOit->getReg();
       MOit++;
 
-      assert(IRVal && "Invalid stackmap IR operand");
-      assert(TargetRegisterInfo::isVirtualRegister(Reg) &&
-             "Should not have been converted to physical registers yet");
       DEBUG(dumpReg(Reg, IRVal););
 
       // Update the list of IR values mapped to the virtual register (multiple
       // IR values may be mapped to a single virtual register).
-      VregIt = SMVregs[MISM].find(Reg);
-      if(VregIt == SMVregs[MISM].end())
-        VregIt = SMVregs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
-      VregIt->second->push_back(IRVal);
+      RegIt = SMRegs[MISM].find(Reg);
+      if(RegIt == SMRegs[MISM].end())
+        RegIt = SMRegs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
+      RegIt->second->push_back(IRVal);
     } else {
       llvm_unreachable("Unrecognized stackmap operand type.");
     }
@@ -659,16 +657,16 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
 
         // Update operand -> IR mapping to source vreg
         if(Found) {
-          assert(SMVregs[SM].count(RCL->Vreg) &&
+          assert(SMRegs[SM].count(RCL->Vreg) &&
                  "Unhandled register operand in stackmap!");
-          VregIt = SMVregs[SM].find(RCL->Vreg);
-          SrcIt = SMVregs[SM].find(RCL->SrcVreg);
-          if(SrcIt != SMVregs[SM].end()) {
+          VregIt = SMRegs[SM].find(RCL->Vreg);
+          SrcIt = SMRegs[SM].find(RCL->SrcVreg);
+          if(SrcIt != SMRegs[SM].end()) {
             for(auto IRVal : *VregIt->second)
               SrcIt->second->push_back(IRVal);
           }
-          else SMVregs[SM].emplace(RCL->SrcVreg, VregIt->second);
-          SMVregs[SM].erase(RCL->Vreg);
+          else SMRegs[SM].emplace(RCL->SrcVreg, VregIt->second);
+          SMRegs[SM].erase(RCL->Vreg);
           Changed = true;
         }
 
@@ -700,16 +698,16 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
 
         // Update operand -> IR mapping to source stack slot
         if(Found) {
-          assert(SMVregs[SM].count(SCL->Vreg) &&
+          assert(SMRegs[SM].count(SCL->Vreg) &&
                  "Unhandled register operand in stackmap!");
           SSIt = SMStackSlots[SM].find(SCL->StackSlot);
-          VregIt = SMVregs[SM].find(SCL->Vreg);
+          VregIt = SMRegs[SM].find(SCL->Vreg);
           if(SSIt != SMStackSlots[SM].end()) {
             for(auto IRVal : *VregIt->second)
               SSIt->second->push_back(IRVal);
           }
           else SMStackSlots[SM].emplace(SCL->StackSlot, VregIt->second);
-          SMVregs[SM].erase(SCL->Vreg);
+          SMRegs[SM].erase(SCL->Vreg);
           Changed = true;
         }
 
@@ -747,13 +745,13 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
           InB->clearRegisterDeads(SCL->Vreg);
           updateRegisterLiveInterval(*SrcOp, SM);
 
-          VregIt = SMVregs[SM].find(SCL->Vreg);
+          VregIt = SMRegs[SM].find(SCL->Vreg);
           SSIt = SMStackSlots[SM].find(SCL->StackSlot);
-          if(VregIt != SMVregs[SM].end()) {
+          if(VregIt != SMRegs[SM].end()) {
             for(auto IRVal : *SSIt->second)
               VregIt->second->push_back(IRVal);
           }
-          else SMVregs[SM].emplace(SCL->Vreg, SSIt->second);
+          else SMRegs[SM].emplace(SCL->Vreg, SSIt->second);
           SMStackSlots[SM].erase(SCL->StackSlot);
           Changed = true;
         }
@@ -810,7 +808,7 @@ bool StackTransformMetadata::addVregMetadata(unsigned Vreg,
                                              const SMInstBundle &SM) {
   const CallInst *IRSM = getIRSM(SM);
   const MachineInstr *MICall = getMICall(SM);
-  RegValsMap &Vregs = SMVregs[getMISM(SM)];
+  RegValsMap &Vregs = SMRegs[getMISM(SM)];
 
   assert(TargetRegisterInfo::isVirtualRegister(Vreg) && VRM->hasPhys(Vreg) &&
          "Cannot add virtual register metadata -- invalid virtual register");
@@ -884,7 +882,7 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
 /// them to the metadata to be generated.
 void
 StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
-  RegValsMap &Vregs = SMVregs[getMISM(SM)];
+  RegValsMap &Regs = SMRegs[getMISM(SM)];
   std::queue<unsigned> work;
   SmallPtrSet<const MachineInstr *, 32> Visited;
   StackCopyLoc *SCL;
@@ -893,7 +891,7 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
   DEBUG(dbgs() << "\nDuplicate operand locations:\n\n";);
 
   // Iterate over all vregs in the stackmap
-  for(RegValsMap::iterator it = Vregs.begin(), end = Vregs.end();
+  for(RegValsMap::iterator it = Regs.begin(), end = Regs.end();
       it != end; it++) {
     unsigned origVreg = it->first;
     ValueVecPtr IRVals = it->second;
@@ -905,7 +903,7 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
     //   1. It's a copy-like instruction, e.g., a register move or a load
     //      from/store to stack slot
     //   2. The alternate location (virtual register/stack slot) is live across
-    //      either the machine call instruction or the stackmap
+    //      the machine call instruction
     //
     // Note: we *must* search exhaustively (i.e., across copies from registers
     // that are *not* live across the call) because the following can happen:
@@ -1035,7 +1033,7 @@ void StackTransformMetadata::sanitizeVregs(MachineLiveValPtr &LV,
           LV.reset(nullptr);
           return;
         }
-        else if(!SMVregs.at(SM).count(RI->getReg())) {
+        else if(!SMRegs.at(SM).count(RI->getReg())) {
           DEBUG(dbgs() << "WARNING: vreg "
                        << TargetRegisterInfo::virtReg2Index(RI->getReg())
                        << " used to generate value not handled in stackmap\n");
@@ -1103,7 +1101,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     const MachineInstr *MISM = getMISM(*S);
     const MachineInstr *MICall = getMICall(*S);
     const CallInst *IRSM = getIRSM(*S);
-    RegValsMap &CurVregs = SMVregs[MISM];
+    RegValsMap &CurVregs = SMRegs[MISM];
     StackValsMap &CurSS = SMStackSlots[MISM];
 
     DEBUG(
@@ -1248,7 +1246,7 @@ void StackTransformMetadata::warnUnhandled() const {
   {
     const MachineInstr *MISM = getMISM(*S);
     const MachineInstr *MICall = getMICall(*S);
-    const RegValsMap &CurVregs = SMVregs.at(MISM);
+    const RegValsMap &CurVregs = SMRegs.at(MISM);
     const StackValsMap &CurSS = SMStackSlots.at(MISM);
     IRCall = findCalledFunc(getIRSM(*S));
     CalledFunc = IRCall->getCalledFunction();
