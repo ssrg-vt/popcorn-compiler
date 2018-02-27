@@ -22,6 +22,23 @@ typedef ValueGenInst::InstType InstType;
 template <InstType T> using RegInstruction = RegInstruction<T>;
 template <InstType T> using ImmInstruction = ImmInstruction<T>;
 
+/// Return whether the machine operand is a specific immediate value.
+static bool isImmOp(const MachineOperand &MO, int64_t Imm) {
+  if(!MO.isImm()) return false;
+  else if(MO.getImm() != Imm) return false;
+  else return true;
+}
+
+/// Return whether the machine operand is a specific register.
+static bool isRegOp(const MachineOperand &MO, unsigned Reg) {
+  if(!MO.isReg()) return false;
+  else if(MO.getReg() != Reg) return false;
+  else return true;
+}
+
+/// Return whether the machine operand is the sentinal %noreg register.
+static bool isNoRegOp(const MachineOperand &MO) { return isRegOp(MO, 0); }
+
 MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
   unsigned Reg, Size;
   int64_t Imm;
@@ -33,15 +50,49 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
     Size = 8;
 
     if(MI->getOperand(1 + X86::AddrBaseReg).isFI()) {
-      assert(MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
-             MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1 &&
-             "Invalid scale amount for frame index");
+      // Stack slot address
+      if(!isImmOp(MI->getOperand(1 + X86::AddrScaleAmt), 1)) {
+        DEBUG(dbgs() << "Unhandled scale amount for frame index\n");
+        break;
+      }
+
+      if(!isNoRegOp(MI->getOperand(1 + X86::AddrIndexReg))) {
+        DEBUG(dbgs() <<  "Unhandled index register for frame index\n");
+        break;
+      }
+
+      if(!isImmOp(MI->getOperand(1 + X86::AddrDisp), 0)) {
+        DEBUG(dbgs() << "Unhandled index register for frame index\n");
+        break;
+      }
+
       return new
         MachineStackObject(MI->getOperand(1 + X86::AddrBaseReg).getIndex(),
                            false, MI, true);
     }
-    else if(MI->getOperand(1 + X86::AddrBaseReg).isReg() &&
-            MI->getOperand(1 + X86::AddrDisp).isImm()) {
+    else if(isRegOp(MI->getOperand(1 + X86::AddrBaseReg), X86::RIP)) {
+      // PC-relative symbol address
+      if(!isImmOp(MI->getOperand(1 + X86::AddrScaleAmt), 1)) {
+        DEBUG(dbgs() << "Unhandled scale amount for PC-relative address\n");
+        break;
+      }
+
+      if(!isNoRegOp(MI->getOperand(1 + X86::AddrIndexReg))) {
+        DEBUG(dbgs() << "Unhandled index register for PC-relative address\n");
+        break;
+      }
+
+      return new
+        MachineSymbolRef(MI->getOperand(1 + X86::AddrDisp), false, MI);
+    }
+    else {
+      // Raw form of LEA
+      if(!MI->getOperand(1 + X86::AddrBaseReg).isReg() ||
+         !MI->getOperand(1 + X86::AddrDisp).isImm()) {
+        DEBUG(dbgs() << "Unhandled base register/displacement operands\n");
+        break;
+      }
+
       // Initialize to index register * scale if indexing, or zero otherwise
       Reg = MI->getOperand(1 + X86::AddrIndexReg).getReg();
       if(Reg) {
@@ -49,7 +100,7 @@ MachineLiveVal *X86Values::genLEAInstructions(const MachineInstr *MI) const {
         IL.emplace_back(new RegInstruction<InstType::Set>(Reg));
         IL.emplace_back(new ImmInstruction<InstType::Multiply>(Size, Imm));
       }
-      else IL.emplace_back(new ImmInstruction<InstType::Set>(8, 0));
+      else IL.emplace_back(new ImmInstruction<InstType::Set>(Size, 0));
 
       // Add the base register & displacement
       Reg = MI->getOperand(1 + X86::AddrBaseReg).getReg();
