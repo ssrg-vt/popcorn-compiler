@@ -1363,7 +1363,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,551 @@
+@@ -0,0 +1,577 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1417,7 +1417,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual InstType type() const = 0;
 +
 +  /// Operand types
-+  enum OpType { Register, Immediate };
++  enum OpType { Register, Immediate, Reference };
 +  virtual OpType opType() const = 0;
 +
 +  /// Equivalence checking.  Depends on both instruction & operand type, and
@@ -1490,7 +1490,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  ImmInstructionBase(unsigned Size, int64_t Imm) : Size(Size), Imm(Imm) {}
 +};
 +
-+/// ImmInstruction<T> - rmmediate-based instructions.  Instructions are
++/// ImmInstruction<T> - immediate-based instructions.  Instructions are
 +/// specified via template argument.
 +template<ValueGenInst::InstType Type>
 +class ImmInstruction : public ImmInstructionBase {
@@ -1509,6 +1509,32 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +
 +  virtual std::string str() const
 +  { return getInstNameStr(Type) + " immediate " + std::to_string(Imm); }
++};
++
++/// ReferenceInstruction - references to symbols.  Only supports set
++/// instructions.
++class RefInstruction : public ValueGenInst {
++public:
++  RefInstruction(const MachineOperand &Symbol) : Symbol(Symbol) {}
++
++  virtual InstType type() const { return Set; }
++  virtual OpType opType() const { return Reference; }
++  MCSymbol *getReference(AsmPrinter &AP) const;
++  virtual bool operator==(const ValueGenInst &RHS) const {
++    if(RHS.type() == Set && RHS.opType() == Reference) {
++      const RefInstruction &RI = (const RefInstruction &)RHS;
++      if(&RI.Symbol == &Symbol) return true;
++    }
++    return false;
++  }
++  virtual std::string str() const;
++
++private:
++  // MCSymbols may not exist yet, so instead store the operand to look up the
++  // MCSymbol at metadata emission time.
++  // Note: store hard-copy (not reference) because optimizations may convert
++  // symbol reference to a different type, e.g., register
++  const MachineOperand Symbol;
 +};
 +
 +/// Wrap raw pointers to ValueGenInst in smart pointers.  Use shared_ptr so we
@@ -6447,7 +6473,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +362,78 @@
+@@ -221,6 +362,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6500,6 +6526,15 @@ Index: lib/CodeGen/StackMaps.cpp
 +        if (Op.Constant)
 +          OS << " + " << Op.Constant;
 +        break;
++      case Location::Indirect:
++        OS << "register";
++        if (TRI)
++          OS << TRI->getName(Op.DwarfReg);
++        else
++          OS << Op.DwarfReg;
++        if (Op.Constant)
++          OS << " + " << Op.Constant;
++        break;
 +      case Location::Constant:
 +        if(Op.isSymbol)
 +          OS << "address of " << Op.Symbol->getName();
@@ -6526,7 +6561,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +490,136 @@
+@@ -277,6 +499,145 @@
    return LiveOuts;
  }
  
@@ -6537,19 +6572,23 @@ Index: lib/CodeGen/StackMaps.cpp
 +                                     const MachineLiveVal &MLV) {
 +  assert(MLV.isGenerated() && "Invalid live value type");
 +
++  unsigned PtrSize = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
 +  const MachineGeneratedVal &MGV = (const MachineGeneratedVal &)MLV;
 +  const ValueGenInstList &I = MGV.getInstructions();
 +  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
 +  const TargetRegisterClass *RC;
 +  Operation Op;
-+
 +  Op.isGenerated = true;
-+  Op.isSymbol = false;
-+  Op.Symbol = nullptr;
 +
 +  for(auto &Inst : I) {
 +    const RegInstructionBase *RI;
 +    const ImmInstructionBase *II;
++    const RefInstruction *RefI;
++
++    Op.DwarfReg = 0;
++    Op.Constant = 0;
++    Op.isSymbol = false;
++    Op.Symbol = nullptr;
 +
 +    Op.InstType = Inst->type();
 +    switch(Inst->opType()) {
@@ -6561,14 +6600,19 @@ Index: lib/CodeGen/StackMaps.cpp
 +      Op.OperandType = Location::Register;
 +      Op.Size = RC->getSize();
 +      Op.DwarfReg = getDwarfRegNum(RI->getReg(), TRI);
-+      Op.Constant = 0;
 +      break;
 +    case ValueGenInst::OpType::Immediate:
 +      II = (const ImmInstructionBase *)Inst.get();
 +      Op.OperandType = Location::Constant;
 +      Op.Size = II->getImmSize();
-+      Op.DwarfReg = 0;
 +      Op.Constant = II->getImm();
++      break;
++    case ValueGenInst::OpType::Reference:
++      RefI = (const RefInstruction *)Inst.get();
++      Op.OperandType = Location::Constant;
++      Op.Size = PtrSize;
++      Op.isSymbol = true;
++      Op.Symbol = RefI->getReference(AP);
 +      break;
 +    default: llvm_unreachable("Invalid operand type"); break;
 +    }
@@ -6663,7 +6707,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +628,46 @@
+@@ -285,21 +646,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6712,7 +6756,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +691,21 @@
+@@ -323,12 +709,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6737,7 +6781,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +788,11 @@
+@@ -411,8 +806,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6750,7 +6794,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +800,15 @@
+@@ -420,6 +818,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6766,7 +6810,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +828,20 @@
+@@ -439,14 +846,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6791,7 +6835,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +850,25 @@
+@@ -455,6 +868,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6817,7 +6861,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +884,29 @@
+@@ -470,23 +902,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6848,7 +6892,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +914,13 @@
+@@ -494,10 +932,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6863,7 +6907,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +932,31 @@
+@@ -509,6 +950,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -6895,7 +6939,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +963,7 @@
+@@ -515,7 +981,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -6904,7 +6948,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +987,7 @@
+@@ -539,7 +1005,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -8224,7 +8268,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformTypes.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformTypes.cpp	(working copy)
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,303 @@
 +//===-- llvm/Target/TargetValueGenerator.cpp - Value Generator --*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -8252,6 +8296,16 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +using namespace llvm;
 +
 +//===----------------------------------------------------------------------===//
++// Common functions
++//
++
++static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
++  SmallString<60> Name;
++  Mangler::getNameWithPrefix(Name, Sym, *AP.TM.getDataLayout());
++  return AP.OutContext.lookupSymbol(Name);
++}
++
++//===----------------------------------------------------------------------===//
 +// Types for generating more complex architecture-specific live values
 +//
 +
@@ -8275,6 +8329,47 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +
 +std::string ValueGenInst::getInstNameStr(enum InstType Type) {
 +  return std::string(getInstName(Type));
++}
++
++std::string RefInstruction::str() const {
++  std::string buf = "reference to '";
++  switch(Symbol.getType()) {
++  case MachineOperand::MO_GlobalAddress:
++    buf += Symbol.getGlobal()->getName();
++    buf += "' (global)";
++    break;
++  case MachineOperand::MO_ExternalSymbol:
++    buf += Symbol.getSymbolName();
++    buf += "' (external)";
++    break;
++  case MachineOperand::MO_MCSymbol:
++    buf += Symbol.getMCSymbol()->getName();
++    buf += "' (MC symbol)";
++    break;
++  default:
++    DEBUG(dbgs() << "Unhandled reference type: ";
++          Symbol.print(dbgs());
++          dbgs() << "\n";);
++    buf += "n/a' (unhandled type)";
++    break;
++  }
++  return buf;
++}
++
++MCSymbol *RefInstruction::getReference(AsmPrinter &AP) const {
++  switch(Symbol.getType()) {
++  case MachineOperand::MO_ExternalSymbol:
++    return GetExternalSymbol(AP, Symbol.getSymbolName());
++  case MachineOperand::MO_GlobalAddress:
++    return AP.TM.getSymbol(Symbol.getGlobal(), *AP.Mang);
++  case MachineOperand::MO_MCSymbol:
++    return Symbol.getMCSymbol();
++  default:
++    DEBUG(dbgs() << "Unhandled reference type: ";
++          Symbol.print(dbgs());
++          dbgs() << "\n";);
++    return nullptr;
++  }
 +}
 +
 +//===----------------------------------------------------------------------===//
@@ -8304,7 +8399,8 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +    break;
 +  case MachineOperand::MO_MCSymbol:
 +    buf += Symbol.getMCSymbol()->getName();
-+    buf += "' (MC symbol)"; break;
++    buf += "' (MC symbol)";
++    break;
 +  default:
 +    DEBUG(dbgs() << "Unhandled reference type: ";
 +          Symbol.print(dbgs());
@@ -8315,14 +8411,7 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +  return buf;
 +}
 +
-+static MCSymbol *GetExternalSymbol(AsmPrinter &AP, StringRef Sym) {
-+  SmallString<60> Name;
-+  Mangler::getNameWithPrefix(Name, Sym, *AP.TM.getDataLayout());
-+  return AP.OutContext.lookupSymbol(Name);
-+}
-+
 +MCSymbol *MachineSymbolRef::getReference(AsmPrinter &AP) const {
-+
 +  switch(Symbol.getType()) {
 +  case MachineOperand::MO_ExternalSymbol:
 +    return GetExternalSymbol(AP, Symbol.getSymbolName());
@@ -8974,7 +9063,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,220 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9023,6 +9112,17 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +  default:
 +    DEBUG(dbgs() << "Unhandled ADD machine instruction");
 +    break;
++  }
++  return nullptr;
++}
++
++MachineLiveVal *
++AArch64Values::genADRPInstructions(const MachineInstr *MI) const {
++  ValueGenInstList IL;
++  if(isSymbolValue(MI->getOperand(1))) {
++    IL.emplace_back(new RefInstruction(MI->getOperand(1)));
++    IL.emplace_back(new ImmInstruction<InstType::Mask>(8, ~0xfff));
++    return new MachineGeneratedVal(IL, MI, false);
 +  }
 +  return nullptr;
 +}
@@ -9136,6 +9236,8 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +    Val = genADDInstructions(MI);
 +    break;
 +  case AArch64::ADRP:
++    Val = genADRPInstructions(MI);
++    break;
 +  case AArch64::MOVaddr:
 +    MO = &MI->getOperand(1);
 +    if(MO->isCPI())
@@ -9186,7 +9288,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.h	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.h	(working copy)
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9207,6 +9309,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 +
 +private:
 +  MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
++  MachineLiveVal *genADRPInstructions(const MachineInstr *MI) const;
 +  MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
 +  MachineLiveVal *genLoadRegValue(const MachineInstr *MI) const;
 +};
