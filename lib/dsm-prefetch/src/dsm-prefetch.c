@@ -121,12 +121,12 @@ void popcorn_prefetch_node(int nid,
                            const void *low,
                            const void *high)
 {
-  memory_span_t span;
+  memory_span_t span = { .low = (uint64_t)low, .high = (uint64_t)high };
 
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    debug("WARNING: invalid node ID %d", nid);
+    debug("WARNING: invalid node ID %d\n", nid);
     return;
   }
 
@@ -135,13 +135,10 @@ void popcorn_prefetch_node(int nid,
   // based on an application's runtime values.
   if(low >= high)
   {
-    debug("WARNING: invalid bounds %p - %p: %s", low, high,
+    debug("WARNING: invalid bounds %p - %p: %s\n", low, high,
           low == high ? "zero-sized span" : "inverted bounds");
     return;
   }
-
-  span.low = PAGE_ROUND_DOWN((uint64_t)low);
-  span.high = PAGE_ROUND_UP((uint64_t)high);
 
   debug("Node %d: queueing span 0x%lx -> 0x%lx for %s\n",
         nid, span.low, span.high, access_type_str(type));
@@ -182,35 +179,37 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
 static inline void __attribute__((optnone, unused))
 prefetch_span_manual(access_type_t type, const memory_span_t *span)
 {
+  // No manual analog to releasing ownership
+  if(type == RELEASE) return;
+
   volatile char *mem;
   char c = 0, c2;
   for(mem = (char *)span->low; mem < (char *)span->high; mem += PAGESZ)
   {
     switch(type)
     {
-    case READ: c += *(char *)mem; break;
+    case READ: c += *mem; break;
     case WRITE:
-      c2 = *(char *)mem;
+      c2 = *mem;
       c += c2;
-      *(char *)mem = c2;
+      *mem = c2;
       break;
-    case RELEASE:/* no manual analog */ break;
     default: assert(false && "Unknown access type"); break;
     }
   }
 
   // Make sure we touch the last page
-  mem = (char *)((uint64_t)mem & ~0xfffUL);
+  mem = (char *)PAGE_ROUND_DOWN((uint64_t)mem);
   if(mem > (char *)span->low && mem < (char *)span->high)
   {
     switch(type)
     {
-    case READ: c += *(char *)mem; break;
+    case READ: c += *mem; break;
     case WRITE:
-      c2 = *(char *)mem;
+      c2 = *mem;
       c += c2;
-      *(char *)mem = c2;
-    case RELEASE:/* no manual analog */ break;
+      *mem = c2;
+      break;
     default: assert(false && "Unknown access type"); break;
     }
   }
@@ -221,12 +220,18 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
 #ifdef _MANUAL_PREFETCH
   prefetch_span_manual(type, span);
 #else
+  memory_span_t align = {
+    .low = PAGE_ROUND_DOWN((uint64_t)span->low),
+    .high = PAGE_ROUND_UP((uint64_t)span->high)
+  };
+
   switch(type)
   {
-  case READ: madvise((void *)span->low, SPAN_SIZE(*span), MADV_READ); break;
-  case WRITE: madvise((void *)span->low, SPAN_SIZE(*span), MADV_WRITE); break;
+  case READ: madvise((void *)align.low, SPAN_SIZE(align), MADV_READ); break;
+  case WRITE: madvise((void *)align.low, SPAN_SIZE(align), MADV_WRITE); break;
   case RELEASE:
-    madvise((void *)span->low, SPAN_SIZE(*span), MADV_RELEASE); break;
+    madvise((void *)align.low, SPAN_SIZE(align), MADV_RELEASE);
+    break;
   default: assert(false && "Unknown access type"); break;
   }
 #endif /* _MANUAL_PREFETCH */
