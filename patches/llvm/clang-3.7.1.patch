@@ -318,12 +318,13 @@ Index: lib/CodeGen/BackendUtil.cpp
    void EmitAssembly(BackendAction Action, raw_pwrite_stream *OS);
  };
  
-@@ -271,6 +283,17 @@
+@@ -271,6 +283,18 @@
    MPM->add(createRewriteSymbolsPass(DL));
  }
  
 +static void addPopcornMigPointPasses(const PassManagerBuilder &Builder,
 +                                     legacy::PassManagerBase &PM) {
++  PM.add(createPopcornCompatibilityPass());
 +  PM.add(createSelectMigrationPointsPass());
 +}
 +
@@ -336,7 +337,7 @@ Index: lib/CodeGen/BackendUtil.cpp
  void EmitAssemblyHelper::CreatePasses() {
    unsigned OptLevel = CodeGenOpts.OptimizationLevel;
    CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
-@@ -420,6 +443,26 @@
+@@ -420,6 +444,29 @@
      MPM->add(createInstrProfilingPass(Options));
    }
  
@@ -346,7 +347,10 @@ Index: lib/CodeGen/BackendUtil.cpp
 +    if (OptLevel > 0)
 +      PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
 +                             addPopcornMigPointPasses);
-+    else MPM->add(createSelectMigrationPointsPass());
++    else {
++      MPM->add(createPopcornCompatibilityPass());
++      MPM->add(createSelectMigrationPointsPass());
++    }
 +  }
 +
 +  // Adjust global symbol linkage for alignment.
@@ -363,7 +367,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    PMBuilder.populateModulePassManager(*MPM);
  }
  
-@@ -570,7 +613,7 @@
+@@ -570,7 +617,7 @@
    // Normal mode, emit a .s or .o file by running the code generator. Note,
    // this also adds codegenerator level optimization passes.
    TargetMachine::CodeGenFileType CGFT = TargetMachine::CGFT_AssemblyFile;
@@ -372,7 +376,7 @@ Index: lib/CodeGen/BackendUtil.cpp
      CGFT = TargetMachine::CGFT_ObjectFile;
    else if (Action == Backend_EmitMCNull)
      CGFT = TargetMachine::CGFT_Null;
-@@ -592,8 +635,8 @@
+@@ -592,8 +639,8 @@
    return true;
  }
  
@@ -383,7 +387,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    TimeRegion Region(llvm::TimePassesIsEnabled ? &CodeGenerationTime : nullptr);
  
    bool UsesCodeGen = (Action != Backend_EmitNothing &&
-@@ -629,7 +672,9 @@
+@@ -629,7 +676,9 @@
  
    // Before executing passes, print the final values of the LLVM options.
    cl::PrintOptionValues();
@@ -393,7 +397,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    // Run passes. For now we do all passes at once, but eventually we
    // would like to have the option of streaming code generation.
  
-@@ -647,7 +692,9 @@
+@@ -647,7 +696,9 @@
      PrettyStackTraceString CrashInfo("Per-module optimization passes");
      PerModulePasses->run(*TheModule);
    }
@@ -403,7 +407,7 @@ Index: lib/CodeGen/BackendUtil.cpp
    if (CodeGenPasses) {
      PrettyStackTraceString CrashInfo("Code generation");
      CodeGenPasses->run(*TheModule);
-@@ -654,6 +701,13 @@
+@@ -654,6 +705,13 @@
    }
  }
  
@@ -417,7 +421,7 @@ Index: lib/CodeGen/BackendUtil.cpp
  void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
                                const CodeGenOptions &CGOpts,
                                const clang::TargetOptions &TOpts,
-@@ -677,3 +731,38 @@
+@@ -677,3 +735,38 @@
      }
    }
  }

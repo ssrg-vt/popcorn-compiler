@@ -10,7 +10,8 @@ When you should report this type of bug:
 
 - When I compile using clang with "-popcorn-migratable", the compiler crashes
 - When I compile using clang with "-popcorn-migratable", the compiler spits out
-  arcane warnings related to live values, stackmaps, or stack transformation
+  arcane errors or warnings related to live values, stackmaps, or stack
+  transformation
 
 When you should *not* report this type of bug:
 
@@ -21,9 +22,25 @@ When you should *not* report this type of bug:
 
 What you should include with your bug report:
 
+- Branch & commit from which you installed the compiler
+
 - *Minimal* working code sample (should compile without "-popcorn-migratable"),
   including detailed directions for reproducing the bug
+
+  - If you built clang/LLVM with debugging information, the compiler will spit
+    out a preprocessed source file and shell script if it crashes, e.g.:
+
+    PLEASE ATTACH THE FOLLOWING FILES TO THE BUG REPORT:
+    Preprocessed source(s) and associated run script(s) are located at:
+    clang-3.7: note: diagnostic msg: /tmp/<file>.c
+    clang-3.7: note: diagnostic msg: /tmp/<file>.sh
+    clang-3.7: note: diagnostic msg:
+
+    This makes it very easy to reproduce the bug, so please use this output if
+    available.
+
 - Behavior of the bug, including any warnings or errors dumped by clang
+
 - Compiler output when adding the following flags (note that it may produce a
   very large file):
 
@@ -60,10 +77,14 @@ When you need to do more investigation before reporting:
 
 What you should report with this bug:
 
+- Branch & commit from which you installed the compiler
+
 - *Minimal* working code sample for reproducing the bug, including detailed
   directions for compiling and running the application in order to reproduce
   the bug
+
 - Behavior of the bug, including any output from the application
+
 - Stack transformation log
 
     - Note: you may need to reinstall the runtime with
@@ -71,4 +92,3 @@ What you should report with this bug:
 
 - Any kernel output in dmesg related to thread or page migration, especially if
   the application successfully migrated
-

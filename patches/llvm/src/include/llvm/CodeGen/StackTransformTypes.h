@@ -51,7 +51,7 @@ public:
   virtual InstType type() const = 0;
 
   /// Operand types
-  enum OpType { Register, Immediate };
+  enum OpType { Register, Immediate, Reference };
   virtual OpType opType() const = 0;
 
   /// Equivalence checking.  Depends on both instruction & operand type, and
@@ -124,7 +124,7 @@ protected:
   ImmInstructionBase(unsigned Size, int64_t Imm) : Size(Size), Imm(Imm) {}
 };
 
-/// ImmInstruction<T> - rmmediate-based instructions.  Instructions are
+/// ImmInstruction<T> - immediate-based instructions.  Instructions are
 /// specified via template argument.
 template<ValueGenInst::InstType Type>
 class ImmInstruction : public ImmInstructionBase {
@@ -143,6 +143,32 @@ public:
 
   virtual std::string str() const
   { return getInstNameStr(Type) + " immediate " + std::to_string(Imm); }
+};
+
+/// ReferenceInstruction - references to symbols.  Only supports set
+/// instructions.
+class RefInstruction : public ValueGenInst {
+public:
+  RefInstruction(const MachineOperand &Symbol) : Symbol(Symbol) {}
+
+  virtual InstType type() const { return Set; }
+  virtual OpType opType() const { return Reference; }
+  MCSymbol *getReference(AsmPrinter &AP) const;
+  virtual bool operator==(const ValueGenInst &RHS) const {
+    if(RHS.type() == Set && RHS.opType() == Reference) {
+      const RefInstruction &RI = (const RefInstruction &)RHS;
+      if(&RI.Symbol == &Symbol) return true;
+    }
+    return false;
+  }
+  virtual std::string str() const;
+
+private:
+  // MCSymbols may not exist yet, so instead store the operand to look up the
+  // MCSymbol at metadata emission time.
+  // Note: store hard-copy (not reference) because optimizations may convert
+  // symbol reference to a different type, e.g., register
+  const MachineOperand Symbol;
 };
 
 /// Wrap raw pointers to ValueGenInst in smart pointers.  Use shared_ptr so we
