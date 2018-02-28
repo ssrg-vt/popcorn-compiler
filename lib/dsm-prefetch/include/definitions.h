@@ -35,5 +35,10 @@ typedef struct {
 #define debug( ... )
 #endif
 
+/* Shorthand for manual asynchronous prefetching */
+#if defined(_MANUAL_PREFETCH) && defined(_MANUAL_ASYNC)
+#define _MAPREFETCH
+#endif
+
 #endif
 

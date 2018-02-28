@@ -5,17 +5,50 @@
  * Date: February 13th, 2018
  */
 
-#include <stdbool.h>
 #include <assert.h>
 #include <migrate.h>
+#include <semaphore.h>
+#include <stdbool.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
 #include "platform.h"
 #include "definitions.h"
 #include "list.h"
 #include "dsm-prefetch.h"
-#include "sys/mman.h"
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Definitions, declarations & utilities
+///////////////////////////////////////////////////////////////////////////////
+
+/* Per-node lists containing read, write & release prefetch requests. */
+typedef struct {
+  list_t read, write, release;
+  char padding[PAGESZ - (3 * sizeof(list_t))];
+} __attribute__((aligned (PAGESZ))) node_requests_t;
+
+/* Parameters for threads performing asynchronous manual prefetching. */
+typedef struct {
+  int nid;
+  volatile bool exit;
+  volatile size_t executed;
+  sem_t work;
+} thread_arg_t;
+
+/* Statically-allocated lists. */
+static node_requests_t requests[MAX_POPCORN_NODES];
+
+#ifdef _MAPREFETCH
+/* Threads for asynchronous manual prefetching */
+static pthread_t prefetch_threads[MAX_POPCORN_NODES];
+static thread_arg_t prefetch_params[MAX_POPCORN_NODES];
+static void *prefetch_thread_main(void *arg);
+#endif
 
 /* Get a human-readable string for the access type. */
-static inline const char *access_type_str(access_type_t type)
+static inline const char * __attribute__((unused))
+access_type_str(access_type_t type)
 {
   switch(type)
   {
@@ -26,17 +59,15 @@ static inline const char *access_type_str(access_type_t type)
   }
 }
 
-/* Per-node lists containing read, write & release prefetch requests. */
-typedef struct {
-  list_t read, write, release;
-  char padding[PAGESZ - (3 * sizeof(list_t))];
-} __attribute__((aligned (PAGESZ))) node_requests_t;
+///////////////////////////////////////////////////////////////////////////////
+// Initialization & cleanup
+///////////////////////////////////////////////////////////////////////////////
 
-/* Statically-allocated lists. */
-static node_requests_t requests[MAX_POPCORN_NODES];
-
-/* Initialize all lists at application startup. */
-static void __attribute__((constructor)) prefetch_initialize_lists()
+/*
+ * Initialize all lists & prefetching threads (if configured) at application
+ * startup.
+ */
+static void __attribute__((constructor)) prefetch_initialize()
 {
   size_t i;
   for(i = 0; i < MAX_POPCORN_NODES; i++)
@@ -45,7 +76,40 @@ static void __attribute__((constructor)) prefetch_initialize_lists()
     list_init(&requests[i].write, i);
     list_init(&requests[i].release, i);
   }
+
+#ifdef _MAPREFETCH
+  int failed;
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    prefetch_params[i].nid = i;
+    prefetch_params[i].exit = false;
+    prefetch_params[i].executed = 0;
+    failed = sem_init(&prefetch_params[i].work, 0, 0);
+    failed |= pthread_create(&prefetch_threads[i], NULL, prefetch_thread_main,
+                             &prefetch_params[i]);
+    assert(!failed && "Could not initialize prefetching threads");
+  }
+#endif
 }
+
+#ifdef _MAPREFETCH
+/* Join all prefetching threads. */
+static void __attribute__((destructor)) prefetch_end()
+{
+  size_t i;
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    prefetch_params[i].exit = true;
+    sem_post(&prefetch_params[i].work);
+    pthread_join(prefetch_threads[i], NULL);
+    sem_destroy(&prefetch_params[i].work);
+  }
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+// Prefetch request batching
+///////////////////////////////////////////////////////////////////////////////
 
 void popcorn_prefetch(access_type_t type, const void *low, const void *high)
 {
@@ -59,11 +123,16 @@ void popcorn_prefetch_node(int nid,
 {
   memory_span_t span;
 
-  assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
+  // Ensure prefetch request is for a valid node.
+  if(nid < 0 || nid >= MAX_POPCORN_NODES)
+  {
+    debug("WARNING: invalid node ID %d", nid);
+    return;
+  }
 
-  // Rather than using an assert, print warning (if type=debug) and return.
-  // This is because expressions used to calculate bounds may produce zero or
-  // high < low bounds based on an application's runtime values.
+  // Ensure prefetch request is for a valid memory span.  This can arise when
+  // expressions used to calculate bounds may produce zero or high < low bounds
+  // based on an application's runtime values.
   if(low >= high)
   {
     debug("WARNING: invalid bounds %p - %p: %s", low, high,
@@ -88,7 +157,12 @@ void popcorn_prefetch_node(int nid,
 
 size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
 {
-  assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
+  // Ensure prefetch request is for a valid node.
+  if(nid < 0 || nid >= MAX_POPCORN_NODES)
+  {
+    debug("WARNING: invalid node ID %d", nid);
+    return 0;
+  }
 
   switch(type)
   {
@@ -100,6 +174,10 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
 
   return UINT64_MAX;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Execute prefetch requests
+///////////////////////////////////////////////////////////////////////////////
 
 static inline void __attribute__((optnone, unused))
 prefetch_span_manual(access_type_t type, const memory_span_t *span)
@@ -151,24 +229,18 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
     madvise((void *)span->low, SPAN_SIZE(*span), MADV_RELEASE); break;
   default: assert(false && "Unknown access type"); break;
   }
-#endif
+#endif /* _MANUAL_PREFETCH */
 }
 
-size_t popcorn_prefetch_execute()
+/* Core prefetching logic, used both in manual & OS-based prefetching */
+static size_t popcorn_prefetch_execute_internal(int nid)
 {
-  return popcorn_prefetch_execute_node(current_nid());
-}
-
-size_t popcorn_prefetch_execute_node(int nid)
-{
-  int current = current_nid();
   size_t executed = 0;
   const node_t *n;
   const memory_span_t *span;
 
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
-
-  if(current != nid) migrate(nid, NULL, NULL);
+  assert(current_nid() == nid && "Cannot prefetch to another node");
 
   list_atomic_start(&requests[nid].read);
   list_atomic_start(&requests[nid].write);
@@ -196,6 +268,7 @@ size_t popcorn_prefetch_execute_node(int nid)
     n = list_next(n);
   }
   list_clear(&requests[nid].write);
+  list_atomic_end(&requests[nid].write);
 
   // Send read requests
   n = list_begin(&requests[nid].read);
@@ -215,6 +288,7 @@ size_t popcorn_prefetch_execute_node(int nid)
     n = list_next(n);
   }
   list_clear(&requests[nid].read);
+  list_atomic_end(&requests[nid].read);
 
   // Send release requests
   n = list_begin(&requests[nid].release);
@@ -230,13 +304,60 @@ size_t popcorn_prefetch_execute_node(int nid)
     n = list_next(n);
   }
   list_clear(&requests[nid].release);
-
   list_atomic_end(&requests[nid].release);
-  list_atomic_end(&requests[nid].write);
-  list_atomic_end(&requests[nid].read);
-
-  if(current != nid) migrate(current, NULL, NULL);
 
   return executed;
+}
+
+size_t popcorn_prefetch_execute()
+{
+  return popcorn_prefetch_execute_node(current_nid());
+}
+
+size_t popcorn_prefetch_execute_node(int nid)
+{
+  size_t executed;
+
+  // Ensure prefetch request is for a valid node.
+  if(nid < 0 || nid >= MAX_POPCORN_NODES)
+  {
+    debug("WARNING: invalid node ID %d", nid);
+    return 0;
+  }
+
+#ifdef _MAPREFETCH
+  executed = list_size(&requests[nid].write) +
+             list_size(&requests[nid].read) +
+             list_size(&requests[nid].release);
+  sem_post(&prefetch_params[nid].work);
+#else
+  int current = current_nid();
+  if(current != nid) migrate(nid, NULL, NULL);
+  executed = popcorn_prefetch_execute_internal(nid);
+  if(current != nid) migrate(current, NULL, NULL);
+#endif
+
+  return executed;
+}
+
+/* Prefetching thread main loop. */
+static void * __attribute__((unused))
+prefetch_thread_main(void *arg)
+{
+  thread_arg_t *param = (thread_arg_t *)arg;
+
+  migrate(param->nid, NULL, NULL);
+
+  sem_wait(&param->work);
+  while(!param->exit)
+  {
+    debug("PID %d: prefetching for node %d\n", gettid(), param->nid);
+    param->executed += popcorn_prefetch_execute_internal(param->nid);
+    sem_wait(&param->work);
+  }
+
+  migrate(0, NULL, NULL);
+
+  return NULL;
 }
 

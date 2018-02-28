@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <assert.h>
+#include <time.h>
+#include <unistd.h>
+
 #include "dsm-prefetch.h"
 #include "platform.h"
 
@@ -8,6 +10,13 @@ static char __attribute__((aligned(PAGESZ))) data[20][PAGESZ];
 
 #define CHECK_NUM_REQUESTS( nid, type, num ) \
   ({ \
+    struct timespec sleep = { 0, 100000000 }; \
+    int ret = nanosleep(&sleep, NULL); \
+    if(ret) { \
+      printf("Could not wait for prefetch to execute (%s:%d)\n", \
+             __FILE__, __LINE__); \
+      exit(1); \
+    } \
     size_t num_requests = popcorn_prefetch_num_requests(nid, type); \
     if(num_requests == num) { \
       printf("Passed: got %d request(s) (%s:%d)\n", \
@@ -23,6 +32,8 @@ static char __attribute__((aligned(PAGESZ))) data[20][PAGESZ];
 
 int main()
 {
+  printf("My TID: %d\n", gettid());
+
   // Add some read requests for node 0
   popcorn_prefetch_node(0, READ, data[0], data[3]);
   popcorn_prefetch_node(0, READ, data[8], data[11]);

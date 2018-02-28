@@ -69,6 +69,10 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type);
  * the thread is currently executing and clear the queued requests.  Only needs
  * to be called once per node.
  *
+ * Note: if manual asynchronous prefetching is enabled, the return value of
+ * prefetch requests executed is approximate -- rather than synchronizing with
+ * the thread to get an exact answer, return potentially-stale information.
+ *
  * @return the number of prefetch requests executed
  */
 size_t popcorn_prefetch_execute();
@@ -76,6 +80,10 @@ size_t popcorn_prefetch_execute();
 /*
  * Inform the DSM of all outstanding prefetch requests for the specified node
  * and clear the queued requests.  Only needs to be called once per node.
+ *
+ * Note: if manual asynchronous prefetching is enabled, the return value of
+ * prefetch requests executed is approximate -- rather than synchronizing with
+ * the thread to get an exact answer, return potentially-stale information.
  *
  * @param nid the node for which to prefetch data
  * @return the number of prefetch requests executed
