@@ -140,7 +140,25 @@ static inline int do_migrate(void __attribute__((unused)) *fn)
 
 #endif /* _ENV_SELECT_MIGRATE */
 
-static enum arch archs[MAX_POPCORN_NODES] = { 0 };
+static struct node_info {
+  unsigned int status;
+  int arch;
+  int distance;
+} ni[MAX_POPCORN_NODES];
+
+int node_available(int nid)
+{
+  if(nid < 0 || nid >= MAX_POPCORN_NODES) return 0;
+  else return ni[nid].status;
+}
+
+enum arch current_arch(void)
+{
+	int nid = current_nid();
+	if (nid < 0 || nid >= MAX_POPCORN_NODES) return ARCH_UNKNOWN;
+
+	return ni[nid].arch;
+}
 
 int current_nid(void)
 {
@@ -150,38 +168,21 @@ int current_nid(void)
 	return status.current_nid;
 }
 
-enum arch current_arch(void)
-{
-	int nid = current_nid();
-	if (nid < 0) return ARCH_UNKNOWN;
-
-	return archs[nid];
-}
-
 static void __attribute__((constructor)) __init_nodes_info(void)
 {
 	int ret;
 	int origin_nid = -1;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni[MAX_POPCORN_NODES];
 
 	set_default_node(current_nid());
-
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		archs[i] = ARCH_UNKNOWN;
-	}
-
 	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
-	if (ret) {
-		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
-		return;
-	}
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		if (ni[i].status == 1) {
-			archs[i] = ni[i].arch;
+	if (ret)
+	{
+		perror("Cannot retrieve Popcorn node information");
+		for (int i = 0; i < MAX_POPCORN_NODES; i++)
+		{
+			ni[i].status = 0;
+			ni[i].arch = ARCH_UNKNOWN;
+			ni[i].distance = -1;
 		}
 	}
 }
@@ -233,7 +234,12 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 #if _SIG_MIGRATION == 1
     clear_migrate_flag();
 #endif
-    const enum arch dst_arch = archs[nid];
+    if(!node_available(nid))
+    {
+      fprintf(stderr, "Destination node is not available!\n");
+      return;
+    }
+    const enum arch dst_arch = ni[nid].arch;
 
     GET_LOCAL_REGSET;
     union {
