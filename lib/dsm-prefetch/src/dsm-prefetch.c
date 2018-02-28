@@ -81,6 +81,12 @@ static void __attribute__((constructor)) prefetch_initialize()
   int failed;
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
+    if(!node_available(i))
+    {
+      debug("Node %lu not available for prefetching\n", i);
+      continue;
+    }
+
     prefetch_params[i].nid = i;
     prefetch_params[i].exit = false;
     prefetch_params[i].executed = 0;
@@ -99,6 +105,8 @@ static void __attribute__((destructor)) prefetch_end()
   size_t i;
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
+    if(!node_available(i)) continue;
+
     prefetch_params[i].exit = true;
     sem_post(&prefetch_params[i].work);
     pthread_join(prefetch_threads[i], NULL);
@@ -176,24 +184,23 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
 // Execute prefetch requests
 ///////////////////////////////////////////////////////////////////////////////
 
+/*
+ * Manually read/write pages (without affecting semantics) in order to force
+ * the DSM to bring the pages to the current node with appropriate permissions.
+ *
+ * Note: optnone is required otherwise the compiler optimizes out accesses
+ */
 static inline void __attribute__((optnone, unused))
 prefetch_span_manual(access_type_t type, const memory_span_t *span)
 {
-  // No manual analog to releasing ownership
-  if(type == RELEASE) return;
-
   volatile char *mem;
-  char c = 0, c2;
+  char c = 0;
   for(mem = (char *)span->low; mem < (char *)span->high; mem += PAGESZ)
   {
     switch(type)
     {
-    case READ: c += *mem; break;
-    case WRITE:
-      c2 = *mem;
-      c += c2;
-      *mem = c2;
-      break;
+    case READ: c += __atomic_load_n(mem, __ATOMIC_RELAXED); break;
+    case WRITE: c += __atomic_fetch_or(mem, 0, __ATOMIC_RELAXED); break;
     default: assert(false && "Unknown access type"); break;
     }
   }
@@ -204,21 +211,19 @@ prefetch_span_manual(access_type_t type, const memory_span_t *span)
   {
     switch(type)
     {
-    case READ: c += *mem; break;
-    case WRITE:
-      c2 = *mem;
-      c += c2;
-      *mem = c2;
-      break;
+    case READ: c += __atomic_load_n(mem, __ATOMIC_RELAXED); break;
+    case WRITE: c += __atomic_fetch_or(mem, 0, __ATOMIC_RELAXED); break;
     default: assert(false && "Unknown access type"); break;
     }
   }
 }
 
+/* Prefetch a given span */
 static void prefetch_span(access_type_t type, const memory_span_t *span)
 {
 #ifdef _MANUAL_PREFETCH
-  prefetch_span_manual(type, span);
+  // Note: no manual analog to releasing ownership
+  if(type != RELEASE) prefetch_span_manual(type, span);
 #else
   memory_span_t align = {
     .low = PAGE_ROUND_DOWN((uint64_t)span->low),
@@ -351,6 +356,8 @@ prefetch_thread_main(void *arg)
 {
   thread_arg_t *param = (thread_arg_t *)arg;
 
+  debug("PID %d: servicing prefetch requests for node %d\n",
+        gettid(), param->nid);
   migrate(param->nid, NULL, NULL);
 
   sem_wait(&param->work);
