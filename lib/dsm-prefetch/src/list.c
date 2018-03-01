@@ -9,8 +9,10 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
-#include "list.h"
+
 #include "definitions.h"
+#include "list.h"
+#include "platform.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Node API
@@ -25,9 +27,13 @@ typedef struct node_t {
 /* Allocate & initialize a new linked list node. */
 static node_t *node_create(const memory_span_t *mem, int nid)
 {
+  int ret;
+  node_t *n;
+
   assert(mem && "Invalid memory span pointer");
-  // TODO use node-aware memory allocator
-  node_t *n = (node_t *)malloc(sizeof(node_t));
+
+  // TODO extreme internal fragmentation, use node-aware memory allocator
+  ret = posix_memalign((void **)&n, PAGESZ, sizeof(node_t));
   assert(n && "Invalid node pointer");
   n->mem = *mem;
 #ifdef _CHECKS

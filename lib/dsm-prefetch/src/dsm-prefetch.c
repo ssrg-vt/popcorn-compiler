@@ -9,6 +9,7 @@
 #include <migrate.h>
 #include <semaphore.h>
 #include <stdbool.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/mman.h>
 
@@ -32,9 +33,9 @@ typedef struct {
 typedef struct {
   int nid;
   volatile bool exit;
-  volatile size_t executed;
   sem_t work;
-} thread_arg_t;
+  char padding[PAGESZ - sizeof(size_t) - sizeof(sem_t)];
+} __attribute__((aligned (PAGESZ))) thread_arg_t;
 
 /* Statically-allocated lists. */
 static node_requests_t requests[MAX_POPCORN_NODES];
@@ -45,6 +46,15 @@ static pthread_t prefetch_threads[MAX_POPCORN_NODES];
 static thread_arg_t prefetch_params[MAX_POPCORN_NODES];
 static void *prefetch_thread_main(void *arg);
 #endif
+
+/* Statistics about prefetching */
+typedef struct {
+  size_t num; // Number of prefetch requests
+  size_t pages; // Number of pages prefetched
+  size_t time; // Time to prefetch, in nanoseconds
+} stats_t;
+
+#define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
 
 /* Get a human-readable string for the access type. */
 static inline const char * __attribute__((unused))
@@ -89,7 +99,6 @@ static void __attribute__((constructor)) prefetch_initialize()
 
     prefetch_params[i].nid = i;
     prefetch_params[i].exit = false;
-    prefetch_params[i].executed = 0;
     failed = sem_init(&prefetch_params[i].work, 0, 0);
     failed |= pthread_create(&prefetch_threads[i], NULL, prefetch_thread_main,
                              &prefetch_params[i]);
@@ -250,12 +259,21 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
 #endif /* _MANUAL_PREFETCH */
 }
 
-/* Core prefetching logic, used both in manual & OS-based prefetching */
-static size_t popcorn_prefetch_execute_internal(int nid)
+/*
+ * Core prefetching logic, used both in manual & OS-based prefetching.  By
+ * default, only records the number of spans prefetched.  If _STATISTICS is
+ * defined, records the number of pages and time to prefetch as well.
+ */
+static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 {
-  size_t executed = 0;
   const node_t *n;
   const memory_span_t *span;
+#ifdef _STATISTICS
+  struct timespec start, end;
+#endif
+  stats->num = 0;
+  stats->pages = 0;
+  stats->time = 0;
 
   assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
   assert(current_nid() == nid && "Cannot prefetch to another node");
@@ -281,8 +299,17 @@ static size_t popcorn_prefetch_execute_internal(int nid)
     debug("Node %d: executing prefetch of 0x%lx -> 0x%lx for writing\n",
           nid, span->low, span->high);
 
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
     prefetch_span(WRITE, span);
-    executed++;
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    stats->pages += SPAN_NUM_PAGES(*span);
+    stats->time += NS(end) - NS(start);
+#endif
+    stats->num++;
+
     n = list_next(n);
   }
   list_clear(&requests[nid].write);
@@ -301,8 +328,17 @@ static size_t popcorn_prefetch_execute_internal(int nid)
     debug("Node %d: executing prefetch of 0x%lx -> 0x%lx for reading\n",
           nid, span->low, span->high);
 
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
     prefetch_span(READ, span);
-    executed++;
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    stats->pages += SPAN_NUM_PAGES(*span);
+    stats->time += NS(end) - NS(start);
+#endif
+    stats->num++;
+
     n = list_next(n);
   }
   list_clear(&requests[nid].read);
@@ -317,14 +353,21 @@ static size_t popcorn_prefetch_execute_internal(int nid)
     debug("Node %d: executing release of 0x%lx -> 0x%lx\n",
           nid, span->low, span->high);
 
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
     prefetch_span(RELEASE, span);
-    executed++;
+#ifdef _STATISTICS
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    stats->pages += SPAN_NUM_PAGES(*span);
+    stats->time += NS(end) - NS(start);
+#endif
+    stats->num++;
+
     n = list_next(n);
   }
   list_clear(&requests[nid].release);
   list_atomic_end(&requests[nid].release);
-
-  return executed;
 }
 
 size_t popcorn_prefetch_execute()
@@ -334,7 +377,7 @@ size_t popcorn_prefetch_execute()
 
 size_t popcorn_prefetch_execute_node(int nid)
 {
-  size_t executed;
+  stats_t stats;
 
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
@@ -344,39 +387,53 @@ size_t popcorn_prefetch_execute_node(int nid)
   }
 
 #ifdef _MAPREFETCH
-  executed = list_size(&requests[nid].write) +
-             list_size(&requests[nid].read) +
-             list_size(&requests[nid].release);
+  stats.num = list_size(&requests[nid].write) +
+              list_size(&requests[nid].read) +
+              list_size(&requests[nid].release);
   sem_post(&prefetch_params[nid].work);
 #else
   int current = current_nid();
   if(current != nid) migrate(nid, NULL, NULL);
-  executed = popcorn_prefetch_execute_internal(nid);
+  popcorn_prefetch_execute_internal(nid, &stats);
   if(current != nid) migrate(current, NULL, NULL);
 #endif
 
-  return executed;
+  return stats.num;
 }
 
 /* Prefetching thread main loop. */
 static void * __attribute__((unused))
 prefetch_thread_main(void *arg)
 {
+  stats_t stats = { .num = 0, .pages = 0, .time = 0 }, cur;
   thread_arg_t *param = (thread_arg_t *)arg;
 
   debug("PID %d: servicing prefetch requests for node %d\n",
         gettid(), param->nid);
+
   migrate(param->nid, NULL, NULL);
+  if(current_nid() != param->nid) debug("PID %d: still on origin\n", gettid());
 
   sem_wait(&param->work);
   while(!param->exit)
   {
     debug("PID %d: prefetching for node %d\n", gettid(), param->nid);
-    param->executed += popcorn_prefetch_execute_internal(param->nid);
+    popcorn_prefetch_execute_internal(param->nid, &cur);
+    stats.num += cur.num;
+#ifdef _STATISTICS
+    stats.pages += cur.pages;
+    stats.time += cur.time;
+#endif
     sem_wait(&param->work);
   }
 
   migrate(0, NULL, NULL);
+
+  debug("PID %d: executed %lu prefetch requests\n", gettid(), stats.num);
+#ifdef _STATISTICS
+  debug("PID %d: touched %lu pages, took %lu ns\n", gettid(),
+        stats.pages, stats.time);
+#endif
 
   return NULL;
 }

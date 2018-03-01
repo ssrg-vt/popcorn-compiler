@@ -21,6 +21,10 @@ typedef struct {
 /* Get the size of a memory span. */
 #define SPAN_SIZE( mem ) ((mem).high - (mem).low)
 
+/* Get the number of pages in the span */
+#define SPAN_NUM_PAGES( mem ) \
+  ((PAGE_ROUND_UP((mem).high) - PAGE_ROUND_DOWN((mem).low)) / PAGESZ)
+
 /* DSM advice values */
 #define MADV_READ 20 // Request write permissions
 #define MADV_WRITE 19 // Request read permissions

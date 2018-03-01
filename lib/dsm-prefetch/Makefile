@@ -5,7 +5,7 @@ POPCORN_X86			:= $(POPCORN)/x86_64
 SYSROOT					:= $(POPCORN_ARM)
 
 CC			:= $(POPCORN)/bin/clang
-CFLAGS	:= -Wall -g -nostdinc -D_MANUAL_PREFETCH -D_MANUAL_ASYNC
+CFLAGS	:= -Wall -g -nostdinc -D_MANUAL_PREFETCH -D_MANUAL_ASYNC -D_STATISTICS
 ifeq ($(findstring debug,$(type)),)
 CFLAGS	+= -O3 -DNDEBUG
 else
