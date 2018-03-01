@@ -224,6 +224,14 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
 #ifdef _MANUAL_PREFETCH
   // Note: no manual analog to releasing ownership
   if(type != RELEASE) prefetch_span_manual(type, span);
+  else
+  {
+    memory_span_t align = {
+      .low = PAGE_ROUND_DOWN((uint64_t)span->low),
+      .high = PAGE_ROUND_UP((uint64_t)span->high)
+    };
+    madvise((void *)align.low, SPAN_SIZE(align), MADV_RELEASE);
+  }
 #else
   memory_span_t align = {
     .low = PAGE_ROUND_DOWN((uint64_t)span->low),

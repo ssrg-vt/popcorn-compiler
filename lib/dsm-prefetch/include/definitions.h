@@ -22,10 +22,9 @@ typedef struct {
 #define SPAN_SIZE( mem ) ((mem).high - (mem).low)
 
 /* DSM advice values */
-// TODO get actual values
-#define MADV_READ -256 // Request write permissions
-#define MADV_WRITE -256 // Request read permissions
-#define MADV_RELEASE -255 // Forfeit current permissions
+#define MADV_READ 20 // Request write permissions
+#define MADV_WRITE 19 // Request read permissions
+#define MADV_RELEASE 18 // Forfeit current permissions
 
 /* Enable/disable printing debugging messages */
 #ifdef _DEBUG
