@@ -6038,7 +6038,7 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
    }
  
    // If the result is null, the sub-method took care of registering results etc.
-@@ -1131,6 +1134,23 @@
+@@ -1131,6 +1134,27 @@
                                  SExtPromotedInteger(N->getOperand(0))), 0);
  }
  
@@ -6050,8 +6050,12 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
 +    if(i == OpNo) {
 +      if(N->getOperand(i).getValueType() == MVT::i1 ||
 +         N->getOperand(i).getValueType() == MVT::i8 ||
-+         N->getOperand(i).getValueType() == MVT::i16)
-+        Ops[i] = DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i32, N->getOperand(i));
++         N->getOperand(i).getValueType() == MVT::i16) {
++        if(N->getOperand(i).getOpcode() == ISD::TRUNCATE)
++          Ops[i] = N->getOperand(i)->getOperand(0);
++        else
++          Ops[i] = DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i32, N->getOperand(i));
++      }
 +    }
 +    else Ops[i] = N->getOperand(i);
 +  }
