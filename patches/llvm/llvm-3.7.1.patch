@@ -2613,7 +2613,7 @@ Index: lib/Analysis/LiveValues.cpp
 +///////////////////////////////////////////////////////////////////////////////
 +
 +LiveValues::LiveValues(void)
-+  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(true),
++  : FunctionPass(ID), inlineasm(false), bitcasts(true), comparisons(true),
 +    constants(false), metadata(false) {}
 +
 +void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const
@@ -9840,7 +9840,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,172 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9970,9 +9970,13 @@ Index: lib/Target/X86/X86Values.cpp
 +  case X86::LEA64r:
 +    Val = genLEAInstructions(MI);
 +    break;
++  case X86::MOV32r0:
++    Val = new MachineImmediate(4, 0, MI, false);
++    break;
 +  case X86::MOV32ri:
 +    MO = &MI->getOperand(1);
 +    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
++    break;
 +  case X86::MOV64ri:
 +    MO = &MI->getOperand(1);
 +    if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
@@ -10060,7 +10064,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,362 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -10370,7 +10374,8 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    auto hidesValues = [](const Instruction *I) {
 +      if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
 +         isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-+         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
++         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
++         isa<BitCastInst>(I))
 +        return true ;
 +      else return false;
 +    };

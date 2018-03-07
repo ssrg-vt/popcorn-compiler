@@ -307,7 +307,8 @@ private:
     auto hidesValues = [](const Instruction *I) {
       if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
+         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
+         isa<BitCastInst>(I))
         return true ;
       else return false;
     };
