@@ -139,6 +139,7 @@ $(X86_64_BUILD)/%.bc: %.c
 
 $(X86_64_BIN): $(X86_64_BUILD)/.dir $(X86_64_BC)
 	@echo " [CC (x86-64)] $@"
+	$(CC) -target $(X86_64_TARGET) $(CFLAGS) -c -o $@.o $(X86_64_BC)
 	@$(CC) -target $(X86_64_TARGET) $(CFLAGS) -o $@ $(X86_64_BC) $(X86_64_LIB)
 	@$(POST_PROCESS) -f $@
 

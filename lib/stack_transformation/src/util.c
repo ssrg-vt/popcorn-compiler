@@ -102,11 +102,10 @@ int match_string(Elf* e, char* name, int *str_index)
                 close(e->e_fd);
                 return -1;
         }
-
 	stringTable = (char*)malloc(s_hdr.sh_size);
         if(!stringTable)
 	{
-		printf("Couldn't allocate memory\n");
+		printf("Couldn't allocate memories\n");
 		return -1;
 	}
 
@@ -218,7 +217,8 @@ Elf64_Shdr* my_get_section(Elf* e, const char* sec)
   ASSERT(sec, "invalid arguments to get_section()\n");
   
  // if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
-	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
+  if(lseek(e->e_fd, 0, SEEK_SET) < 0)
+  {
         printf("lseek failed\n");
         close(e->e_fd);
     	return NULL;
@@ -287,10 +287,28 @@ const void* get_section_data(Elf* e, const char* sec)
 const void* my_get_section_data(Elf* e, const char* sec)
 {   
   Elf64_Shdr *shdr;
+
   Elf_Data *data = (Elf_Data*)malloc(sizeof(Elf_Data));  
+  if(data == NULL)
+  {
+	printf("Couldn't allocate memory for Data\n");
+	return NULL;	
+  }
 
   shdr = my_get_section(e, sec);
+  if(shdr == NULL)
+  {
+	printf("No section found\n");
+	return NULL;
+  }
+
   data->d_buf = malloc(shdr->sh_size);
+  if(data->d_buf == NULL)
+  {
+	printf("Couldn't allocate memory for data->buf\n");
+	return NULL;	
+  }
+
   for(int i=0; i<shdr->sh_size; i++)
   	*((int*)(data->d_buf + i)) = 0;
   

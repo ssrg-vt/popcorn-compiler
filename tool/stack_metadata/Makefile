@@ -12,7 +12,8 @@ CC     := gcc
 CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include \
           -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
 LDFLAGS=-static
-LIB    := -lelf
+#LIB    := -lelf
+LIB	:= /usr/local/popcorn/lib/libelf.a
 
 HDR := $(shell ls include/*.h) $(shell ls $(COMMON)/include/*.h)
 SRC := $(shell ls src/*.c)

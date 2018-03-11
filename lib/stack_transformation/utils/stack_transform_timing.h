@@ -354,7 +354,7 @@ get_call_site() { return __builtin_return_address(0); }
     struct timeval end = { .tv_sec = 0, .tv_usec = 0 }; \
     struct regset_x86_64 regset, regset_dest; \
     stack_bounds bounds = get_stack_bounds(); \
-        printf("2\n"); \
+    printf("2\n"); \
     READ_REGS_X86_64(regset); \
     regset.rip = get_call_site(); \
     gettimeofday(&start, NULL); \
