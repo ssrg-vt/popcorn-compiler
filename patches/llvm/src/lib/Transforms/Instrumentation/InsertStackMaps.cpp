@@ -125,11 +125,19 @@ public:
         {
           if(Popcorn::isCallSite(&*i))
           {
-            CallInst *CI = cast<CallInst>(&*i);
-            IRBuilder<> builder(CI->getNextNode());
+            CallSite CS(i);
+            if(CS.isInvoke())
+            {
+              DEBUG(dbgs() << "WARNING: unhandled invoke:"; CS->dump());
+              continue;
+            }
+
+            IRBuilder<> builder(CS->getNextNode());
             std::vector<Value *> args(2);
-            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()),
+                                             this->callSiteID++);
+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()),
+                                             0);
 
             if(NoLiveVals) {
               builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
@@ -145,7 +153,7 @@ public:
                *   1. The value's definition dominates the call
                *   2. A use which hides the definition is in the stackmap
                */
-              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
+              if(DT.dominates(val, i) && hasLiveUser(val, *live))
                 sortedLive.insert(val);
             }
             for(const Argument *val : hiddenArgs) {
@@ -162,16 +170,16 @@ public:
               const Function *calledFunc;
 
               errs() << "  ";
-              if(!CI->getType()->isVoidTy()) {
-                CI->printAsOperand(errs(), false);
+              if(!CS->getType()->isVoidTy()) {
+                CS->printAsOperand(errs(), false);
                 errs() << " ";
               }
               else errs() << "(void) ";
 
-              calledFunc = CI->getCalledFunction();
+              calledFunc = CS.getCalledFunction();
               if(calledFunc && calledFunc->hasName())
               {
-                StringRef name = CI->getCalledFunction()->getName();
+                StringRef name = CS.getCalledFunction()->getName();
                 errs() << name << " ";
               }
               errs() << "ID: " << this->callSiteID;
@@ -307,7 +315,8 @@ private:
     auto hidesValues = [](const Instruction *I) {
       if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
+         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
+         isa<BitCastInst>(I))
         return true ;
       else return false;
     };

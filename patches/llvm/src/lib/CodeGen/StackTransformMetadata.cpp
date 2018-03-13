@@ -21,8 +21,10 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/CodeGen/VirtRegMap.h"
@@ -176,11 +178,13 @@ class StackTransformMetadata : public MachineFunctionPass {
   const VirtRegMap *VRM;
 
   /// Stackmap/call instructions, mapping of virtual registers & stack slots to
-  /// IR values, list of instructions that copy to/from the stack
+  /// IR values, stack slots used in the function, list of instructions that
+  /// copy to/from the stack
   SmallVector<SMInstBundle, 32> SM;
   SMRegMap SMRegs;
   SMStackSlotMap SMStackSlots;
-  StackSlotCopies SSUses;
+  SmallSet<int, 32> UsedSS;
+  StackSlotCopies SSCopies;
 
   /* Functions */
 
@@ -189,7 +193,8 @@ class StackTransformMetadata : public MachineFunctionPass {
     SM.clear();
     SMRegs.clear();
     SMStackSlots.clear();
-    SSUses.clear();
+    UsedSS.clear();
+    SSCopies.clear();
   }
 
   /// Print information about a virtual register and it's associated IR value
@@ -449,17 +454,30 @@ void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
         SM.push_back(SMInstBundle(IRSM, &*MI, MCI));
       }
       else {
+        // Record all stack slots that are actually used.  Note that this is
+        // necessary because analysis maintained in MachineFrameInfo/LiveStacks
+        // may denote stack slots as live even though register allocation
+        // actually all references to them.
+        const PseudoSourceValue *PSV;
+        const FixedStackPseudoSourceValue *FI;
+        for(auto MemOp : MI->memoperands()) {
+          PSV = MemOp->getPseudoValue();
+          if(PSV && PSV->isFixed) {
+            FI = cast<FixedStackPseudoSourceValue>(PSV);
+            UsedSS.insert(FI->getFrameIndex());
+          }
+        }
+
         // See if instruction copies to/from stack slot
         StackSlotCopies::iterator it;
         CopyLocPtr loc;
-
         if(!(loc = getCopyLocation(&*MI))) continue;
         enum CopyLoc::Type type = loc->getType();
         if(type == CopyLoc::STACK_LOAD || type == CopyLoc::STACK_STORE) {
           StackCopyLoc *SCL = (StackCopyLoc *)loc.get();
-          if((it = SSUses.find(SCL->StackSlot)) == SSUses.end())
-            it = SSUses.emplace(SCL->StackSlot,
-                                CopyLocVecPtr(new CopyLocVec)).first;
+          if((it = SSCopies.find(SCL->StackSlot)) == SSCopies.end())
+            it = SSCopies.emplace(SCL->StackSlot,
+                                  CopyLocVecPtr(new CopyLocVec)).first;
           it->second->push_back(loc);
         }
       }
@@ -468,7 +486,7 @@ void StackTransformMetadata::findStackmapsAndStackSlotCopies() {
 
   DEBUG(
     dbgs() << "\n*** Stack slot copies ***\n\n";
-    for(auto SC = SSUses.begin(), SCe = SSUses.end(); SC != SCe; SC++) {
+    for(auto SC = SSCopies.begin(), SCe = SSCopies.end(); SC != SCe; SC++) {
       dbgs() << "Stack slot " << SC->first << ":\n";
       for(size_t i = 0, e = SC->second->size(); i < e; i++) {
         (*SC->second)[i]->Instr->dump();
@@ -863,7 +881,7 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
   CopyLocVecPtr CL;
   CopyLocVec::const_iterator Copy, CE;
 
-  if((Copies = SSUses.find(SS)) != SSUses.end()) {
+  if((Copies = SSCopies.find(SS)) != SSCopies.end()) {
     CL = Copies->second;
     for(Copy = CL->begin(), CE = CL->end(); Copy != CE; Copy++) {
       unsigned Vreg = (*Copy)->Vreg;
@@ -1187,18 +1205,21 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
           CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
         }
         else {
-          DEBUG(dbgs() << "      Unhandled defining instruction: ";
-                MRI->def_instr_begin(Vreg)->print(dbgs());
-                dbgs() << "\n");
+          DEBUG(
+            DefMI = &*MRI->def_instr_begin(Vreg);
+            StringRef BBName = DefMI->getParent()->getName();
+            dbgs() << "      Unhandled defining instruction in basic block "
+                   << BBName << ":";
+            DefMI->print(dbgs());
+          );
         }
       }
     }
 
     // Search for stack slots not handled by the stackmap
-    // TODO handle function arguments on the stack (negative stack slots)
     for(int SS = MFI->getObjectIndexBegin(), e = MFI->getObjectIndexEnd();
         SS < e; SS++) {
-      if(!MFI->isDeadObjectIndex(SS) &&
+      if(UsedSS.count(SS) && !MFI->isDeadObjectIndex(SS) &&
          isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
         DEBUG(dbgs() << "    + stack slot " << SS
                      << " is live but not in stackmap\n";);
@@ -1268,7 +1289,7 @@ void StackTransformMetadata::warnUnhandled() const {
     // Search for all stack slots not handled by the stackmap
     for(int SS = MFI->getObjectIndexBegin(), e = MFI->getObjectIndexEnd();
         SS < e; SS++) {
-      if(!MFI->isDeadObjectIndex(SS) &&
+      if(UsedSS.count(SS) && !MFI->isDeadObjectIndex(SS) &&
          isSSLiveAcrossInstr(SS, MICall) && CurSS.find(SS) == CurSS.end()) {
         Msg = "Stack transformation: unhandled stack slot ";
         Msg += std::to_string(SS);

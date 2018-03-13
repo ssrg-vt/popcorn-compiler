@@ -28,7 +28,7 @@ namespace llvm {
 ///////////////////////////////////////////////////////////////////////////////
 
 LiveValues::LiveValues(void)
-  : FunctionPass(ID), inlineasm(false), bitcasts(false), comparisons(true),
+  : FunctionPass(ID), inlineasm(false), bitcasts(true), comparisons(true),
     constants(false), metadata(false) {}
 
 void LiveValues::getAnalysisUsage(AnalysisUsage &AU) const

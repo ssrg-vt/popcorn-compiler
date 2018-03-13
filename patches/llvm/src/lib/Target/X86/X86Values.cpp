@@ -127,9 +127,13 @@ MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   case X86::LEA64r:
     Val = genLEAInstructions(MI);
     break;
+  case X86::MOV32r0:
+    Val = new MachineImmediate(4, 0, MI, false);
+    break;
   case X86::MOV32ri:
     MO = &MI->getOperand(1);
     if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
+    break;
   case X86::MOV64ri:
     MO = &MI->getOperand(1);
     if(MO->isImm()) Val = new MachineImmediate(8, MO->getImm(), MI, false);
