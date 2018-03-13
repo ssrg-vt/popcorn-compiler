@@ -5,6 +5,9 @@
  * Date: February 13th, 2018
  */
 
+#ifndef _PLATFORM_H
+#define _PLATFORM_H
+
 /* The size of a page in the system. */
 #define PAGESZ 4096UL
 
@@ -17,3 +20,6 @@
 
 /* The maximum number of nodes supported by the system. */
 #define MAX_POPCORN_NODES 32
+
+#endif /* _PLATFORM_H */
+
