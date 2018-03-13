@@ -153,7 +153,7 @@ Index: include/clang/CodeGen/PopcornUtil.h
 ===================================================================
 --- include/clang/CodeGen/PopcornUtil.h	(nonexistent)
 +++ include/clang/CodeGen/PopcornUtil.h	(working copy)
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,47 @@
 +//===--- PopcornUtil.h - Popcorn Linux Utilities ----------------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -174,8 +174,16 @@ Index: include/clang/CodeGen/PopcornUtil.h
 +namespace clang {
 +namespace Popcorn {
 +
++/// Return whether a given target is supported by the compiler.
++bool SupportedTarget(const llvm::StringRef Target);
++
++/// Populate an array with all targets currently supported by the Popcorn
++/// compiler.
++void GetAllTargets(llvm::SmallVector<std::string, 2> &Targets);
++
 +/// Return a TargetOptions with features appropriate for Popcorn Linux
-+std::shared_ptr<TargetOptions> GetPopcornTargetOpts(llvm::StringRef TripleStr);
++std::shared_ptr<TargetOptions>
++GetPopcornTargetOpts(const llvm::StringRef TripleStr);
 +
 +/// Strip target-specific CPUs & features from function attributes in all
 +/// functions in the module.  This silences warnings from the compiler about
@@ -197,13 +205,23 @@ Index: include/clang/Driver/Options.td
 ===================================================================
 --- include/clang/Driver/Options.td	(revision 320332)
 +++ include/clang/Driver/Options.td	(working copy)
-@@ -1538,6 +1538,10 @@
+@@ -83,6 +83,8 @@
+ def m_libc_Group          : OptionGroup<"<m libc group>">, Group<m_Group>;
+ def u_Group               : OptionGroup<"<u group>">;
+ 
++def Popcorn_Target_Group  : OptionGroup<"<Popcorn target group>">, Group<CompileOnly_Group>;
++
+ def pedantic_Group        : OptionGroup<"<pedantic group>">,
+   Group<CompileOnly_Group>;
+ def reserved_lib_Group   : OptionGroup<"<reserved libs group>">;
+@@ -1538,6 +1540,11 @@
  def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
  def pipe : Flag<["-", "--"], "pipe">,
    HelpText<"Use pipes between commands, when possible">;
 +def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux (implies -popcorn-alignment)">, Flags<[CC1Option]>;
 +def popcorn_libc : Flag<["-"], "popcorn-libc">, HelpText<"Compile libc code with appropriate instrumentation for migration (implies -popcorn-alignment)">, Flags<[CC1Option]>;
 +def popcorn_alignment : Flag<["-"], "popcorn-alignment">, HelpText<"Run Popcorn passes to prepare for link-time symbol alignment">, Flags<[CC1Option]>;
++def popcorn_target : Joined<["-"], "popcorn-target=">, HelpText<"Targets for which to generate object files (requires -popcorn-migratable)">, Group<Popcorn_Target_Group>, Flags<[CC1Option]>, MetaVarName<"<target>">;
 +def distributed_omp : Flag<["-"], "distributed-omp">, HelpText<"Optimize OpenMP code generation for distributed execution on Popcorn Linux">, Flags<[CC1Option]>;
  def prebind__all__twolevel__modules : Flag<["-"], "prebind_all_twolevel_modules">;
  def prebind : Flag<["-"], "prebind">;
@@ -225,6 +243,20 @@ Index: include/clang/Frontend/CodeGenOptions.def
  /// The user specified number of registers to be used for integral arguments,
  /// or 0 if unspecified.
  VALUE_CODEGENOPT(NumRegisterParameters, 32, 0)
+Index: include/clang/Frontend/CodeGenOptions.h
+===================================================================
+--- include/clang/Frontend/CodeGenOptions.h	(revision 320332)
++++ include/clang/Frontend/CodeGenOptions.h	(working copy)
+@@ -201,6 +201,9 @@
+   /// Set of sanitizer checks that trap rather than diagnose.
+   SanitizerSet SanitizeTrap;
+ 
++  /// Targets for which to emit object code
++  std::vector<std::string> PopcornTargets;
++
+ public:
+   // Define accessors/mutators for code generation options of enumeration type.
+ #define CODEGENOPT(Name, Bits, Default)
 Index: include/clang/Frontend/CompilerInstance.h
 ===================================================================
 --- include/clang/Frontend/CompilerInstance.h	(revision 320332)
@@ -850,18 +882,14 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +866,118 @@
+@@ -769,3 +866,140 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
 +
 +void EmitMultiObjAction::anchor() { }
 +EmitMultiObjAction::EmitMultiObjAction(llvm::LLVMContext *_VMContext)
-+  : CodeGenAction(Backend_EmitMultiObj, _VMContext) {
-+  // TODO make Popcorn targets selectable from command line
-+  Targets.push_back("aarch64--linux-gnu");
-+  Targets.push_back("x86_64-unknown-linux-gnu");
-+}
++  : CodeGenAction(Backend_EmitMultiObj, _VMContext) {}
 +
 +static std::string AppendArchName(StringRef File, const TargetInfo *TI) {
 +  size_t dot = File.rfind('.');
@@ -883,16 +911,42 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +    CI.getFrontendOpts().OutputFile = "";
 +  }
 +
++  // Populate list of targets requested.  If none are requested, default to all
++  // supported targets.
++  std::vector<std::string> &Requested = CI.getCodeGenOpts().PopcornTargets;
++  if(Requested.size()) {
++    for(auto &Target : Requested) {
++      if(!Popcorn::SupportedTarget(Target)) {
++        std::string Msg("Popcorn: unsupported target '" + Target + "'");
++        unsigned DiagID =
++            CI.getDiagnostics().getCustomDiagID(DiagnosticsEngine::Error, "%0");
++        CI.getDiagnostics().Report(DiagID) << Msg;
++        return false;
++      }
++      Targets.push_back(Target);
++    }
++  }
++  else Popcorn::GetAllTargets(this->Targets);
++
 +  BackendAction BA = Backend_EmitMultiObj;
-+  for(size_t i = 0; i < Targets.size(); i++) {
-+    std::shared_ptr<TargetOptions> Opts = Popcorn::GetPopcornTargetOpts(Targets[i]);
++  if(Targets.size() > 1) {
++    for(size_t i = 0; i < Targets.size(); i++) {
++      std::shared_ptr<TargetOptions> Opts = Popcorn::GetPopcornTargetOpts(Targets[i]);
++      TargetOpts.push_back(Opts);
++      TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
++
++      raw_pwrite_stream *OS;
++      OS = GetOutputStream(CI, AppendArchName(OutFile, TargetInfos[i]), BA);
++      if (!OS) return false;
++      OutFiles.push_back(OS);
++    }
++  }
++  else {
++    std::shared_ptr<TargetOptions> Opts = Popcorn::GetPopcornTargetOpts(Targets[0]);
 +    TargetOpts.push_back(Opts);
 +    TargetInfos.push_back(TargetInfo::CreateTargetInfo(CI.getDiagnostics(), Opts));
 +
-+    raw_pwrite_stream *OS;
-+    if(i) OS = GetOutputStream(CI, AppendArchName(OutFile, TargetInfos[i]), BA);
-+    else OS = GetOutputStream(CI, OutFile, BA);
-+
++    raw_pwrite_stream *OS = GetOutputStream(CI, OutFile, BA);
 +    if (!OS) return false;
 +    OutFiles.push_back(OS);
 +  }
@@ -1009,7 +1063,7 @@ Index: lib/CodeGen/PopcornUtil.cpp
 ===================================================================
 --- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
 +++ lib/CodeGen/PopcornUtil.cpp	(working copy)
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,103 @@
 +//===--- PopcornUtil.cpp - LLVM Popcorn Linux Utilities -------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1026,9 +1080,25 @@ Index: lib/CodeGen/PopcornUtil.cpp
 +using namespace clang;
 +using namespace llvm;
 +
++const static std::vector<std::string> PopcornSupported = {
++  "aarch64-linux-gnu",
++  "x86_64-linux-gnu"
++};
++
++bool Popcorn::SupportedTarget(const StringRef Target) {
++  for(auto SupportedTarget : PopcornSupported)
++    if(Target == SupportedTarget) return true;
++  return false;
++}
++
++void Popcorn::GetAllTargets(SmallVector<std::string, 2> &Targets) {
++  Targets.clear();
++  for(auto Target : PopcornSupported) Targets.push_back(Target);
++}
++
 +typedef std::shared_ptr<TargetOptions> TargetOptionsPtr;
 +
-+TargetOptionsPtr Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
++TargetOptionsPtr Popcorn::GetPopcornTargetOpts(const StringRef TripleStr) {
 +  Triple Triple(Triple::normalize(TripleStr));
 +  assert(!Triple.getTriple().empty() && "Invalid target triple");
 +
@@ -1101,7 +1171,7 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 320332)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,41 @@
+@@ -4934,6 +4934,45 @@
        A->render(Args, CmdArgs);
    }
  
@@ -1120,6 +1190,10 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-optimize-regalloc");
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-fast-isel=false");
++    for(auto Target : Args.getAllArgValues(options::OPT_popcorn_target)) {
++      std::string combined("-popcorn-target=" + Target);
++      CmdArgs.push_back(Args.MakeArgString(combined));
++    }
 +  }
 +  else if(Args.hasArg(options::OPT_popcorn_libc)) {
 +    // Symbol alignment for libc & generate stack transformation metadata for
@@ -1172,7 +1246,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
    // We must always run at least the always inlining pass.
    Opts.setInlining(
      (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
-@@ -675,9 +664,37 @@
+@@ -675,9 +664,41 @@
    Opts.CudaGpuBinaryFileNames =
        Args.getAllArgValues(OPT_fcuda_include_gpubinary);
  
@@ -1185,6 +1259,10 @@ Index: lib/Frontend/CompilerInvocation.cpp
 +    Opts.VectorizeLoop = 0;
 +    Opts.VectorizeSLP = 0;
 +  }
++
++  if(Opts.PopcornMigratable)
++    for(auto Target : Args.getAllArgValues(OPT_popcorn_target))
++      Opts.PopcornTargets.push_back(Target);
 +
    return Success;
  }
@@ -1210,7 +1288,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
  static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
                                        ArgList &Args) {
    using namespace options;
-@@ -856,7 +873,11 @@
+@@ -856,7 +877,11 @@
      case OPT_emit_codegen_only:
        Opts.ProgramAction = frontend::EmitCodeGenOnly; break;
      case OPT_emit_obj:
@@ -1223,7 +1301,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
      case OPT_fixit_EQ:
        Opts.FixItSuffix = A->getValue();
        // fall-through!
-@@ -1704,6 +1725,8 @@
+@@ -1704,6 +1729,8 @@
    Opts.SanitizeAddressFieldPadding =
        getLastArgIntValue(Args, OPT_fsanitize_address_field_padding, 0, Diags);
    Opts.SanitizerBlacklistFiles = Args.getAllArgValues(OPT_fsanitize_blacklist);
@@ -1232,7 +1310,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
  }
  
  static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
-@@ -1803,6 +1826,7 @@
+@@ -1803,6 +1830,7 @@
    case frontend::EmitLLVMOnly:
    case frontend::EmitCodeGenOnly:
    case frontend::EmitObj:
@@ -1240,7 +1318,7 @@ Index: lib/Frontend/CompilerInvocation.cpp
    case frontend::FixIt:
    case frontend::GenerateModule:
    case frontend::GeneratePCH:
-@@ -1890,6 +1914,11 @@
+@@ -1890,6 +1918,11 @@
    ParseTargetArgs(Res.getTargetOpts(), Args);
    Success &= ParseCodeGenArgs(Res.getCodeGenOpts(), Args, DashX, Diags,
                                Res.getTargetOpts());
