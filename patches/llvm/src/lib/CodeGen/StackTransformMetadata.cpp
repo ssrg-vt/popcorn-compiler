@@ -1205,9 +1205,13 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
           CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
         }
         else {
-          DEBUG(dbgs() << "      Unhandled defining instruction: ";
-                MRI->def_instr_begin(Vreg)->print(dbgs());
-                dbgs() << "\n");
+          DEBUG(
+            DefMI = &*MRI->def_instr_begin(Vreg);
+            StringRef BBName = DefMI->getParent()->getName();
+            dbgs() << "      Unhandled defining instruction in basic block "
+                   << BBName << ":";
+            DefMI->print(dbgs());
+          );
         }
       }
     }
