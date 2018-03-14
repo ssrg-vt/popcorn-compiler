@@ -47,7 +47,13 @@ public:
   /// Emit a warning message for a given location, denoted by an instruction.
   static void warn(const Instruction *I, const std::string &Msg) {
     const Function *F = I->getParent()->getParent();
-    std::string Warning("Popcorn compatibility: " + Msg);
+    std::string Warning("Popcorn compatibility");
+    if(F->hasName()) {
+      Warning += " in function '";
+      Warning += F->getName();
+      Warning += "'";
+    }
+    Warning += ": " + Msg;
     DiagnosticInfoOptimizationFailure DI(*F, I->getDebugLoc(), Warning);
     I->getContext().diagnose(DI);
   }
@@ -59,7 +65,13 @@ public:
   /// Emit an error message for a given location, denoted by an instruction.
   static void error(const Instruction *I, const std::string &Msg) {
     const Function *F = I->getParent()->getParent();
-    std::string Error("Popcorn compatibility: " + Msg);
+    std::string Error("Popcorn compatibility");
+    if(F->hasName()) {
+      Error += " in function '";
+      Error += F->getName();
+      Error += "'";
+    }
+    Error += ": " + Msg;
     DiagnosticInfoOptimizationError DI(*F, I->getDebugLoc(), Error);
     I->getContext().diagnose(DI);
   }

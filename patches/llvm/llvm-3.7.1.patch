@@ -3630,7 +3630,7 @@ Index: lib/Analysis/PopcornCompatibility.cpp
 ===================================================================
 --- lib/Analysis/PopcornCompatibility.cpp	(nonexistent)
 +++ lib/Analysis/PopcornCompatibility.cpp	(working copy)
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,142 @@
 +//===- PopcornCompatibility.cpp -------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3680,7 +3680,13 @@ Index: lib/Analysis/PopcornCompatibility.cpp
 +  /// Emit a warning message for a given location, denoted by an instruction.
 +  static void warn(const Instruction *I, const std::string &Msg) {
 +    const Function *F = I->getParent()->getParent();
-+    std::string Warning("Popcorn compatibility: " + Msg);
++    std::string Warning("Popcorn compatibility");
++    if(F->hasName()) {
++      Warning += " in function '";
++      Warning += F->getName();
++      Warning += "'";
++    }
++    Warning += ": " + Msg;
 +    DiagnosticInfoOptimizationFailure DI(*F, I->getDebugLoc(), Warning);
 +    I->getContext().diagnose(DI);
 +  }
@@ -3692,7 +3698,13 @@ Index: lib/Analysis/PopcornCompatibility.cpp
 +  /// Emit an error message for a given location, denoted by an instruction.
 +  static void error(const Instruction *I, const std::string &Msg) {
 +    const Function *F = I->getParent()->getParent();
-+    std::string Error("Popcorn compatibility: " + Msg);
++    std::string Error("Popcorn compatibility");
++    if(F->hasName()) {
++      Error += " in function '";
++      Error += F->getName();
++      Error += "'";
++    }
++    Error += ": " + Msg;
 +    DiagnosticInfoOptimizationError DI(*F, I->getDebugLoc(), Error);
 +    I->getContext().diagnose(DI);
 +  }
@@ -6987,7 +6999,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1301 @@
+@@ -0,0 +1,1304 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7565,26 +7577,27 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  unsigned Vreg = Src.getReg();
 +  bool hasRegUnit = false;
 +  SlotIndex Slots[2] = {
-+    Indexes->getInstructionIndex(Src.getParent()),
-+    Indexes->getInstructionIndex(SM)
++    Indexes->getInstructionIndex(Src.getParent()).getRegSlot(),
++    Indexes->getInstructionIndex(SM).getRegSlot()
 +  };
 +
++  // Find the segment ending at or containing the call instruction.  Note that
++  // we search using the insruction's base index, as the interval may end at
++  // the register index (and the end of the range is non-inclusive).
 +  LiveInterval &Reg = LI->getInterval(Vreg);
-+  LiveInterval::iterator Seg = Reg.find(Slots[0]);
-+  assert(Seg != Reg.end() && Seg->contains(Slots[0]) &&
++  LiveInterval::iterator Seg = Reg.find(Slots[0].getBaseIndex());
++  assert(Seg != Reg.end() && Seg->contains(Slots[0].getBaseIndex()) &&
 +         "Invalid live interval");
 +
 +  if(Seg->end < Slots[1]) {
 +    // Update the segment to include the stackmap
-+    SlotIndex SMRegSlot = Slots[1].getRegSlot();
-+    Seg = Reg.addSegment(Segment(Seg->start, SMRegSlot, Seg->valno));
++    Seg = Reg.addSegment(Segment(Seg->start, Slots[1], Seg->valno));
 +    DEBUG(dbgs() << "    -> Updated register live interval: "; Seg->dump());
 +
 +    // We also need to update the physical register's register unit (RU) live
 +    // range because LiveIntervals::addKillFlags() will use the RU's live range
 +    // to avoid marking a physical register dead if two virtual registers
 +    // (mapped to that physical register) have overlapping live ranges.
-+    SMRegSlot = SMRegSlot.getNextIndex();
 +    MCRegUnitIterator Outer(VRM->getPhys(Vreg), TRI);
 +    for(MCRegUnitIterator Unit(Outer); Unit.isValid(); ++Unit) {
 +      LiveRange &RURange = LI->getRegUnit(*Unit);
@@ -7597,7 +7610,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +      if(RUS != RURange.end()) {
 +        hasRegUnit = true;
-+        Seg = RURange.addSegment(Segment(RUS->start, SMRegSlot, RUS->valno));
++        Seg = RURange.addSegment(
++          Segment(RUS->start, Slots[1].getNextIndex(), RUS->valno));
 +        DEBUG(
 +          dbgs() << "    -> Updated segment for register unit "
 +                 << *Unit << ": ";
@@ -7611,7 +7625,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    if(!hasRegUnit) {
 +      LiveRange &RURange = LI->getRegUnit(*Outer);
 +      VNInfo *Valno = RURange.getNextValue(Slots[0], LI->getVNInfoAllocator());
-+      Seg = RURange.addSegment(Segment(Slots[0], SMRegSlot, Valno));
++      Seg = RURange.addSegment(
++        Segment(Slots[0], Slots[1].getNextIndex(), Valno));
 +      DEBUG(
 +        dbgs() << "    -> Added segment for register unit "
 +               << *Outer << ": ";
@@ -9844,7 +9859,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,178 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9980,6 +9995,12 @@ Index: lib/Target/X86/X86Values.cpp
 +  case X86::MOV32ri:
 +    MO = &MI->getOperand(1);
 +    if(MO->isImm()) Val = new MachineImmediate(4, MO->getImm(), MI, false);
++    break;
++  case X86::MOV32ri64:
++    // TODO the upper 32 bits of this reference are supposed to be masked
++    MO = &MI->getOperand(1);
++    if(TargetValues::isSymbolValue(MO))
++      Val = new MachineSymbolRef(*MO, false, MI);
 +    break;
 +  case X86::MOV64ri:
 +    MO = &MI->getOperand(1);
