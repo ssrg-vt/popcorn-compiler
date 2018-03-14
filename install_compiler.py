@@ -538,12 +538,12 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         print("Configuring libopenpop ({})...".format(target))
         try:
-            # TODO -popcorn-alignment -> -popcorn-migratable
-            os.environ['CC'] = '{}/bin/clang'.format(install_path)
-            os.environ['CFLAGS'] = '-target {}-linux-gnu \
-                                    -nostdinc -isystem {}/include \
-                                    -popcorn-alignment'\
-                                    .format(target, target_install_path)
+            os.environ['CC'] = '{}/bin/musl-clang'.format(target_install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu -g -O2 \
+                                    -popcorn-migratable \
+                                    -popcorn-target={}-linux-gnu' \
+                                    .format(target, target)
+            os.environ['LIBS'] = '-lmigrate -lstack-transform -lelf'
             args = ['./configure',
                     '--prefix=' + target_install_path,
                     '--target={}-linux-gnu'.format(target),
