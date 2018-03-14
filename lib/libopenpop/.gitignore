@@ -3,6 +3,7 @@
 *.la
 .deps/
 .libs/
+.Tpo
 Makefile
 config.h
 config.log

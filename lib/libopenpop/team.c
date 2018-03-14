@@ -561,14 +561,15 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		    {
 		      unsigned int j;
 
-		      if (team->prev_ts.place_partition_len > 64)
+                     /* Popcorn: remove allocas */
+		      /*if (team->prev_ts.place_partition_len > 64)*/
 			affinity_thr
 			  = gomp_malloc (team->prev_ts.place_partition_len
 					 * sizeof (struct gomp_thread *));
-		      else
+		      /*else
 			affinity_thr
 			  = gomp_alloca (team->prev_ts.place_partition_len
-					 * sizeof (struct gomp_thread *));
+					 * sizeof (struct gomp_thread *));*/
 		      memset (affinity_thr, '\0',
 			      team->prev_ts.place_partition_len
 			      * sizeof (struct gomp_thread *));
@@ -656,7 +657,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	      ? (affinity_count == old_threads_used - nthreads)
 	      : (i == old_threads_used))
 	    {
-	      if (team->prev_ts.place_partition_len > 64)
+             /* Popcorn: removed alloca, always needs to be freed */
+	      /*if (team->prev_ts.place_partition_len > 64)*/
 		free (affinity_thr);
 	      affinity_thr = NULL;
 	      affinity_count = 0;
@@ -735,7 +737,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       attr = &thread_attr;
     }
 
-  start_data = gomp_alloca (sizeof (struct gomp_thread_start_data)
+  /* Popcorn: convert alloca to malloc */
+  start_data = gomp_malloc (sizeof (struct gomp_thread_start_data)
 			    * (nthreads-i));
 
   /* Launch new threads.  */
@@ -844,6 +847,9 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	gomp_fatal ("Thread creation failed: %s", strerror (err));
     }
 
+  /* Popcorn: converted alloca to malloc, needs to be freed */
+  free(start_data);
+
   if (__builtin_expect (attr == &thread_attr, 0))
     pthread_attr_destroy (&thread_attr);
 
@@ -879,8 +885,9 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       gomp_mutex_unlock (&gomp_managed_threads_lock);
 #endif
     }
+  /* Popcorn: removed alloca, always needs to be freed */
   if (__builtin_expect (affinity_thr != NULL, 0)
-      && team->prev_ts.place_partition_len > 64)
+      /*&& team->prev_ts.place_partition_len > 64*/)
     free (affinity_thr);
 }
 #endif

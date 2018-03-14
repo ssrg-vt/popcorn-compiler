@@ -1524,9 +1524,11 @@ GOMP_target_ext (int device, void (*fn) (void *), size_t mapnum,
 					       &tgt_align, &tgt_size);
 	  if (tgt_align)
 	    {
-	      char *tgt = gomp_alloca (tgt_size + tgt_align - 1);
+             /* Popcorn: converted alloca to malloc */
+	      char *tgt = gomp_malloc (tgt_size + tgt_align - 1);
 	      copy_firstprivate_data (tgt, mapnum, hostaddrs, sizes, kinds,
 				      tgt_align, tgt_size);
+             free(tgt);
 	    }
 	  fpc_done = true;
 	  gomp_task_maybe_wait_for_dependencies (depend);
@@ -1545,9 +1547,11 @@ GOMP_target_ext (int device, void (*fn) (void *), size_t mapnum,
 					       &tgt_align, &tgt_size);
 	  if (tgt_align)
 	    {
-	      char *tgt = gomp_alloca (tgt_size + tgt_align - 1);
+             /* Popcorn: converted alloca to malloc */
+	      char *tgt = gomp_malloc (tgt_size + tgt_align - 1);
 	      copy_firstprivate_data (tgt, mapnum, hostaddrs, sizes, kinds,
 				      tgt_align, tgt_size);
+             free(tgt);
 	    }
 	}
       gomp_target_fallback (fn, hostaddrs);
