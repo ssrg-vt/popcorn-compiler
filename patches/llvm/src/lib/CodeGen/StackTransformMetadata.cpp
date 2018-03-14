@@ -575,26 +575,27 @@ StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
   unsigned Vreg = Src.getReg();
   bool hasRegUnit = false;
   SlotIndex Slots[2] = {
-    Indexes->getInstructionIndex(Src.getParent()),
-    Indexes->getInstructionIndex(SM)
+    Indexes->getInstructionIndex(Src.getParent()).getRegSlot(),
+    Indexes->getInstructionIndex(SM).getRegSlot()
   };
 
+  // Find the segment ending at or containing the call instruction.  Note that
+  // we search using the insruction's base index, as the interval may end at
+  // the register index (and the end of the range is non-inclusive).
   LiveInterval &Reg = LI->getInterval(Vreg);
-  LiveInterval::iterator Seg = Reg.find(Slots[0]);
-  assert(Seg != Reg.end() && Seg->contains(Slots[0]) &&
+  LiveInterval::iterator Seg = Reg.find(Slots[0].getBaseIndex());
+  assert(Seg != Reg.end() && Seg->contains(Slots[0].getBaseIndex()) &&
          "Invalid live interval");
 
   if(Seg->end < Slots[1]) {
     // Update the segment to include the stackmap
-    SlotIndex SMRegSlot = Slots[1].getRegSlot();
-    Seg = Reg.addSegment(Segment(Seg->start, SMRegSlot, Seg->valno));
+    Seg = Reg.addSegment(Segment(Seg->start, Slots[1], Seg->valno));
     DEBUG(dbgs() << "    -> Updated register live interval: "; Seg->dump());
 
     // We also need to update the physical register's register unit (RU) live
     // range because LiveIntervals::addKillFlags() will use the RU's live range
     // to avoid marking a physical register dead if two virtual registers
     // (mapped to that physical register) have overlapping live ranges.
-    SMRegSlot = SMRegSlot.getNextIndex();
     MCRegUnitIterator Outer(VRM->getPhys(Vreg), TRI);
     for(MCRegUnitIterator Unit(Outer); Unit.isValid(); ++Unit) {
       LiveRange &RURange = LI->getRegUnit(*Unit);
@@ -607,7 +608,8 @@ StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
 
       if(RUS != RURange.end()) {
         hasRegUnit = true;
-        Seg = RURange.addSegment(Segment(RUS->start, SMRegSlot, RUS->valno));
+        Seg = RURange.addSegment(
+          Segment(RUS->start, Slots[1].getNextIndex(), RUS->valno));
         DEBUG(
           dbgs() << "    -> Updated segment for register unit "
                  << *Unit << ": ";
@@ -621,7 +623,8 @@ StackTransformMetadata::updateRegisterLiveInterval(MachineOperand &Src,
     if(!hasRegUnit) {
       LiveRange &RURange = LI->getRegUnit(*Outer);
       VNInfo *Valno = RURange.getNextValue(Slots[0], LI->getVNInfoAllocator());
-      Seg = RURange.addSegment(Segment(Slots[0], SMRegSlot, Valno));
+      Seg = RURange.addSegment(
+        Segment(Slots[0], Slots[1].getNextIndex(), Valno));
       DEBUG(
         dbgs() << "    -> Added segment for register unit "
                << *Outer << ": ";
