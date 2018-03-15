@@ -316,7 +316,7 @@ void
 gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		 unsigned flags, struct gomp_team *team)
 {
-  struct gomp_thread_start_data *start_data;
+  struct gomp_thread_start_data *start_data, *first_start;
   struct gomp_thread *thr, *nthr;
   struct gomp_task *task;
   struct gomp_task_icv *icv;
@@ -740,6 +740,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   /* Popcorn: convert alloca to malloc */
   start_data = gomp_malloc (sizeof (struct gomp_thread_start_data)
 			    * (nthreads-i));
+  first_start = start_data;
 
   /* Launch new threads.  */
   for (; i < nthreads; ++i)
@@ -847,9 +848,6 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	gomp_fatal ("Thread creation failed: %s", strerror (err));
     }
 
-  /* Popcorn: converted alloca to malloc, needs to be freed */
-  free(start_data);
-
   if (__builtin_expect (attr == &thread_attr, 0))
     pthread_attr_destroy (&thread_attr);
 
@@ -889,6 +887,9 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (__builtin_expect (affinity_thr != NULL, 0)
       /*&& team->prev_ts.place_partition_len > 64*/)
     free (affinity_thr);
+
+  /* Popcorn: converted alloca to malloc, needs to be freed */
+  free(first_start);
 }
 #endif
 
