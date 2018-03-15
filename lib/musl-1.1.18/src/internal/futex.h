@@ -17,5 +17,6 @@
 #define FUTEX_CLOCK_REALTIME 256
 
 int __futex(volatile int *, int, int, void *);
+int futex(volatile int *, int, int, void *);
 
 #endif
