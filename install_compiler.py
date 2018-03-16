@@ -16,6 +16,9 @@ import urllib
 # GLOBALS
 #================================================
 
+# The machine on which we're compiling
+host = platform.machine()
+
 # Supported targets
 supported_targets = ['aarch64', 'x86_64']
 # LLVM names for targets
@@ -404,6 +407,7 @@ def install_binutils(base_path, install_path, num_threads):
 
 def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
+    global host
     cur_dir = os.getcwd()
 
     # musl-libc & libelf are built individually per target
@@ -539,10 +543,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         print("Configuring libopenpop ({})...".format(target))
         try:
             os.environ['CC'] = '{}/bin/musl-clang'.format(target_install_path)
-            os.environ['CFLAGS'] = '-target {}-linux-gnu -g -O2 \
-                                    -popcorn-migratable \
-                                    -popcorn-target={}-linux-gnu' \
-                                    .format(target, target)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g ' \
+                                   '-popcorn-migratable ' \
+                                   '-popcorn-target={}-linux-gnu' \
+                                    .format(host, target)
             os.environ['LIBS'] = '-lmigrate -lstack-transform -lelf'
             args = ['./configure',
                     '--prefix=' + target_install_path,
