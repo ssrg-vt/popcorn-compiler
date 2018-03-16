@@ -2582,7 +2582,7 @@ Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
 +++ lib/Analysis/LiveValues.cpp	(working copy)
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,380 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -2741,7 +2741,13 @@ Index: lib/Analysis/LiveValues.cpp
 +      if(includeVal(*op))
 +        live->insert(*op);
 +  }
++
 +  live->erase(&*ri);
++  for(User::const_op_iterator op = ri->op_begin();
++      op != ri->op_end();
++      op++)
++    if(includeVal(*op))
++      live->insert(*op);
 +
 +  return live;
 +}
