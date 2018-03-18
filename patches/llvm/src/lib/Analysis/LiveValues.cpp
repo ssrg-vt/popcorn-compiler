@@ -156,7 +156,13 @@ std::set<const Value *>
       if(includeVal(*op))
         live->insert(*op);
   }
+
   live->erase(&*ri);
+  for(User::const_op_iterator op = ri->op_begin();
+      op != ri->op_end();
+      op++)
+    if(includeVal(*op))
+      live->insert(*op);
 
   return live;
 }

@@ -651,7 +651,7 @@ public:
       if(AddedMigPoint) LP->runOnFunction(F);
     }
 
-    if(MoreMigPoints && !LP->tooManyPaths()) {
+    if(MoreMigPoints && !LP->analysisFailed()) {
       StringRef FuncName = F.getName();
       StringMap<unsigned>::const_iterator It;
       if((It = FuncCapList.find(FuncName)) != FuncCapList.end())
