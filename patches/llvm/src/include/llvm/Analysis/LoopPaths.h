@@ -186,6 +186,10 @@ private:
   /// the function.
   bool TooManyPaths;
 
+  /// Set if analysis had to bail out because it found a non-loop cycle due to
+  /// complect control flow (usually due to goto's).
+  bool DetectedCycle;
+
   /// Depth-first search information for the current path being explored.
   struct LoopDFSInfo {
   public:
@@ -235,8 +239,14 @@ public:
   /// below which populate containers with paths (for this loop only).
   void rerunOnLoop(Loop *L);
 
+  /// Query whether analysis failed.
+  bool analysisFailed() const { return TooManyPaths || DetectedCycle; }
+
   /// Query whether there were too many paths to enumerate in the function.
   bool tooManyPaths() const { return TooManyPaths; }
+
+  /// Query whether analysis detected a non-loop cycle.
+  bool detectedCycle() const { return DetectedCycle; }
 
   bool hasPaths(const Loop *L) const { return Paths.count(L); }
 
