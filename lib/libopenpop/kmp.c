@@ -335,7 +335,7 @@ void __kmpc_flush(ident_t *loc)
 
 /*
  * Barrier with cancellation point to send threads from the barrier to the end
- * of the parallel region.  Needs a special code pattern as document in the
+ * of the parallel region.  Needs a special code pattern as documented in the
  * design document for the cancellation feature.
  * @param loc source location information
  * @param gtid global thread ID
@@ -347,7 +347,7 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
   // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  GOMP_barrier();
+  GOMP_barrier_cancel();
   return 0;
 }
 
