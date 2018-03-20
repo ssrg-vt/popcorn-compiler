@@ -542,12 +542,30 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         print("Configuring libopenpop ({})...".format(target))
         try:
-            os.environ['CC'] = '{}/bin/musl-clang'.format(target_install_path)
-            os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g ' \
+            # Get the libgcc file name
+            # NOTE: this won't be needed if we force clang to emit 64-bit
+            # doubles when compiling musl (currently, it needs soft-FP
+            # emulation for 128-bit long doubles)
+            args = [ '{}-linux-gnu-gcc'.format(target),
+                     '-print-libgcc-file-name' ]
+            libgcc = subprocess.check_output(args, stderr=subprocess.STDOUT,
+                                             shell=False).decode("utf-8")
+
+            # Note: for build repeatability, we have to use the *same* include
+            # path for *all* targets
+            include_dir = os.path.join(install_path, targets[0], 'include')
+            lib_dir = os.path.join(target_install_path, 'lib')
+
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g -Wall ' \
+                                   '-nostdinc -isystem {} ' \
                                    '-popcorn-migratable ' \
                                    '-popcorn-target={}-linux-gnu' \
-                                    .format(host, target)
-            os.environ['LIBS'] = '-lmigrate -lstack-transform -lelf'
+                                    .format(host, include_dir, target)
+            os.environ['LDFLAGS'] = '-nostdlib -L{}'.format(lib_dir)
+            os.environ['LIBS'] = '{}/crt1.o -lmigrate -lstack-transform ' \
+                                 '-lelf -lc {}' \
+                                 .format(lib_dir, libgcc)
             args = ['./configure',
                     '--prefix=' + target_install_path,
                     '--target={}-linux-gnu'.format(target),
@@ -557,6 +575,8 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
             rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
             del os.environ['CC']
             del os.environ['CFLAGS']
+            del os.environ['LDFLAGS']
+            del os.environ['LIBS']
         except Exception as e:
            print('Could not configure libopenpop ({})!'.format(e))
            sys.exit(1)
