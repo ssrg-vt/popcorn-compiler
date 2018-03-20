@@ -1141,7 +1141,7 @@ Index: include/llvm/CodeGen/Passes.h
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -193,6 +205,26 @@
+@@ -193,10 +205,33 @@
    /// Return true if shrink wrapping is enabled.
    bool getEnableShrinkWrap() const;
  
@@ -1168,7 +1168,14 @@ Index: include/llvm/CodeGen/Passes.h
    /// Return true if the default global register allocator is in use and
    /// has not be overriden on the command line with '-regalloc=...'
    bool usingDefaultRegAlloc() const;
-@@ -448,6 +480,10 @@
+ 
++  /// Add Popcorn-specific IR passes for code generation.
++  void addPopcornPasses();
++
+   /// Add common target configurable passes that perform LLVM IR to IR
+   /// transforms following machine independent optimization.
+   virtual void addIRPasses();
+@@ -448,6 +483,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -5759,7 +5766,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,6 +125,29 @@
+@@ -105,8 +125,33 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
@@ -5788,7 +5795,11 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +
    PM.add(PassConfig);
  
++  PassConfig->addPopcornPasses();
++
    PassConfig->addIRPasses();
+ 
+   PassConfig->addCodeGenPrepare();
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
 --- lib/CodeGen/MachineFunction.cpp	(revision 320332)
@@ -6017,7 +6028,7 @@ Index: lib/CodeGen/Passes.cpp
      addPass(createPartiallyInlineLibCallsPass());
  }
  
-@@ -449,7 +457,9 @@
+@@ -449,11 +457,32 @@
  /// Add pass to prepare the LLVM IR for code generation. This should be done
  /// before exception handling preparation passes.
  void TargetPassConfig::addCodeGenPrepare() {
@@ -6028,10 +6039,8 @@ Index: lib/CodeGen/Passes.cpp
      addPass(createCodeGenPreparePass(TM));
    addPass(createRewriteSymbolsPass());
  }
-@@ -459,6 +469,23 @@
- void TargetPassConfig::addISelPrepare() {
-   addPreISel();
  
++void TargetPassConfig::addPopcornPasses() {
 +  assert(!(AddStackMaps && AddLibcStackMaps) &&
 +    "Cannot add both InsertStackMapsPass and LibcStackMapsPass");
 +  assert(!(AddMigrationPoints && AddLibcStackMaps) &&
@@ -6048,11 +6057,12 @@ Index: lib/CodeGen/Passes.cpp
 +  // Similar to creatInsertStackMaps pass, but only instruments libc thread
 +  // start functions
 +  if(AddLibcStackMaps) addPass(createLibcStackMapsPass());
++}
 +
-   // Add both the safe stack and the stack protection passes: each of them will
-   // only protect functions that have corresponding attributes.
-   addPass(createSafeStackPass());
-@@ -754,6 +781,10 @@
+ /// Add common passes that perform LLVM IR to IR transforms in preparation for
+ /// instruction selection.
+ void TargetPassConfig::addISelPrepare() {
+@@ -754,6 +783,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -6063,7 +6073,7 @@ Index: lib/CodeGen/Passes.cpp
    // Finally rewrite virtual registers.
    addPass(&VirtRegRewriterID);
  
-@@ -766,7 +797,8 @@
+@@ -766,7 +799,8 @@
    // Run post-ra machine LICM to hoist reloads / remats.
    //
    // FIXME: can this move into MachineLateOptimization?
@@ -10144,7 +10154,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,363 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -10201,6 +10211,13 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 + */
 +class InsertStackMaps : public ModulePass
 +{
++private:
++  /* Some useful typedefs */
++  typedef SmallVector<const Instruction *, 4> InstVec;
++  typedef DenseMap<const Instruction *, InstVec> InstHidingMap;
++  typedef SmallVector<const Argument *, 4> ArgVec;
++  typedef DenseMap<const Instruction *, ArgVec> ArgHidingMap;
++
 +public:
 +  static char ID;
 +  size_t callSiteID;
@@ -10233,8 +10250,8 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +    std::set<const Value *> *live;
 +    std::set<const Value *, ValueComp> sortedLive;
-+    std::set<const Instruction *> hiddenInst;
-+    std::set<const Argument *> hiddenArgs;
++    InstHidingMap hiddenInst;
++    ArgHidingMap hiddenArgs;
 +
 +    DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
 +                 << "********** Module: " << M.getName() << " **********\n\n");
@@ -10294,22 +10311,22 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +
 +            live = liveVals.getLiveValues(&*i);
 +            for(const Value *val : *live) sortedLive.insert(val);
-+            for(const Instruction *val : hiddenInst) {
++            for(const auto &pair : hiddenInst) {
 +              /*
 +               * The two criteria for inclusion of a hidden value are:
 +               *   1. The value's definition dominates the call
 +               *   2. A use which hides the definition is in the stackmap
 +               */
-+              if(DT.dominates(val, i) && hasLiveUser(val, *live))
-+                sortedLive.insert(val);
++              if(DT.dominates(pair.first, i) && live->count(pair.first))
++                for(auto &inst : pair.second) sortedLive.insert(inst);
 +            }
-+            for(const Argument *val : hiddenArgs) {
++            for(const auto &pair : hiddenArgs) {
 +              /*
 +               * Similar criteria apply as above, except we know arguments
 +               * dominate the entire function.
 +               */
-+              if(hasLiveUser(val, *live))
-+                sortedLive.insert(val);
++              if(live->count(pair.first))
++                for(auto &inst : pair.second) sortedLive.insert(inst);
 +            }
 +            delete live;
 +
@@ -10449,14 +10466,12 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +   *     be used any more
 +   *
 +   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
-+   *    architecture-specific  machine code by the backend.  To help capture
-+   *    all live values, we capture both the value used in the comparison and
-+   *    the resulting condition value.
++   *    architecture-specific machine code by the backend.  To help capture all
++   *    live values, we capture both the value used in the comparison and the
++   *    resulting condition value.
 +   *
 +   */
-+  void getHiddenVals(Function &F,
-+                     std::set<const Instruction *> &inst,
-+                     std::set<const Argument *> &args)
++  void getHiddenVals(Function &F, InstHidingMap &inst, ArgHidingMap &args)
 +  {
 +    /* Does the instruction potentially hide values from liveness analysis? */
 +    auto hidesValues = [](const Instruction *I) {
@@ -10464,36 +10479,24 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +         isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
 +         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
 +         isa<BitCastInst>(I))
-+        return true ;
++        return true;
 +      else return false;
 +    };
 +
 +    /* Search for instructions that obscure live values & record operands */
 +    for(inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
++      InstVec &InstsHidden = inst[&*i];
++      ArgVec &ArgsHidden = args[&*i];
++
 +      if(hidesValues(&*i)) {
 +        for(unsigned op = 0; op < i->getNumOperands(); op++) {
 +          if(isa<Instruction>(i->getOperand(op)))
-+            inst.insert(cast<Instruction>(i->getOperand(op)));
++            InstsHidden.push_back(cast<Instruction>(i->getOperand(op)));
 +          else if(isa<Argument>(i->getOperand(op)))
-+            args.insert(cast<Argument>(i->getOperand(op)));
++            ArgsHidden.push_back(cast<Argument>(i->getOperand(op)));
 +        }
 +      }
 +    }
-+  }
-+
-+  /**
-+   * Return whether or not a value's user is in a liveness set.
-+   *
-+   * @param Val a value whose users are checked against the liveness set
-+   * @param Live a set of live values
-+   * @return true if a user is in the liveness set, false otherwise
-+   */
-+  bool hasLiveUser(const Value *Val,
-+                   const std::set<const Value *> &Live) const {
-+    Value::const_use_iterator use, e;
-+    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
-+      if(Live.count(use->getUser())) return true;
-+    return false;
 +  }
 +};
 +
