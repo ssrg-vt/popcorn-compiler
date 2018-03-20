@@ -1141,7 +1141,7 @@ Index: include/llvm/CodeGen/Passes.h
    /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
    /// a portion of the normal code-gen pass sequence.
    ///
-@@ -193,6 +205,26 @@
+@@ -193,10 +205,33 @@
    /// Return true if shrink wrapping is enabled.
    bool getEnableShrinkWrap() const;
  
@@ -1168,7 +1168,14 @@ Index: include/llvm/CodeGen/Passes.h
    /// Return true if the default global register allocator is in use and
    /// has not be overriden on the command line with '-regalloc=...'
    bool usingDefaultRegAlloc() const;
-@@ -448,6 +480,10 @@
+ 
++  /// Add Popcorn-specific IR passes for code generation.
++  void addPopcornPasses();
++
+   /// Add common target configurable passes that perform LLVM IR to IR
+   /// transforms following machine independent optimization.
+   virtual void addIRPasses();
+@@ -448,6 +483,10 @@
    // instruction and update the MachineFunctionInfo with that information.
    extern char &ShrinkWrapID;
  
@@ -5759,7 +5766,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,6 +125,29 @@
+@@ -105,8 +125,33 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
@@ -5788,7 +5795,11 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +
    PM.add(PassConfig);
  
++  PassConfig->addPopcornPasses();
++
    PassConfig->addIRPasses();
+ 
+   PassConfig->addCodeGenPrepare();
 Index: lib/CodeGen/MachineFunction.cpp
 ===================================================================
 --- lib/CodeGen/MachineFunction.cpp	(revision 320332)
@@ -6017,7 +6028,7 @@ Index: lib/CodeGen/Passes.cpp
      addPass(createPartiallyInlineLibCallsPass());
  }
  
-@@ -449,7 +457,9 @@
+@@ -449,11 +457,32 @@
  /// Add pass to prepare the LLVM IR for code generation. This should be done
  /// before exception handling preparation passes.
  void TargetPassConfig::addCodeGenPrepare() {
@@ -6028,10 +6039,8 @@ Index: lib/CodeGen/Passes.cpp
      addPass(createCodeGenPreparePass(TM));
    addPass(createRewriteSymbolsPass());
  }
-@@ -459,6 +469,23 @@
- void TargetPassConfig::addISelPrepare() {
-   addPreISel();
  
++void TargetPassConfig::addPopcornPasses() {
 +  assert(!(AddStackMaps && AddLibcStackMaps) &&
 +    "Cannot add both InsertStackMapsPass and LibcStackMapsPass");
 +  assert(!(AddMigrationPoints && AddLibcStackMaps) &&
@@ -6048,11 +6057,12 @@ Index: lib/CodeGen/Passes.cpp
 +  // Similar to creatInsertStackMaps pass, but only instruments libc thread
 +  // start functions
 +  if(AddLibcStackMaps) addPass(createLibcStackMapsPass());
++}
 +
-   // Add both the safe stack and the stack protection passes: each of them will
-   // only protect functions that have corresponding attributes.
-   addPass(createSafeStackPass());
-@@ -754,6 +781,10 @@
+ /// Add common passes that perform LLVM IR to IR transforms in preparation for
+ /// instruction selection.
+ void TargetPassConfig::addISelPrepare() {
+@@ -754,6 +783,10 @@
    // Allow targets to change the register assignments before rewriting.
    addPreRewrite();
  
@@ -6063,7 +6073,7 @@ Index: lib/CodeGen/Passes.cpp
    // Finally rewrite virtual registers.
    addPass(&VirtRegRewriterID);
  
-@@ -766,7 +797,8 @@
+@@ -766,7 +799,8 @@
    // Run post-ra machine LICM to hoist reloads / remats.
    //
    // FIXME: can this move into MachineLateOptimization?
