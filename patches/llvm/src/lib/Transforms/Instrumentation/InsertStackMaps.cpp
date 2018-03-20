@@ -54,6 +54,13 @@ struct ValueComp
  */
 class InsertStackMaps : public ModulePass
 {
+private:
+  /* Some useful typedefs */
+  typedef SmallVector<const Instruction *, 4> InstVec;
+  typedef DenseMap<const Instruction *, InstVec> InstHidingMap;
+  typedef SmallVector<const Argument *, 4> ArgVec;
+  typedef DenseMap<const Instruction *, ArgVec> ArgHidingMap;
+
 public:
   static char ID;
   size_t callSiteID;
@@ -86,8 +93,8 @@ public:
 
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
-    std::set<const Instruction *> hiddenInst;
-    std::set<const Argument *> hiddenArgs;
+    InstHidingMap hiddenInst;
+    ArgHidingMap hiddenArgs;
 
     DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
                  << "********** Module: " << M.getName() << " **********\n\n");
@@ -147,22 +154,22 @@ public:
 
             live = liveVals.getLiveValues(&*i);
             for(const Value *val : *live) sortedLive.insert(val);
-            for(const Instruction *val : hiddenInst) {
+            for(const auto &pair : hiddenInst) {
               /*
                * The two criteria for inclusion of a hidden value are:
                *   1. The value's definition dominates the call
                *   2. A use which hides the definition is in the stackmap
                */
-              if(DT.dominates(val, i) && hasLiveUser(val, *live))
-                sortedLive.insert(val);
+              if(DT.dominates(pair.first, i) && live->count(pair.first))
+                for(auto &inst : pair.second) sortedLive.insert(inst);
             }
-            for(const Argument *val : hiddenArgs) {
+            for(const auto &pair : hiddenArgs) {
               /*
                * Similar criteria apply as above, except we know arguments
                * dominate the entire function.
                */
-              if(hasLiveUser(val, *live))
-                sortedLive.insert(val);
+              if(live->count(pair.first))
+                for(auto &inst : pair.second) sortedLive.insert(inst);
             }
             delete live;
 
@@ -302,14 +309,12 @@ private:
    *     be used any more
    *
    * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
-   *    architecture-specific  machine code by the backend.  To help capture
-   *    all live values, we capture both the value used in the comparison and
-   *    the resulting condition value.
+   *    architecture-specific machine code by the backend.  To help capture all
+   *    live values, we capture both the value used in the comparison and the
+   *    resulting condition value.
    *
    */
-  void getHiddenVals(Function &F,
-                     std::set<const Instruction *> &inst,
-                     std::set<const Argument *> &args)
+  void getHiddenVals(Function &F, InstHidingMap &inst, ArgHidingMap &args)
   {
     /* Does the instruction potentially hide values from liveness analysis? */
     auto hidesValues = [](const Instruction *I) {
@@ -317,36 +322,24 @@ private:
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
          isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
          isa<BitCastInst>(I))
-        return true ;
+        return true;
       else return false;
     };
 
     /* Search for instructions that obscure live values & record operands */
     for(inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
+      InstVec &InstsHidden = inst[&*i];
+      ArgVec &ArgsHidden = args[&*i];
+
       if(hidesValues(&*i)) {
         for(unsigned op = 0; op < i->getNumOperands(); op++) {
           if(isa<Instruction>(i->getOperand(op)))
-            inst.insert(cast<Instruction>(i->getOperand(op)));
+            InstsHidden.push_back(cast<Instruction>(i->getOperand(op)));
           else if(isa<Argument>(i->getOperand(op)))
-            args.insert(cast<Argument>(i->getOperand(op)));
+            ArgsHidden.push_back(cast<Argument>(i->getOperand(op)));
         }
       }
     }
-  }
-
-  /**
-   * Return whether or not a value's user is in a liveness set.
-   *
-   * @param Val a value whose users are checked against the liveness set
-   * @param Live a set of live values
-   * @return true if a user is in the liveness set, false otherwise
-   */
-  bool hasLiveUser(const Value *Val,
-                   const std::set<const Value *> &Live) const {
-    Value::const_use_iterator use, e;
-    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
-      if(Live.count(use->getUser())) return true;
-    return false;
   }
 };
 

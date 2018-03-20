@@ -6,6 +6,7 @@
  * Date: 7/7/2016
  */
 
+#include <stdio.h>
 #include <unistd.h>
 
 #include "definitions.h"
@@ -52,7 +53,7 @@ static void print_help()
 
 static void parse_args(int argc, char **argv)
 {
-  int arg;
+  int arg, count = 0;
 
   while((arg = getopt(argc, argv, args)) != -1)
   {
@@ -76,8 +77,12 @@ static void parse_args(int argc, char **argv)
     }
   }
 
-  if(!bin_aarch64_fn || !bin_x86_64_fn || !bin_powerpc64_fn)
-    die("please specify binaries (run with -h for more information)",
+  count += (bin_aarch64_fn ? 1 : 0);
+  count += (bin_powerpc64_fn ? 1 : 0);
+  count += (bin_x86_64_fn ? 1 : 0);
+  if(count < 2)
+    die("please specify at least 2 binaries "
+        "(run with -h for more information)",
         INVALID_ARGUMENT);
 }
 
@@ -126,7 +131,8 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
     if(sm_a[i].num_records != sm_b[i].num_records)
     {
       snprintf(buf, BUF_SIZE,
-               "number of records for stackmap section %lu doesn't match (%u vs. %u)",
+               "number of records for stackmap section %lu doesn't match "
+               "(%u vs. %u)",
                i, sm_a[i].num_records, sm_b[i].num_records);
       warn(buf);
       ret = INVALID_METADATA;
@@ -158,8 +164,8 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
       if(func_a != func_b)
       {
         snprintf(buf, BUF_SIZE,
-                 "stackmap %lu corresponds to different functions "
-                 "(%s/%lx vs. %s/%lx)", sm_a[i].call_sites[j].id,
+                 "stackmap %lu corresponds to different functions: "
+                 "%s/%lx vs. %s/%lx", sm_a[i].call_sites[j].id,
                  sym_a_name, func_a, sym_b_name, func_b);
         warn(buf);
         ret = INVALID_METADATA;
@@ -186,9 +192,9 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
         if(num_a != num_b)
         {
           snprintf(buf, BUF_SIZE,
-                   "stackmap %lu has different numbers of location records "
+                   "%s: stackmap %lu has different numbers of location records "
                    "(%u vs. %u)",
-                   sm_a[i].call_sites[j].id, num_a, num_b);
+                   sym_a_name, sm_a[i].call_sites[j].id, num_a, num_b);
           warn(buf);
           ret = INVALID_METADATA;
         }
@@ -274,43 +280,78 @@ int main(int argc, char **argv)
   ret_t ret;
   bin *bin_aarch64 = NULL, *bin_powerpc64 = NULL, *bin_x86_64 = NULL;
   stack_map_section *sm_aarch64 = NULL, *sm_powerpc64 = NULL, *sm_x86_64 = NULL;
-  size_t num_sm_aarch64, num_sm_powerpc64, num_sm_x86_64;
+  size_t num_sm_aarch64 = 0, num_sm_powerpc64 = 0, num_sm_x86_64 = 0, i, j, num;
+  char buf[1024];
 
   parse_args(argc, argv);
 
   if(elf_version(EV_CURRENT) == EV_NONE)
     die("could not initialize libELF", INVALID_ELF_VERSION);
 
-  if((ret = init_elf_bin(bin_aarch64_fn, &bin_aarch64)) != SUCCESS)
-    die("could not initialize the binary (aarch64)", ret);
-  if((ret = init_elf_bin(bin_powerpc64_fn, &bin_powerpc64)) != SUCCESS)
-    die("could not initialize the binary (powerpc64)", ret);
-  if((ret = init_elf_bin(bin_x86_64_fn, &bin_x86_64)) != SUCCESS)
-    die("could not initialize the binary (x86-64)", ret);
+  if(bin_aarch64_fn)
+  {
+    ret = init_elf_bin(bin_aarch64_fn, &bin_aarch64);
+    if(ret != SUCCESS) die("could not initialize the binary (aarch64)", ret);
+    ret = init_stackmap(bin_aarch64, &sm_aarch64, &num_sm_aarch64);
+    if(ret != SUCCESS) die("could not read stackmaps (aarch64)", ret);
+  }
 
-  if((ret = init_stackmap(bin_aarch64,
-                          &sm_aarch64,
-                          &num_sm_aarch64)) != SUCCESS)
-    die("could not read stackmaps (aarch64)", ret);
-  if((ret = init_stackmap(bin_powerpc64,
-                          &sm_powerpc64,
-                          &num_sm_powerpc64)) != SUCCESS)
-    die("could not read stackmaps (powerpc64)", ret);
-  if((ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64)) != SUCCESS)
-    die("could not read stackmaps (x86-64)", ret);
+  if(bin_powerpc64_fn)
+  {
+    ret = init_elf_bin(bin_powerpc64_fn, &bin_powerpc64);
+    if(ret != SUCCESS) die("could not initialize the binary (powerpc64)", ret);
+    ret = init_stackmap(bin_powerpc64, &sm_powerpc64, &num_sm_powerpc64);
+    if(ret != SUCCESS) die("could not read stackmaps (powerpc64)", ret);
+  }
 
-  if((ret = check_stackmaps(bin_aarch64, sm_aarch64, num_sm_aarch64,
-                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
-  if((ret = check_stackmaps(bin_powerpc64, sm_powerpc64, num_sm_powerpc64,
-                            bin_x86_64, sm_x86_64, num_sm_x86_64)) != SUCCESS)
-    die("stackmap sections differ", ret);
+  if(bin_x86_64_fn)
+  {
+    ret = init_elf_bin(bin_x86_64_fn, &bin_x86_64);
+    if(ret != SUCCESS) die("could not initialize the binary (x86-64)", ret);
+    ret = init_stackmap(bin_x86_64, &sm_x86_64, &num_sm_x86_64);
+    if(ret != SUCCESS) die("could not read stackmaps (x86-64)", ret);
+  }
 
-  free_stackmaps(sm_aarch64, num_sm_aarch64);
-  free_stackmaps(sm_powerpc64, num_sm_powerpc64);
-  free_stackmaps(sm_x86_64, num_sm_x86_64);
-  free_elf_bin(bin_aarch64);
-  free_elf_bin(bin_powerpc64);
-  free_elf_bin(bin_x86_64);
+  bin *binaries[] = { bin_aarch64, bin_powerpc64, bin_x86_64 };
+  stack_map_section *stackmaps[] = { sm_aarch64, sm_powerpc64, sm_x86_64 };
+  size_t num_stackmaps[] = { num_sm_aarch64, num_sm_powerpc64, num_sm_x86_64 };
+  num = sizeof(binaries) / sizeof(bin *);
+
+  for(i = 0; i < num; i++)
+  {
+    for(j = i + 1; j < num; j++)
+    {
+      if(binaries[i] && binaries[j])
+      {
+        ret = check_stackmaps(binaries[i], stackmaps[i], num_stackmaps[i],
+                              binaries[j], stackmaps[j], num_stackmaps[j]);
+        if(ret != SUCCESS)
+        {
+          snprintf(buf, sizeof(buf), "stackmaps in '%s' & '%s' differ",
+                   binaries[i]->name, binaries[j]->name);
+          die(buf, ret);
+        }
+      }
+    }
+  }
+
+  if(bin_aarch64_fn)
+  {
+    free_stackmaps(sm_aarch64, num_sm_aarch64);
+    free_elf_bin(bin_aarch64);
+  }
+
+  if(bin_powerpc64_fn)
+  {
+    free_stackmaps(sm_powerpc64, num_sm_powerpc64);
+    free_elf_bin(bin_powerpc64);
+  }
+
+  if(bin_x86_64_fn)
+  {
+    free_stackmaps(sm_x86_64, num_sm_x86_64);
+    free_elf_bin(bin_x86_64);
+  }
 
   return 0;
 }
