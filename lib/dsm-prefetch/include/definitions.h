@@ -34,8 +34,10 @@ typedef struct {
 #ifdef _DEBUG
 #include <stdio.h>
 #define debug( ... ) fprintf(stderr, __VA_ARGS__)
+#define warn( ... ) fprintf(stderr, "WARNING: " __VA_ARGS__)
 #else
 #define debug( ... )
+#define warn( ... )
 #endif
 
 /* Shorthand for manual asynchronous prefetching */

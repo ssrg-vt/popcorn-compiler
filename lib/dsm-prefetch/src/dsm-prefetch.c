@@ -93,7 +93,7 @@ static void __attribute__((constructor)) prefetch_initialize()
   {
     if(!node_available(i))
     {
-      debug("Node %lu not available for prefetching\n", i);
+      warn("Node %lu not available for prefetching\n", i);
       continue;
     }
 
@@ -102,7 +102,7 @@ static void __attribute__((constructor)) prefetch_initialize()
     failed = sem_init(&prefetch_params[i].work, 0, 0);
     failed |= pthread_create(&prefetch_threads[i], NULL, prefetch_thread_main,
                              &prefetch_params[i]);
-    assert(!failed && "Could not initialize prefetching threads");
+    if(failed) warn("Could not initialize prefetching thread %d\n", i);
   }
 #endif
 }
@@ -143,7 +143,7 @@ void popcorn_prefetch_node(int nid,
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    debug("WARNING: invalid node ID %d\n", nid);
+    warn("Invalid node ID %d\n", nid);
     return;
   }
 
@@ -152,7 +152,7 @@ void popcorn_prefetch_node(int nid,
   // based on an application's runtime values.
   if(low >= high)
   {
-    debug("WARNING: invalid bounds %p - %p: %s\n", low, high,
+    warn("Invalid bounds %p - %p: %s\n", low, high,
           low == high ? "zero-sized span" : "inverted bounds");
     return;
   }
@@ -174,7 +174,7 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    debug("WARNING: invalid node ID %d", nid);
+    warn("Invalid node ID %d", nid);
     return 0;
   }
 
@@ -266,7 +266,7 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
  */
 static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 {
-  const node_t *n;
+  const node_t *n, *end;
   const memory_span_t *span;
 #ifdef _STATISTICS
   struct timespec start, end;
@@ -275,8 +275,22 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
   stats->pages = 0;
   stats->time = 0;
 
-  assert(nid > -1 && nid < MAX_POPCORN_NODES && "Invalid node ID");
-  assert(current_nid() == nid && "Cannot prefetch to another node");
+  // Ensure prefetch request is for a valid node.
+  if(nid < 0 || nid >= MAX_POPCORN_NODES) {
+    warn("Invalid node ID %d\n", nid);
+    return;
+  }
+
+  // We can't prefetch to another node, so warn & clear out lists to prevent
+  // them from growing forever due to failed prefetch executions.
+  if(current_nid() != nid) {
+    warn("Cannot prefetch to node on which we're not running (%d vs. %d)\n",
+         current_nid(), nid);
+    list_clear(&requests[nid].write);
+    list_clear(&requests[nid].read);
+    list_clear(&requests[nid].release);
+    return;
+  }
 
   list_atomic_start(&requests[nid].read);
   list_atomic_start(&requests[nid].write);
@@ -284,7 +298,8 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 
   // Send write requests
   n = list_begin(&requests[nid].write);
-  while(n != list_end(&requests[nid].write))
+  end = list_end(&requests[nid].write);
+  while(n != end)
   {
     span = list_get_span(n);
 
@@ -317,7 +332,8 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 
   // Send read requests
   n = list_begin(&requests[nid].read);
-  while(n != list_end(&requests[nid].read))
+  end = list_end(&requests[nid].read);
+  while(n != end)
   {
     span = list_get_span(n);
 
@@ -346,7 +362,8 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 
   // Send release requests
   n = list_begin(&requests[nid].release);
-  while(n != list_end(&requests[nid].release))
+  end = list_end(&requests[nid].release);
+  while(n != end)
   {
     span = list_get_span(n);
 
@@ -382,7 +399,7 @@ size_t popcorn_prefetch_execute_node(int nid)
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    debug("WARNING: invalid node ID %d", nid);
+    warn("Invalid node ID %d", nid);
     return 0;
   }
 
@@ -412,7 +429,7 @@ prefetch_thread_main(void *arg)
         gettid(), param->nid);
 
   migrate(param->nid, NULL, NULL);
-  if(current_nid() != param->nid) debug("PID %d: still on origin\n", gettid());
+  if(current_nid() != param->nid) warn("PID %d: still on origin\n", gettid());
 
   sem_wait(&param->work);
   while(!param->exit)
