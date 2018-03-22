@@ -5739,14 +5739,15 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 ===================================================================
 --- lib/CodeGen/LLVMTargetMachine.cpp	(revision 320332)
 +++ lib/CodeGen/LLVMTargetMachine.cpp	(working copy)
-@@ -42,6 +42,26 @@
+@@ -42,6 +42,28 @@
  EnableFastISelOption("fast-isel", cl::Hidden,
    cl::desc("Enable the \"fast\" instruction selector"));
  
 +// Popcorn-specific IR-level instrumentation
 +enum PopcornInstrumentation {
 +  none, // No instrumentation
-+  migpoints, // Only add equivalence points, don't generate rewriting metadata
++  metadata, // Only generate migration metadata, don't insert migration points
++  migpoints, // Only add migration points, don't generate rewriting metadata
 +  migration, // Add migration points & generate rewriting metadata for migration
 +  libc // Generate rewriting metadata for libc thread start functions
 +};
@@ -5756,8 +5757,9 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +  cl::init(none),
 +  cl::values(
 +    clEnumVal(none, "No instrumentation (default)"),
++    clEnumVal(metadata, "Only generate migration metadata (no migration points"),
 +    clEnumVal(migpoints, "Only add migration points (no migration metadata)"),
-+    clEnumVal(migration, "Add equivalence points & migration metadata"),
++    clEnumVal(migration, "Add migration points & generate migration metadata"),
 +    clEnumVal(libc, "Instrument libc thread start functions for migration"),
 +    NULL
 +  )
@@ -5766,7 +5768,7 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
  void LLVMTargetMachine::initAsmInfo() {
    MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
    MII = TheTarget.createMCInstrInfo();
-@@ -105,8 +125,33 @@
+@@ -105,8 +127,36 @@
    // Set PassConfig options provided by TargetMachine.
    PassConfig->setDisableVerify(DisableVerify);
  
@@ -5777,6 +5779,9 @@ Index: lib/CodeGen/LLVMTargetMachine.cpp
 +    TM->setArchIROptLevel(CodeGenOpt::None);
 +
 +    switch(PopcornInstrument) {
++    case PopcornInstrumentation::metadata:
++      PassConfig->setAddStackMaps(true);
++      break;
 +    case PopcornInstrumentation::migpoints:
 +      PassConfig->setAddMigrationPoints(true);
 +      break;

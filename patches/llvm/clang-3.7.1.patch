@@ -214,11 +214,12 @@ Index: include/clang/Driver/Options.td
  def pedantic_Group        : OptionGroup<"<pedantic group>">,
    Group<CompileOnly_Group>;
  def reserved_lib_Group   : OptionGroup<"<reserved libs group>">;
-@@ -1538,6 +1540,11 @@
+@@ -1538,6 +1540,12 @@
  def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
  def pipe : Flag<["-", "--"], "pipe">,
    HelpText<"Use pipes between commands, when possible">;
 +def popcorn_migratable : Flag<["-"], "popcorn-migratable">, HelpText<"Instrument code to be migratable on Popcorn Linux (implies -popcorn-alignment)">, Flags<[CC1Option]>;
++def popcorn_metadata : Flag<["-"], "popcorn-metadata">, HelpText<"Generate stack transformation metadata without inserting migration points (implies -popcorn-alignment)">, Flags<[CC1Option]>;
 +def popcorn_libc : Flag<["-"], "popcorn-libc">, HelpText<"Compile libc code with appropriate instrumentation for migration (implies -popcorn-alignment)">, Flags<[CC1Option]>;
 +def popcorn_alignment : Flag<["-"], "popcorn-alignment">, HelpText<"Run Popcorn passes to prepare for link-time symbol alignment">, Flags<[CC1Option]>;
 +def popcorn_target : Joined<["-"], "popcorn-target=">, HelpText<"Targets for which to generate object files (requires -popcorn-migratable)">, Group<Popcorn_Target_Group>, Flags<[CC1Option]>, MetaVarName<"<target>">;
@@ -1171,13 +1172,14 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 320332)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,45 @@
+@@ -4934,6 +4934,49 @@
        A->render(Args, CmdArgs);
    }
  
 +  // Forward Popcorn & other standard compiler flags to -cc1 to generate
 +  // multi-ISA binaries
-+  if(Args.hasArg(options::OPT_popcorn_migratable)) {
++  if(Args.hasArg(options::OPT_popcorn_migratable) ||
++     Args.hasArg(options::OPT_popcorn_metadata)) {
 +    // Full-blown Popcorn migration capabilities, including adding migration
 +    // points, symbol alignment and generating stack transformation metadata
 +    CmdArgs.push_back("-ffunction-sections");
@@ -1185,7 +1187,10 @@ Index: lib/Driver/Tools.cpp
 +    CmdArgs.push_back("-popcorn-alignment");
 +    CmdArgs.push_back("-popcorn-migratable");
 +    CmdArgs.push_back("-mllvm");
-+    CmdArgs.push_back("-popcorn-instrument=migration");
++    if(Args.hasArg(options::OPT_popcorn_migratable))
++      CmdArgs.push_back("-popcorn-instrument=migration");
++    else
++      CmdArgs.push_back("-popcorn-instrument=metadata");
 +    CmdArgs.push_back("-mllvm");
 +    CmdArgs.push_back("-optimize-regalloc");
 +    CmdArgs.push_back("-mllvm");
