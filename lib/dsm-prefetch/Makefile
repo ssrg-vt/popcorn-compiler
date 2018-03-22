@@ -5,11 +5,17 @@ POPCORN_X86			:= $(POPCORN)/x86_64
 SYSROOT					:= $(POPCORN_ARM)
 
 CC			:= $(POPCORN)/bin/clang
-CFLAGS	:= -Wall -g -nostdinc -D_MANUAL_PREFETCH -D_MANUAL_ASYNC -D_STATISTICS
+CFLAGS	:= -Wall -g -nostdinc
 ifeq ($(findstring debug,$(type)),)
 CFLAGS	+= -O3 -DNDEBUG
 else
 CFLAGS	+= -O0 -D_DEBUG=1
+endif
+ifneq ($(findstring manual,$(type)),)
+CFLAGS	+= -D_MANUAL_PREFETCH -D_MANUAL_ASYNC
+endif
+ifneq ($(findstring statistics,$(type)),)
+CFLAGS	+= -D_STATISTICS
 endif
 
 COMMON	:= $(shell readlink -f ../../common/include)
@@ -26,8 +32,8 @@ BUILD_ARM			:= $(BUILD)/aarch64
 BUILD_POWERPC	:= $(BUILD)/powerpc64le
 BUILD_X86			:= $(BUILD)/x86_64
 
-OBJ					:= $(subst src,$(BUILD),$(SRC:.c=.o))
-OBJ_ARM			:= $(OBJ)
+OBJ				:= $(subst src,$(BUILD),$(SRC:.c=.o))
+OBJ_ARM			:= $(OBJ:.o=_aarch64.o)
 OBJ_POWERPC	:= $(OBJ:.o=_powerpc64le.o)
 OBJ_X86			:= $(OBJ:.o=_x86_64.o)
 
@@ -55,9 +61,10 @@ all: $(LIB_ARM) $(LIB_X86)
 
 $(BUILD)/%.o: src/%.c
 	@echo " [CC] $<"
-	@$(CC) $(CFLAGS) -popcorn-migratable $(INC) -c -o $@ $<
+	@$(CC) $(CFLAGS) -popcorn-metadata $(INC) -c -o $@ $<
 
-$(OBJ_ARM): $(BUILD)/.dir $(HDR)
+$(OBJ): $(BUILD)/.dir $(HDR)
+$(OBJ_ARM): $(OBJ)
 $(OBJ_POWERPC): $(OBJ_ARM)
 $(OBJ_X86): $(OBJ_ARM)
 

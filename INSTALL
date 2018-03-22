@@ -27,14 +27,13 @@ between components, so components should be installed in the following order:
 4. Install architecture-specific libraries
   - see lib/musl-1.1.10
   - see lib/libelf
-  - see lib/libdwarf
-  - see lib/libbomp
   - see lib/stack_transformation
   - see lib/migration
+  - see lib/libopenpop
+  - see lib/dsm-prefetch
 5. Install alignment tool - see tool/alignment
 6. Install stack transformation metadata tool - see tool/stack_metadata
 7. (Optional) Install call information library - see lib/stack_depth
 
 See the INSTALL file in each subdirectory for more details.
 
-# TODO installation script
