@@ -1,3 +1,105 @@
+Index: include/clang/AST/DataRecursiveASTVisitor.h
+===================================================================
+--- include/clang/AST/DataRecursiveASTVisitor.h	(revision 320332)
++++ include/clang/AST/DataRecursiveASTVisitor.h	(working copy)
+@@ -2663,6 +2663,14 @@
+   return true;
+ }
+ 
++template <typename Derived>
++bool RecursiveASTVisitor<Derived>::VisitOMPPrefetchClause(OMPPrefetchClause *C) {
++  TRY_TO(VisitOMPClauseList(C));
++  TRY_TO(TraverseStmt(C->getStartOfRange()));
++  TRY_TO(TraverseStmt(C->getEndOfRange()));
++  return true;
++}
++
+ // FIXME: look at the following tricky-seeming exprs to see if we
+ // need to recurse on anything.  These are ones that have methods
+ // returning decls or qualtypes or nestednamespecifier -- though I'm
+Index: include/clang/AST/OpenMPClause.h
+===================================================================
+--- include/clang/AST/OpenMPClause.h	(revision 320332)
++++ include/clang/AST/OpenMPClause.h	(working copy)
+@@ -2300,6 +2300,59 @@
+   }
+ };
+ 
++/// \brief This represents a memory prefetch request for Popcorn Linux.  This
++/// should only be used for prefetching contiguous blocks of memory, e.g.,
++/// arrays or pointers to chunks of memory.
++class OMPPrefetchClause : public OMPVarListClause<OMPPrefetchClause> {
++private:
++  /// \brief What type of prefetching to perform.
++  OpenMPPrefetchClauseKind Kind;
++
++  /// \brief Expressions describing the memory range to be prefetched.
++  ///
++  /// 1. If both are nullptr, then the entire array should be prefetched
++  /// 2. If Start is valid and End is nullptr, then use the expression (which
++  ///    should be affine to a for-loop iteration variable) to prefetch the
++  ///    region of memory based on the loop iterations assigned to the thread
++  /// 3. If both Start and End are valid, then prefetch the absolute range
++  ///    denoted by the starting & ending expressions
++  Expr *Start, *End;
++
++  /// \brief Locations of the kind specifier, colons used to separate the
++  /// variable list and range expression(s).  These are valid in conjunction
++  /// with Start & End, respectively.
++  SourceLocation KindLoc, FirstColonLoc, SecondColonLoc;
++
++  OMPPrefetchClause(SourceLocation StartLoc, SourceLocation LParenLoc,
++                    SourceLocation FirstColonLoc,
++                    SourceLocation SecondColonLoc, SourceLocation EndLoc,
++                    unsigned N)
++      : OMPVarListClause<OMPPrefetchClause>(OMPC_prefetch, StartLoc, LParenLoc,
++                                            EndLoc, N),
++        FirstColonLoc(FirstColonLoc), SecondColonLoc(SecondColonLoc) {}
++public:
++  static OMPPrefetchClause *
++  Create(const ASTContext &C, OpenMPPrefetchClauseKind Kind,
++         SourceLocation KindLoc, ArrayRef<Expr *> VL, Expr *Start, Expr *End,
++         SourceLocation StartLoc, SourceLocation LParenLoc,
++         SourceLocation FirstColonLoc, SourceLocation SecondColonLoc,
++         SourceLocation EndLoc);
++
++  OpenMPPrefetchClauseKind getPrefetchKind() const { return Kind; }
++  void setPrefetchKind(OpenMPPrefetchClauseKind Kind) { this->Kind = Kind; }
++
++  Expr *getStartOfRange() const { return Start; }
++  void setStartOfRange(Expr *Start) { this->Start = Start; }
++  Expr *getEndOfRange() const { return End; }
++  void setEndOfRange(Expr *End) { this->End = End; }
++
++  SourceLocation getPrefetchKindLoc() const { return KindLoc; }
++  void setPrefetchKindLoc(SourceLocation Loc) { KindLoc = Loc; }
++  SourceLocation getFirstColonLoc() const { return FirstColonLoc; }
++  SourceLocation getSecondColonLoc() const { return SecondColonLoc; }
++
++};
++
+ } // end namespace clang
+ 
+ #endif
+Index: include/clang/AST/RecursiveASTVisitor.h
+===================================================================
+--- include/clang/AST/RecursiveASTVisitor.h	(revision 320332)
++++ include/clang/AST/RecursiveASTVisitor.h	(working copy)
+@@ -2695,6 +2695,14 @@
+   return true;
+ }
+ 
++template <typename Derived>
++bool RecursiveASTVisitor<Derived>::VisitOMPPrefetchClause(OMPPrefetchClause *C) {
++  TRY_TO(VisitOMPClauseList(C));
++  TRY_TO(TraverseStmt(C->getStartOfRange()));
++  TRY_TO(TraverseStmt(C->getEndOfRange()));
++  return true;
++}
++
+ // FIXME: look at the following tricky-seeming exprs to see if we
+ // need to recurse on anything.  These are ones that have methods
+ // returning decls or qualtypes or nestednamespecifier -- though I'm
 Index: include/clang/AST/Stmt.h
 ===================================================================
 --- include/clang/AST/Stmt.h	(revision 320332)
@@ -26,6 +128,70 @@ Index: include/clang/AST/Stmt.h
    /// \brief An iterator that walks over the captures.
    typedef Capture *capture_iterator;
    typedef const Capture *const_capture_iterator;
+Index: include/clang/AST/StmtOpenMP.h
+===================================================================
+--- include/clang/AST/StmtOpenMP.h	(revision 320332)
++++ include/clang/AST/StmtOpenMP.h	(working copy)
+@@ -42,6 +42,8 @@
+   const unsigned NumClauses;
+   /// \brief Number of child expressions/stmts.
+   const unsigned NumChildren;
++  /// \brief Enable prefetching code generation for Popcorn Linux
++  bool Prefetch;
+   /// \brief Offset from this to the start of clauses.
+   /// There are NumClauses pointers to clauses, they are followed by
+   /// NumChildren pointers to child stmts/exprs (if the directive type
+@@ -69,7 +71,7 @@
+                          unsigned NumClauses, unsigned NumChildren)
+       : Stmt(SC), Kind(K), StartLoc(std::move(StartLoc)),
+         EndLoc(std::move(EndLoc)), NumClauses(NumClauses),
+-        NumChildren(NumChildren),
++        NumChildren(NumChildren), Prefetch(false),
+         ClausesOffset(llvm::RoundUpToAlignment(sizeof(T),
+                                                llvm::alignOf<OMPClause *>())) {}
+ 
+@@ -205,6 +207,9 @@
+   ArrayRef<OMPClause *> clauses() const {
+     return const_cast<OMPExecutableDirective *>(this)->getClauses();
+   }
++
++  bool prefetchingEnabled() const { return Prefetch; }
++  void setPrefetching(bool Prefetch) { this->Prefetch = Prefetch; }
+ };
+ 
+ /// \brief This represents '#pragma omp parallel' directive.
+Index: include/clang/Basic/DiagnosticParseKinds.td
+===================================================================
+--- include/clang/Basic/DiagnosticParseKinds.td	(revision 320332)
++++ include/clang/Basic/DiagnosticParseKinds.td	(working copy)
+@@ -993,6 +993,12 @@
+   "'#pragma omp %0' cannot be an immediate substatement">;
+ def err_omp_expected_identifier_for_critical : Error<
+   "expected identifier specifying the name of the 'omp critical' directive">;
++def err_omp_invalid_prefetch_kind : Error<
++  "invalid argument; expected 'read' or 'write'">;
++// TODO Technically this is a semantics issue, but we're doing checking in the
++// parser for this particular clause
++def err_omp_invalid_prefetch_loop_var : Error<
++  "can only prefetch loop iteration range using a loop iteration variable">;
+ 
+ // Pragma loop support.
+ def err_pragma_loop_missing_argument : Error<
+Index: include/clang/Basic/DiagnosticSemaKinds.td
+===================================================================
+--- include/clang/Basic/DiagnosticSemaKinds.td	(revision 320332)
++++ include/clang/Basic/DiagnosticSemaKinds.td	(working copy)
+@@ -7649,6 +7649,10 @@
+   "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be nowait">;
+ def err_omp_parent_cancel_region_ordered : Error<
+   "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be ordered">;
++def err_omp_invalid_prefetch_var_type : Error<
++  "invalid variable type; must be %0 type">;
++def err_omp_invalid_prefetch_range_type : Error<
++  "invalid range specifier type; must be of integer (signed or unsigned) type">;
+ } // end of OpenMP category
+ 
+ let CategoryName = "Related Result Type Issue" in {
 Index: include/clang/Basic/LangOptions.def
 ===================================================================
 --- include/clang/Basic/LangOptions.def	(revision 320332)
@@ -40,6 +206,98 @@ Index: include/clang/Basic/LangOptions.def
  #undef LANGOPT
  #undef COMPATIBLE_LANGOPT
  #undef BENIGN_LANGOPT
+Index: include/clang/Basic/OpenMPKinds.def
+===================================================================
+--- include/clang/Basic/OpenMPKinds.def	(revision 320332)
++++ include/clang/Basic/OpenMPKinds.def	(working copy)
+@@ -72,6 +72,9 @@
+ #ifndef OPENMP_DEPEND_KIND
+ #define OPENMP_DEPEND_KIND(Name)
+ #endif
++#ifndef OPENMP_PREFETCH_KIND
++#define OPENMP_PREFETCH_KIND(Name)
++#endif
+ 
+ // OpenMP directives.
+ OPENMP_DIRECTIVE(threadprivate)
+@@ -129,6 +132,7 @@
+ OPENMP_CLAUSE(capture, OMPCaptureClause)
+ OPENMP_CLAUSE(seq_cst, OMPSeqCstClause)
+ OPENMP_CLAUSE(depend, OMPDependClause)
++OPENMP_CLAUSE(prefetch, OMPPrefetchClause)
+ 
+ // Clauses allowed for OpenMP directive 'parallel'.
+ OPENMP_PARALLEL_CLAUSE(if)
+@@ -159,6 +163,7 @@
+ OPENMP_FOR_CLAUSE(schedule)
+ OPENMP_FOR_CLAUSE(ordered)
+ OPENMP_FOR_CLAUSE(nowait)
++OPENMP_FOR_CLAUSE(prefetch)
+ 
+ // Clauses allowed for directive 'omp for simd'.
+ OPENMP_FOR_SIMD_CLAUSE(private)
+@@ -171,6 +176,7 @@
+ OPENMP_FOR_SIMD_CLAUSE(safelen)
+ OPENMP_FOR_SIMD_CLAUSE(linear)
+ OPENMP_FOR_SIMD_CLAUSE(aligned)
++OPENMP_FOR_SIMD_CLAUSE(prefetch)
+ 
+ // Clauses allowed for OpenMP directive 'omp sections'.
+ OPENMP_SECTIONS_CLAUSE(private)
+@@ -206,6 +212,10 @@
+ OPENMP_DEPEND_KIND(out)
+ OPENMP_DEPEND_KIND(inout)
+ 
++// Static attributes for 'prefetch' clause.
++OPENMP_PREFETCH_KIND(read)
++OPENMP_PREFETCH_KIND(write)
++
+ // Clauses allowed for OpenMP directive 'parallel for'.
+ OPENMP_PARALLEL_FOR_CLAUSE(if)
+ OPENMP_PARALLEL_FOR_CLAUSE(num_threads)
+@@ -220,6 +230,7 @@
+ OPENMP_PARALLEL_FOR_CLAUSE(collapse)
+ OPENMP_PARALLEL_FOR_CLAUSE(schedule)
+ OPENMP_PARALLEL_FOR_CLAUSE(ordered)
++OPENMP_PARALLEL_FOR_CLAUSE(prefetch)
+ 
+ // Clauses allowed for OpenMP directive 'parallel for simd'.
+ OPENMP_PARALLEL_FOR_SIMD_CLAUSE(if)
+@@ -237,6 +248,7 @@
+ OPENMP_PARALLEL_FOR_SIMD_CLAUSE(safelen)
+ OPENMP_PARALLEL_FOR_SIMD_CLAUSE(linear)
+ OPENMP_PARALLEL_FOR_SIMD_CLAUSE(aligned)
++OPENMP_PARALLEL_FOR_SIMD_CLAUSE(prefetch)
+ 
+ // Clauses allowed for OpenMP directive 'parallel sections'.
+ OPENMP_PARALLEL_SECTIONS_CLAUSE(if)
+@@ -280,6 +292,7 @@
+ OPENMP_TEAMS_CLAUSE(shared)
+ OPENMP_TEAMS_CLAUSE(reduction)
+ 
++#undef OPENMP_PREFETCH_KIND
+ #undef OPENMP_DEPEND_KIND
+ #undef OPENMP_SCHEDULE_KIND
+ #undef OPENMP_PROC_BIND_KIND
+Index: include/clang/Basic/OpenMPKinds.h
+===================================================================
+--- include/clang/Basic/OpenMPKinds.h	(revision 320332)
++++ include/clang/Basic/OpenMPKinds.h	(working copy)
+@@ -70,6 +70,14 @@
+   OMPC_DEPEND_unknown
+ };
+ 
++/// \brief OpenMP attributes for 'prefetch' clause.
++enum OpenMPPrefetchClauseKind {
++#define OPENMP_PREFETCH_KIND(Name) \
++  OMPC_PREFETCH_##Name,
++#include "clang/Basic/OpenMPKinds.def"
++  OMPC_PREFETCH_unknown
++};
++
+ OpenMPDirectiveKind getOpenMPDirectiveKind(llvm::StringRef Str);
+ const char *getOpenMPDirectiveName(OpenMPDirectiveKind Kind);
+ 
 Index: include/clang/CodeGen/BackendUtil.h
 ===================================================================
 --- include/clang/CodeGen/BackendUtil.h	(revision 320332)
@@ -314,6 +572,162 @@ Index: include/clang/Frontend/FrontendOptions.h
      FixIt,                  ///< Parse and apply any fixits to the source.
      GenerateModule,         ///< Generate pre-compiled module.
      GeneratePCH,            ///< Generate pre-compiled header.
+Index: include/clang/Parse/Parser.h
+===================================================================
+--- include/clang/Parse/Parser.h	(revision 320332)
++++ include/clang/Parse/Parser.h	(working copy)
+@@ -2418,6 +2418,10 @@
+ 
+   //===--------------------------------------------------------------------===//
+   // OpenMP: Directives and clauses.
++  /// \brief Checks 'prefetch' clauses for correctness.  Note that we can only
++  /// perform some semantic checks *after* the entire compound statement
++  /// representing the directive's body has been parsed.
++  void CheckOpenMPPrefetchClauses(StmtResult Directive);
+   /// \brief Parses declarative OpenMP directives.
+   DeclGroupPtrTy ParseOpenMPDeclarativeDirective();
+   /// \brief Parses simple list of variables.
+Index: include/clang/Sema/Sema.h
+===================================================================
+--- include/clang/Sema/Sema.h	(revision 320332)
++++ include/clang/Sema/Sema.h	(working copy)
+@@ -7950,11 +7950,12 @@
+ 
+   OMPClause *ActOnOpenMPVarListClause(
+       OpenMPClauseKind Kind, ArrayRef<Expr *> Vars, Expr *TailExpr,
+-      SourceLocation StartLoc, SourceLocation LParenLoc,
+-      SourceLocation ColonLoc, SourceLocation EndLoc,
+-      CXXScopeSpec &ReductionIdScopeSpec,
++      Expr *EndExpr, SourceLocation StartLoc, SourceLocation LParenLoc,
++      SourceLocation ColonLoc, SourceLocation EndColonLoc,
++      SourceLocation EndLoc, CXXScopeSpec &ReductionIdScopeSpec,
+       const DeclarationNameInfo &ReductionId, OpenMPDependClauseKind DepKind,
+-      SourceLocation DepLoc);
++      SourceLocation DepLoc, OpenMPPrefetchClauseKind PrefKind,
++      SourceLocation PrefLoc);
+   /// \brief Called on well-formed 'private' clause.
+   OMPClause *ActOnOpenMPPrivateClause(ArrayRef<Expr *> VarList,
+                                       SourceLocation StartLoc,
+@@ -8018,6 +8019,18 @@
+                           SourceLocation StartLoc, SourceLocation LParenLoc,
+                           SourceLocation EndLoc);
+ 
++  /// \brief Called on well-formed 'prefetch' clause.
++  OMPClause *
++  ActOnOpenMPPrefetchClause(OpenMPPrefetchClauseKind PrefKind,
++                            SourceLocation PrefLoc,
++                            ArrayRef<Expr *> VarList,
++                            Expr *Start, Expr *End,
++                            SourceLocation StartLoc,
++                            SourceLocation LParenLoc,
++                            SourceLocation FirstColonLoc,
++                            SourceLocation SecondColonLoc,
++                            SourceLocation EndLoc);
++
+   /// \brief The kind of conversion being performed.
+   enum CheckedConversionKind {
+     /// \brief An implicit conversion.
+Index: lib/AST/Stmt.cpp
+===================================================================
+--- lib/AST/Stmt.cpp	(revision 320332)
++++ lib/AST/Stmt.cpp	(working copy)
+@@ -1623,6 +1623,28 @@
+   return nullptr;
+ }
+ 
++OMPPrefetchClause *
++OMPPrefetchClause::Create(const ASTContext &C, OpenMPPrefetchClauseKind Kind,
++                          SourceLocation KindLoc, ArrayRef<Expr *> VL,
++                          Expr *Start, Expr *End, SourceLocation StartLoc,
++                          SourceLocation LParenLoc,
++                          SourceLocation FirstColonLoc,
++                          SourceLocation SecondColonLoc,
++                          SourceLocation EndLoc) {
++  void *Mem = C.Allocate(llvm::RoundUpToAlignment(sizeof(OMPPrefetchClause),
++                                                  llvm::alignOf<Expr *>()) +
++                         sizeof(Expr *) * VL.size());
++  OMPPrefetchClause *Clause =
++    new (Mem) OMPPrefetchClause(StartLoc, LParenLoc, FirstColonLoc, SecondColonLoc,
++                                EndLoc, VL.size());
++  Clause->setPrefetchKind(Kind);
++  Clause->setPrefetchKindLoc(KindLoc);
++  Clause->setStartOfRange(Start);
++  Clause->setEndOfRange(End);
++  Clause->setVarRefs(VL);
++  return Clause;
++}
++
+ OMPParallelDirective *OMPParallelDirective::Create(
+                                               const ASTContext &C,
+                                               SourceLocation StartLoc,
+Index: lib/AST/StmtPrinter.cpp
+===================================================================
+--- lib/AST/StmtPrinter.cpp	(revision 320332)
++++ lib/AST/StmtPrinter.cpp	(working copy)
+@@ -810,7 +810,22 @@
+     OS << ")";
+   }
+ }
++
++void OMPClausePrinter::VisitOMPPrefetchClause(OMPPrefetchClause *Node) {
++  if (!Node->varlist_empty()) {
++    OS << "prefetch(";
++    OS << getOpenMPSimpleClauseTypeName(Node->getClauseKind(),
++                                        Node->getPrefetchKind())
++       << " :";
++    VisitOMPClauseList(Node, ' ');
++    OS << ",";
++    Node->getStartOfRange()->printPretty(OS, nullptr, Policy, 0);
++    OS << ",";
++    Node->getEndOfRange()->printPretty(OS, nullptr, Policy, 0);
++    OS << ")";
++  }
+ }
++}
+ 
+ //===----------------------------------------------------------------------===//
+ //  OpenMP directives printing methods
+Index: lib/AST/StmtProfile.cpp
+===================================================================
+--- lib/AST/StmtProfile.cpp	(revision 320332)
++++ lib/AST/StmtProfile.cpp	(working copy)
+@@ -428,7 +428,12 @@
+ void OMPClauseProfiler::VisitOMPDependClause(const OMPDependClause *C) {
+   VisitOMPClauseList(C);
+ }
++void OMPClauseProfiler::VisitOMPPrefetchClause(const OMPPrefetchClause *C) {
++  VisitOMPClauseList(C);
++  Profiler->VisitStmt(C->getStartOfRange());
++  Profiler->VisitStmt(C->getEndOfRange());
+ }
++}
+ 
+ void
+ StmtProfiler::VisitOMPExecutableDirective(const OMPExecutableDirective *S) {
+Index: lib/Basic/OpenMPKinds.cpp
+===================================================================
+--- lib/Basic/OpenMPKinds.cpp	(revision 320332)
++++ lib/Basic/OpenMPKinds.cpp	(working copy)
+@@ -96,6 +96,11 @@
+ #define OPENMP_DEPEND_KIND(Name) .Case(#Name, OMPC_DEPEND_##Name)
+ #include "clang/Basic/OpenMPKinds.def"
+         .Default(OMPC_DEPEND_unknown);
++  case OMPC_prefetch:
++    return llvm::StringSwitch<OpenMPPrefetchClauseKind>(Str)
++#define OPENMP_PREFETCH_KIND(Name) .Case(#Name, OMPC_PREFETCH_##Name)
++#include "clang/Basic/OpenMPKinds.def"
++        .Default(OMPC_PREFETCH_unknown);
+   case OMPC_unknown:
+   case OMPC_threadprivate:
+   case OMPC_if:
+@@ -195,6 +200,7 @@
+   case OMPC_update:
+   case OMPC_capture:
+   case OMPC_seq_cst:
++  case OMPC_prefetch:
+     break;
+   }
+   llvm_unreachable("Invalid OpenMP simple clause kind");
 Index: lib/CodeGen/BackendUtil.cpp
 ===================================================================
 --- lib/CodeGen/BackendUtil.cpp	(revision 320332)
@@ -600,7 +1014,15 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 ===================================================================
 --- lib/CodeGen/CGStmtOpenMP.cpp	(revision 320332)
 +++ lib/CodeGen/CGStmtOpenMP.cpp	(working copy)
-@@ -489,6 +489,8 @@
+@@ -17,6 +17,7 @@
+ #include "TargetInfo.h"
+ #include "clang/AST/Stmt.h"
+ #include "clang/AST/StmtOpenMP.h"
++#include "llvm/IR/CallSite.h"
+ using namespace clang;
+ using namespace CodeGen;
+ 
+@@ -489,6 +490,8 @@
    }
    CGF.CGM.getOpenMPRuntime().emitParallelCall(CGF, S.getLocStart(), OutlinedFn,
                                                CapturedStruct, IfCond);
@@ -609,6 +1031,194 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
  }
  
  void CodeGenFunction::EmitOMPParallelDirective(const OMPParallelDirective &S) {
+@@ -743,6 +746,170 @@
+   }
+ }
+ 
++/// Ease the variable lookup burden for captures.
++typedef llvm::DenseMap<const VarDecl *, FieldDecl *> VarFieldMap;
++
++/// Map variable declarations captured in the outer function to their field in
++/// the captured struct.
++static void
++buildVarToFieldMap(ASTContext &C, CapturedStmt *CS, VarFieldMap &Map) {
++  CapturedStmt::capture_iterator Capture;
++  RecordDecl::field_iterator Field;
++
++  // Captures are in a 1-to-1 correspondence with captured record fields
++  Map.clear();
++  for(Capture = CS->capture_begin(),
++      Field = CS->getCapturedRecordDecl()->field_begin();
++      Capture != CS->capture_end(); Capture++, Field++) {
++    // TODO remove type checking
++    const ReferenceType *FieldRefTy = cast<ReferenceType>(Field->getType());
++    QualType FieldQualTy = FieldRefTy->getPointeeType().getDesugaredType(C),
++       CapQualTy = Capture->getCapturedVar()->getType().getDesugaredType(C);
++    const Type *CapTy = CapQualTy.getTypePtr(),
++               *FieldTy = FieldQualTy.getTypePtr();
++    assert(CapTy == FieldTy);
++
++    Map[Capture->getCapturedVar()] = *Field;
++  }
++}
++
++/// Create a reference to the captured context struct.
++static DeclRefExpr *
++getContextRefExpr(ASTContext &C, ImplicitParamDecl *Ctx) {
++  QualType Ty = Ctx->getType();
++  DeclRefExpr *DRE = DeclRefExpr::Create(C, NestedNameSpecifierLoc(),
++                                         SourceLocation(), Ctx, true,
++                                         SourceLocation(), Ty, VK_LValue);
++  DRE->getDecl()->setIsUsed();
++  return DRE;
++}
++
++/// Create a reference to a field captured in the capture's context struct.
++/// This should produce an expression with the same type as the variable.
++static Expr *
++getContextFieldExpr(ASTContext &C, DeclRefExpr *Ctx, FieldDecl *F) {
++  QualType Ty = F->getType().getNonReferenceType();
++  MemberExpr *Mem = new (C) MemberExpr(Ctx, true, SourceLocation(), F,
++                                       SourceLocation(), Ty,
++                                       VK_RValue, OK_Ordinary);
++  assert(isa<ArrayType>(Mem->getType()) || isa<PointerType>(Mem->getType()));
++  return Mem;
++}
++
++/// Create an expression representing the address of some array index.
++static Expr *
++getPrefetchAddr(ASTContext &C, Expr *Ptr, Expr *Subscript) {
++  QualType BaseTy = Ptr->getType(), IdxTy;
++
++  // Get an array subscript
++  if(isa<ArrayType>(BaseTy)) IdxTy = cast<ArrayType>(BaseTy)->getElementType();
++  else IdxTy = cast<PointerType>(BaseTy)->getPointeeType();
++  Expr *Index = new (C) ArraySubscriptExpr(Ptr, Subscript, IdxTy,
++                                           VK_RValue, OK_Ordinary,
++                                           SourceLocation());
++
++  // Take the address of the array subscript
++  QualType RePtrTy = C.getPointerType(IdxTy);
++  UnaryOperator *Addr = new (C) UnaryOperator(Index, UO_AddrOf, RePtrTy, VK_LValue,
++                               OK_Ordinary, SourceLocation());
++
++  // Finally, cast to a void * type
++  QualType VoidPtrTy = C.getPointerType(C.VoidTy.withConst());
++  return ImplicitCastExpr::Create(C, VoidPtrTy, CK_BitCast, Addr, nullptr,
++                                  VK_RValue);
++}
++
++static llvm::Constant *getPrefetchKind(CodeGenFunction &CGF,
++                                       OpenMPPrefetchClauseKind Kind) {
++  llvm::Type *Ty = llvm::Type::getInt32Ty(CGF.CurFn->getContext());
++  switch(Kind) {
++  case OMPC_PREFETCH_read: return llvm::ConstantInt::get(Ty, 0);
++  case OMPC_PREFETCH_write: return llvm::ConstantInt::get(Ty, 1);
++  //case OMPC_PREFETCH_release: return llvm::ConstantInt::get(Ty, 3);
++  default:
++    llvm_unreachable("Invalid prefetch type\n");
++    return nullptr;
++  }
++}
++
++void CodeGenFunction::EmitOMPPrefetchClauses(const OMPLoopDirective &D) {
++  ASTContext &AST = getContext();
++  VarFieldMap VarFields;
++  VarFieldMap::iterator Field;
++  Expr *Start, *End, *MemberRef, *StartAddr, *EndAddr;
++  RValue LoweredStart, LoweredEnd;
++  std::vector<llvm::Value *> Params;
++  std::vector<llvm::Type *> ParamTypes;
++  llvm::FunctionType *FnType;
++  llvm::Constant *Prefetch, *Execute;
++
++  bool HasPrefetch = !D.getClausesOfKind(OMPC_prefetch).empty();
++  if(HasPrefetch) {
++    // declare void @popcorn_prefetch(i32, i8*, i8*)
++    ParamTypes = { Int32Ty, Int8PtrTy, Int8PtrTy };
++    FnType = llvm::FunctionType::get(VoidTy, ParamTypes, false);
++    Prefetch = CGM.CreateRuntimeFunction(FnType, "popcorn_prefetch");
++
++    // declare i64 @popcorn_prefetch_execute()
++    ParamTypes.clear();
++    FnType = llvm::FunctionType::get(Int64Ty, ParamTypes, false);
++    Execute = CGM.CreateRuntimeFunction(FnType, "popcorn_prefetch_execute");
++
++    // For each prefetched variable, construct start & end range expressions
++    // and call @popcorn_prefetch
++    CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
++    ImplicitParamDecl *ContextDecl = CS->getCapturedDecl()->getContextParam();
++    DeclRefExpr *Ctx = getContextRefExpr(AST, ContextDecl);
++    buildVarToFieldMap(AST, CS, VarFields);
++    for(auto &&I = D.getClausesOfKind(OMPC_prefetch); I; ++I) {
++      auto *C = cast<OMPPrefetchClause>(*I);
++      Start = C->getStartOfRange();
++      End = C->getEndOfRange();
++
++      for(auto &V : C->varlists()) {
++        const DeclRefExpr *DR = cast<DeclRefExpr>(V);
++        const VarDecl *VD = cast<VarDecl>(DR->getDecl());
++        Field = VarFields.find(VD);
++
++        if(Field != VarFields.end()) {
++          MemberRef = getContextFieldExpr(AST, Ctx, Field->second);
++          if(Start && End) {
++            // User specified entire range
++            StartAddr = getPrefetchAddr(AST, MemberRef, Start);
++            EndAddr = getPrefetchAddr(AST, MemberRef, End);
++          }
++          else if(Start) {
++            // User specified an expression affine to loop iteration variable
++            // TODO if expression is affine transformation of loop induction
++            // variable, need to re-generate for lower/upper bound variables
++            assert(isa<DeclRefExpr>(Start) &&
++                   "Can't handle transformations on loop variables yet");
++            StartAddr =
++              getPrefetchAddr(AST, MemberRef, D.getLowerBoundVariable());
++            EndAddr =
++              getPrefetchAddr(AST, MemberRef, D.getUpperBoundVariable());
++          }
++          else {
++            // TODO consruct range expressions for the entirety of the array
++          }
++
++          LoweredStart = EmitAnyExpr(StartAddr);
++          LoweredEnd = EmitAnyExpr(EndAddr);
++          Params = { getPrefetchKind(*this, C->getPrefetchKind()),
++                     LoweredStart.getScalarVal(),
++                     LoweredEnd.getScalarVal() };
++          EmitCallOrInvoke(Prefetch, Params);
++        }
++        else llvm_unreachable("Invalid prefetch variable");
++      }
++    }
++
++    // Finally, call @popcorn_prefetch_execute to issue requests
++    Params.clear();
++    EmitCallOrInvoke(Execute, Params);
++  }
++}
++
+ void CodeGenFunction::EmitOMPSimdInit(const OMPLoopDirective &D) {
+   // Walk clauses and process safelen/lastprivate.
+   LoopStack.setParallel();
+@@ -1137,6 +1304,8 @@
+         auto LoopExit = getJumpDestInCurrentScope(createBasicBlock("omp.loop.exit"));
+         // UB = min(UB, GlobalUB);
+         EmitIgnoredExpr(S.getEnsureUpperBound());
++        // Popcorn: emit prefetch function declarations & requests
++        EmitOMPPrefetchClauses(S);
+         // IV = LB;
+         EmitIgnoredExpr(S.getInit());
+         // while (idx <= UB) { BODY; ++idx; }
+@@ -2049,6 +2218,7 @@
+   case OMPC_threadprivate:
+   case OMPC_depend:
+   case OMPC_mergeable:
++  case OMPC_prefetch:
+     llvm_unreachable("Clause is not allowed in 'omp atomic'.");
+   }
+ }
 Index: lib/CodeGen/CMakeLists.txt
 ===================================================================
 --- lib/CodeGen/CMakeLists.txt	(revision 320332)
@@ -1060,6 +1670,17 @@ Index: lib/CodeGen/CodeGenFunction.h
    LValue InitCapturedStruct(const CapturedStmt &S);
    llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
    void GenerateCapturedStmtFunctionProlog(const CapturedStmt &S);
+@@ -2191,6 +2209,10 @@
+   ///
+   /// \param D Directive (possibly) with the 'linear' clause.
+   void EmitOMPLinearClauseInit(const OMPLoopDirective &D);
++  /// \brief Emit prefetching requests for loop directive.
++  ///
++  /// \param D Directive (possibly) with the 'prefetch' clause.
++  void EmitOMPPrefetchClauses(const OMPLoopDirective &D);
+ 
+   void EmitOMPParallelDirective(const OMPParallelDirective &S);
+   void EmitOMPSimdDirective(const OMPSimdDirective &S);
 Index: lib/CodeGen/PopcornUtil.cpp
 ===================================================================
 --- lib/CodeGen/PopcornUtil.cpp	(nonexistent)
@@ -1351,17 +1972,406 @@ Index: lib/Parse/ParseOpenMP.cpp
 ===================================================================
 --- lib/Parse/ParseOpenMP.cpp	(revision 320332)
 +++ lib/Parse/ParseOpenMP.cpp	(working copy)
-@@ -294,6 +294,13 @@
+@@ -14,6 +14,7 @@
+ #include "RAIIObjectsForParser.h"
+ #include "clang/AST/ASTConsumer.h"
+ #include "clang/AST/ASTContext.h"
++#include "clang/AST/RecursiveASTVisitor.h"
+ #include "clang/AST/StmtOpenMP.h"
+ #include "clang/Parse/ParseDiagnostic.h"
+ #include "clang/Parse/Parser.h"
+@@ -25,6 +26,68 @@
+ // OpenMP declarative directives.
+ //===----------------------------------------------------------------------===//
+ 
++/// \brief Helper class to find variables declared or used in a statement's
++/// sub-tree.
++class VarFinder : public RecursiveASTVisitor<VarFinder> {
++public:
++  void reset() { Variables.clear(); }
++
++  bool VisitDeclRefExpr(DeclRefExpr *D) {
++    ValueDecl *VD = D->getDecl();
++    if(isa<VarDecl>(VD)) Variables.insert(cast<VarDecl>(VD));
++    return true;
++  }
++
++  bool VisitVarDecl(VarDecl *D) {
++    Variables.insert(D);
++    return true;
++  }
++
++  const llvm::SmallPtrSet<const VarDecl *, 2> &
++  getDeclaredOrReferencedVars() const { return Variables; }
++
++private:
++  llvm::SmallPtrSet<const VarDecl *, 2> Variables;
++};
++
++void Parser::CheckOpenMPPrefetchClauses(StmtResult Directive) {
++  VarFinder LoopVarFinder, UseFinder;
++
++  OMPLoopDirective *D = dyn_cast<OMPLoopDirective>(Directive.get());
++  if(D) {
++    // OpenMP Standard 4.5, Section 2.6:
++    // A loop has canonical loop form if it conforms to the following:
++    //    for (init-expr; test-expr; incr-expr) structured-block
++    //      init-expr     One of the following:
++    //                    var = lb
++    //                    integer-type var = lb
++    //                    random-access-iterator-type var = lb
++    //                    pointer-type var = lb
++    //
++    // Examine the initialization statement to find the loop iteration
++    // variable.
++    CapturedStmt *Captured = cast<CapturedStmt>(D->getAssociatedStmt());
++    ForStmt *For = cast<ForStmt>(Captured->getCapturedStmt());
++    BinaryOperator *InitExpr = cast<BinaryOperator>(For->getInit());
++    LoopVarFinder.TraverseStmt(InitExpr);
++    const llvm::SmallPtrSet<const VarDecl *, 2> &LoopVars =
++      LoopVarFinder.getDeclaredOrReferencedVars();
++
++    for(auto &&I = D->getClausesOfKind(OMPC_prefetch); I; ++I) {
++      auto *C = cast<OMPPrefetchClause>(*I);
++      Expr *Start = C->getStartOfRange(), *End = C->getEndOfRange();
++      if(Start && !End) {
++        UseFinder.reset();
++        UseFinder.TraverseStmt(Start);
++
++        for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
++          if(!LoopVars.count(V)) Diag(C->getFirstColonLoc(),
++                                      diag::err_omp_invalid_prefetch_loop_var);
++      }
++    }
++  }
++}
++
+ static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
+   // Array of foldings: F[i][0] F[i][1] ===> F[i][2].
+   // E.g.: OMPD_for OMPD_simd ===> OMPD_for_simd
+@@ -294,6 +357,21 @@
            DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
            EndLoc);
  
-+    if(PP.getLangOpts().DistributedOmp &&
-+       (DKind == OMPD_parallel || DKind == OMPD_parallel_for ||
-+        DKind == OMPD_parallel_for_simd || DKind == OMPD_parallel_sections)) {
-+      CapturedStmt *CS = cast<CapturedStmt>(AssociatedStmt.get());
-+      CS->setOffloadShared(true);
++    // Enable optimizations for Popcorn Linux, if requested.
++    if(PP.getLangOpts().DistributedOmp) {
++      if((DKind == OMPD_parallel || DKind == OMPD_parallel_for ||
++          DKind == OMPD_parallel_for_simd || DKind == OMPD_parallel_sections)) {
++        CapturedStmt *CS = cast<CapturedStmt>(AssociatedStmt.get());
++        CS->setOffloadShared(true);
++      }
++
++      if(DKind == OMPD_for || DKind == OMPD_parallel_for ||
++         DKind == OMPD_parallel_for_simd) {
++        cast<OMPExecutableDirective>(Directive.get())->setPrefetching(true);
++        CheckOpenMPPrefetchClauses(Directive);
++      }
 +    }
 +
      // Exit scope.
      Actions.EndOpenMPDSABlock(Directive.get());
      OMPDirectiveScope.Exit();
+@@ -385,7 +463,7 @@
+ ///       lastprivate-clause | reduction-clause | proc_bind-clause |
+ ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
+ ///       mergeable-clause | flush-clause | read-clause | write-clause |
+-///       update-clause | capture-clause | seq_cst-clause
++///       update-clause | capture-clause | seq_cst-clause | prefetch-clause
+ ///
+ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
+                                      OpenMPClauseKind CKind, bool FirstClause) {
+@@ -479,6 +557,7 @@
+   case OMPC_copyprivate:
+   case OMPC_flush:
+   case OMPC_depend:
++  case OMPC_prefetch:
+     Clause = ParseOpenMPVarListClause(CKind);
+     break;
+   case OMPC_unknown:
+@@ -702,17 +781,20 @@
+ ///       'flush' '(' list ')'
+ ///    depend-clause:
+ ///       'depend' '(' in | out | inout : list ')'
++///    prefetch-clause:
++///       'prefetch' '(' read | write ':' list [ ':' start ':' end ] ')'
+ ///
+ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPClauseKind Kind) {
+   SourceLocation Loc = Tok.getLocation();
+   SourceLocation LOpen = ConsumeToken();
+-  SourceLocation ColonLoc = SourceLocation();
++  SourceLocation ColonLoc = SourceLocation(), EndColonLoc = SourceLocation();
+   // Optional scope specifier and unqualified id for reduction identifier.
+   CXXScopeSpec ReductionIdScopeSpec;
+   UnqualifiedId ReductionId;
+   bool InvalidReductionId = false;
+   OpenMPDependClauseKind DepKind = OMPC_DEPEND_unknown;
+-  SourceLocation DepLoc;
++  OpenMPPrefetchClauseKind PrefKind = OMPC_PREFETCH_unknown;
++  SourceLocation DepLoc, PrefLoc;
+ 
+   // Parse '('.
+   BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
+@@ -755,6 +837,20 @@
+     } else {
+       Diag(Tok, diag::warn_pragma_expected_colon) << "dependency type";
+     }
++  } else if (Kind == OMPC_prefetch) {
++  // Handle permission type for prefetch clause.
++    ColonProtectionRAIIObject ColonRAII(*this);
++    PrefKind = static_cast<OpenMPPrefetchClauseKind>(getOpenMPSimpleClauseType(
++        Kind, Tok.is(tok::identifier) ? PP.getSpelling(Tok) : ""));
++    PrefLoc = Tok.getLocation();
++
++    if (PrefKind == OMPC_PREFETCH_unknown) {
++      SkipUntil(tok::r_paren, tok::annot_pragma_openmp_end, StopBeforeMatch);
++      Diag(PrefLoc, diag::err_omp_invalid_prefetch_kind) << true;
++    } else {
++      ConsumeToken(); // Keyword
++      ConsumeToken(); // Colon
++    }
+   }
+ 
+   SmallVector<Expr *, 5> Vars;
+@@ -761,7 +857,8 @@
+   bool IsComma = ((Kind != OMPC_reduction) && (Kind != OMPC_depend)) ||
+                  ((Kind == OMPC_reduction) && !InvalidReductionId) ||
+                  ((Kind == OMPC_depend) && DepKind != OMPC_DEPEND_unknown);
+-  const bool MayHaveTail = (Kind == OMPC_linear || Kind == OMPC_aligned);
++  const bool MayHaveTail = (Kind == OMPC_linear || Kind == OMPC_aligned ||
++                            Kind == OMPC_prefetch);
+   while (IsComma || (Tok.isNot(tok::r_paren) && Tok.isNot(tok::colon) &&
+                      Tok.isNot(tok::annot_pragma_openmp_end))) {
+     ColonProtectionRAIIObject ColonRAII(*this, MayHaveTail);
+@@ -787,9 +884,9 @@
+           << (Kind == OMPC_flush);
+   }
+ 
+-  // Parse ':' linear-step (or ':' alignment).
++  // Parse ':' linear-step, ':' alignment, or ':' start.
+   Expr *TailExpr = nullptr;
+-  const bool MustHaveTail = MayHaveTail && Tok.is(tok::colon);
++  const bool MustHaveTail = (MayHaveTail && Tok.is(tok::colon));
+   if (MustHaveTail) {
+     ColonLoc = Tok.getLocation();
+     ConsumeToken();
+@@ -802,6 +899,20 @@
+                 StopBeforeMatch);
+   }
+ 
++  // Parse ':' end.
++  Expr *EndExpr = nullptr;
++  if (Kind == OMPC_prefetch && Tok.is(tok::colon)) {
++    EndColonLoc = Tok.getLocation();
++    ConsumeToken();
++    ExprResult Tail =
++        Actions.CorrectDelayedTyposInExpr(ParseAssignmentExpression());
++    if (Tail.isUsable())
++      EndExpr = Tail.get();
++    else
++      SkipUntil(tok::comma, tok::r_paren, tok::annot_pragma_openmp_end,
++                StopBeforeMatch);
++  }
++
+   // Parse ')'.
+   T.consumeClose();
+   if ((Kind == OMPC_depend && DepKind != OMPC_DEPEND_unknown && Vars.empty()) ||
+@@ -810,10 +921,10 @@
+     return nullptr;
+ 
+   return Actions.ActOnOpenMPVarListClause(
+-      Kind, Vars, TailExpr, Loc, LOpen, ColonLoc, Tok.getLocation(),
+-      ReductionIdScopeSpec,
++      Kind, Vars, TailExpr, EndExpr, Loc, LOpen, ColonLoc, EndColonLoc,
++      Tok.getLocation(), ReductionIdScopeSpec,
+       ReductionId.isValid() ? Actions.GetNameFromUnqualifiedId(ReductionId)
+                             : DeclarationNameInfo(),
+-      DepKind, DepLoc);
++      DepKind, DepLoc, PrefKind, PrefLoc);
+ }
+ 
+Index: lib/Sema/SemaOpenMP.cpp
+===================================================================
+--- lib/Sema/SemaOpenMP.cpp	(revision 320332)
++++ lib/Sema/SemaOpenMP.cpp	(working copy)
+@@ -4616,6 +4616,7 @@
+   case OMPC_seq_cst:
+   case OMPC_depend:
+   case OMPC_unknown:
++  case OMPC_prefetch:
+     llvm_unreachable("Clause is not allowed.");
+   }
+   return Res;
+@@ -4831,6 +4832,7 @@
+   case OMPC_seq_cst:
+   case OMPC_depend:
+   case OMPC_unknown:
++  case OMPC_prefetch:
+     llvm_unreachable("Clause is not allowed.");
+   }
+   return Res;
+@@ -4952,6 +4954,7 @@
+   case OMPC_seq_cst:
+   case OMPC_depend:
+   case OMPC_unknown:
++  case OMPC_prefetch:
+     llvm_unreachable("Clause is not allowed.");
+   }
+   return Res;
+@@ -5075,6 +5078,7 @@
+   case OMPC_flush:
+   case OMPC_depend:
+   case OMPC_unknown:
++  case OMPC_prefetch:
+     llvm_unreachable("Clause is not allowed.");
+   }
+   return Res;
+@@ -5129,10 +5133,12 @@
+ 
+ OMPClause *Sema::ActOnOpenMPVarListClause(
+     OpenMPClauseKind Kind, ArrayRef<Expr *> VarList, Expr *TailExpr,
+-    SourceLocation StartLoc, SourceLocation LParenLoc, SourceLocation ColonLoc,
++    Expr *EndExpr, SourceLocation StartLoc, SourceLocation LParenLoc,
++    SourceLocation ColonLoc, SourceLocation EndColonLoc,
+     SourceLocation EndLoc, CXXScopeSpec &ReductionIdScopeSpec,
+     const DeclarationNameInfo &ReductionId, OpenMPDependClauseKind DepKind,
+-    SourceLocation DepLoc) {
++    SourceLocation DepLoc, OpenMPPrefetchClauseKind PrefKind,
++    SourceLocation PrefLoc) {
+   OMPClause *Res = nullptr;
+   switch (Kind) {
+   case OMPC_private:
+@@ -5172,6 +5178,11 @@
+     Res = ActOnOpenMPDependClause(DepKind, DepLoc, ColonLoc, VarList, StartLoc,
+                                   LParenLoc, EndLoc);
+     break;
++  case OMPC_prefetch:
++    Res = ActOnOpenMPPrefetchClause(PrefKind, PrefLoc, VarList, TailExpr,
++                                    EndExpr, StartLoc, LParenLoc, ColonLoc,
++                                    EndColonLoc, EndLoc);
++    break;
+   case OMPC_if:
+   case OMPC_final:
+   case OMPC_num_threads:
+@@ -6785,3 +6796,55 @@
+                                  DepLoc, ColonLoc, Vars);
+ }
+ 
++OMPClause *
++Sema::ActOnOpenMPPrefetchClause(OpenMPPrefetchClauseKind PrefKind,
++                                SourceLocation PrefLoc,
++                                ArrayRef<Expr *> VarList,
++                                Expr *Start, Expr *End,
++                                SourceLocation StartLoc,
++                                SourceLocation LParenLoc,
++                                SourceLocation FirstColonLoc,
++                                SourceLocation SecondColonLoc,
++                                SourceLocation EndLoc) {
++  bool HasRange = Start || End;
++
++  // Check that the variable is the correct type.  We currently only support
++  // arrays & pointers.
++  for(const auto &Var : VarList) {
++    QualType T = Var->getType();
++    if(HasRange) {
++      if(!T->isArrayType() && !T->isPointerType()) {
++        Diag(Var->getExprLoc(), diag::err_omp_invalid_prefetch_var_type)
++          << "array or pointer";
++        return nullptr;
++      }
++    }
++    else {
++      if(!T->isArrayType()) {
++        Diag(Var->getExprLoc(), diag::err_omp_invalid_prefetch_var_type)
++          << "array";
++        return nullptr;
++      }
++    }
++  }
++
++  if(HasRange) {
++    if(!Start->getType().getTypePtr()->isIntegerType()) {
++      Diag(Start->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
++      return nullptr;
++    }
++
++    if(End) {
++      if(!End->getType().getTypePtr()->isIntegerType()) {
++        Diag(End->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
++        return nullptr;
++      }
++      // TODO if of type array, ensure the range fits within bounds match
++    }
++  }
++
++  return OMPPrefetchClause::Create(Context, PrefKind, PrefLoc, VarList, Start,
++                                   End, StartLoc, LParenLoc, FirstColonLoc,
++                                   SecondColonLoc, EndLoc);
++}
++
+Index: lib/Sema/TreeTransform.h
+===================================================================
+--- lib/Sema/TreeTransform.h	(revision 320332)
++++ lib/Sema/TreeTransform.h	(working copy)
+@@ -7469,6 +7469,14 @@
+       C->getLocStart(), C->getLParenLoc(), C->getLocEnd());
+ }
+ 
++template <typename Derived>
++OMPClause *
++TreeTransform<Derived>::TransformOMPPrefetchClause(OMPPrefetchClause *C) {
++  // TODO Rob
++  llvm_unreachable("not yet implmented");
++  return C;
++}
++
+ //===----------------------------------------------------------------------===//
+ // Expression transformation
+ //===----------------------------------------------------------------------===//
+Index: lib/Serialization/ASTReaderStmt.cpp
+===================================================================
+--- lib/Serialization/ASTReaderStmt.cpp	(revision 320332)
++++ lib/Serialization/ASTReaderStmt.cpp	(working copy)
+@@ -2065,6 +2065,11 @@
+   C->setVarRefs(Vars);
+ }
+ 
++void OMPClauseReader::VisitOMPPrefetchClause(OMPPrefetchClause *C) {
++  // TODO Rob
++  llvm_unreachable("not yet implemented");
++}
++
+ //===----------------------------------------------------------------------===//
+ // OpenMP Directives.
+ //===----------------------------------------------------------------------===//
+Index: lib/Serialization/ASTWriterStmt.cpp
+===================================================================
+--- lib/Serialization/ASTWriterStmt.cpp	(revision 320332)
++++ lib/Serialization/ASTWriterStmt.cpp	(working copy)
+@@ -1916,6 +1916,11 @@
+     Writer->Writer.AddStmt(VE);
+ }
+ 
++void OMPClauseWriter::VisitOMPPrefetchClause(OMPPrefetchClause *C) {
++  // TODO Rob
++  llvm_unreachable("not yet implemented");
++}
++
+ //===----------------------------------------------------------------------===//
+ // OpenMP Directives.
+ //===----------------------------------------------------------------------===//
+Index: tools/libclang/CIndex.cpp
+===================================================================
+--- tools/libclang/CIndex.cpp	(revision 320332)
++++ tools/libclang/CIndex.cpp	(working copy)
+@@ -2147,7 +2147,11 @@
+ void OMPClauseEnqueue::VisitOMPDependClause(const OMPDependClause *C) {
+   VisitOMPClauseList(C);
+ }
++void OMPClauseEnqueue::VisitOMPPrefetchClause(const OMPPrefetchClause *C) {
++  // TODO Rob
++  llvm_unreachable("not yet implemented");
+ }
++}
+ 
+ void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {
+   unsigned size = WL.size();
