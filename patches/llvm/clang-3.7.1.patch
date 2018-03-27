@@ -164,14 +164,16 @@ Index: include/clang/Basic/DiagnosticParseKinds.td
 ===================================================================
 --- include/clang/Basic/DiagnosticParseKinds.td	(revision 320332)
 +++ include/clang/Basic/DiagnosticParseKinds.td	(working copy)
-@@ -993,6 +993,12 @@
+@@ -993,6 +993,14 @@
    "'#pragma omp %0' cannot be an immediate substatement">;
  def err_omp_expected_identifier_for_critical : Error<
    "expected identifier specifying the name of the 'omp critical' directive">;
 +def err_omp_invalid_prefetch_kind : Error<
 +  "invalid argument; expected 'read' or 'write'">;
-+// TODO Technically this is a semantics issue, but we're doing checking in the
++// TODO Technically these are semantics issues, but we're doing checking in the
 +// parser for this particular clause
++def err_omp_invalid_prefetch_capture : Error<
++  "can only prefetch variables used in the loop body">;
 +def err_omp_invalid_prefetch_loop_var : Error<
 +  "can only prefetch loop iteration range using a loop iteration variable">;
  
@@ -1031,63 +1033,30 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
  }
  
  void CodeGenFunction::EmitOMPParallelDirective(const OMPParallelDirective &S) {
-@@ -743,6 +746,170 @@
+@@ -743,6 +746,159 @@
    }
  }
  
 +/// Ease the variable lookup burden for captures.
-+typedef llvm::DenseMap<const VarDecl *, FieldDecl *> VarFieldMap;
++typedef llvm::DenseMap<const VarDecl *, DeclRefExpr *> CaptureMap;
 +
 +/// Map variable declarations captured in the outer function to their field in
 +/// the captured struct.
 +static void
-+buildVarToFieldMap(ASTContext &C, CapturedStmt *CS, VarFieldMap &Map) {
-+  CapturedStmt::capture_iterator Capture;
-+  RecordDecl::field_iterator Field;
-+
++buildCapturedMap(ASTContext &C, CapturedStmt *CS, CaptureMap &Map) {
 +  // Captures are in a 1-to-1 correspondence with captured record fields
 +  Map.clear();
-+  for(Capture = CS->capture_begin(),
-+      Field = CS->getCapturedRecordDecl()->field_begin();
-+      Capture != CS->capture_end(); Capture++, Field++) {
-+    // TODO remove type checking
-+    const ReferenceType *FieldRefTy = cast<ReferenceType>(Field->getType());
-+    QualType FieldQualTy = FieldRefTy->getPointeeType().getDesugaredType(C),
-+       CapQualTy = Capture->getCapturedVar()->getType().getDesugaredType(C);
-+    const Type *CapTy = CapQualTy.getTypePtr(),
-+               *FieldTy = FieldQualTy.getTypePtr();
-+    assert(CapTy == FieldTy);
-+
-+    Map[Capture->getCapturedVar()] = *Field;
++  for(auto Child : CS->children()) {
++    if(isa<DeclRefExpr>(Child)) {
++      DeclRefExpr *DRE = cast<DeclRefExpr>(Child);
++      ValueDecl *Decl = DRE->getDecl();
++      if(isa<VarDecl>(Decl)) Map[cast<VarDecl>(Decl)] = DRE;
++    }
 +  }
 +}
 +
-+/// Create a reference to the captured context struct.
-+static DeclRefExpr *
-+getContextRefExpr(ASTContext &C, ImplicitParamDecl *Ctx) {
-+  QualType Ty = Ctx->getType();
-+  DeclRefExpr *DRE = DeclRefExpr::Create(C, NestedNameSpecifierLoc(),
-+                                         SourceLocation(), Ctx, true,
-+                                         SourceLocation(), Ty, VK_LValue);
-+  DRE->getDecl()->setIsUsed();
-+  return DRE;
-+}
-+
-+/// Create a reference to a field captured in the capture's context struct.
-+/// This should produce an expression with the same type as the variable.
-+static Expr *
-+getContextFieldExpr(ASTContext &C, DeclRefExpr *Ctx, FieldDecl *F) {
-+  QualType Ty = F->getType().getNonReferenceType();
-+  MemberExpr *Mem = new (C) MemberExpr(Ctx, true, SourceLocation(), F,
-+                                       SourceLocation(), Ty,
-+                                       VK_RValue, OK_Ordinary);
-+  assert(isa<ArrayType>(Mem->getType()) || isa<PointerType>(Mem->getType()));
-+  return Mem;
-+}
-+
 +/// Create an expression representing the address of some array index.
-+static Expr *
-+getPrefetchAddr(ASTContext &C, Expr *Ptr, Expr *Subscript) {
++static Expr *getPrefetchAddr(ASTContext &C, Expr *Ptr, Expr *Subscript) {
 +  QualType BaseTy = Ptr->getType(), IdxTy;
 +
 +  // Get an array subscript
@@ -1102,10 +1071,26 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 +  UnaryOperator *Addr = new (C) UnaryOperator(Index, UO_AddrOf, RePtrTy, VK_LValue,
 +                               OK_Ordinary, SourceLocation());
 +
-+  // Finally, cast to a void * type
++  // Finally, cast to a const void * type
 +  QualType VoidPtrTy = C.getPointerType(C.VoidTy.withConst());
 +  return ImplicitCastExpr::Create(C, VoidPtrTy, CK_BitCast, Addr, nullptr,
 +                                  VK_RValue);
++}
++
++static Expr *getArrayIndexAddr(ASTContext &C, Expr *Arr, const llvm::APInt &Idx) {
++  QualType Ty = Arr->getType();
++  if(Ty->isArrayType()) {
++    Ty = C.getPointerType(cast<ArrayType>(Ty)->getElementType());
++    Arr = ImplicitCastExpr::Create(C, Ty, CK_ArrayToPointerDecay, Arr, nullptr,
++                                   VK_RValue);
++  }
++  Expr *IdxLiteral =
++    IntegerLiteral::Create(C, Idx, C.LongTy, SourceLocation());
++  return getPrefetchAddr(C, Arr, IdxLiteral);
++}
++
++static Expr *getArrayIndexAddr(ASTContext &C, Expr *Arr, int64_t Idx) {
++  return getArrayIndexAddr(C, Arr, llvm::APInt(64, Idx, true));
 +}
 +
 +static llvm::Constant *getPrefetchKind(CodeGenFunction &CGF,
@@ -1123,9 +1108,10 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 +
 +void CodeGenFunction::EmitOMPPrefetchClauses(const OMPLoopDirective &D) {
 +  ASTContext &AST = getContext();
-+  VarFieldMap VarFields;
-+  VarFieldMap::iterator Field;
-+  Expr *Start, *End, *MemberRef, *StartAddr, *EndAddr;
++  CaptureMap AllCaptures;
++  CaptureMap::iterator Captured;
++  const ConstantArrayType *ArrTy;
++  Expr *Base, *Start, *End, *StartAddr, *EndAddr;
 +  RValue LoweredStart, LoweredEnd;
 +  std::vector<llvm::Value *> Params;
 +  std::vector<llvm::Type *> ParamTypes;
@@ -1147,9 +1133,8 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 +    // For each prefetched variable, construct start & end range expressions
 +    // and call @popcorn_prefetch
 +    CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
-+    ImplicitParamDecl *ContextDecl = CS->getCapturedDecl()->getContextParam();
-+    DeclRefExpr *Ctx = getContextRefExpr(AST, ContextDecl);
-+    buildVarToFieldMap(AST, CS, VarFields);
++    buildCapturedMap(AST, CS, AllCaptures);
++
 +    for(auto &&I = D.getClausesOfKind(OMPC_prefetch); I; ++I) {
 +      auto *C = cast<OMPPrefetchClause>(*I);
 +      Start = C->getStartOfRange();
@@ -1158,14 +1143,17 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 +      for(auto &V : C->varlists()) {
 +        const DeclRefExpr *DR = cast<DeclRefExpr>(V);
 +        const VarDecl *VD = cast<VarDecl>(DR->getDecl());
-+        Field = VarFields.find(VD);
++        Captured = AllCaptures.find(VD);
 +
-+        if(Field != VarFields.end()) {
-+          MemberRef = getContextFieldExpr(AST, Ctx, Field->second);
++        // TODO the current mechanism for calculating addresses applies an
++        // "inbounds" tag to the array index addressing expression, but we
++        // don't necessarily know this is true.
++        if(Captured != AllCaptures.end()) {
++          Base = Captured->second;
 +          if(Start && End) {
 +            // User specified entire range
-+            StartAddr = getPrefetchAddr(AST, MemberRef, Start);
-+            EndAddr = getPrefetchAddr(AST, MemberRef, End);
++            StartAddr = getPrefetchAddr(AST, Base, Start);
++            EndAddr = getPrefetchAddr(AST, Base, End);
 +          }
 +          else if(Start) {
 +            // User specified an expression affine to loop iteration variable
@@ -1173,13 +1161,16 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
 +            // variable, need to re-generate for lower/upper bound variables
 +            assert(isa<DeclRefExpr>(Start) &&
 +                   "Can't handle transformations on loop variables yet");
-+            StartAddr =
-+              getPrefetchAddr(AST, MemberRef, D.getLowerBoundVariable());
-+            EndAddr =
-+              getPrefetchAddr(AST, MemberRef, D.getUpperBoundVariable());
++            StartAddr = getPrefetchAddr(AST, Base, D.getLowerBoundVariable());
++            EndAddr = getPrefetchAddr(AST, Base, D.getUpperBoundVariable());
 +          }
 +          else {
-+            // TODO consruct range expressions for the entirety of the array
++            // User didn't specify a range, prefetch the entire array (note:
++            // should have type checked it's an array by now).
++            ArrTy = cast<ConstantArrayType>(Base->getType());
++            const llvm::APInt &Size = ArrTy->getSize();
++            StartAddr = getArrayIndexAddr(AST, Base, 0);
++            EndAddr = getArrayIndexAddr(AST, Base, Size);
 +          }
 +
 +          LoweredStart = EmitAnyExpr(StartAddr);
@@ -1202,16 +1193,16 @@ Index: lib/CodeGen/CGStmtOpenMP.cpp
  void CodeGenFunction::EmitOMPSimdInit(const OMPLoopDirective &D) {
    // Walk clauses and process safelen/lastprivate.
    LoopStack.setParallel();
-@@ -1137,6 +1304,8 @@
+@@ -1137,6 +1293,8 @@
          auto LoopExit = getJumpDestInCurrentScope(createBasicBlock("omp.loop.exit"));
          // UB = min(UB, GlobalUB);
          EmitIgnoredExpr(S.getEnsureUpperBound());
 +        // Popcorn: emit prefetch function declarations & requests
-+        EmitOMPPrefetchClauses(S);
++        if(S.prefetchingEnabled()) EmitOMPPrefetchClauses(S);
          // IV = LB;
          EmitIgnoredExpr(S.getInit());
          // while (idx <= UB) { BODY; ++idx; }
-@@ -2049,6 +2218,7 @@
+@@ -2049,6 +2207,7 @@
    case OMPC_threadprivate:
    case OMPC_depend:
    case OMPC_mergeable:
@@ -1980,7 +1971,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  #include "clang/AST/StmtOpenMP.h"
  #include "clang/Parse/ParseDiagnostic.h"
  #include "clang/Parse/Parser.h"
-@@ -25,6 +26,68 @@
+@@ -25,6 +26,81 @@
  // OpenMP declarative directives.
  //===----------------------------------------------------------------------===//
  
@@ -1996,10 +1987,7 @@ Index: lib/Parse/ParseOpenMP.cpp
 +    return true;
 +  }
 +
-+  bool VisitVarDecl(VarDecl *D) {
-+    Variables.insert(D);
-+    return true;
-+  }
++  bool VisitVarDecl(VarDecl *D) { Variables.insert(D); return true; }
 +
 +  const llvm::SmallPtrSet<const VarDecl *, 2> &
 +  getDeclaredOrReferencedVars() const { return Variables; }
@@ -2009,7 +1997,7 @@ Index: lib/Parse/ParseOpenMP.cpp
 +};
 +
 +void Parser::CheckOpenMPPrefetchClauses(StmtResult Directive) {
-+  VarFinder LoopVarFinder, UseFinder;
++  VarFinder CapturedVarFinder, LoopVarFinder, UseFinder;
 +
 +  OMPLoopDirective *D = dyn_cast<OMPLoopDirective>(Directive.get());
 +  if(D) {
@@ -2022,17 +2010,33 @@ Index: lib/Parse/ParseOpenMP.cpp
 +    //                    random-access-iterator-type var = lb
 +    //                    pointer-type var = lb
 +    //
-+    // Examine the initialization statement to find the loop iteration
-+    // variable.
++    // Thus we can examine the initialization statement to find the loop
++    // iteration variable.
 +    CapturedStmt *Captured = cast<CapturedStmt>(D->getAssociatedStmt());
 +    ForStmt *For = cast<ForStmt>(Captured->getCapturedStmt());
 +    BinaryOperator *InitExpr = cast<BinaryOperator>(For->getInit());
++
++    // Find captured & loop iteration variables
++    CapturedVarFinder.TraverseStmt(Captured);
++    const llvm::SmallPtrSet<const VarDecl *, 2> &CapturedVars =
++      CapturedVarFinder.getDeclaredOrReferencedVars();
 +    LoopVarFinder.TraverseStmt(InitExpr);
 +    const llvm::SmallPtrSet<const VarDecl *, 2> &LoopVars =
 +      LoopVarFinder.getDeclaredOrReferencedVars();
 +
 +    for(auto &&I = D->getClausesOfKind(OMPC_prefetch); I; ++I) {
 +      auto *C = cast<OMPPrefetchClause>(*I);
++
++      // Verify we're only prefetching captured variables
++      for(auto E : C->varlists()) {
++        UseFinder.reset();
++        UseFinder.TraverseStmt((Expr *)E);
++        for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
++          if(!CapturedVars.count(V))
++            Diag(E->getExprLoc(), diag::err_omp_invalid_prefetch_capture);
++      }
++
++      // Verify loop iteration variable use
 +      Expr *Start = C->getStartOfRange(), *End = C->getEndOfRange();
 +      if(Start && !End) {
 +        UseFinder.reset();
@@ -2049,7 +2053,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
    // Array of foldings: F[i][0] F[i][1] ===> F[i][2].
    // E.g.: OMPD_for OMPD_simd ===> OMPD_for_simd
-@@ -294,6 +357,21 @@
+@@ -294,6 +370,21 @@
            DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
            EndLoc);
  
@@ -2071,7 +2075,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      // Exit scope.
      Actions.EndOpenMPDSABlock(Directive.get());
      OMPDirectiveScope.Exit();
-@@ -385,7 +463,7 @@
+@@ -385,7 +476,7 @@
  ///       lastprivate-clause | reduction-clause | proc_bind-clause |
  ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
  ///       mergeable-clause | flush-clause | read-clause | write-clause |
@@ -2080,7 +2084,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  ///
  OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                       OpenMPClauseKind CKind, bool FirstClause) {
-@@ -479,6 +557,7 @@
+@@ -479,6 +570,7 @@
    case OMPC_copyprivate:
    case OMPC_flush:
    case OMPC_depend:
@@ -2088,7 +2092,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      Clause = ParseOpenMPVarListClause(CKind);
      break;
    case OMPC_unknown:
-@@ -702,17 +781,20 @@
+@@ -702,17 +794,20 @@
  ///       'flush' '(' list ')'
  ///    depend-clause:
  ///       'depend' '(' in | out | inout : list ')'
@@ -2111,7 +2115,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  
    // Parse '('.
    BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
-@@ -755,6 +837,20 @@
+@@ -755,6 +850,20 @@
      } else {
        Diag(Tok, diag::warn_pragma_expected_colon) << "dependency type";
      }
@@ -2132,7 +2136,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    }
  
    SmallVector<Expr *, 5> Vars;
-@@ -761,7 +857,8 @@
+@@ -761,7 +870,8 @@
    bool IsComma = ((Kind != OMPC_reduction) && (Kind != OMPC_depend)) ||
                   ((Kind == OMPC_reduction) && !InvalidReductionId) ||
                   ((Kind == OMPC_depend) && DepKind != OMPC_DEPEND_unknown);
@@ -2142,7 +2146,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    while (IsComma || (Tok.isNot(tok::r_paren) && Tok.isNot(tok::colon) &&
                       Tok.isNot(tok::annot_pragma_openmp_end))) {
      ColonProtectionRAIIObject ColonRAII(*this, MayHaveTail);
-@@ -787,9 +884,9 @@
+@@ -787,9 +897,9 @@
            << (Kind == OMPC_flush);
    }
  
@@ -2154,7 +2158,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    if (MustHaveTail) {
      ColonLoc = Tok.getLocation();
      ConsumeToken();
-@@ -802,6 +899,20 @@
+@@ -802,6 +912,20 @@
                  StopBeforeMatch);
    }
  
@@ -2175,7 +2179,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    // Parse ')'.
    T.consumeClose();
    if ((Kind == OMPC_depend && DepKind != OMPC_DEPEND_unknown && Vars.empty()) ||
-@@ -810,10 +921,10 @@
+@@ -810,10 +934,10 @@
      return nullptr;
  
    return Actions.ActOnOpenMPVarListClause(
@@ -2252,7 +2256,7 @@ Index: lib/Sema/SemaOpenMP.cpp
    case OMPC_if:
    case OMPC_final:
    case OMPC_num_threads:
-@@ -6785,3 +6796,55 @@
+@@ -6785,3 +6796,53 @@
                                   DepLoc, ColonLoc, Vars);
  }
  
@@ -2266,40 +2270,38 @@ Index: lib/Sema/SemaOpenMP.cpp
 +                                SourceLocation FirstColonLoc,
 +                                SourceLocation SecondColonLoc,
 +                                SourceLocation EndLoc) {
-+  bool HasRange = Start || End;
++  // Check validity of range expressions & variables which use them
++  if(Start) {
++    if(!Start->getType()->isIntegerType()) {
++      Diag(Start->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
++      return nullptr;
++    }
 +
-+  // Check that the variable is the correct type.  We currently only support
-+  // arrays & pointers.
-+  for(const auto &Var : VarList) {
-+    QualType T = Var->getType();
-+    if(HasRange) {
++    if(End) {
++      if(!End->getType()->isIntegerType()) {
++        Diag(End->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
++        return nullptr;
++      }
++    }
++
++    for(const auto &Var : VarList) {
++      QualType T = Var->getType();
++
 +      if(!T->isArrayType() && !T->isPointerType()) {
 +        Diag(Var->getExprLoc(), diag::err_omp_invalid_prefetch_var_type)
 +          << "array or pointer";
 +        return nullptr;
 +      }
 +    }
-+    else {
-+      if(!T->isArrayType()) {
-+        Diag(Var->getExprLoc(), diag::err_omp_invalid_prefetch_var_type)
-+          << "array";
-+        return nullptr;
-+      }
-+    }
 +  }
-+
-+  if(HasRange) {
-+    if(!Start->getType().getTypePtr()->isIntegerType()) {
-+      Diag(Start->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
-+      return nullptr;
-+    }
-+
-+    if(End) {
-+      if(!End->getType().getTypePtr()->isIntegerType()) {
-+        Diag(End->getExprLoc(), diag::err_omp_invalid_prefetch_range_type);
++  else {
++    for(const auto &Var : VarList) {
++      QualType T = Var->getType();
++      if(!T->isConstantArrayType()) {
++        Diag(Var->getExprLoc(), diag::err_omp_invalid_prefetch_var_type)
++          << "constant-sized array";
 +        return nullptr;
 +      }
-+      // TODO if of type array, ensure the range fits within bounds match
 +    }
 +  }
 +
