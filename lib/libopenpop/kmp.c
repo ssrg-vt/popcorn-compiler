@@ -197,7 +197,6 @@ __kmpc_for_static_init(8u, uint64_t)
 void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
 {
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
-  GOMP_barrier();
 }
 
 void __kmpc_dispatch_init_4(ident_t *loc,

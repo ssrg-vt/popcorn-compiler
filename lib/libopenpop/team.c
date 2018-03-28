@@ -316,7 +316,7 @@ void
 gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		 unsigned flags, struct gomp_team *team)
 {
-  struct gomp_thread_start_data *start_data, *first_start;
+  struct gomp_thread_start_data *start_data, *first_start = NULL;
   struct gomp_thread *thr, *nthr;
   struct gomp_task *task;
   struct gomp_task_icv *icv;
@@ -889,7 +889,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
     free (affinity_thr);
 
   /* Popcorn: converted alloca to malloc, needs to be freed */
-  free(first_start);
+  if (first_start) free (first_start);
 }
 #endif
 
