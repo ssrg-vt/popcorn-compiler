@@ -6319,7 +6319,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,148 @@
+@@ -84,32 +98,144 @@
    return (unsigned)RegNum;
  }
  
@@ -6452,15 +6452,10 @@ Index: lib/CodeGen/StackMaps.cpp
 -      Locs.emplace_back(StackMaps::Location::Direct, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
 +      Locs.emplace_back(Location::Direct, Size, getDwarfRegNum(Reg, TRI), Imm,
-+                        isPtr, isAlloca, false, AllocaSize);
++                        isPtr, true, false, AllocaSize);
        break;
      }
      case StackMaps::IndirectMemRefOp: {
-+      // Note: getPointerInfo() may have found a suitable alloca for this
-+      // operand, but the backend didn't actually turn it into one.
-+      isAlloca = false;
-+      AllocaSize = 0;
-+
        int64_t Size = (++MOI)->getImm();
        assert(Size > 0 && "Need a valid size for indirect memory locations.");
 +      Size = DL.getTypeAllocSize(IROp->getType());
@@ -6468,19 +6463,22 @@ Index: lib/CodeGen/StackMaps.cpp
        int64_t Imm = (++MOI)->getImm();
 -      Locs.emplace_back(StackMaps::Location::Indirect, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
++      // Note: getPointerInfo() may have found a suitable alloca for this
++      // operand, but the backend didn't actually turn it into one.
 +      Locs.emplace_back(Location::Indirect, (unsigned)Size,
-+                        getDwarfRegNum(Reg, TRI), Imm, isPtr, isAlloca, false,
-+                        AllocaSize);
++                        getDwarfRegNum(Reg, TRI), Imm, isPtr, false, false, 0);
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +246,24 @@
+@@ -116,17 +242,26 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
 -      Locs.emplace_back(Location::Constant, sizeof(int64_t), 0, Imm);
++      // Note: getPointerInfo() may have found a suitable alloca for this
++      // operand, but the backend didn't actually turn it into one.
 +      Locs.emplace_back(Location::Constant, sizeof(int64_t), 0, Imm,
-+                        isPtr, isAlloca, false, AllocaSize);
++                        isPtr, false, false, 0);
        break;
      }
      }
@@ -6502,7 +6500,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +271,16 @@
+@@ -134,17 +269,18 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6520,9 +6518,11 @@ Index: lib/CodeGen/StackMaps.cpp
 +    getRegLocation(MOI->getReg(), DwarfRegNum, Offset);
  
 -    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
++    // Note: getPointerInfo() may have found a suitable alloca for this
++    // operand, but the backend didn't actually turn it into one.
 +    Locs.emplace_back(Location::Register, ValSize, DwarfRegNum, Offset,
-+                      isPtr, isAlloca, false, AllocaSize);
-+    addDuplicateLocs(IRSM, IROp, Locs, ValSize, isPtr, isAlloca, AllocaSize);
++                      isPtr, false, false, 0);
++    addDuplicateLocs(IRSM, IROp, Locs, ValSize, isPtr, false, 0);
 +    ++Op;
      return ++MOI;
    }
