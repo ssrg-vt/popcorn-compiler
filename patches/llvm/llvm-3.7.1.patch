@@ -6319,7 +6319,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,145 @@
+@@ -84,32 +98,148 @@
    return (unsigned)RegNum;
  }
  
@@ -6344,7 +6344,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +    for(it = GEP->idx_begin(), e = GEP->idx_end(); it != e; it++) {
 +      if(!isa<ConstantInt>(it->get())) return nullptr;
 +      const ConstantInt *Idx = cast<ConstantInt>(it->get());
-+      if(Idx->getSExtValue() != 0) return nullptr;
++      if(!Idx->isZero()) return nullptr;
 +    }
 +    return GEP->getOperand(0);
 +  }
@@ -6456,8 +6456,11 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::IndirectMemRefOp: {
-+      assert(!isAlloca &&
-+             "Alloca lowered to indirect memory reference operand");
++      // Note: getPointerInfo() may have found a suitable alloca for this
++      // operand, but the backend didn't actually turn it into one.
++      isAlloca = false;
++      AllocaSize = 0;
++
        int64_t Size = (++MOI)->getImm();
        assert(Size > 0 && "Need a valid size for indirect memory locations.");
 +      Size = DL.getTypeAllocSize(IROp->getType());
@@ -6471,7 +6474,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +243,24 @@
+@@ -116,17 +246,24 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6499,7 +6502,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +268,16 @@
+@@ -134,17 +271,16 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6524,7 +6527,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +294,7 @@
+@@ -161,6 +297,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6532,7 +6535,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +328,7 @@
+@@ -194,7 +331,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6541,7 +6544,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +337,15 @@
+@@ -203,8 +340,15 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -6559,7 +6562,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +362,87 @@
+@@ -221,6 +365,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6647,7 +6650,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +499,145 @@
+@@ -277,6 +502,145 @@
    return LiveOuts;
  }
  
@@ -6793,7 +6796,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +646,46 @@
+@@ -285,21 +649,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6842,7 +6845,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +709,21 @@
+@@ -323,12 +712,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6867,7 +6870,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +806,11 @@
+@@ -411,8 +809,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6880,7 +6883,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +818,15 @@
+@@ -420,6 +821,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6896,7 +6899,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +846,20 @@
+@@ -439,14 +849,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6921,7 +6924,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +868,25 @@
+@@ -455,6 +871,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6947,7 +6950,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +902,29 @@
+@@ -470,23 +905,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6978,7 +6981,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +932,13 @@
+@@ -494,10 +935,13 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -6993,7 +6996,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +950,31 @@
+@@ -509,6 +953,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7025,7 +7028,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +981,7 @@
+@@ -515,7 +984,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -7034,7 +7037,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +1005,7 @@
+@@ -539,7 +1008,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
