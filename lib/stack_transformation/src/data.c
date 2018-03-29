@@ -158,7 +158,7 @@ void put_val_data(rewrite_context ctx,
     return;
   }
 
-  ST_INFO("Setting data: ");
+  ST_INFO("Setting data in frame %d: ", act);
   dest_addr = get_dest_loc(ctx, val, act);
   if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
     callee_addr = callee_saved_loc(ctx, val->regnum, act);
