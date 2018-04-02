@@ -20,8 +20,8 @@
 #ifndef LLVM_SUPPORT_ELF_H
 #define LLVM_SUPPORT_ELF_H
 
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/DataTypes.h"
+//#include "llvm/Support/Compiler.h"
+//#include "llvm/Support/DataTypes.h"
 //#include <cstring>
 
 typedef uint32_t Elf32_Addr; // Program address
