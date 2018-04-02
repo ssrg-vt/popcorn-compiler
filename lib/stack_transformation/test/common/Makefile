@@ -14,7 +14,7 @@ SRC=$(shell ls *.c)
 PROG=prog
 BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
-LINKER_SCRIPT=ls.x
+LINKER_SCRIPT=$(POPCORN_SRC)/lib/stack_transformation/test/common/ls.x
 LIBS=$(HERMIT_PREFIX)/x86_64-hermit/lib/crt0.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/libgcc.a \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crti.o \
