@@ -51,6 +51,17 @@ AArch64Values::genADDInstructions(const MachineInstr *MI) const {
 }
 
 MachineLiveVal *
+AArch64Values::genADRPInstructions(const MachineInstr *MI) const {
+  ValueGenInstList IL;
+  if(isSymbolValue(MI->getOperand(1))) {
+    IL.emplace_back(new RefInstruction(MI->getOperand(1)));
+    IL.emplace_back(new ImmInstruction<InstType::Mask>(8, ~0xfff));
+    return new MachineGeneratedVal(IL, MI, false);
+  }
+  return nullptr;
+}
+
+MachineLiveVal *
 AArch64Values::genBitfieldInstructions(const MachineInstr *MI) const {
   int64_t R, S;
   unsigned Size, Bits;
@@ -159,6 +170,8 @@ MachineLiveValPtr AArch64Values::getMachineValue(const MachineInstr *MI) const {
     Val = genADDInstructions(MI);
     break;
   case AArch64::ADRP:
+    Val = genADRPInstructions(MI);
+    break;
   case AArch64::MOVaddr:
     MO = &MI->getOperand(1);
     if(MO->isCPI())
