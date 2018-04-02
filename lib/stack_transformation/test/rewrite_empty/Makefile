@@ -2,9 +2,12 @@
 # Compilation options
 # -------------------
 POPCORN_INSTALL=/usr/local/popcorn/
+POPCORN_SRC=/home/pierre/Desktop/hermit-llvm/popcorn-compiler
 HERMIT_PREFIX=/home/usr/hermit/
 
-CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I../../utils -DPOSIX -mllvm -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include
+CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
+	   -I$(POPCORN_SRC)/lib/stack_transformation/utils -DPOSIX -mllvm \
+	   -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include
 CC=$(POPCORN_INSTALL)/bin/clang
 LD=/home/pierre/Desktop/hermit-llvm/hermit-toolchain/build/binutils/gold/ld-new
 SRC=rewrite_empty.c
@@ -22,7 +25,7 @@ LIBS=$(HERMIT_PREFIX)/x86_64-hermit/lib/crt0.o \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libm.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a \
-	 ../../build/x86_64/libstack-transform.a \
+	 $(POPCORN_SRC)/lib/stack_transformation/build/x86_64/libstack-transform.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a
 
 # ----------------------
@@ -57,4 +60,4 @@ $(PROG):
 
 test: all
 	sudo HERMIT_ISLE=$(ISLE) HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
-		HERMTI_VERBOSE=$(VEBOSE) $(PROXY) $(PROG)
+		HERMIT_VERBOSE=$(VEBOSE) $(PROXY) $(PROG)
