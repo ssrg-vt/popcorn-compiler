@@ -550,6 +550,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                      '-print-libgcc-file-name' ]
             libgcc = subprocess.check_output(args, stderr=subprocess.STDOUT,
                                              shell=False).decode("utf-8")
+            libgcc = libgcc.strip()
 
             # Note: for build repeatability, we have to use the *same* include
             # path for *all* targets
@@ -559,19 +560,19 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
             os.environ['CC'] = '{}/bin/clang'.format(install_path)
             os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g -Wall ' \
                                    '-nostdinc -isystem {} ' \
-                                   '-popcorn-migratable ' \
+                                   '-popcorn-metadata ' \
                                    '-popcorn-target={}-linux-gnu' \
                                     .format(host, include_dir, target)
             os.environ['LDFLAGS'] = '-nostdlib -L{}'.format(lib_dir)
-            os.environ['LIBS'] = '{}/crt1.o -lmigrate -lstack-transform ' \
-                                 '-lelf -lc {}' \
+            os.environ['LIBS'] = '{}/crt1.o -lc {}' \
                                  .format(lib_dir, libgcc)
             args = ['./configure',
                     '--prefix=' + target_install_path,
                     '--target={}-linux-gnu'.format(target),
                     '--host={}-linux-gnu'.format(target),
                     '--enable-static',
-                    '--disable-shared']
+                    '--disable-shared',
+                    '--disable-tls']
             rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
             del os.environ['CC']
             del os.environ['CFLAGS']
