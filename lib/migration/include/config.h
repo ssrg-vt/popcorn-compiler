@@ -53,6 +53,10 @@
 # define MIGRATE_SIGNAL SIGRTMIN
 #endif
 
+/* Dump verbose migration information to a log file. */
+//#define _LOG 1
+#define LOG_FILE "/tmp/migrate.log"
+
 /*
  * Debug the migration process by spinning on the destination post-migration.
  * Allows the user to attach a debugger to the process and resume exeuction.

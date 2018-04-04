@@ -12,6 +12,7 @@
 #include "config.h"
 #include "arch.h"
 #include "mapping.h"
+#include "debug.h"
 
 #if _SIG_MIGRATION == 1
 #include "trigger.h"
@@ -282,6 +283,17 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
       } else {
         assert(0 && "Unsupported architecture!");
       }
+
+#if _LOG == 1
+      switch(dst_arch) {
+      case ARCH_AARCH64: dump_regs_aarch64(&regs_dst.aarch, LOG_FILE); break;
+      case ARCH_POWERPC64: dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE); break;
+      case ARCH_X86_64: dump_regs_x86_64(&regs_dst.x86, LOG_FILE); break;
+      default:
+        fprintf(stderr, "WARNING: unknown destination architecture\n");
+        break;
+      }
+#endif
 
       MIGRATE;
       assert(0 && "Couldn't migrate!");

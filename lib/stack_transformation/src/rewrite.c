@@ -469,7 +469,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
     // Note: it's an error for a pointer to point to frames down the call
     // chain, this is most likely uninitialized pointer data
     else
-      ST_WARN("Pointer-to-stack points to called functions");
+      ST_WARN("Pointer-to-stack points to called functions\n");
   }
   else put_val(src, val_src, dest, val_dest);
 
