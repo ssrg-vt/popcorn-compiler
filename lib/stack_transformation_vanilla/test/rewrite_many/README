@@ -1,0 +1,7 @@
+This test generates a set of random values for each invocation of recurse(),
+continues recursion down to the outermost frame, and then re-uses the values
+upon returning.  This tests the runtime's basic ability to copy live values
+between the source and destination stack.  This test is more for determining
+how long it takes to rewrite a larger stack frame, and less about correctness.
+
+Note: there is no default expected output besides timing information.
