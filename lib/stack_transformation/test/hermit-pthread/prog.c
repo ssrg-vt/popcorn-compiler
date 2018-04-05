@@ -76,6 +76,7 @@ int main(int argc, char** argv)
 	int i, ret, param[MAX_THREADS];
 
 	printf("[%d] Main thread starts ...\n", getpid());
+	printf("[%d] Initial value tdata: %d, tbss:%d\n", getpid(), thr_data, thr_bss);
 
 	for(i=0; i<MAX_THREADS; i++) {
 		param[i] = i;
