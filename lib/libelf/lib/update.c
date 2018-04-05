@@ -26,6 +26,7 @@ static const char rcsid[] = "@(#) $Id: update.c,v 1.34 2009/05/22 17:08:09 micha
 #include <errno.h>
 
 #if HAVE_MMAP
+#error "mmap not supported in hermitcore"
 #include <sys/mman.h>
 #endif /* HAVE_MMAP */
 

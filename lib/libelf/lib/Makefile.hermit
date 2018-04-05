@@ -1,0 +1,24 @@
+POPCORN_INSTALL=/usr/local/popcorn/
+HERMIT_PREFIX=/home/usr/hermit/
+
+CC=$(POPCORN_INSTALL)/bin/clang
+AR=$(HERMIT_PREFIX)/bin/x86_64-hermit-ar
+RANLIB=$(HERMIT_PREFIX)/bin/x86_64-hermit-ranlib
+OUTPUT=libelf.a
+
+CFLAGS=-I. -target x86_64-hermit -nostdlib -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -Wno-tautological-compare -O0 -g
+
+SRCS = $(wildcard *.c)
+OBJS = $(SRCS:.c=.o)
+
+all: $(OUTPUT)
+
+$(OUTPUT): $(OBJS)
+	$(AR) rcv $@ $^ > /dev/null
+	$(RANLIB) $@ > /dev/null
+
+%.o: %.c
+	$(CC) -c $(CFLAGS) $< -o $@
+
+clean:
+	rm -rf $(OBJS) $(OUTPUT)

@@ -18,6 +18,7 @@
  */
 
 #include <private.h>
+#include <stdlib.h>
 
 #ifndef lint
 static const char rcsid[] = "@(#) $Id: version.c,v 1.8 2008/05/23 08:15:35 michael Exp $";
