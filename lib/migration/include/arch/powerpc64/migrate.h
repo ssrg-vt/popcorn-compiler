@@ -34,8 +34,6 @@
       ret; \
     })
 
-#define SET_FP_REGS // N/A
-
 #define MIGRATE \
     { \
       SET_REGS_POWERPC64(regs_src); \
@@ -56,9 +54,6 @@
       } \
       ret; \
     })
-
-#define SET_FP_REGS \
-    SET_FP_REGS_NOCLOBBER_POWERPC64(*(struct regset_powerpc64 *)data_ptr->regset)
 
 #define MIGRATE \
     asm volatile ("mr 3, %0;" \

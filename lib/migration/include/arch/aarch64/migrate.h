@@ -34,8 +34,6 @@
       ret; \
     })
 
-#define SET_FP_REGS // N/A
-
 #define MIGRATE \
     { \
       SET_REGS_AARCH64(regs_src); \
@@ -56,9 +54,6 @@
       } \
       ret; \
     })
-
-#define SET_FP_REGS \
-    SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
 
 #define MIGRATE \
     asm volatile ("mov w0, %w0;" \

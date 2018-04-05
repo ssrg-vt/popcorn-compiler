@@ -11,6 +11,7 @@
 #include "migrate.h"
 #include "config.h"
 #include "arch.h"
+#include "internal.h"
 #include "mapping.h"
 #include "debug.h"
 
@@ -211,8 +212,8 @@ get_call_site() { return __builtin_return_address(0); };
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.
-static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
-                                           void *callback_data)
+void
+__migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 {
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
@@ -226,10 +227,6 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 
     if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
     *pthread_migrate_args() = NULL;
-
-    // Hack: the kernel can't set floating-point registers, so we have to
-    // manually copy them over in userspace
-    SET_FP_REGS;
   }
   else // Invoke migration
   {
@@ -269,15 +266,15 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 #endif
 
       if(dst_arch == ARCH_X86_64) {
-        regs_dst.x86.rip = __migrate_shim_internal;
+        regs_dst.x86.rip = __migrate_fixup_x86_64;
         sp = (unsigned long)regs_dst.x86.rsp;
         bp = (unsigned long)regs_dst.x86.rbp;
       } else if (dst_arch == ARCH_AARCH64) {
-        regs_dst.aarch.pc = __migrate_shim_internal;
+        regs_dst.aarch.pc = __migrate_fixup_aarch64;
         sp = (unsigned long)regs_dst.aarch.sp;
         bp = (unsigned long)regs_dst.aarch.x[29];
       } else if (dst_arch == ARCH_POWERPC64) {
-        regs_dst.powerpc.pc = __migrate_shim_internal;
+        regs_dst.powerpc.pc = __migrate_fixup_powerpc64;
         sp = (unsigned long)regs_dst.powerpc.r[1];
         bp = (unsigned long)regs_dst.powerpc.r[31];
       } else {

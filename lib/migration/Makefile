@@ -39,11 +39,19 @@ OPT_FLAGS := $(OPT_LEVEL) -disable-loop-vectorization \
              -disable-slp-vectorization -insert-stackmaps \
              -no-live-vals
 
+AS_ARM           := aarch64-linux-gnu-as
+AS_POWERPC       := powerpc64le-linux-gnu-as
+AS_X86           := x86_64-linux-gnu-as
+AS_FLAGS_ARM     := --defsym __aarch64__=1
+AS_FLAGS_POWERPC := --defsym __powerpc64__=1
+AS_FLAGS_X86     := --defsym __x86_64__=1
+
 AR      := ar
 ARFLAGS := -cq
 
 HDR := $(shell ls include/*.h)
 SRC := $(shell ls src/*.c)
+ASM := $(shell find -iname "migrate_*.s")
 
 BUILD         := build
 BUILD_ARM     := $(BUILD)/aarch64
@@ -54,7 +62,7 @@ HDR_ARM     := $(HDR) $(shell ls include/arch/aarch64/*.h)
 HDR_POWERPC := $(HDR) $(shell ls include/arch/powerpc64/*.h)
 HDR_X86     := $(HDR) $(shell ls include/arch/x86_64/*.h)
 
-OBJ         := $(SRC:.c=.o)
+OBJ         := $(SRC:.c=.o) $(ASM:.s=.o)
 OBJ_ARM     := $(subst src,$(BUILD_ARM),$(OBJ))
 OBJ_POWERPC := $(subst src,$(BUILD_POWERPC),$(OBJ))
 OBJ_X86     := $(subst src,$(BUILD_X86),$(OBJ))
@@ -78,7 +86,21 @@ $(BUILD_POWERPC)/%.o: src/%.c $(HDR_POWERPC)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_POWERPC) -o $@ $@.bc
 
-$(OBJ_POWERPC): $(BUILD_POWERPC)/.dir
+$(BUILD_POWERPC)/arch/aarch64/%.o: src/arch/aarch64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
+
+$(BUILD_POWERPC)/arch/powerpc64/%.o: src/arch/powerpc64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
+
+$(BUILD_POWERPC)/arch/x86_64/%.o: src/arch/x86_64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
+
+$(OBJ_POWERPC): $(BUILD_POWERPC)/.dir $(BUILD_POWERPC)/arch/aarch64/.dir \
+		 $(BUILD_POWERPC)/arch/powerpc64/.dir \
+		 $(BUILD_POWERPC)/arch/x86_64/.dir
 $(LIB_POWERPC): $(HDR_POWERPC) $(OBJ_POWERPC)
 	@echo " [AR] $(LIB_POWERPC)"
 	@rm -f $(LIB_POWERPC)
@@ -90,7 +112,20 @@ $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_ARM) -o $@ $@.bc
 
-$(OBJ_ARM): $(BUILD_ARM)/.dir
+$(BUILD_ARM)/arch/aarch64/%.o: src/arch/aarch64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+
+$(BUILD_ARM)/arch/powerpc64/%.o: src/arch/powerpc64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+
+$(BUILD_ARM)/arch/x86_64/%.o: src/arch/x86_64/%.s
+	@echo " [AS] $< (aarch64)"
+	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+
+$(OBJ_ARM): $(BUILD_ARM)/.dir $(BUILD_ARM)/arch/aarch64/.dir \
+	     $(BUILD_ARM)/arch/powerpc64/.dir $(BUILD_ARM)/arch/x86_64/.dir
 $(LIB_ARM): $(HDR_ARM) $(OBJ_ARM)
 	@echo " [AR] $(LIB_ARM)"
 	@rm -f $(LIB_ARM)
@@ -102,7 +137,20 @@ $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
 
-$(OBJ_X86): $(BUILD_X86)/.dir
+$(BUILD_X86)/arch/aarch64/%.o: src/arch/aarch64/%.s $(BUILD_X86)/arch/aarch64/.dir
+	@echo " [AS] $< (aarch64)"
+	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+
+$(BUILD_X86)/arch/powerpc64/%.o: src/arch/powerpc64/%.s $(BUILD_X86)/arch/powerpc64/.dir
+	@echo " [AS] $< (aarch64)"
+	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+
+$(BUILD_X86)/arch/x86_64/%.o: src/arch/x86_64/%.s $(BUILD_X86)/arch/x86_64/.dir
+	@echo " [AS] $< (aarch64)"
+	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+
+$(OBJ_X86): $(BUILD_X86)/.dir $(BUILD_X86)/arch/aarch64/.dir \
+	     $(BUILD_X86)/arch/powerpc64/.dir $(BUILD_X86)/arch/x86_64/.dir
 $(LIB_X86): $(HDR_X86) $(OBJ_X86)
 	@echo " [AR] $(LIB_X86)"
 	@rm -f $(LIB_X86)
