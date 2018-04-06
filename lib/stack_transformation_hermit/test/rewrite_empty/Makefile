@@ -25,7 +25,7 @@ LIBS=$(HERMIT_PREFIX)/x86_64-hermit/lib/crt0.o \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libhermit.a \
 	 $(POPCORN_SRC)/lib/stack_transformation_hermit/build/x86_64/libstack-transform.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
-	 $(POPCORN_SRC)/lib/libelf/lib/libelf.a \
+	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libelf.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libm.a
 # ----------------------
