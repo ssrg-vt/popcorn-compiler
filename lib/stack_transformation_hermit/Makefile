@@ -2,7 +2,8 @@
 # Common
 ###############################################################################
 
-HERMIT_TOOLCHAIN=/opt/hermit
+HERMIT_TOOLCHAIN=/opt/hermit/
+HERMIT_PREFIX=/home/usr/hermit/
 
 POPCORN := /usr/local/popcorn
 COMMON  := $(shell readlink -f ../../common)
@@ -13,10 +14,11 @@ SRC   := src
 UTILS := utils
 
 CC     := $(POPCORN)/bin/clang
-CFLAGS := -g -Wall -D_GNU_SOURCE --target=x86_64-hermit -popcorn-alignment
+CFLAGS := -g -Wall -D_GNU_SOURCE --target=x86_64-hermit -popcorn-alignment \
+	-nostdlib -nostdinc
 
 AR  := $(HERMIT_TOOLCHAIN)/bin/x86_64-hermit-ar
-LOC := -I$(INC) -I$(COMMON)/include
+LOC := -I$(INC) -I$(COMMON)/include -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -isystem /usr/local/popcorn/bin/../lib/clang/3.7.1/include
 
 LIB_HDR      := $(shell ls $(INC)/*.h)
 LIB_SRC      := $(shell ls $(SRC)/*.c)
@@ -38,8 +40,10 @@ POPCORN_X86_64 := $(POPCORN)/x86_64
 
 BUILD_X86_64 := $(BUILD)/x86_64
 LIB_X86_64   := $(BUILD_X86_64)/libstack-transform.a
-CC_X86_64    := $(CC) -target x86_64-linux-gnu
-LOC_X86_64   := $(LOC) -isystem $(POPCORN_X86_64)/include
+CC_X86_64    := $(CC) -target x86_64-hermit
+LOC_X86_64   := $(LOC)
+
+#-isystem $(POPCORN_X86_64)/include
 
 LIB_OBJ_X86_64      := $(subst $(SRC),$(BUILD_X86_64),$(LIB_SRC:.c=.o))
 LIB_ARCH_OBJ_X86_64 := $(subst $(SRC),$(BUILD_X86_64),$(LIB_ARCH_SRC:.c=.o))

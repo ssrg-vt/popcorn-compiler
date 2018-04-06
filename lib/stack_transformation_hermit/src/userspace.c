@@ -11,7 +11,10 @@
 #endif
 #include <unistd.h>
 #include <sys/resource.h>
-#include <sys/syscall.h>
+#include <stdio.h>
+
+/* Pierre TODO silence it for now */
+//#include <sys/syscall.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
@@ -72,8 +75,8 @@ static int userspace_rewrite_internal(void* sp,
 /*
  * Program name, as invoked by the shell.
  */
-// Note: set by glibc/musl-libc, non-portable!
-extern const char *__progname;
+// Pierre: FIXME
+const char *___progname = "prog";
 
 /*
  * Binary names.  User-code can define these symbols to override these
@@ -118,7 +121,7 @@ void __st_userspace_ctor(void)
   else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
   else {
     aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", __progname);
+    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", ___progname);
   }
   aarch64_handle = st_init(aarch64_fn);
   if(aarch64_handle) alloc_aarch64_fn = true;
@@ -129,7 +132,7 @@ void __st_userspace_ctor(void)
   else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
   else {
     powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", __progname);
+    snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", ___progname);
   }
   powerpc64_handle = st_init(powerpc64_fn);
   if(powerpc64_handle) alloc_powerpc64_fn = true;
@@ -139,7 +142,7 @@ void __st_userspace_ctor(void)
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
     x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", __progname);
+    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", ___progname);
   }
   x86_64_handle = st_init(x86_64_fn);
   if(x86_64_handle) alloc_x86_64_fn = true;
@@ -267,6 +270,10 @@ int st_userspace_rewrite(void* sp,
  * allocates them and we can divide the stack in half for rewriting.  Also,
  * calculate stack bounds for main thread.
  */
+// Pierre TODO, silence this for now
+static bool prep_stack(void) {return true;}
+
+#if 0
 static bool prep_stack(void)
 {
   long ret;
@@ -329,8 +336,11 @@ static bool prep_stack(void)
 #endif
   return true;
 }
+#endif
 
 /* Read stack information for the main thread from the procfs. */
+// Pierre TODO: silence this for now
+#if 0
 static bool get_main_stack(stack_bounds* bounds)
 {
   /* /proc/<id>/maps fields */
@@ -353,7 +363,7 @@ static bool get_main_stack(stack_bounds* bounds)
   if(snprintf(proc_fn, BUF_SIZE, "/proc/%d/maps", getpid()) < 0) return false;
   if(!(proc_fp = fopen(proc_fn, "r"))) return false;
   if(!(lineptr = (char*)malloc(BUF_SIZE * sizeof(char)))) return false;
-  while(getline(&lineptr, &linesz, proc_fp) >= 0)
+  while(__getline(&lineptr, &linesz, proc_fp) >= 0)
   {
     fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
                     &start, &end, perms, &offset, dev, &inode, path);
@@ -371,8 +381,13 @@ static bool get_main_stack(stack_bounds* bounds)
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
 }
+#endif
 
 /* Read stack information for cloned threads from the pthread library. */
+/* Pierre: TODO silence this for now */
+static bool get_thread_stack(stack_bounds* bounds) {return true;}
+
+#if 0
 static bool get_thread_stack(stack_bounds* bounds)
 {
   pthread_attr_t attr;
@@ -404,6 +419,7 @@ static bool get_thread_stack(stack_bounds* bounds)
   ST_INFO("Thread stack limits: %p -> %p\n", bounds->low, bounds->high);
   return retval;
 }
+#endif
 
 /*
  * Rewrite from source to destination stack.  Logically, divides 8MB stack in
