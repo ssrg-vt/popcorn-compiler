@@ -7,11 +7,12 @@ HERMIT_PREFIX=/home/usr/hermit/
 
 CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
 	   -I$(POPCORN_SRC)/lib/stack_transformation_hermit/utils -DPOSIX -mllvm \
-	   -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include
+	   -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -nostdinc \
+	   -isystem /usr/local/popcorn/bin/../lib/clang/3.7.1/include
 CC=$(POPCORN_INSTALL)/bin/clang
 LD=/home/pierre/Desktop/hermit-llvm/hermit-toolchain/build/binutils/gold/ld-new
 SRC=$(shell ls *.c)
-PROG=prog
+PROG=prog_x86-64
 BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
 LINKER_SCRIPT=ls.x
@@ -22,12 +23,11 @@ LIBS=$(HERMIT_PREFIX)/x86_64-hermit/lib/crt0.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtend.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtn.o \
 	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libhermit.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libm.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a \
 	 $(POPCORN_SRC)/lib/stack_transformation_hermit/build/x86_64/libstack-transform.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a
-
+	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
+	 $(POPCORN_SRC)/lib/libelf/lib/libelf.a \
+	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a \
+	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libm.a
 # ----------------------
 # Hermit runtime options
 # ----------------------
