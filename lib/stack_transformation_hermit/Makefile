@@ -2,7 +2,8 @@
 # Common
 ###############################################################################
 
-HERMIT_TOOLCHAIN=/opt/hermit/ #TODO update
+#TODO update hermit toolchain
+HERMIT_TOOLCHAIN=/opt/hermit/
 HERMIT_PREFIX=/home/usr/hermit/
 
 POPCORN ?= ~/hermit-popcorn/
@@ -13,12 +14,14 @@ INC   := include
 SRC   := src
 UTILS := utils
 
-CC     := $(POPCORN)/bin/clang
+CC     := $(POPCORN)/x86_64-host/bin/clang
 CFLAGS := -g -Wall -D_GNU_SOURCE --target=x86_64-hermit -popcorn-alignment \
 	-nostdlib -nostdinc
 
 AR  := $(HERMIT_TOOLCHAIN)/bin/x86_64-hermit-ar
-LOC := -I$(INC) -I$(COMMON)/include -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -isystem /usr/local/popcorn/bin/../lib/clang/3.7.1/include
+LOC := -I$(INC) -I$(COMMON)/include -isystem \
+	$(HERMIT_PREFIX)/x86_64-hermit/include \
+	-isystem $(POPCORN)/x86_64-host/lib/clang/3.7.1/include
 
 LIB_HDR      := $(shell ls $(INC)/*.h)
 LIB_SRC      := $(shell ls $(SRC)/*.c)

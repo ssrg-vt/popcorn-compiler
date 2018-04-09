@@ -2,7 +2,8 @@
 # libraries
 
 POPCORN_INSTALL?=~/hermit-popcorn/
-HERMIT_PREFIX=/home/usr/hermit/ #TODO
+# TODO update hermit prefix
+HERMIT_PREFIX=/home/usr/hermit/
 INSTALL_PREFIX?=$(HERMIT_PREFIX)
 
 CC=$(POPCORN_INSTALL)/x86_64-host/bin/clang
