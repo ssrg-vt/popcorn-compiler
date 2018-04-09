@@ -53,10 +53,17 @@ bool __crash_x86_64(long a, long b, long c, long d)
 weak_alias(__crash_aarch64, crash_aarch64);
 weak_alias(__crash_powerpc64, crash_powerpc64);
 weak_alias(__crash_x86_64, crash_x86_64);
+
+bool __crash(long a, long b, long c, long d)
+{
 #if defined __aarch64__
-weak_alias(__crash_aarch64, crash);
+  return __crash_aarch64(a, b, c, d);
 #elif defined __powerpc64__
-weak_alias(__crash_powerpc64, crash);
+  return __crash_powerpc64(a, b, c, d);
 #else /* __x86_64__ */
-weak_alias(__crash_x86_64, crash);
+  return __crash_x86_64(a, b, c, d);
 #endif
+}
+
+weak_alias(__crash, crash);
+

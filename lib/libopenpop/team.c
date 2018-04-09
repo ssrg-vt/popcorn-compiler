@@ -972,12 +972,14 @@ gomp_team_end (void)
 
 /* Constructors for this file.  */
 
+#if !defined HAVE_TLS && !defined USE_EMUTLS
+static struct gomp_thread initial_thread_tls_data;
+#endif
+
 static void __attribute__((constructor))
 initialize_team (void)
 {
 #if !defined HAVE_TLS && !defined USE_EMUTLS
-  static struct gomp_thread initial_thread_tls_data;
-
   pthread_key_create (&gomp_tls_key, NULL);
   pthread_setspecific (gomp_tls_key, &initial_thread_tls_data);
 #endif
