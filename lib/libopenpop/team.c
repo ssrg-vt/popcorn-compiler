@@ -83,8 +83,8 @@ gomp_thread_start (void *xdata)
 #if defined HAVE_TLS || defined USE_EMUTLS
   thr = &gomp_tls_data;
 #else
-  struct gomp_thread local_thr;
-  thr = &local_thr;
+  struct gomp_thread *local_thr = malloc(sizeof(struct gomp_thread));
+  thr = local_thr;
   pthread_setspecific (gomp_tls_key, thr);
 #endif
   gomp_sem_init (&thr->release, 0);
@@ -144,6 +144,7 @@ gomp_thread_start (void *xdata)
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
   thr->task = NULL;
+  free(thr);
   return NULL;
 }
 #endif

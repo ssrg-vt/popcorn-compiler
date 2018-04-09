@@ -348,8 +348,7 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
   // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  GOMP_barrier_cancel();
-  return 0;
+  return GOMP_barrier_cancel();
 }
 
 /*
