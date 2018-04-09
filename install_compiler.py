@@ -24,7 +24,12 @@ llvm_targets = {
 
 llvm_direct_url = 'http://releases.llvm.org/3.7.1/llvm-3.7.1.src.tar.xz'
 clang_direct_url = 'http://releases.llvm.org/3.7.1/cfe-3.7.1.src.tar.xz'
-binutils_url = 'https://github.com/RWTH-OS/binutils.git'
+
+binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
+binutils_git_branch = 'hermit'
+
+hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
+hermit_git_branch = 'llvm-stable-pierre' #TODO switch to llvm-stable when things are actually stable
 
 #================================================
 # LOG CLASS
@@ -74,6 +79,10 @@ def setup_argument_parsing():
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
+    process_opts.add_argument("--skip-hermit-install",
+                        help="Skip installation of the HermitCore kernel",
+                        action="store_true",
+                        dest="skip_hermit_install")
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
@@ -589,6 +598,45 @@ def install_utils(base_path, install_path, num_threads):
         if item != 'README':
             shutil.copy(s, d)
 
+def install_hermit(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore')
+
+# Cleanup src dir if needed
+    if(os.path.isdir(hermit_download_path)):
+        shutil.rmtree(hermit_download_path)
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50',
+            '--recurse-submodules', '-b', hermit_git_branch, hermit_git_url,
+            hermit_download_path])
+    except Exception as e:
+        print('Cannot download HermitCore: {}'.format(e))
+        sys.exit(1)
+
+    print('Running Cmake for HermitCore')
+   
+    os.makedirs(hermit_download_path + '/build')
+    os.chdir(hermit_download_path + '/build')
+
+    try:
+        rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
+            install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
+            '/x86_64-host/bin', '..'])
+    except Exception as e:
+        print('Error running hermitcore cmake: {}'.format(e))
+        sys.exit(1)
+
+    print('Building hermitcore')
+
+    try:
+        rv = subprocess.check_call(['make', '-j', str(threads), 'install'])
+    except Exception as e:
+        print('Error building hermitcore: {}'.format(e))
+        sys.exit(1)
+
+    os.chdir(cur_dir)
+
 def install_binutils(base_path, install_path, threads):
     cur_dir = os.getcwd()
     binutils_download_path = os.path.join(install_path, 'x86_64-host/src/binutils')
@@ -600,8 +648,8 @@ def install_binutils(base_path, install_path, threads):
         shutil.rmtree(binutils_download_path)
 
     try:
-        rv = subprocess.check_call(['git', 'clone', '--depth=50', binutils_url,
-            binutils_download_path])
+        rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
+            binutils_git_branch, binutils_git_url, binutils_download_path])
     except Exception as e:
         print('Cannot download binutils: {}'.format(e))
         sys.exit(1)
@@ -639,7 +687,7 @@ def install_binutils(base_path, install_path, threads):
             rv = subprocess.check_call(['./configure'])
             rv = subprocess.check_call(['make', '-j', str(threads)])
         except Exception as e:
-            print('Error building BFD: {}')
+            print('Error building %s: {}'.format(e) % tool)
             sys.exit(1)
 
     # gold
@@ -663,6 +711,9 @@ def main(args):
 
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_hermit_install:
+        install_hermit(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
