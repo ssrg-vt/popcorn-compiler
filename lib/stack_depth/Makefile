@@ -1,4 +1,6 @@
-POPCORN := /usr/local/popcorn
+POPCORN ?= ~/hermit-popcorn/
+
+POPCORN_HOST_PREFIX=$(POPCORN)/x86_64-host/
 
 BIN   := libstack-depth.a
 BUILD := build
@@ -26,8 +28,9 @@ $(BIN): $(BUILD)/.dir $(OBJ)
 	@ar -cq $(BIN) $(OBJ)
 
 install: $(BIN)
-	@echo " [INSTALL] $< to $(POPCORN)/lib"
-	@cp $< $(POPCORN)/lib
+	@echo " [INSTALL] $< to $(POPCORN_HOST_PREFIX)/lib"
+	@mkdir -p $(POPCORN_HOST_PREFIX)/lib &> /dev/null
+	@cp $< $(POPCORN_HOST_PREFIX)/lib
 
 clean:
 	@echo " [CLEAN] $(BUILD) $(BIN)"

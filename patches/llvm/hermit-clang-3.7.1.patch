@@ -1,0 +1,295 @@
+Index: lib/Basic/Targets.cpp
+===================================================================
+--- lib/Basic/Targets.cpp	(revision 329516)
++++ lib/Basic/Targets.cpp	(working copy)
+@@ -185,6 +185,24 @@
+ }
+ 
+ namespace {
++
++
++// Hermit target
++template<typename Target>
++class HermitTargetInfo : public OSTargetInfo<Target> {
++	protected:
++		void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
++				MacroBuilder &Builder) const override {
++			Builder.defineMacro("__hermit__");
++		}
++
++	public:
++		HermitTargetInfo(const llvm::Triple &Triple) : 
++			OSTargetInfo<Target>(Triple) {
++			//this->UserLabelPrefix = "";
++		}
++};
++
+ // CloudABI Target
+ template <typename Target>
+ class CloudABITargetInfo : public OSTargetInfo<Target> {
+@@ -7331,6 +7349,8 @@
+       return new DarwinX86_64TargetInfo(Triple);
+ 
+     switch (os) {
++	case llvm::Triple::Hermit:
++		return new HermitTargetInfo<X86_64TargetInfo>(Triple);
+     case llvm::Triple::CloudABI:
+       return new CloudABITargetInfo<X86_64TargetInfo>(Triple);
+     case llvm::Triple::Linux: {
+Index: lib/Driver/Driver.cpp
+===================================================================
+--- lib/Driver/Driver.cpp	(revision 329516)
++++ lib/Driver/Driver.cpp	(working copy)
+@@ -2157,6 +2157,10 @@
+   ToolChain *&TC = ToolChains[Target.str()];
+   if (!TC) {
+     switch (Target.getOS()) {
++
++	case llvm::Triple::Hermit:
++		TC = new toolchains::Hermit(*this, Target, Args);
++		break;
+     case llvm::Triple::CloudABI:
+       TC = new toolchains::CloudABI(*this, Target, Args);
+       break;
+Index: lib/Driver/ToolChains.cpp
+===================================================================
+--- lib/Driver/ToolChains.cpp	(revision 329516)
++++ lib/Driver/ToolChains.cpp	(working copy)
+@@ -39,6 +39,18 @@
+ using namespace clang;
+ using namespace llvm::opt;
+ 
++Hermit::Hermit(const Driver &D, const llvm::Triple& Triple, 
++		const ArgList &Args) : Generic_ELF(D, Triple, Args) {
++}
++
++Tool *Hermit::buildAssembler() const {
++	return new tools::hermit::Assemble(*this);
++}
++
++Tool *Hermit::buildLinker() const {
++	return new tools::hermit::Link(*this);
++}
++
+ MachO::MachO(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
+     : ToolChain(D, Triple, Args) {
+   // We expect 'as', 'ld', etc. to be adjacent to our install dir.
+Index: lib/Driver/ToolChains.h
+===================================================================
+--- lib/Driver/ToolChains.h	(revision 329516)
++++ lib/Driver/ToolChains.h	(working copy)
+@@ -666,6 +666,16 @@
+   Tool *buildLinker() const override;
+ };
+ 
++class LLVM_LIBRARY_VISIBILITY Hermit : public Generic_ELF {
++public:
++	Hermit(const Driver &D, const llvm::Triple &Triple,
++			const llvm::opt::ArgList &Args);
++
++protected:
++	Tool *buildAssembler() const override;
++	Tool *buildLinker() const override;
++};
++
+ class LLVM_LIBRARY_VISIBILITY Linux : public Generic_ELF {
+ public:
+   Linux(const Driver &D, const llvm::Triple &Triple,
+Index: lib/Driver/Tools.cpp
+===================================================================
+--- lib/Driver/Tools.cpp	(revision 329516)
++++ lib/Driver/Tools.cpp	(working copy)
+@@ -9517,3 +9517,135 @@
+   C.addCommand(
+       llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Exec), CmdArgs));
+ }
++
++void hermit::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
++									const InputInfo &Output,
++									const InputInfoList &Inputs,
++									const ArgList &Args,
++									const char *LinkingOutput) const {
++	ArgStringList CmdArgs;
++
++	Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA, options::OPT_Xassembler);
++
++	CmdArgs.push_back("-o");
++	CmdArgs.push_back(Output.getFilename());
++
++	for (const auto &II : Inputs)
++		CmdArgs.push_back(II.getFilename());
++
++	const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("x86_64-hermit-as"));
++	C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
++}
++
++#if 0
++void hermit::Link::ConstructJob(Compilation &C, const JobAction &JA,
++									const InputInfo &Output,
++									const InputInfoList &Inputs,
++									const ArgList &Args,
++									const char *LinkingOutput) const {
++	const Driver &D = getToolChain().getDriver();
++	ArgStringList CmdArgs;
++
++	if (Output.isFilename()) {
++		CmdArgs.push_back("-o");
++		CmdArgs.push_back(Output.getFilename());
++	} else {
++		assert(Output.isNothing() && "Invalid output.");
++	}
++
++	/* if (!Args.hasArg(options::OPT_nostdlib) &&
++	 +       !Args.hasArg(options::OPT_nostartfiles)) {
++	 +       CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crt1.o")));
++	 +       CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
++	 +       CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
++	 +       CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtn.o")));
++	 +   }*/
++
++	Args.AddAllArgs(CmdArgs, options::OPT_L);
++	Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
++	Args.AddAllArgs(CmdArgs, options::OPT_e);
++
++	AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
++
++	addProfileRT(getToolChain(), Args, CmdArgs);
++
++	if (!Args.hasArg(options::OPT_nostdlib) &&
++			!Args.hasArg(options::OPT_nodefaultlibs)) {
++		if (D.CCCIsCXX()) {
++			getToolChain().AddCXXStdlibLibArgs(Args, CmdArgs);
++			CmdArgs.push_back("-lm");
++		}
++	}
++
++	// We already have no stdlib...
++	/*if (!Args.hasArg(options::OPT_nostdlib) &&
++	 * !Args.hasArg(options::OPT_nostartfiles)) {
++		if (Args.hasArg(options::OPT_pthread))
++			CmdArgs.push_back("-lpthread");
++			CmdArgs.push_back("-lc");
++			CmdArgs.push_back("-lCompilerRT-Generic");
++			CmdArgs.push_back("-L/usr/pkg/compiler-rt/lib");
++			CmdArgs.push_back(
++			Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
++		 }*/
++
++	const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
++	C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
++}
++#endif
++
++void hermit::Link::ConstructJob(Compilation &C, const JobAction &JA,
++								const InputInfo &Output,
++								const InputInfoList &Inputs,
++								const ArgList &Args,
++								const char *LinkingOutput) const {
++	const Driver &D = getToolChain().getDriver();
++	ArgStringList CmdArgs;
++
++	if (Output.isFilename()) {
++		CmdArgs.push_back("-o");
++		CmdArgs.push_back(Output.getFilename());
++	} else {
++		assert(Output.isNothing() && "Invalid output.");
++	}
++
++	/* if (!Args.hasArg(options::OPT_nostdlib) &&
++		!Args.hasArg(options::OPT_nostartfiles)) {
++		CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crt1.o")));
++		CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
++		CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
++		CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtn.o")));
++	}*/
++
++	Args.AddAllArgs(CmdArgs, options::OPT_L);
++	Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
++	Args.AddAllArgs(CmdArgs, options::OPT_e);
++
++	AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
++
++	addProfileRT(getToolChain(), Args, CmdArgs);
++
++	if (!Args.hasArg(options::OPT_nostdlib) &&
++		!Args.hasArg(options::OPT_nodefaultlibs)) {
++		if (D.CCCIsCXX()) {
++			getToolChain().AddCXXStdlibLibArgs(Args, CmdArgs);
++			CmdArgs.push_back("-lm");
++		}
++	}
++
++	// We already have no stdlib...
++	/*if (!Args.hasArg(options::OPT_nostdlib) &&
++		!Args.hasArg(options::OPT_nostartfiles)) {
++		if (Args.hasArg(options::OPT_pthread))
++			CmdArgs.push_back("-lpthread");
++			CmdArgs.push_back("-lc");
++			CmdArgs.push_back("-lCompilerRT-Generic");
++			CmdArgs.push_back("-L/usr/pkg/compiler-rt/lib");
++			CmdArgs.push_back(
++			Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
++		}*/
++
++	const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
++//	printf("Linker Path = %s\n", Exec);
++	C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
++}
+Index: lib/Driver/Tools.h
+===================================================================
+--- lib/Driver/Tools.h	(revision 329516)
++++ lib/Driver/Tools.h	(working copy)
+@@ -264,6 +264,38 @@
+   bool hasPPCAbiArg(const llvm::opt::ArgList &Args, const char *Value);
+ }
+ 
++/// hermit -- Directly call GNU Binutils assembler and linker
++namespace hermit {
++	class LLVM_LIBRARY_VISIBILITY Assemble : public GnuTool {
++		public:
++			Assemble(const ToolChain &TC) : GnuTool("hermit::Assemble",
++					"assembler", TC) {}
++			
++			bool hasIntegratedCPP() const override { return false; }
++
++			void ConstructJob(Compilation &C, const JobAction &JA,
++					const InputInfo &Output,
++					const InputInfoList &Inputs,
++					const llvm::opt::ArgList &TCArgs,
++					const char *LinkingOutput) const override;
++	};
++
++	class LLVM_LIBRARY_VISIBILITY Link : public GnuTool {
++		public:
++			Link(const ToolChain &TC) : GnuTool("hermit::Link", "linker",
++					TC) {}
++
++			bool hasIntegratedCPP() const override { return false; }
++			bool isLinkJob() const override { return true; }
++
++			void ConstructJob(Compilation &C, const JobAction &JA,
++					const InputInfo &Output,
++					const InputInfoList &Inputs,
++					const llvm::opt::ArgList &TCArgs,
++					const char *LinkingOutput) const override;
++	};
++} // end namespace hermit
++
+ /// cloudabi -- Directly call GNU Binutils linker
+ namespace cloudabi {
+ class LLVM_LIBRARY_VISIBILITY Linker : public GnuTool {
+Index: lib/Frontend/InitHeaderSearch.cpp
+===================================================================
+--- lib/Frontend/InitHeaderSearch.cpp	(revision 329516)
++++ lib/Frontend/InitHeaderSearch.cpp	(working copy)
+@@ -265,6 +265,10 @@
+     break;
+   }
+ 
++  case llvm::Triple::Hermit:
++    //AddPath("/usr/local/include", System, false);
++	break;
++
+   case llvm::Triple::Haiku:
+     AddPath("/boot/common/include", System, false);
+     AddPath("/boot/develop/headers/os", System, false);

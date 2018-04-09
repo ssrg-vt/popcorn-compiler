@@ -1,19 +1,18 @@
+POPCORN        ?= ~/hermit-popcorn/
+
 BUILD		:= build
 BIN		:= gen-stackinfo
 DUMP_SM	:= dump-llvm-stackmap
 DUMP_ST	:= dump-stackinfo
 CHECK		:= check-stackmaps
 
-POPCORN        := /usr/local/popcorn
-POPCORN_X86_64 := $(POPCORN)/x86_64
 COMMON         := $(shell readlink -f ../../common)
+POPCORN_HOST_PREFIX=$(POPCORN)/x86_64-host/
 
 CC     := gcc
-CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include \
-          -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
-LDFLAGS=-static
-#LIB    := -lelf
-LIB	:= /usr/local/popcorn/lib/libelf.a
+CFLAGS := -O3 -g -Wall -isystem $(POPCORN_HOST_PREFIX)/include -Iinclude \
+	-I$(COMMON)/include
+LDFLAGS=-static -L$(POPCORN_HOST_PREFIX)/lib -lelf
 
 HDR := $(shell ls include/*.h) $(shell ls $(COMMON)/include/*.h)
 SRC := $(shell ls src/*.c)
@@ -54,8 +53,9 @@ $(CHECK): utils/check_stackmaps.c $(CHECK_OBJ)
 	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
 install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
-	@echo " [INSTALL] $^ to $(POPCORN)/bin"
-	@cp $^ $(POPCORN)/bin
+	@echo " [INSTALL] $^ to $(POPCORN_HOST_PREFIX)/bin"
+	@mkdir -p $(POPCORN_HOST_PREFIX)/bin
+	@cp -f $^ $(POPCORN_HOST_PREFIX)/bin
 
 clean:
 	@echo " [RM] $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK)"

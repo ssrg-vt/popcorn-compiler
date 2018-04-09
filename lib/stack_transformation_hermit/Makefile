@@ -2,10 +2,10 @@
 # Common
 ###############################################################################
 
-HERMIT_TOOLCHAIN=/opt/hermit/
+HERMIT_TOOLCHAIN=/opt/hermit/ #TODO update
 HERMIT_PREFIX=/home/usr/hermit/
 
-POPCORN := /usr/local/popcorn
+POPCORN ?= ~/hermit-popcorn/
 COMMON  := $(shell readlink -f ../../common)
 
 BUILD := build
@@ -36,7 +36,7 @@ endif
 # x86-64
 ###############################################################################
 
-POPCORN_X86_64 := $(POPCORN)/x86_64
+POPCORN_X86_64 := $(POPCORN)/x86_64-hermit
 
 BUILD_X86_64 := $(BUILD)/x86_64
 LIB_X86_64   := $(BUILD_X86_64)/libstack-transform.a

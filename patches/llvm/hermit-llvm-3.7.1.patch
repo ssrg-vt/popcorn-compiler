@@ -1,0 +1,57 @@
+Index: include/llvm/ADT/Triple.h
+===================================================================
+--- include/llvm/ADT/Triple.h	(revision 329516)
++++ include/llvm/ADT/Triple.h	(working copy)
+@@ -129,6 +129,7 @@
+   enum OSType {
+     UnknownOS,
+ 
++	Hermit,
+     CloudABI,
+     Darwin,
+     DragonFly,
+Index: include/llvm/MC/MCELFObjectWriter.h
+===================================================================
+--- include/llvm/MC/MCELFObjectWriter.h	(revision 329516)
++++ include/llvm/MC/MCELFObjectWriter.h	(working copy)
+@@ -52,6 +52,8 @@
+ public:
+   static uint8_t getOSABI(Triple::OSType OSType) {
+     switch (OSType) {
++      case Triple::Hermit:
++		return ELF::ELFOSABI_HERMIT;
+       case Triple::CloudABI:
+         return ELF::ELFOSABI_CLOUDABI;
+       case Triple::PS4:
+Index: include/llvm/Support/ELF.h
+===================================================================
+--- include/llvm/Support/ELF.h	(revision 329516)
++++ include/llvm/Support/ELF.h	(working copy)
+@@ -346,6 +346,7 @@
+   ELFOSABI_AROS = 15,         // AROS
+   ELFOSABI_FENIXOS = 16,      // FenixOS
+   ELFOSABI_CLOUDABI = 17,     // Nuxi CloudABI
++  ELFOSABI_HERMIT = 0x42,     // HermitCore
+   ELFOSABI_C6000_ELFABI = 64, // Bare-metal TMS320C6000
+   ELFOSABI_AMDGPU_HSA = 64,   // AMD HSA runtime
+   ELFOSABI_C6000_LINUX = 65,  // Linux TMS320C6000
+Index: lib/Support/Triple.cpp
+===================================================================
+--- lib/Support/Triple.cpp	(revision 329516)
++++ lib/Support/Triple.cpp	(working copy)
+@@ -153,6 +153,7 @@
+   switch (Kind) {
+   case UnknownOS: return "unknown";
+ 
++  case Hermit: return "hermit";
+   case CloudABI: return "cloudabi";
+   case Darwin: return "darwin";
+   case DragonFly: return "dragonfly";
+@@ -389,6 +390,7 @@
+ 
+ static Triple::OSType parseOS(StringRef OSName) {
+   return StringSwitch<Triple::OSType>(OSName)
++    .StartsWith("hermit", Triple::Hermit)
+     .StartsWith("cloudabi", Triple::CloudABI)
+     .StartsWith("darwin", Triple::Darwin)
+     .StartsWith("dragonfly", Triple::DragonFly)
