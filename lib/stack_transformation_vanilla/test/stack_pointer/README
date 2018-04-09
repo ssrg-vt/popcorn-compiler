@@ -1,9 +1,0 @@
-This test passes a pointer to a stack-allocated variable up the call chain,
-incrementing its value for every time recurse() is called.  This tests the
-runtime's ability to detect pointers to the stack, and its ability to reify
-those pointers once the pointed-to data is relocated.
-
-Expected output for default run:
---------------------------------
-
-myvar = 10

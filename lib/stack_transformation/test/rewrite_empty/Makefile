@@ -1,1 +1,2 @@
-../common/Makefile
+BIN	:= rewrite_empty
+include ../Makefile
