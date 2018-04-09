@@ -1,7 +1,7 @@
 # -------------------
 # Compilation options
 # -------------------
-POPCORN_INSTALL=/home/pierre/hermit-popcorn/x86_64-host/
+POPCORN_INSTALL=/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host/
 POPCORN_SRC=/home/pierre/Desktop/hermit-llvm/popcorn-compiler
 HERMIT_PREFIX=/home/usr/hermit/
 
@@ -10,7 +10,7 @@ CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
 	   -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -nostdinc \
 	   -isystem $(POPCORN_INSTALL)/lib/clang/3.7.1/include
 CC=$(POPCORN_INSTALL)/bin/clang
-LD=/home/pierre/Desktop/hermit-llvm/hermit-toolchain/build/binutils/gold/ld-new #TODO update
+LD=$(POPCORN_INSTALL)/bin/x86_64-hermit-ld.gold
 SRC=$(shell ls *.c)
 PROG=prog_x86-64
 BITCODE=$(PROG).bc

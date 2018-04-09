@@ -9,8 +9,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import tarfile
-import urllib
 
 #================================================
 # GLOBALS
@@ -24,10 +22,9 @@ llvm_targets = {
     'x86_64' : 'X86'
 }
 
-# LLVM 3.7.1 SVN URL
 llvm_direct_url = 'http://releases.llvm.org/3.7.1/llvm-3.7.1.src.tar.xz'
-# Clang SVN URL
 clang_direct_url = 'http://releases.llvm.org/3.7.1/cfe-3.7.1.src.tar.xz'
+binutils_url = 'https://github.com/RWTH-OS/binutils.git'
 
 #================================================
 # LOG CLASS
@@ -73,6 +70,10 @@ def setup_argument_parsing():
                         help="Skip installation of LLVM and Clang",
                         action="store_true",
                         dest="skip_llvm_clang_install")
+    process_opts.add_argument("--skip-binutils-install",
+                        help="Skip installation of binutils",
+                        action="store_true",
+                        dest="skip_binutils_install")
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
@@ -156,11 +157,15 @@ def _check_for_prerequisite(prereq):
         out = subprocess.check_output([prereq, '--version'],
                                       stderr=subprocess.STDOUT)
     except Exception:
-        print('{} not found!'.format(prereq))
-        return None
-    else:
-        out = out.split('\n')[0]
-        return out
+        try:
+             out = subprocess.check_output([prereq, '-v'],
+                                      stderr=subprocess.STDOUT)
+        except Exception:
+            print('{} not found!'.format(prereq))
+            return None
+
+    out = out.split('\n')[0]
+    return out
 
 def check_for_prerequisites(args):
     success = True
@@ -169,7 +174,7 @@ def check_for_prerequisites(args):
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
     for target in args.install_targets:
         gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
-    other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget']
+    other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -584,11 +589,80 @@ def install_utils(base_path, install_path, num_threads):
         if item != 'README':
             shutil.copy(s, d)
 
+def install_binutils(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    binutils_download_path = os.path.join(install_path, 'x86_64-host/src/binutils')
+
+    print('Downloading binutils (hermit)')
+
+    # Cleanup src dir if needed
+    if(os.path.isdir(binutils_download_path)):
+        shutil.rmtree(binutils_download_path)
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50', binutils_url,
+            binutils_download_path])
+    except Exception as e:
+        print('Cannot download binutils: {}'.format(e))
+        sys.exit(1)
+
+    print('Compiling binutils (hermit)')
+
+    os.makedirs(binutils_download_path + '/build')
+    os.chdir(binutils_download_path + '/build')
+
+    binutils_prefix = install_path + '/' + 'x86_64-host'
+    try:
+        rv = subprocess.check_call(['../configure', '--target=x86_64-hermit',
+            '--prefix=%s' % binutils_prefix, '--with-sysroot',
+            '--disable-multilib', '--disable-shared', '--disable-nls',
+            '--disable-gdb',
+            '--disable-libdecnumber', '--disable-readline', '--disable-sim',
+            '--disable-libssp', '--enable-tls', '--enable-lto',
+            '--enable-plugin'])
+
+        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
+
+    except Exception as e:
+        print('Error building binutils: {}'.format(e))
+        sys.exit(1)
+
+    print('Compiling gold')
+
+    # We use a hacky way to compile gold, TODO make things simpler...
+
+    # bfd and libiberty
+    for tool in ['bfd', 'libiberty']:
+        os.chdir(binutils_download_path + '/' + tool)
+        try:
+            rv = subprocess.check_call(['./configure'])
+            rv = subprocess.check_call(['make', '-j', str(threads)])
+        except Exception as e:
+            print('Error building BFD: {}')
+            sys.exit(1)
+
+    # gold
+    os.chdir(binutils_download_path + '/' + 'gold')
+    try:
+        rv = subprocess.check_call(['./configure', '--target=x86_64-hermit',
+            '--prefix=%s' % binutils_prefix])
+        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'install'])
+    except Exception as e:
+        print('Error building gold: {}'.format(e))
+        sys.exit(1)
+
+    os.chdir(cur_dir)
+
 def main(args):
 
     if not args.skip_llvm_clang_install:
         install_clang_llvm(args.base_path, args.install_path, args.threads,
                            args.llvm_targets)
+
+    if not args.skip_binutils_install:
+        install_binutils(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
