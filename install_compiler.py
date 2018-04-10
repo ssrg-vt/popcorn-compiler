@@ -197,7 +197,8 @@ def check_for_prerequisites(args):
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
     for target in args.install_targets:
         gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
-    other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm']
+    other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm',
+            'zip']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -214,6 +215,22 @@ def check_for_prerequisites(args):
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
+
+    # hexdump
+    if shutil.which('hexdump') is None:
+        print('Cannot find hexdump! please install debian package bsdmainutils')
+        success = False
+
+    # texinfo
+     if shutil.which('makeinfo') is None:
+        print('Cannot find makeinfo! please install debian package texinfo')
+        success = False
+
+    # Check if /usr/include/asm exists
+    if not os.isdir('/usr/include/asm'):
+        print('/usr/include/asm does not exists, you probably want to create it:')
+        print('sudo ln -s /usr/include/asm-generic /usr/include/asm')
+        success = False
 
     return success
 
