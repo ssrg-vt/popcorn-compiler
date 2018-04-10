@@ -636,7 +636,7 @@ def install_newlib(base_path, install_path, threads):
             'AS_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-as' % install_path,
             'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path,
             'RANLIB_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ranlib' % install_path,
-            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ftree-vectorize -mtune=native']
+            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -ftree-vectorize -mtune=native']
 
     try:
         rv = subprocess.check_call(newlib_conf)
