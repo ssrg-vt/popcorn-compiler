@@ -13,7 +13,8 @@ HERMIT_PREFIX=/home/usr/hermit/
 
 CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
 	   -I$(POPHERMIT)/lib/stack_transformation_hermit/utils -DPOSIX -mllvm \
-	   -optimize-regalloc -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -nostdinc \
+	   -optimize-regalloc -isystem $(PH_PREFIX_X86)/include \
+	   -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -nostdinc \
 	   -isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
@@ -22,23 +23,22 @@ PROG=prog_x86-64
 BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
 LINKER_SCRIPT=$(POPHERMIT)/util/hermit/ls.x
-LIBS=$(HERMIT_PREFIX)/x86_64-hermit/lib/crt0.o \
+LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/libgcc.a \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crti.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtbegin.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtend.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtn.o \
+	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
 	 $(PH_PREFIX_X86)/lib/libhermit.a \
 	 $(PH_PREFIX_X86)/lib/libstack-transform.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libelf.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libc.a \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libm.a
+	 $(PH_PREFIX_X86)/lib/libelf.a \
+	 $(PH_PREFIX_X86)/lib/libm.a  \
+	 $(PH_PREFIX_X86)/lib/libc.a
 
 # ----------------------
 # Hermit runtime options
 # ----------------------
-#PROXY=$(HERMIT_PREFIX)/bin/proxy
 PROXY=$(PH_PREFIX_HOST)/bin/proxy
 ISLE=uhyve
 MEM?=1G

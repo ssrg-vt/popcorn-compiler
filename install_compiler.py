@@ -31,6 +31,9 @@ binutils_git_branch = 'hermit'
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
 hermit_git_branch = 'llvm-stable-pierre' #TODO switch to llvm-stable when things are actually stable
 
+newlib_git_url = 'https://github.com/ssrg-vt/newlib'
+newlib_git_branch = 'llvm-stable'
+
 #================================================
 # LOG CLASS
 #   Logs all output to outfile as well as stdout
@@ -83,6 +86,10 @@ def setup_argument_parsing():
                         help="Skip installation of the HermitCore kernel",
                         action="store_true",
                         dest="skip_hermit_install")
+    process_opts.add_argument("--skip-newlib-install",
+                        help="Skip installation of newlib",
+                        action="store_true",
+                        dest="skip_newlib_install")
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
@@ -598,13 +605,63 @@ def install_utils(base_path, install_path, num_threads):
         if item != 'README':
             shutil.copy(s, d)
 
+def install_newlib(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib')
+
+    # Cleanup src dir if needed
+    if(os.path.isdir(newlib_download_path)):
+        shutil.rmtree(newlib_download_path)
+
+    print('Downloading newlib')
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
+            newlib_git_branch, newlib_git_url, newlib_download_path])
+    except Exception as e:
+        print('Cannot download newlib: {}'.format(e))
+        sys.exit(1)
+
+    print('Configuring newlib')
+    os.makedirs(newlib_download_path + '/build')
+    os.chdir(newlib_download_path + '/build')
+
+    newlib_conf = ['../configure', '--target=x86_64-hermit',
+            '--prefix=%s' % install_path, '--disable-shared',
+            '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
+            '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
+            'target_alias=x86_64-hermit',
+            'CC=%s/x86_64-host/bin/clang' % install_path,
+            'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
+            'AS_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-as' % install_path,
+            'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path,
+            'RANLIB_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ranlib' % install_path,
+            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ftree-vectorize -mtune=native']
+
+    try:
+        rv = subprocess.check_call(newlib_conf)
+    except Exception as e:
+        print('Cannot configure newlib: {}'.format(e))
+        sys.exit(1)
+
+    print('Building and installing newlib')
+    try:
+        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'install'])
+    except Exception as e:
+        print('Cannot build/install newlib: {}'.format(e))
+
+    os.chdir(cur_dir)
+
 def install_hermit(base_path, install_path, threads):
     cur_dir = os.getcwd()
     hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore')
 
-# Cleanup src dir if needed
+    # Cleanup src dir if needed
     if(os.path.isdir(hermit_download_path)):
         shutil.rmtree(hermit_download_path)
+
+    print('Downloading HermitCore kernel')
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50',
@@ -714,6 +771,9 @@ def main(args):
 
     if not args.skip_hermit_install:
         install_hermit(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_newlib_install:
+        install_newlib(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
