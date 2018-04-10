@@ -93,7 +93,7 @@ def setup_argument_parsing():
                         help="Skip installation of newlib",
                         action="store_true",
                         dest="skip_newlib_install")
-    process_opts.add_argument("--skip-newlib-pte",
+    process_opts.add_argument("--skip-pte-install",
                         help="Skip installation of pthread-embedded",
                         action="store_true",
                         dest="skip_pte_install")
@@ -555,6 +555,14 @@ def install_tools(base_path, install_path, num_threads):
         if rv != 0:
             print('Make failed.')
             sys.exit(1)
+
+    #====================================================
+    # INSTALL hermit x86 object files
+    #====================================================
+    objs_dir = base_path + '/util/hermit/x86_64-objs'
+    os.chdir(objs_dir)
+    for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o']:
+        shutil.copyfile(objs_dir + '/' + f, install_path + '/x86_64-hermit/lib/' + f)
 
     os.chdir(cur_dir)
 
