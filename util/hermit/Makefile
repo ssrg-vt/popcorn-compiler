@@ -29,7 +29,7 @@ LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtbegin.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtend.o \
 	 $(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/crtn.o \
-	 $(HERMIT_PREFIX)/x86_64-hermit/lib/libpthread.a \
+	 $(PH_PREFIX_X86)/lib/libpthread.a \
 	 $(PH_PREFIX_X86)/lib/libhermit.a \
 	 $(PH_PREFIX_X86)/lib/libstack-transform.a \
 	 $(PH_PREFIX_X86)/lib/libelf.a \

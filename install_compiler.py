@@ -34,6 +34,9 @@ hermit_git_branch = 'llvm-stable-pierre' #TODO switch to llvm-stable when things
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
 newlib_git_branch = 'llvm-stable'
 
+pte_git_url = "https://github.com/ssrg-vt/pthread-embedded.git"
+pte_git_branch = "llvm-stable"
+
 #================================================
 # LOG CLASS
 #   Logs all output to outfile as well as stdout
@@ -90,6 +93,10 @@ def setup_argument_parsing():
                         help="Skip installation of newlib",
                         action="store_true",
                         dest="skip_newlib_install")
+    process_opts.add_argument("--skip-newlib-pte",
+                        help="Skip installation of pthread-embedded",
+                        action="store_true",
+                        dest="skip_pte_install")
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
@@ -605,6 +612,40 @@ def install_utils(base_path, install_path, num_threads):
         if item != 'README':
             shutil.copy(s, d)
 
+def install_pte(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    pte_download_path = os.path.join(install_path, 'x86_64-host/src/pte')
+
+    # Cleanup src dir if needed
+    if(os.path.isdir(pte_download_path)):
+        shutil.rmtree(pte_download_path)
+
+    print('Downloading pthread-embedded')
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
+            pte_git_branch, pte_git_url, pte_download_path])
+    except Exception as e:
+        print('Cannot download pthread-embedded: {}'.format(e))
+        sys.exit(1)
+
+    print('Configuring and building pthread-embedded')
+    os.chdir(pte_download_path)
+
+    try:
+        rv = subprocess.check_call(['./configure', '--target=x86_64-hermit',
+        '--prefix=%s' % install_path,
+        'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path])
+
+        rv = subprocess.check_call(['make',
+            'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
+            'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path])
+    except Exception as e:
+        print('Cannot build/install pthread-embedded: {}'.format(e))
+        sys.exit(1)
+
+    os.chdir(cur_dir)
+
 def install_newlib(base_path, install_path, threads):
     cur_dir = os.getcwd()
     newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib')
@@ -774,6 +815,9 @@ def main(args):
 
     if not args.skip_newlib_install:
         install_newlib(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_pte_install:
+        install_pte(args.base_path, args.install_path, args.threads)
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
