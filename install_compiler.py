@@ -557,12 +557,15 @@ def install_tools(base_path, install_path, num_threads):
             sys.exit(1)
 
     #====================================================
-    # INSTALL hermit x86 object files
+    # INSTALL hermit x86 object files + linker script
     #====================================================
     objs_dir = base_path + '/util/hermit/x86_64-objs'
     os.chdir(objs_dir)
     for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o']:
         shutil.copyfile(objs_dir + '/' + f, install_path + '/x86_64-hermit/lib/' + f)
+
+    shutil.copyfile(base_path + '/util/hermit/ls.x',
+            install_path + '/x86_64-hermit/lib/ls.x')
 
     os.chdir(cur_dir)
 
@@ -648,6 +651,8 @@ def install_pte(base_path, install_path, threads):
         rv = subprocess.check_call(['make',
             'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
             'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path])
+
+        rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
         print('Cannot build/install pthread-embedded: {}'.format(e))
         sys.exit(1)
@@ -728,7 +733,8 @@ def install_hermit(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
-            '/x86_64-host/bin', '..'])
+            '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
+            '..'])
     except Exception as e:
         print('Error running hermitcore cmake: {}'.format(e))
         sys.exit(1)
@@ -818,11 +824,11 @@ def main(args):
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_hermit_install:
-        install_hermit(args.base_path, args.install_path, args.threads)
-
     if not args.skip_newlib_install:
         install_newlib(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_hermit_install:
+        install_hermit(args.base_path, args.install_path, args.threads)
 
     if not args.skip_pte_install:
         install_pte(args.base_path, args.install_path, args.threads)

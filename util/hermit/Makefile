@@ -2,8 +2,8 @@
 # Compilation options
 # -------------------
 
-POPHERMIT=/home/pierre/Desktop/hermit-llvm/popcorn-compiler/
-POPHERMIT_PREFIX=$(POPHERMIT)/prefix/
+POPHERMIT=/root/hermit-popcorn/
+POPHERMIT_PREFIX=$(POPHERMIT)
 
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
@@ -19,7 +19,7 @@ SRC=$(shell ls *.c)
 PROG=prog_x86-64
 BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
-LINKER_SCRIPT=$(POPHERMIT)/util/hermit/ls.x
+LINKER_SCRIPT=$(PH_PREFIX_X86)/lib/ls.x
 LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
 	 $(PH_PREFIX_X86)/lib/crti.o \
 	 $(PH_PREFIX_X86)/lib/crtbegin.o \

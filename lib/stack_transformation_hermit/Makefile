@@ -2,10 +2,6 @@
 # Common
 ###############################################################################
 
-#TODO update hermit toolchain
-HERMIT_TOOLCHAIN=/opt/hermit/
-HERMIT_PREFIX=/home/usr/hermit/
-
 POPCORN ?= ~/hermit-popcorn/
 COMMON  := $(shell readlink -f ../../common)
 
@@ -18,9 +14,9 @@ CC     := $(POPCORN)/x86_64-host/bin/clang
 CFLAGS := -g -Wall -D_GNU_SOURCE --target=x86_64-hermit -popcorn-alignment \
 	-nostdlib -nostdinc
 
-AR  := $(HERMIT_TOOLCHAIN)/bin/x86_64-hermit-ar
+AR  := $(POPCORN)/x86_64-host/bin/x86_64-hermit-ar
 LOC := -I$(INC) -I$(COMMON)/include -isystem \
-	$(HERMIT_PREFIX)/x86_64-hermit/include \
+	$(POPCORN)/x86_64-hermit/include \
 	-isystem $(POPCORN)/x86_64-host/lib/clang/3.7.1/include
 
 LIB_HDR      := $(shell ls $(INC)/*.h)

@@ -2,18 +2,15 @@
 # libraries
 
 POPCORN_INSTALL?=~/hermit-popcorn/
-# TODO update hermit prefix
-HERMIT_PREFIX=/home/usr/hermit/
-INSTALL_PREFIX?=$(HERMIT_PREFIX)
 
 CC=$(POPCORN_INSTALL)/x86_64-host/bin/clang
-AR=$(HERMIT_PREFIX)/bin/x86_64-hermit-ar
-RANLIB=$(HERMIT_PREFIX)/bin/x86_64-hermit-ranlib
+AR=$(POPCORN_INSTALL)/x86_64-host/bin/x86_64-hermit-ar
+RANLIB=$(POPCORN_INSTALL)/x86_64-host/bin/x86_64-hermit-ranlib
 OUTPUT=libelf.a
-TARGET_LIB_DIR=$(INSTALL_PREFIX)/x86_64-hermit/lib/
-TARGET_HDR_DIR=$(INSTALL_PREFIX)/x86_64-hermit/include/libelf
+TARGET_LIB_DIR=$(POPCORN_INSTALL)/x86_64-hermit/lib/
+TARGET_HDR_DIR=$(POPCORN_INSTALL)/x86_64-hermit/include/libelf
 
-INCLUDES=-I. -isystem $(HERMIT_PREFIX)/x86_64-hermit/include \
+INCLUDES=-I. -isystem $(POPCORN_INSTALL)/x86_64-hermit/include \
 		 -isystem $(POPCORN_INSTALL)/x86_64-host/lib/clang/3.7.1/include 
 
 CFLAGS=-target x86_64-hermit $(INCLUDES) -nostdlib -Wno-tautological-compare \
