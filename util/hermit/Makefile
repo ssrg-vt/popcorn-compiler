@@ -20,7 +20,6 @@ SRCS=$(shell ls *.c)
 OBJS=$(SRCS:.c=.o)
 
 PROG=prog_x86-64
-BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
 LINKER_SCRIPT=$(PH_PREFIX_X86)/lib/ls.x
 LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
@@ -52,12 +51,12 @@ $(TMP_FOLDER):
 
 %.o: %.c $(TMP_FOLDER)
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS) -c $< -emit-llvm -o $(TMP_FOLDER)/$(BITCODE)
+	$(CC) $(CFLAGS) -c $< -emit-llvm -o $(TMP_FOLDER)/$<.bc
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -insert-stackmaps \
-		-o $(TMP_FOLDER)/$(BITCODE) $(TMP_FOLDER)/$(BITCODE)
+		-o $(TMP_FOLDER)/$<.bc $(TMP_FOLDER)/$<.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS) -c $(TMP_FOLDER)/$(BITCODE) -o $@
+	$(CC) $(CFLAGS) -c $(TMP_FOLDER)/$<.bc -o $@
 
 $(PROG): $(OBJS)
 	@# 4. Link
