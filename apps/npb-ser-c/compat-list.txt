@@ -20,7 +20,7 @@ ep-c: working
 (need to use malloc for FT B and C)
 ft-a: working (verification fails)
 ft-b: working (verification fails)
-ft-c: guest 
+ft-c: guest page fault 
 
 (need ot use malloc for IS C)
 is-a: working
