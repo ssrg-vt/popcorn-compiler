@@ -4,7 +4,7 @@
  1. Debian packages
 ```
 apt update
-apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget
 ```
 
  2. Cmake
