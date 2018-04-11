@@ -1,3 +1,4 @@
 build_x86-64
 prog_x86-64
 *.o
+npbparams.h

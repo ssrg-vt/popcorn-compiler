@@ -9,10 +9,12 @@ PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 
 CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
-	   -I$(POPHERMIT)/lib/stack_transformation_hermit/utils -DPOSIX -mllvm \
-	   -optimize-regalloc -isystem $(PH_PREFIX_X86)/include \
-	   -isystem $(HERMIT_PREFIX)/x86_64-hermit/include -nostdinc \
-	   -isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include
+	    -DPOSIX -mllvm -optimize-regalloc -static
+ 
+INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
+	-isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include \
+	-isystem $(PH_PREFIX_X86)/include -nostdinc
+
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
 
@@ -22,19 +24,16 @@ OBJS=$(SRCS:.c=.o)
 PROG=prog_x86-64
 TMP_FOLDER=build_x86-64/
 LINKER_SCRIPT=$(PH_PREFIX_X86)/lib/ls.x
-LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
-	 $(PH_PREFIX_X86)/lib/crti.o \
-	 $(PH_PREFIX_X86)/lib/crtbegin.o \
-	 $(PH_PREFIX_X86)/lib/crtend.o \
-	 $(PH_PREFIX_X86)/lib/crtn.o \
-	 $(PH_PREFIX_X86)/lib/libpthread.a \
-	 $(PH_PREFIX_X86)/lib/libhermit.a \
-	 $(PH_PREFIX_X86)/lib/libstack-transform.a \
-	 $(PH_PREFIX_X86)/lib/libelf.a \
-	 $(PH_PREFIX_X86)/lib/libm.a  \
-	 $(PH_PREFIX_X86)/lib/libc.a
+ADD_OBJS=$(PH_PREFIX_X86)/lib/crt0.o \
+		 $(PH_PREFIX_X86)/lib/crti.o \
+		 $(PH_PREFIX_X86)/lib/crtbegin.o \
+		 $(PH_PREFIX_X86)/lib/crtend.o \
+		 $(PH_PREFIX_X86)/lib/crtn.o
 
-	 #$(HERMIT_PREFIX)/lib/gcc/x86_64-hermit/6.3.0/libgcc.a \
+LIBS=-lpthread -lhermit -lstack-transform -lelf -lm -lc
+
+LDFLAGS=-L$(PH_PREFIX_X86)/lib
+
 # ----------------------
 # Hermit runtime options
 # ----------------------
@@ -46,21 +45,21 @@ CPUS?=1
 
 all: $(PROG)
 
-$(TMP_FOLDER):
+%.o: %.c
+	@#0. Create tmp folder if needed
 	mkdir -p $(TMP_FOLDER) && touch $(TMP_FOLDER)/.dir
-
-%.o: %.c $(TMP_FOLDER)
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS) -c $< -emit-llvm -o $(TMP_FOLDER)/$<.bc
+	$(CC) $(CFLAGS) $(INC) -c $< -emit-llvm -o $(TMP_FOLDER)/$<.bc
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -insert-stackmaps \
 		-o $(TMP_FOLDER)/$<.bc $(TMP_FOLDER)/$<.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS) -c $(TMP_FOLDER)/$<.bc -o $@
+	$(CC) -target x86_64-hermit -static -mllvm -optimize-regalloc \
+		-c $(TMP_FOLDER)/$<.bc -o $@
 
 $(PROG): $(OBJS)
 	@# 4. Link
-	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(OBJS) $(LIBS)
+	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(OBJS) $(ADD_OBJS) $(LIBS) $(LDFLAGS)
 	@# 5. Post-process
 	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG)
 	@# 6. Change OSABI
