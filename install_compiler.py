@@ -195,8 +195,11 @@ def check_for_prerequisites(args):
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
-    for target in args.install_targets:
-        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
+# Pierre: for some reason we need libc6-devii386 which conflicts with aarch64-gcc
+# any way we will probably not use this cross compiler so let's comment this for
+# now
+#    for target in args.install_targets:
+#        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
     other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm',
             'zip']
 
