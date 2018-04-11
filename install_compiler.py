@@ -217,17 +217,17 @@ def check_for_prerequisites(args):
             success = False
 
     # hexdump
-    if shutil.which('hexdump') is None:
+    if not os.path.isfile('/usr/bin/hexdump'):
         print('Cannot find hexdump! please install debian package bsdmainutils')
         success = False
 
     # texinfo
-     if shutil.which('makeinfo') is None:
+    if not os.path.isfile('/usr/bin/makeinfo'):
         print('Cannot find makeinfo! please install debian package texinfo')
         success = False
 
     # Check if /usr/include/asm exists
-    if not os.isdir('/usr/include/asm'):
+    if not os.path.isdir('/usr/include/asm'):
         print('/usr/include/asm does not exists, you probably want to create it:')
         print('sudo ln -s /usr/include/asm-generic /usr/include/asm')
         success = False
