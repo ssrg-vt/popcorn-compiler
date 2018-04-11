@@ -1,0 +1,44 @@
+Compatibility list for npb-ser-c, compiled with hwemir-llvm, linked with gold,
+with stack-transformation stuff
+
+bt-a: working
+bt-b: working
+bt-c: working (verification fails)
+
+cg-a: working
+cg-b: working
+cg-c: working
+
+dc-a: working
+dc-b: working
+dc-c: (there is no C class for dc)
+
+ep-a: working
+ep-b: working
+ep-c: working
+
+(need to use malloc for FT B and C)
+ft-a: working (verification fails)
+ft-b: working (verification fails)
+ft-c: guest 
+
+(need ot use malloc for IS C)
+is-a: working
+is-b: working
+is-c: working
+
+lu-a: working
+lu-b: working
+lu-c: working
+
+mg-a: working
+mg-b: working
+mg-c: uhyve segfaults
+
+sp-a: working
+sp-b: working (verification fails)
+sp-c: working (verification fails)
+
+ua-a: working
+ua-b: working
+ua-c: working

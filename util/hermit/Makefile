@@ -2,7 +2,7 @@
 # Compilation options
 # -------------------
 
-POPHERMIT=/root/hermit-popcorn/
+POPHERMIT=$(HOME)/Desktop/hermit-llvm/popcorn-compiler/prefix
 POPHERMIT_PREFIX=$(POPHERMIT)
 
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
@@ -15,7 +15,10 @@ CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
 	   -isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
-SRC=$(shell ls *.c)
+
+SRCS=$(shell ls *.c)
+OBJS=$(SRCS:.c=.o)
+
 PROG=prog_x86-64
 BITCODE=$(PROG).bc
 TMP_FOLDER=build_x86-64/
@@ -38,26 +41,27 @@ LIBS=$(PH_PREFIX_X86)/lib/crt0.o \
 # ----------------------
 PROXY=$(PH_PREFIX_HOST)/bin/proxy
 ISLE=uhyve
-MEM?=1G
+MEM?=4G
 VERBOSE?=0
 CPUS?=1
 
-
 all: $(PROG)
 
-.PHONY: $(PROG)
-$(PROG):
-	@# Create folder if needed
-	mkdir -p $(TMP_FOLDER); touch $(TMP_FOLDER)/.dir
+$(TMP_FOLDER):
+	mkdir -p $(TMP_FOLDER) && touch $(TMP_FOLDER)/.dir
+
+%.o: %.c $(TMP_FOLDER)
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS) -c $(SRC) -emit-llvm -o $(TMP_FOLDER)/$(BITCODE)
+	$(CC) $(CFLAGS) -c $< -emit-llvm -o $(TMP_FOLDER)/$(BITCODE)
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -insert-stackmaps \
 		-o $(TMP_FOLDER)/$(BITCODE) $(TMP_FOLDER)/$(BITCODE)
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS) -c $(TMP_FOLDER)/$(BITCODE) -o $(PROG).o
+	$(CC) $(CFLAGS) -c $(TMP_FOLDER)/$(BITCODE) -o $@
+
+$(PROG): $(OBJS)
 	@# 4. Link
-	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(PROG).o $(LIBS)
+	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(OBJS) $(LIBS)
 	@# 5. Post-process
 	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG)
 	@# 6. Change OSABI
@@ -66,6 +70,9 @@ $(PROG):
 test: all
 	HERMIT_ISLE=$(ISLE) HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) $(PROXY) $(PROG)
+
+objdump:
+	objdump --source $(PROG) > /tmp/objdump.txt && vim /tmp/objdump.txt
 
 clean:
 	rm -rf $(TMP_FOLDER) *.o $(PROG)
