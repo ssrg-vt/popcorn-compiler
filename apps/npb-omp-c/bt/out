@@ -1,0 +1,258 @@
+GNU Make 4.1
+Built for x86_64-pc-linux-gnu
+Copyright (C) 1988-2014 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Reading makefiles...
+Updating goal targets....
+ File 'all' does not exist.
+     Prerequisite 'build_x86-64/' is newer than target 'add.o'.
+    Must remake target 'add.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c add.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o add.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'add.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'adi.o'.
+    Must remake target 'adi.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c adi.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o adi.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'adi.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'bt.o'.
+    Must remake target 'bt.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c bt.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+bt.c:155:49: warning: implicit declaration of function 'omp_get_max_threads' is invalid in C99 [-Wimplicit-function-declaration]
+  printf(" Number of available threads: %5d\n", omp_get_max_threads());
+                                                ^
+1 warning generated.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o bt.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'bt.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'c_timers.o'.
+    Must remake target 'c_timers.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c c_timers.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o c_timers.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'c_timers.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'error.o'.
+    Must remake target 'error.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c error.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o error.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+warning: error.c:65:9: (x86_64--hermit) Stack transformation: unhandled stack slot 4 across call to exact_solution
+warning: error.c:65:9: (x86_64--hermit) Stack transformation: unhandled stack slot 5 across call to exact_solution
+warning: error.c:65:9: (x86_64--hermit) Stack transformation: unhandled stack slot 6 across call to exact_solution
+    Successfully remade target file 'error.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'exact_rhs.o'.
+    Must remake target 'exact_rhs.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c exact_rhs.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o exact_rhs.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled register R14 across call to exact_solution
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled register R13 across call to exact_solution
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled stack slot 1 across call to exact_solution
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled stack slot 11 across call to exact_solution
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled stack slot 12 across call to exact_solution
+warning: exact_rhs.c:74:9: (x86_64--hermit) Stack transformation: unhandled stack slot 62 across call to exact_solution
+warning: exact_rhs.c:170:9: (x86_64--hermit) Stack transformation: unhandled register R12 across call to exact_solution
+warning: exact_rhs.c:170:9: (x86_64--hermit) Stack transformation: unhandled register R13 across call to exact_solution
+warning: exact_rhs.c:170:9: (x86_64--hermit) Stack transformation: unhandled stack slot 1 across call to exact_solution
+warning: exact_rhs.c:170:9: (x86_64--hermit) Stack transformation: unhandled stack slot 63 across call to exact_solution
+warning: exact_rhs.c:266:9: (x86_64--hermit) Stack transformation: unhandled register R12 across call to exact_solution
+warning: exact_rhs.c:266:9: (x86_64--hermit) Stack transformation: unhandled register R13 across call to exact_solution
+warning: exact_rhs.c:266:9: (x86_64--hermit) Stack transformation: unhandled stack slot 1 across call to exact_solution
+warning: exact_rhs.c:266:9: (x86_64--hermit) Stack transformation: unhandled stack slot 64 across call to exact_solution
+    Successfully remade target file 'exact_rhs.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'exact_solution.o'.
+    Must remake target 'exact_solution.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c exact_solution.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o exact_solution.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'exact_solution.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'initialize.o'.
+    Must remake target 'initialize.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c initialize.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o initialize.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+warning: initialize.c:116:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+warning: initialize.c:133:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+warning: initialize.c:150:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+warning: initialize.c:167:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+warning: initialize.c:184:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+warning: initialize.c:201:7: (x86_64--hermit) Stack transformation: unhandled register RBX across call to exact_solution
+    Successfully remade target file 'initialize.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'print_results.o'.
+    Must remake target 'print_results.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c print_results.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o print_results.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 1 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 2 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 6 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 7 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 8 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 9 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 10 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 11 across call to printf
+warning: print_results.c:58:3: (x86_64--hermit) Stack transformation: unhandled stack slot 12 across call to printf
+warning: print_results.c:74:3: (x86_64--hermit) Stack transformation: unhandled stack slot 7 across call to printf
+warning: print_results.c:74:3: (x86_64--hermit) Stack transformation: unhandled stack slot 9 across call to printf
+warning: print_results.c:74:3: (x86_64--hermit) Stack transformation: unhandled stack slot 12 across call to printf
+warning: print_results.c:74:3: (x86_64--hermit) Stack transformation: unhandled stack slot 13 across call to printf
+    Successfully remade target file 'print_results.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'rhs.o'.
+    Must remake target 'rhs.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c rhs.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o rhs.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'rhs.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'set_constants.o'.
+    Must remake target 'set_constants.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c set_constants.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o set_constants.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'set_constants.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'solve_subs.o'.
+    Must remake target 'solve_subs.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c solve_subs.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o solve_subs.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'solve_subs.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'verify.o'.
+    Must remake target 'verify.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c verify.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o verify.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+warning: verify.c:56:3: (x86_64--hermit) Stack transformation: unhandled register R12 across call to error_norm
+warning: verify.c:56:3: (x86_64--hermit) Stack transformation: unhandled register R13 across call to error_norm
+warning: verify.c:56:3: (x86_64--hermit) Stack transformation: unhandled stack slot 7 across call to error_norm
+warning: verify.c:57:3: (x86_64--hermit) Stack transformation: unhandled register R12 across call to compute_rhs
+warning: verify.c:57:3: (x86_64--hermit) Stack transformation: unhandled register R13 across call to compute_rhs
+warning: verify.c:57:3: (x86_64--hermit) Stack transformation: unhandled stack slot 7 across call to compute_rhs
+warning: verify.c:59:3: (x86_64--hermit) Stack transformation: unhandled register R12 across call to rhs_norm
+warning: verify.c:59:3: (x86_64--hermit) Stack transformation: unhandled register R13 across call to rhs_norm
+warning: verify.c:59:3: (x86_64--hermit) Stack transformation: unhandled stack slot 7 across call to rhs_norm
+    Successfully remade target file 'verify.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'wtime.o'.
+    Must remake target 'wtime.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c wtime.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o wtime.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'wtime.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'x_solve.o'.
+    Must remake target 'x_solve.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c x_solve.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o x_solve.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'x_solve.o'.
+     Prerequisite 'build_x86-64/' is newer than target 'y_solve.o'.
+    Must remake target 'y_solve.o'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c y_solve.c -emit-llvm -o build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/opt -O3 -insert-stackmaps \
+	-o build_x86-64//prog_x86-64.bc build_x86-64//prog_x86-64.bc
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/clang -target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib -I/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils -DPOSIX -mllvm -optimize-regalloc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include -isystem /x86_64-hermit/include -nostdinc -isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include -fopenmp -c build_x86-64//prog_x86-64.bc -o y_solve.o
+clang-3.7: warning: argument unused during compilation: '-I /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/lib/stack_transformation_hermit/utils'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//include'
+clang-3.7: warning: argument unused during compilation: '-isystem /x86_64-hermit/include'
+clang-3.7: warning: argument unused during compilation: '-isystem /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//lib/clang/3.7.1/include'
+    Successfully remade target file 'y_solve.o'.
+   Prerequisite 'add.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'adi.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'bt.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'c_timers.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'error.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'exact_rhs.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'exact_solution.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'initialize.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'print_results.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'rhs.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'set_constants.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'solve_subs.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'verify.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'wtime.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'x_solve.o' is newer than target 'prog_x86-64'.
+   Prerequisite 'y_solve.o' is newer than target 'prog_x86-64'.
+  Must remake target 'prog_x86-64'.
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/x86_64-hermit-ld.gold -T /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/ls.x -o prog_x86-64 add.o adi.o bt.o c_timers.o error.o exact_rhs.o exact_solution.o initialize.o print_results.o rhs.o set_constants.o solve_subs.o verify.o wtime.o x_solve.o y_solve.o z_solve.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/crt0.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/crti.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/crtbegin.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/crtend.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libiomp.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/crtn.o /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libpthread.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libhermit.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libstack-transform.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libelf.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libc.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libm.a /home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-hermit//lib/libgcc.a
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/gen-stackinfo -f prog_x86-64
+size = 256 entsize = 16
+/home/pierre/Desktop/hermit-llvm/popcorn-compiler/prefix/x86_64-host//bin/x86_64-hermit-elfedit --output-osabi=HermitCore prog_x86-64
+  Successfully remade target file 'prog_x86-64'.
+Must remake target 'all'.
+Successfully remade target file 'all'.

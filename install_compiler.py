@@ -578,7 +578,7 @@ def install_tools(base_path, install_path, num_threads):
     #====================================================
     objs_dir = base_path + '/util/hermit/x86_64-objs'
     os.chdir(objs_dir)
-    for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o']:
+    for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o', 'libgcc.a']:
         shutil.copyfile(objs_dir + '/' + f, install_path + '/x86_64-hermit/lib/' + f)
 
     shutil.copyfile(base_path + '/util/hermit/ls.x',
