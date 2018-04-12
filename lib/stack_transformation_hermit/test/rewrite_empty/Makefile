@@ -1,1 +1,3 @@
-../../../../util/hermit/Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in

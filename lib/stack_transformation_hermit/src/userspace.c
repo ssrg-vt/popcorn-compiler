@@ -6,21 +6,23 @@
  * Date: 3/1/2016
  */
 
-#ifdef PTHREAD_TLS
-#include <pthread.h>
-#endif
+//#ifdef PTHREAD_TLS
+//#include <pthread.h>
+//#endif
 #include <unistd.h>
 #include <sys/resource.h>
 #include <stdio.h>
-
-/* Pierre TODO silence it for now */
-//#include <sys/syscall.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
 #include "util.h"
 #include "arch/x86_64/regs.h"
 #include "arch/aarch64/regs.h"
+
+// Hermit syscalls TODO include the right header
+extern void *sys_stackaddr(void);
+extern void *sys_stacksize(void);
+extern long int sys_getpid();
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
@@ -32,7 +34,7 @@ static st_handle x86_64_handle = NULL;
 #if _TLS_IMPL == COMPILER_TLS
 static __thread stack_bounds bounds = { .high = NULL, .low = NULL };
 #else /* PTHREAD_TLS */
-static pthread_key_t stack_bounds_key = 0;
+//static pthread_key_t stack_bounds_key = 0;
 #endif
 
 /*
@@ -76,7 +78,7 @@ static int userspace_rewrite_internal(void* sp,
  * Program name, as invoked by the shell.
  */
 // Pierre: FIXME
-const char *___progname = "prog";
+const char *___progname = "prog_x86_64";
 
 /*
  * Binary names.  User-code can define these symbols to override these
@@ -178,10 +180,16 @@ void __st_userspace_dtor(void)
  */
 stack_bounds get_stack_bounds()
 {
-  int retval;
+//  int retval;
   void* cur_stack;
   stack_bounds cur_bounds = {NULL, NULL};
 
+  if(!get_thread_stack(&cur_bounds)) {
+	  fprintf(stderr, "Cannot get stack bounds");
+	  exit(1);
+  }
+
+#if 0
   /* If not already resolved, get stack limits for thread. */
 #if _TLS_IMPL == COMPILER_TLS
   if(bounds.high == NULL)
@@ -201,6 +209,7 @@ stack_bounds get_stack_bounds()
     if(!get_thread_stack(bounds_ptr)) return cur_bounds;
   }
   cur_bounds = *bounds_ptr;
+#endif
 #endif
 
   /* Determine which half of stack we're currently using. */
@@ -270,16 +279,12 @@ int st_userspace_rewrite(void* sp,
  * allocates them and we can divide the stack in half for rewriting.  Also,
  * calculate stack bounds for main thread.
  */
-// Pierre TODO, silence this for now
-static bool prep_stack(void) {return true;}
-
-#if 0
 static bool prep_stack(void)
 {
-  long ret;
+//  long ret;
   size_t offset;
+#if 0 //_TLS_IMPL == PTHREAD_TLS
   struct rlimit rlim;
-#if _TLS_IMPL == PTHREAD_TLS
   stack_bounds bounds;
   stack_bounds* bounds_ptr;
 
@@ -291,6 +296,8 @@ static bool prep_stack(void)
 #endif
 
   if(!get_main_stack(&bounds)) return false;
+
+#if 0
   if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
   if(!ret)
   {
@@ -322,104 +329,53 @@ static bool prep_stack(void)
 
   ST_INFO("Prepped stack for main thread, addresses %p -> %p\n",
           bounds.low, bounds.high);
+#endif
 
   /*
    * Get offset of main thread's stack pointer from stack base so we can avoid
    * clobbering argv & environment variables.
    */
-  ASSERT(__popcorn_stack_base, "Stack base not correctly set by musl\n");
+  ASSERT(__popcorn_stack_base, "Stack base not correctly set by newlib\n");
   offset = (uint64_t)(bounds.high - __popcorn_stack_base);
   offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
   bounds.high -= offset;
-#if _TLS_IMPL == PTHREAD_TLS
+#if 0 //_TLS_IMPL == PTHREAD_TLS
   *bounds_ptr = bounds;
 #endif
   return true;
 }
-#endif
 
 /* Read stack information for the main thread from the procfs. */
-// Pierre TODO: silence this for now
-#if 0
 static bool get_main_stack(stack_bounds* bounds)
 {
-  /* /proc/<id>/maps fields */
-  bool found = false;
-  int fields;
-  uint64_t start, end, offset, inode;
-  char perms[8]; // should be no more than 4
-  char dev[8]; // should be no more than 5
-  char path[BUF_SIZE];
+	bounds->low = 0x0;
+	bounds->low = sys_stackaddr();
+	bounds->high = (void *)((uint64_t)bounds->low + (uint64_t)sys_stacksize());
 
-  /* File data, reading & parsing */
-  char proc_fn[BUF_SIZE];
-  FILE* proc_fp;
-  char* lineptr;
-  size_t linesz = BUF_SIZE;
+	if(!bounds->low) {
+		fprintf(stderr, "Cannot get stack location from hermitcore kernel\n");
+		exit(1);
+	}
 
-  bounds->high = NULL;
-  bounds->low = NULL;
-
-  if(snprintf(proc_fn, BUF_SIZE, "/proc/%d/maps", getpid()) < 0) return false;
-  if(!(proc_fp = fopen(proc_fn, "r"))) return false;
-  if(!(lineptr = (char*)malloc(BUF_SIZE * sizeof(char)))) return false;
-  while(__getline(&lineptr, &linesz, proc_fp) >= 0)
-  {
-    fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
-                    &start, &end, perms, &offset, dev, &inode, path);
-    if(fields == 7 && !strncmp(path, "[stack]", 7))
-    {
-      bounds->high = (void*)end;
-      bounds->low = (void*)start;
-      found = true;
-      break;
-    }
-  }
-  free(lineptr);
-  fclose(proc_fp);
-
-  ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
-  return found;
+	ST_INFO("Main stack limits: %p -> %p\n", bounds->low, bounds->high);
+	return true;
 }
-#endif
 
 /* Read stack information for cloned threads from the pthread library. */
-/* Pierre: TODO silence this for now */
-static bool get_thread_stack(stack_bounds* bounds) {return true;}
-
-#if 0
 static bool get_thread_stack(stack_bounds* bounds)
 {
-  pthread_attr_t attr;
-  size_t stack_size;
-  int ret;
-  bool retval;
+	bounds->low = 0x0;
+	bounds->low = sys_stackaddr();
+	bounds->high = (void *)((uint64_t)bounds->low + (uint64_t)sys_stacksize());
 
-  ret = pthread_getattr_np(pthread_self(), &attr);
-  ret |= pthread_attr_getstack(&attr, &bounds->low, &stack_size);
-  if(ret == 0)
-  {
-    // TODO is there any important data stored above muslc/start's stack frame?
-    bounds->high = bounds->low + stack_size;
-    if(stack_size != MAX_STACK_SIZE)
-    {
-      ST_WARN("unexpected stack size: expected %lx, got %lx\n",
-              MAX_STACK_SIZE, stack_size);
-      bounds->low = bounds->high - MAX_STACK_SIZE;
-    }
-    retval = true;
-  }
-  else
-  {
-    bounds->high = 0;
-    bounds->low = 0;
-    ST_WARN("could not get stack limits\n");
-    retval = false;
-  }
-  ST_INFO("Thread stack limits: %p -> %p\n", bounds->low, bounds->high);
-  return retval;
+	if(!bounds->low) {
+		fprintf(stderr, "Cannot get stack location from hermitcore kernel\n");
+		exit(1);
+	}
+
+	ST_INFO("Thread stack limits: %p -> %p\n", bounds->low, bounds->high);
+	return true;
 }
-#endif
 
 /*
  * Rewrite from source to destination stack.  Logically, divides 8MB stack in
@@ -433,7 +389,7 @@ static int userspace_rewrite_internal(void* sp,
 {
   int retval = 0;
   void* stack_a, *stack_b, *cur_stack, *new_stack;
-#if _TLS_IMPL == PTHREAD_TLS
+#if 0 //_TLS_IMPL == PTHREAD_TLS
   stack_bounds bounds;
   stack_bounds* bounds_ptr;
 #endif
@@ -466,7 +422,7 @@ static int userspace_rewrite_internal(void* sp,
     return 1;
   }
 
-  ST_INFO("Thread %ld beginning re-write\n", syscall(SYS_gettid));
+  ST_INFO("Thread %ld beginning re-write\n", sys_getpid());
 
   /* Divide stack into two halves. */
   stack_a = bounds.high;

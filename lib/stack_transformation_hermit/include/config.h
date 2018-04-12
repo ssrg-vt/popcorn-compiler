@@ -46,7 +46,7 @@
  */
 #define COMPILER_TLS 0
 #define PTHREAD_TLS 1
-#define _TLS_IMPL PTHREAD_TLS
+#define _TLS_IMPL COMPILER_TLS
 
 /*
  * Maximum number of frames that can be rewritten.
