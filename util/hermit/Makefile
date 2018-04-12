@@ -8,7 +8,7 @@ POPHERMIT_PREFIX=$(POPHERMIT)
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 
-CFLAGS=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS?=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
 	    -DPOSIX -mllvm -optimize-regalloc -static
  
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
