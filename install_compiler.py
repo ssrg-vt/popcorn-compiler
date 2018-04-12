@@ -701,13 +701,14 @@ def install_newlib(base_path, install_path, threads):
             '--prefix=%s' % install_path, '--disable-shared',
             '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
             '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
+            '--disable-newlib-nano-formatted-io',
             'target_alias=x86_64-hermit',
             'CC=%s/x86_64-host/bin/clang' % install_path,
             'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
             'AS_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-as' % install_path,
             'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path,
             'RANLIB_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ranlib' % install_path,
-            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -ftree-vectorize -mtune=native']
+            'CFLAGS_FOR_TARGET=-O2 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -mtune=native -popcorn-libc']
 
     try:
         rv = subprocess.check_call(newlib_conf)
