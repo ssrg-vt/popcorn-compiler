@@ -24,6 +24,8 @@ llvm_targets = {
 
 llvm_direct_url = 'http://releases.llvm.org/3.7.1/llvm-3.7.1.src.tar.xz'
 clang_direct_url = 'http://releases.llvm.org/3.7.1/cfe-3.7.1.src.tar.xz'
+llvm_svn_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
+clang_svn_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 
 binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit'
@@ -72,6 +74,10 @@ def setup_argument_parsing():
                         type=int,
                         default=multiprocessing.cpu_count(),
                         dest="threads")
+    config_opts.add_argument("--direct-download",
+                        help="Use direct download rather than svn for llvm/clang",
+                        action="store_true",
+                        dest="direct_download")
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
                         help="Skip checking for prerequisites (see README)",
@@ -195,8 +201,11 @@ def check_for_prerequisites(args):
 
     print('Checking for prerequisites (see README for more info)...')
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
-    for target in args.install_targets:
-        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
+# Pierre: for some reason we need libc6-devii386 which conflicts with aarch64-gcc
+# any way we will probably not use this cross compiler so let's comment this for
+# now
+#    for target in args.install_targets:
+#        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
     other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm',
             'zip']
 
@@ -234,7 +243,9 @@ def check_for_prerequisites(args):
 
     return success
 
-def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
+# direct download: set it to true to download sources directly (faster) rather
+# than from svn repos (allows keeping track of changes to generate patches)
+def install_clang_llvm(base_path, install_path, num_threads, llvm_targets, direct_download):
 
     llvm_download_path = os.path.join(install_path, 'x86_64-host/src/llvm')
     clang_download_path = os.path.join(llvm_download_path, 'tools/clang')
@@ -258,10 +269,14 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         print('Downloading LLVM source...')
 
         try:
-            rv = subprocess.check_call(['wget', llvm_direct_url, '-O',
-                                        '/tmp/llvm.tar.xz'],
-                                        # stdout=FNULL,
-                                        stderr=subprocess.STDOUT)
+            if not direct_download:
+                rv = subprocess.check_call(['svn', 'co', llvm_svn_url,
+                    llvm_download_path])
+            else:
+                rv = subprocess.check_call(['wget', llvm_direct_url, '-O',
+                                            '/tmp/llvm.tar.xz'],
+                                            # stdout=FNULL,
+                                            stderr=subprocess.STDOUT)
 
         except Exception as e:
             print('Could not download LLVM source ({})!'.format(e))
@@ -271,29 +286,34 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
                 print('LLVM source download failed.')
                 sys.exit(1)
 
-        print('Extracting LLVM source...')
-        try:
-            rv = subprocess.check_call(['tar', 'xf', '/tmp/llvm.tar.xz',
-                                        '-C', '/tmp'])
-            rv = subprocess.check_call(['rm', '-rf', llvm_download_path])
-            rv = subprocess.check_call(['mkdir', '-p', install_path +
-                '/x86_64-host/src'])
-            rv = subprocess.check_call(['mv', '-f', '/tmp/llvm-3.7.1.src',
-                llvm_download_path])
+        if direct_download:
+            print('Extracting LLVM source...')
+            try:
+                rv = subprocess.check_call(['tar', 'xf', '/tmp/llvm.tar.xz',
+                                            '-C', '/tmp'])
+                rv = subprocess.check_call(['rm', '-rf', llvm_download_path])
+                rv = subprocess.check_call(['mkdir', '-p', install_path +
+                    '/x86_64-host/src'])
+                rv = subprocess.check_call(['mv', '-f', '/tmp/llvm-3.7.1.src',
+                    llvm_download_path])
 
-        except Exception as e:
-            print('Cannot extract LLVM source: {}'.format(e))
-            sys.exit(1)
+            except Exception as e:
+                print('Cannot extract LLVM source: {}'.format(e))
+                sys.exit(1)
 
         #=====================================================
         # DOWNLOAD CLANG
         #=====================================================
         print('Downloading Clang source...')
         try:
-          rv = subprocess.check_call(['wget', clang_direct_url, '-O',
-                                        '/tmp/clang.tar.xz'],
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT) 
+            if not direct_download:
+                rv = subprocess.check_call(['svn', 'co', clang_svn_url,
+                    clang_download_path])
+            else:
+                rv = subprocess.check_call(['wget', clang_direct_url, '-O',
+                                            '/tmp/clang.tar.xz'],
+                                            #stdout=FNULL,
+                                            stderr=subprocess.STDOUT)
         except Exception as e:
             print('Could not download Clang source ({})!'.format(e))
             sys.exit(1)
@@ -302,17 +322,18 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
                 print('Clang source download failed.')
                 sys.exit(1)
 
-        print('Extracting Clang source...')
-        try:
-            rv = subprocess.check_call(['tar', 'xf', '/tmp/clang.tar.xz',
-                                        '-C', '/tmp'])
-            rv = subprocess.check_call(['rm', '-rf', clang_download_path])
-            rv = subprocess.check_call(['mv', '-f', '/tmp/cfe-3.7.1.src',
-                clang_download_path])
+        if direct_download:
+            print('Extracting Clang source...')
+            try:
+                rv = subprocess.check_call(['tar', 'xf', '/tmp/clang.tar.xz',
+                                            '-C', '/tmp'])
+                rv = subprocess.check_call(['rm', '-rf', clang_download_path])
+                rv = subprocess.check_call(['mv', '-f', '/tmp/cfe-3.7.1.src',
+                    clang_download_path])
 
-        except Exception as e:
-            print('Cannot extract LLVM source: {}'.format(e))
-            sys.exit(1)
+            except Exception as e:
+                print('Cannot extract LLVM source: {}'.format(e))
+                sys.exit(1)
 
         # PATCH LLVM
         with open(llvm_patch_path, 'r') as patch_file:
@@ -336,7 +357,7 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         with open(llvm_hermit_patch_path, 'r') as patch_file:
 
             try:
-                print("Patching LLVM...")
+                print("Patching hermit-LLVM...")
                 rv = subprocess.check_call(['patch', '-p0', '-d',
                                             llvm_download_path],
                                             stdin=patch_file,
@@ -837,7 +858,7 @@ def main(args):
 
     if not args.skip_llvm_clang_install:
         install_clang_llvm(args.base_path, args.install_path, args.threads,
-                           args.llvm_targets)
+                           args.llvm_targets, args.direct_download)
 
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
