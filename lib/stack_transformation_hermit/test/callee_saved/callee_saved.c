@@ -19,7 +19,7 @@ int outer_frame()
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./callee_saved_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    TIME_AND_TEST_REWRITE("./callee_saved_x86-64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_x86-64", outer_frame);
 #endif
   }
   return rand();
