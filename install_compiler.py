@@ -23,8 +23,6 @@ llvm_targets = {
 }
 
 # TODO have some stable branches for all git software
-llvm_direct_url = 'http://releases.llvm.org/3.7.1/llvm-3.7.1.src.tar.xz'
-clang_direct_url = 'http://releases.llvm.org/3.7.1/cfe-3.7.1.src.tar.xz'
 llvm_git_url = 'https://github.com/ssrg-vt/llvm.git'
 llvm_git_branch = 'pierre-hermit-popcorn'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
@@ -77,10 +75,6 @@ def setup_argument_parsing():
                         type=int,
                         default=multiprocessing.cpu_count(),
                         dest="threads")
-    config_opts.add_argument("--direct-download",
-                        help="Use direct download rather than git for llvm/clang",
-                        action="store_true",
-                        dest="direct_download")
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
                         help="Skip checking for prerequisites (see README)",
@@ -246,8 +240,6 @@ def check_for_prerequisites(args):
 
     return success
 
-# direct download: set it to true to download sources directly (faster) rather
-# than from git repos (allows keeping track of changes to generate patches)
 def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     llvm_download_path = os.path.join(install_path, 'x86_64-host/src/llvm')
@@ -748,7 +740,7 @@ def main(args):
 
     if not args.skip_llvm_clang_install:
         install_clang_llvm(args.base_path, args.install_path, args.threads,
-                           args.llvm_targets, args.direct_download)
+                           args.llvm_targets)
 
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
