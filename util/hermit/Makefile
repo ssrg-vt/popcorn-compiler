@@ -9,7 +9,8 @@ PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 
 CFLAGS+=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
-	    -DPOSIX -mllvm -optimize-regalloc -static -popcorn-alignment
+	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
+		-popcorn-alignment
  
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
 	-isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include \
