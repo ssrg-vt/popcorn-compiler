@@ -115,7 +115,8 @@ bool first_frame(uint64_t id)
   if(id == UINT64_MAX || /* "__libc_start_main()" in __libc_start_main.c */
      id == UINT64_MAX - 1 || /* "start()" in pthread_create.c */
      id == UINT64_MAX - 2 || /* "start_c11()" in pthread_create.c */
-     id == UINT64_MAX - 3) /* "libc_start" in newlib crt0.c */
+     id == UINT64_MAX - 3 || /* "libc_start" in newlib crt0.c */
+	 id == UINT64_MAX - 4) /* thread_entry in hermitcore's tasks.c */
     return true;
   else return false;
 }
