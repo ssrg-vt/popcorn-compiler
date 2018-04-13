@@ -10,7 +10,7 @@ For now all of this only works with x86, ARM integration is TODO.
  1. Debian packages
 ```
 apt update
-apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils
+apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils svn
 ```
 
  2. Cmake

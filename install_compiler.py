@@ -207,7 +207,7 @@ def check_for_prerequisites(args):
 #    for target in args.install_targets:
 #        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
     other_prequisites = ['flex', 'bison', 'cmake', 'make', 'wget', 'nasm',
-            'zip']
+            'zip', 'svn']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
