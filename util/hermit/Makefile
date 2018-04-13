@@ -80,4 +80,4 @@ dump-llvm-stackmaps:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG)
 
 clean:
-	rm -rf $(TMP_FOLDER) *.o $(PROG)
+	rm -rf $(TMP_FOLDER) *.o $(PROG) stack-transform.log
