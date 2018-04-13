@@ -1,4 +1,4 @@
-POPCORN     ?= ~/hermit-popcorn/
+POPCORN     ?= $(HOME)/hermit-popcorn/
 BINARY      := pyalign
 TMP_ZIPFILE := align.zip
 BOOTSTRAP   := align.script

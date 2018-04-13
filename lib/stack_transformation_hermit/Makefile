@@ -2,7 +2,7 @@
 # Common
 ###############################################################################
 
-POPCORN ?= ~/hermit-popcorn/
+POPCORN ?= $(HOME)/hermit-popcorn/
 COMMON  := $(shell readlink -f ../../common)
 
 BUILD := build

@@ -2,7 +2,7 @@
 # Compilation options
 # -------------------
 
-POPHERMIT=$(HOME)/Desktop/popcorn-compiler/prefix
+POPHERMIT=$(HOME)/hermit-popcorn
 POPHERMIT_PREFIX=$(POPHERMIT)
 
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/

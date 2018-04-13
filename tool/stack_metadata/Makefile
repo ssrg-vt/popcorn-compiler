@@ -1,4 +1,4 @@
-POPCORN        ?= ~/hermit-popcorn/
+POPCORN        ?= $(HOME)/hermit-popcorn/
 
 BUILD		:= build
 BIN		:= gen-stackinfo

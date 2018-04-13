@@ -1,4 +1,4 @@
-POPCORN ?= ~/hermit-popcorn/
+POPCORN ?= $(HOME)/hermit-popcorn/
 
 POPCORN_HOST_PREFIX=$(POPCORN)/x86_64-host/
 

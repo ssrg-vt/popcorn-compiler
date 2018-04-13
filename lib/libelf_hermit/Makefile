@@ -1,7 +1,7 @@
 # TODO: compile for aarch64 as well in this Makefile (same method as other
 # libraries
 
-POPCORN_INSTALL?=~/hermit-popcorn/
+POPCORN_INSTALL?=$(HOME)/hermit-popcorn/
 
 CC=$(POPCORN_INSTALL)/x86_64-host/bin/clang
 AR=$(POPCORN_INSTALL)/x86_64-host/bin/x86_64-hermit-ar
