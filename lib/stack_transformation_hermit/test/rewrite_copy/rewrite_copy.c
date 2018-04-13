@@ -17,7 +17,7 @@ long outer_frame()
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./rewrite_copy_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    TIME_AND_TEST_REWRITE("./rewrite_copy_x86-64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_x86-64", outer_frame);
 #endif
   }
   return rand();
