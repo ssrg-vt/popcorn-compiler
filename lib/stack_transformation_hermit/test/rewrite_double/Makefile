@@ -1,2 +1,3 @@
-BIN	:= rewrite_double
-include ../Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in

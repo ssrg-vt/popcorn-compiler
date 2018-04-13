@@ -16,7 +16,7 @@ double outer_frame()
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./rewrite_double_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    TIME_AND_TEST_REWRITE("./rewrite_double_x86-64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_x86-64", outer_frame);
 #endif
   }
   return 1.0;
