@@ -81,10 +81,13 @@
 #define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*
- * Stack limits -- Linux defaults to 8MB.
+ * Stack limits
+ * HermitCore stack size is configurable, so make sure MAX_STACK_SIZE is
+ * consistent with the HermitCore DEFAULT_STACK_SIZE macro, set by cmake (see
+ * <hermitcore sources>/cmake/HermitCore-Configuration.cmake)
  */
-#define MAX_STACK_SIZE (8UL * 1024UL * 1024UL)
-#define B_STACK_OFFSET (4 * 1024 * 1024)
+#define MAX_STACK_SIZE 524288
+#define B_STACK_OFFSET (MAX_STACK_SIZE / 2)
 
 #endif /* _CONFIG_H */
 
