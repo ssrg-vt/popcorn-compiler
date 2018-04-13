@@ -252,7 +252,8 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       /* Populate call site record */
       if(site_record->id == UINT64_MAX ||
          site_record->id == UINT64_MAX - 1 ||
-         site_record->id == UINT64_MAX - 2)
+         site_record->id == UINT64_MAX - 2 ||
+         site_record->id == UINT64_MAX -3)
         sites[cur].id = site_record->id;
       else
         sites[cur].id = start_id++;
