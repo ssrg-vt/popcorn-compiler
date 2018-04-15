@@ -23,6 +23,7 @@ __migrate_fixup_x86_64:
    * transformation process, all caller-saved registers should have been saved
    * to the stack in the caller's frame.
    */
+  pushq %rsp
   call pthread_migrate_args
   mov (%rax), %rdx /* Get struct shim_data pointer */
   test %rdx, %rdx
@@ -45,6 +46,7 @@ __migrate_fixup_x86_64:
   mov 128(%rdx), %r15
 
   /* Cleanup & return to C! */
+  popq %rsp
   jmp __migrate_shim_internal
 
 .Lcrash:

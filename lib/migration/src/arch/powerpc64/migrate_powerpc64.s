@@ -25,7 +25,7 @@ __migrate_fixup_powerpc64:
    * transformation process, all caller-saved registers should have been saved
    * to the stack in the caller's frame.
    */
-  subi 1, 1, 8
+  subi 1, 1, 16
   mflr 0
   std 0, 0(1)
   bl pthread_migrate_args
@@ -95,7 +95,7 @@ __migrate_fixup_powerpc64:
   /* Cleanup & return to C! */
   ld 0, 0(1)
   mtlr 0
-  addi 1, 1, 8
+  addi 1, 1, 16
   b __migrate_shim_internal
 
 .Lcrash:

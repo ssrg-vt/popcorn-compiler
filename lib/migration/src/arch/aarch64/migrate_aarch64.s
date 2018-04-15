@@ -25,7 +25,7 @@ __migrate_fixup_aarch64:
    * transformation process, all caller-saved registers should have been saved
    * to the stack in the caller's frame.
    */
-  str x30, [sp,#-8]!
+  str x30, [sp,#-16]!
   bl pthread_migrate_args
   ldr x1, [x0] /* Get struct shim_data pointer */
   cbz x1, .Lcrash
@@ -68,8 +68,7 @@ __migrate_fixup_aarch64:
   ldr q15, [x1,#240]
 
   /* Cleanup & return to C! */
-  ldr x30, [sp]
-  add sp, sp, #8
+  ldr x30, [sp], #16
   b __migrate_shim_internal
 
 .Lcrash:
