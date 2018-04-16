@@ -46,29 +46,58 @@
 #define REWRITE_STACK \
     ({ \
       int ret = 1; \
-      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_X86_64, &regs_src, \
-                              dst_arch, &regs_dst)) \
+      if(dst_arch != ARCH_X86_64) \
       { \
-        fprintf(stderr, "Could not rewrite stack!\n"); \
-        ret = 0; \
+        if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_X86_64, &regs_src, \
+                                dst_arch, &regs_dst)) \
+        { \
+          fprintf(stderr, "Could not rewrite stack!\n"); \
+          ret = 0; \
+        } \
       } \
+      else memcpy(&regs_dst.x86, &regs_src, sizeof(struct regset_x86_64)); \
       ret; \
     })
 
 #define MIGRATE \
-    asm volatile ("mov %0, %%rdi;" \
-                  "movq %1, %%rsi;" \
-                  "movq %2, %%rsp;" \
-                  "movq %3, %%rbp;" \
-                  "mov %4, %%eax;" \
-                  "syscall;" \
-                  : /* Outputs */ \
-                  : /* Inputs */ \
-                  "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
-                  "i"(SYSCALL_SCHED_MIGRATE) \
-                  : /* Clobbered */ \
-                  "rdi", "rsi" \
-    )
+    ({ \
+      int ret = 0; \
+      if(dst_arch != ARCH_X86_64) \
+      { \
+        ret = 1; /* Fail if we don't migrate. */ \
+        asm volatile ("movl %0, %%edi;" \
+                      "movq %1, %%rsi;" \
+                      "movq %2, %%rsp;" \
+                      "movq %3, %%rbp;" \
+                      "movl %4, %%eax;" \
+                      "syscall;" \
+                      : /* Outputs */ \
+                      : /* Inputs */ \
+                      "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      "rdi", "rsi"); \
+      } \
+      else \
+      { \
+        asm volatile ("movq $1f, %0;" \
+                      "movl %2, %%edi;" \
+                      "movq %3, %%rsi;" \
+                      "movq %4, %%rsp;" \
+                      "movq %5, %%rbp;" \
+                      "movl %6, %%eax;" \
+                      "syscall;" \
+                      "1: movl %%eax, %1;" \
+                      : /* Outputs */ \
+                      "=m"(regs_dst.x86.rip), "=g"(ret) \
+                      : /* Inputs */ \
+                      "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      "edi", "rsi", "eax"); \
+      } \
+      ret; \
+    })
 
 #endif
 

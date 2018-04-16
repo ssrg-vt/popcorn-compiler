@@ -135,8 +135,8 @@ class SymbolTable:
             None if the address doesn't correspond to any symbol.
         '''
         idx = bisect.bisect_right(self.sortedaddrs, addr)
-        if idx == 0: return None
-        else:
+        if idx != 0:
             for sym in self.addrs[self.sortedaddrs[idx-1]]:
                 if sym.contains(addr): return sym
+        else: return None
 

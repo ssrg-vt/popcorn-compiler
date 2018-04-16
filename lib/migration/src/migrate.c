@@ -292,8 +292,12 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       }
 #endif
 
-      MIGRATE;
-      assert(0 && "Couldn't migrate!");
+      assert(!MIGRATE && "Couldn't migrate!");
+
+      // If we did a heterogeneous migration we'll resume back at the beginning
+      // of the function.  If it's a homogeneous migration, we'll resume here.
+      // Clear the migrate args to signal post-migration.
+      *pthread_migrate_args() = NULL;
     }
     else *pthread_migrate_args() = NULL;
   }

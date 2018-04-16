@@ -20,7 +20,7 @@ def plotPageAccessFrequency(chunks, ranges, perthread, save):
                            bbox_to_anchor=(1, 0.5))
     else: ax.plot(ranges, chunks)
     plt.xlabel("Seconds")
-    plt.ylabel("Frequency")
+    plt.ylabel("Number of faults")
     if save == None: plt.show()
     else: plt.savefig(save)
 
