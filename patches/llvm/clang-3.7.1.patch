@@ -730,6 +730,21 @@ Index: lib/Basic/OpenMPKinds.cpp
      break;
    }
    llvm_unreachable("Invalid OpenMP simple clause kind");
+Index: lib/Basic/Targets.cpp
+===================================================================
+--- lib/Basic/Targets.cpp	(revision 320332)
++++ lib/Basic/Targets.cpp	(working copy)
+@@ -4987,8 +4987,8 @@
+     MaxAtomicInlineWidth = 128;
+     MaxAtomicPromoteWidth = 128;
+ 
+-    LongDoubleWidth = LongDoubleAlign = SuitableAlign = 128;
+-    LongDoubleFormat = &llvm::APFloat::IEEEquad;
++    LongDoubleWidth = LongDoubleAlign = SuitableAlign = 64;
++    LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+ 
+     // {} in inline assembly are neon specifiers, not assembly variant
+     // specifiers.
 Index: lib/CodeGen/BackendUtil.cpp
 ===================================================================
 --- lib/CodeGen/BackendUtil.cpp	(revision 320332)
