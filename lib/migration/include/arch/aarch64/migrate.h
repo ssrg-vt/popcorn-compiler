@@ -11,67 +11,50 @@
 #define SYSCALL_GET_THREAD_STATUS 287
 #define SYSCALL_GET_NODE_INFO 288
 
-#define GET_LOCAL_REGSET \
-    struct regset_aarch64 regs_src; \
-    READ_REGS_AARCH64(regs_src); \
-    regs_src.pc = get_call_site()
-
-#define LOCAL_STACK_FRAME \
-    (void *)regs_src.sp
-
+#define GET_LOCAL_REGSET(regset) \
+    READ_REGS_AARCH64(regset.aarch); \
+    regset.aarch.pc = get_call_site()
 
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
-#define REWRITE_STACK \
-    ({ \
-      int ret = 1; \
-      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
-                              ARCH_AARCH64, &regs_dst)) \
-      { \
-        fprintf(stderr, "Could not rewrite stack!\n"); \
-        ret = 0; \
-      } \
-      ret; \
-    })
+#define REWRITE_STACK(regs_src, regs_dst, dst_arch) \
+    !st_userspace_rewrite((void *)regs_src.aarch.sp, ARCH_AARCH64, &regs_src, \
+                          ARCH_AARCH64, &regs_dst)
 
-#define MIGRATE \
+#define MIGRATE(err) \
     { \
-      SET_REGS_AARCH64(regs_src); \
+      err = 0; \
+      SET_REGS_AARCH64(regs_src.aarch); \
       SET_FRAME_AARCH64(bp, sp); \
       SET_PC_IMM(__migrate_shim_internal); \
     }
 
 #else /* Heterogeneous migration */
 
-#define REWRITE_STACK \
+#define REWRITE_STACK(regs_src, regs_dst, dst_arch) \
     ({ \
       int ret = 1; \
       if(dst_arch != ARCH_AARCH64) \
-      { \
-        if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_AARCH64, &regs_src, \
-                                dst_arch, &regs_dst)) \
-        { \
-          fprintf(stderr, "Could not rewrite stack!\n"); \
-          ret = 0; \
-        } \
-      } \
-      else memcpy(&regs_dst.aarch, &regs_src, sizeof(struct regset_aarch64)); \
+        ret = !st_userspace_rewrite((void *)regs_src.aarch.sp, ARCH_AARCH64, \
+                                    &regs_src, dst_arch, &regs_dst); \
+      else memcpy(&regs_dst, &regs_src, sizeof(struct regset_aarch64)); \
       ret; \
     })
 
-#define MIGRATE \
+#define MIGRATE(err) \
     ({ \
-      int ret = 0; \
       if(dst_arch != ARCH_AARCH64) \
       { \
-        ret = 1; /* Fail if we don't migrate. */ \
-        asm volatile ("mov w0, %w0;" \
-                      "mov x1, %1;" \
-                      "mov sp, %2;" \
-                      "mov x29, %3;" \
-                      "mov x8, %4;" \
+        data.post_syscall = __migrate_shim_internal; \
+        asm volatile ("mov w0, %w1;" \
+                      "mov x1, %2;" \
+                      "mov sp, %3;" \
+                      "mov x29, %4;" \
+                      "mov x8, %5;" \
                       "svc 0;" \
+                      "mov %w0, w0;" \
                       : /* Outputs */ \
+                      "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
@@ -90,14 +73,13 @@
                       "svc 0;" \
                       "1: mov %w1, w0;" \
                       : /* Outputs */ \
-                      "=m"(regs_dst.aarch.pc), "=r"(ret) \
+                      "=m"(data.post_syscall), "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
                       : /* Clobbered */ \
                       "x0", "x1", "x8"); \
       } \
-      ret; \
     })
 
 #endif
