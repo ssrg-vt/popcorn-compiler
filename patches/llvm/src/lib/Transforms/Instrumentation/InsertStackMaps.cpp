@@ -297,7 +297,7 @@ private:
    * This function collects the values used in these instructions, which are
    * later added to the appropriate stackmaps.
    *
-   * 1. Instructions which access fields of structs or entries of arrays, like
+   *  - Instructions which access fields of structs or entries of arrays, like
    *    getelementptr, can interfere with the live value analysis to hide the
    *    backing values used in the instruction.  For example, the following IR
    *    obscures %arr from the live value analysis:
@@ -308,11 +308,6 @@ private:
    *  -> Access to %arr might only happen through %arrayidx, and %arr may not
    *     be used any more
    *
-   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
-   *    architecture-specific machine code by the backend.  To help capture all
-   *    live values, we capture both the value used in the comparison and the
-   *    resulting condition value.
-   *
    */
   void getHiddenVals(Function &F, InstHidingMap &inst, ArgHidingMap &args)
   {
@@ -320,8 +315,7 @@ private:
     auto hidesValues = [](const Instruction *I) {
       if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
-         isa<BitCastInst>(I))
+         isa<GetElementPtrInst>(I) || isa<BitCastInst>(I))
         return true;
       else return false;
     };

@@ -142,8 +142,14 @@ std::set<const Value *>
   const BasicBlock *BB = inst->getParent();
   const Function *F = BB->getParent();
   BasicBlock::const_reverse_iterator ri, rie;
-  std::set<const Value *> *live =
-    new std::set<const Value *>(FuncBBLiveOut.at(F).at(BB));
+  std::set<const Value *> *live = nullptr;
+
+  // Note: some functions have unreachable basic blocks (e.g., functions that
+  // call exit and then return a value).  If we don't have analysis for the
+  // block, return an empty set.
+  const LiveVals &Blocks = FuncBBLiveOut.at(F);
+  if(Blocks.count(BB)) live = new std::set<const Value *>(Blocks.at(BB));
+  else return new std::set<const Value *>;
 
   for(ri = BB->rbegin(), rie = BB->rend(); ri != rie; ri++)
   {

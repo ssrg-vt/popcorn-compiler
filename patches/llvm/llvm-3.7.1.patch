@@ -2599,7 +2599,7 @@ Index: lib/Analysis/LiveValues.cpp
 ===================================================================
 --- lib/Analysis/LiveValues.cpp	(nonexistent)
 +++ lib/Analysis/LiveValues.cpp	(working copy)
-@@ -0,0 +1,380 @@
+@@ -0,0 +1,386 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -2744,8 +2744,14 @@ Index: lib/Analysis/LiveValues.cpp
 +  const BasicBlock *BB = inst->getParent();
 +  const Function *F = BB->getParent();
 +  BasicBlock::const_reverse_iterator ri, rie;
-+  std::set<const Value *> *live =
-+    new std::set<const Value *>(FuncBBLiveOut.at(F).at(BB));
++  std::set<const Value *> *live = nullptr;
++
++  // Note: some functions have unreachable basic blocks (e.g., functions that
++  // call exit and then return a value).  If we don't have analysis for the
++  // block, return an empty set.
++  const LiveVals &Blocks = FuncBBLiveOut.at(F);
++  if(Blocks.count(BB)) live = new std::set<const Value *>(Blocks.at(BB));
++  else return new std::set<const Value *>;
 +
 +  for(ri = BB->rbegin(), rie = BB->rend(); ri != rie; ri++)
 +  {
@@ -10162,7 +10168,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 ===================================================================
 --- lib/Transforms/Instrumentation/InsertStackMaps.cpp	(nonexistent)
 +++ lib/Transforms/Instrumentation/InsertStackMaps.cpp	(working copy)
-@@ -0,0 +1,363 @@
+@@ -0,0 +1,357 @@
 +#include <map>
 +#include <set>
 +#include <vector>
@@ -10462,7 +10468,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +   * This function collects the values used in these instructions, which are
 +   * later added to the appropriate stackmaps.
 +   *
-+   * 1. Instructions which access fields of structs or entries of arrays, like
++   *  - Instructions which access fields of structs or entries of arrays, like
 +   *    getelementptr, can interfere with the live value analysis to hide the
 +   *    backing values used in the instruction.  For example, the following IR
 +   *    obscures %arr from the live value analysis:
@@ -10473,11 +10479,6 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +   *  -> Access to %arr might only happen through %arrayidx, and %arr may not
 +   *     be used any more
 +   *
-+   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
-+   *    architecture-specific machine code by the backend.  To help capture all
-+   *    live values, we capture both the value used in the comparison and the
-+   *    resulting condition value.
-+   *
 +   */
 +  void getHiddenVals(Function &F, InstHidingMap &inst, ArgHidingMap &args)
 +  {
@@ -10485,8 +10486,7 @@ Index: lib/Transforms/Instrumentation/InsertStackMaps.cpp
 +    auto hidesValues = [](const Instruction *I) {
 +      if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
 +         isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-+         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I) ||
-+         isa<BitCastInst>(I))
++         isa<GetElementPtrInst>(I) || isa<BitCastInst>(I))
 +        return true;
 +      else return false;
 +    };
