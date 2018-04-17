@@ -734,6 +734,26 @@ Index: lib/Basic/Targets.cpp
 ===================================================================
 --- lib/Basic/Targets.cpp	(revision 320332)
 +++ lib/Basic/Targets.cpp	(working copy)
+@@ -2239,7 +2239,7 @@
+         HasAVX512DQ(false), HasAVX512BW(false), HasAVX512VL(false),
+         HasSHA(false), HasCX16(false), CPU(CK_Generic), FPMath(FP_Default) {
+     BigEndian = false;
+-    LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
++    LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+   }
+   unsigned getFloatEvalMethod() const override {
+     // X87 evaluates with 80 bits "long double" precision.
+@@ -3851,8 +3851,8 @@
+     bool IsWinCOFF =
+         getTriple().isOSWindows() && getTriple().isOSBinFormatCOFF();
+     LongWidth = LongAlign = PointerWidth = PointerAlign = IsX32 ? 32 : 64;
+-    LongDoubleWidth = 128;
+-    LongDoubleAlign = 128;
++    LongDoubleWidth = 64;
++    LongDoubleAlign = 64;
+     LargeArrayMinWidth = 128;
+     LargeArrayAlign = 128;
+     SuitableAlign = 128;
 @@ -4987,8 +4987,8 @@
      MaxAtomicInlineWidth = 128;
      MaxAtomicPromoteWidth = 128;
