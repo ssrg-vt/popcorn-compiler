@@ -1,7 +1,7 @@
 #ifndef _MIGRATE_H
 #define _MIGRATE_H
 
-#if !defined __aarch64__ && !defined __x86_64__
+#if !defined(__aarch64__) && !defined(__powerpc64__) && !defined(__x86_64__)
 # error Unknown/unsupported architecture!
 #endif
 
@@ -14,15 +14,12 @@ extern "C" {
 #endif
 #include <sched.h>
 
-#define MAX_POPCORN_NODES 32
-
-/* Supported architectures */
-enum arch {
-  ARCH_UNKNOWN = -1,
-  ARCH_AARCH64 = 0,
-  ARCH_X86_64,
-  NUM_ARCHES,
-};
+/**
+ * Return whether a node is available as a migration target.
+ * @param nid the node ID
+ * @return one if the node is available, or zero otherwise
+ */
+int node_available(int nid);
 
 /**
  * Get the current architecture.
@@ -35,7 +32,6 @@ enum arch current_arch(void);
  * @return the node id on which this thread is running
  */
 int current_nid(void);
-
 
 /**
  * Check if thread should migrate, and if so, invoke migration.  The optional
@@ -59,16 +55,22 @@ void check_migrate(void (*callback)(void*), void *callback_data);
 void migrate(int nid, void (*callback)(void*), void *callback_data);
 
 /**
- * Register a function to be used for migration points inserted by
- * -finstrument-functions.
+ * Migrate thread according to a thread schedule created by thread placement
+ * analysis.  The optional callback function will be invoked before execution
+ * resumes on destination architecture.
  *
- * Note: does not apply to direct calls to migrate_shim().
- *
+ * @param region a region identifier used to look up a mapping for a particular
+ *               application region
+ * @param popcorn_tid a Popcorn-specific thread ID, returned by one of its
+ *                    runtime systems
  * @param callback a callback function to be invoked before execution resumes
  *                 on destination architecture
  * @param callback_data data to be passed to the callback function
  */
-void register_migrate_callback(void (*callback)(void*), void *callback_data);
+void migrate_schedule(size_t region,
+                      int popcorn_tid,
+                      void (*callback)(void*),
+                      void *callback_data);
 
 #ifdef __cplusplus
 }

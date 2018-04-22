@@ -64,7 +64,7 @@ strong_alias (gomp_test_lock_30, gomp_test_lock_25)
 # if !defined (HAVE_TLS)
 static inline int gomp_tid (void)
 {
-  return syscall (SYS_gettid);
+  return gettid ();
 }
 # elif !defined(__LP64__)
 static inline int gomp_tid (void)
@@ -77,7 +77,7 @@ static inline int gomp_tid (void)
 {
   int tid = tid_cache;
   if (__builtin_expect (tid == 0, 0))
-    tid_cache = tid = syscall (SYS_gettid);
+    tid_cache = tid = gettid ();
   return tid;
 }
 # endif

@@ -246,6 +246,11 @@ omp_get_thread_num (void)
   return gomp_thread ()->ts.team_id;
 }
 
+int omp_get_popcorn_tid (void)
+{
+  return gomp_thread ()->popcorn_tid;
+}
+
 /* This wasn't right for OpenMP 2.5.  Active region used to be non-zero
    when the IF clause doesn't evaluate to false, starting with OpenMP 3.0
    it is non-zero with more than one thread in the team.  */

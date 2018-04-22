@@ -30,6 +30,7 @@
 #include "pool.h"
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifdef LIBGOMP_USE_PTHREADS
 /* This attribute contains PTHREAD_CREATE_DETACHED.  */
@@ -46,6 +47,11 @@ __thread struct gomp_thread gomp_tls_data;
 pthread_key_t gomp_tls_key;
 #endif
 
+/* Whether or not we're doing Popcorn a profiling run. Activates all associated
+   machinery.  */
+bool popcorn_profiling = false;
+const char *popcorn_prof_fn = "popcorn-profile.txt";
+FILE *popcorn_prof_fp = NULL;
 
 /* This structure is used to communicate across pthread_create.  */
 
@@ -56,6 +62,7 @@ struct gomp_thread_start_data
   struct gomp_team_state ts;
   struct gomp_task *task;
   struct gomp_thread_pool *thread_pool;
+  size_t popcorn_tid;
   unsigned int place;
   bool nested;
 };
@@ -76,8 +83,8 @@ gomp_thread_start (void *xdata)
 #if defined HAVE_TLS || defined USE_EMUTLS
   thr = &gomp_tls_data;
 #else
-  struct gomp_thread local_thr;
-  thr = &local_thr;
+  struct gomp_thread *local_thr = malloc(sizeof(struct gomp_thread));
+  thr = local_thr;
   pthread_setspecific (gomp_tls_key, thr);
 #endif
   gomp_sem_init (&thr->release, 0);
@@ -89,8 +96,12 @@ gomp_thread_start (void *xdata)
   thr->ts = data->ts;
   thr->task = data->task;
   thr->place = data->place;
+  thr->popcorn_tid = data->popcorn_tid;
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
+
+  if (popcorn_profiling)
+    fprintf(popcorn_prof_fp, "%d %lu\n", gettid(), thr->popcorn_tid);
 
   /* Make thread pool local. */
   pool = thr->thread_pool;
@@ -133,6 +144,7 @@ gomp_thread_start (void *xdata)
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
   thr->task = NULL;
+  free(thr);
   return NULL;
 }
 #endif
@@ -292,6 +304,12 @@ gomp_free_thread (void *arg __attribute__((unused)))
     }
 }
 
+/* Keep a counter of all threads launched. */
+#ifndef HAVE_SYNC_BUILTINS
+gomp_mutex_t popcorn_tid_lock;
+#endif
+static size_t popcorn_tid = 1;
+
 /* Launch a team.  */
 
 #ifdef LIBGOMP_USE_PTHREADS
@@ -299,7 +317,7 @@ void
 gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		 unsigned flags, struct gomp_team *team)
 {
-  struct gomp_thread_start_data *start_data;
+  struct gomp_thread_start_data *start_data, *first_start = NULL;
   struct gomp_thread *thr, *nthr;
   struct gomp_task *task;
   struct gomp_task_icv *icv;
@@ -544,14 +562,15 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		    {
 		      unsigned int j;
 
-		      if (team->prev_ts.place_partition_len > 64)
+                     /* Popcorn: remove allocas */
+		      /*if (team->prev_ts.place_partition_len > 64)*/
 			affinity_thr
 			  = gomp_malloc (team->prev_ts.place_partition_len
 					 * sizeof (struct gomp_thread *));
-		      else
+		      /*else
 			affinity_thr
 			  = gomp_alloca (team->prev_ts.place_partition_len
-					 * sizeof (struct gomp_thread *));
+					 * sizeof (struct gomp_thread *));*/
 		      memset (affinity_thr, '\0',
 			      team->prev_ts.place_partition_len
 			      * sizeof (struct gomp_thread *));
@@ -639,7 +658,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	      ? (affinity_count == old_threads_used - nthreads)
 	      : (i == old_threads_used))
 	    {
-	      if (team->prev_ts.place_partition_len > 64)
+             /* Popcorn: removed alloca, always needs to be freed */
+	      /*if (team->prev_ts.place_partition_len > 64)*/
 		free (affinity_thr);
 	      affinity_thr = NULL;
 	      affinity_count = 0;
@@ -718,8 +738,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       attr = &thread_attr;
     }
 
-  start_data = gomp_alloca (sizeof (struct gomp_thread_start_data)
+  /* Popcorn: convert alloca to malloc */
+  start_data = gomp_malloc (sizeof (struct gomp_thread_start_data)
 			    * (nthreads-i));
+  first_start = start_data;
 
   /* Launch new threads.  */
   for (; i < nthreads; ++i)
@@ -804,6 +826,14 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->ts.active_level = thr->ts.active_level;
 #ifdef HAVE_SYNC_BUILTINS
       start_data->ts.single_count = 0;
+      start_data->popcorn_tid = __sync_fetch_and_add(&popcorn_tid, 1);
+#else
+      if(nested) {
+        gomp_mutex_lock(&popcorn_tid_lock);
+        start_data->popcorn_tid = popcorn_tid++;
+        gomp_mutex_unlock(&popcorn_tid_lock);
+      }
+      else start_data->popcorn_tid = popcorn_tid++;
 #endif
       start_data->ts.static_trip = 0;
       start_data->task = &team->implicit_task[i];
@@ -854,9 +884,13 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       gomp_mutex_unlock (&gomp_managed_threads_lock);
 #endif
     }
+  /* Popcorn: removed alloca, always needs to be freed */
   if (__builtin_expect (affinity_thr != NULL, 0)
-      && team->prev_ts.place_partition_len > 64)
+      /*&& team->prev_ts.place_partition_len > 64*/)
     free (affinity_thr);
+
+  /* Popcorn: converted alloca to malloc, needs to be freed */
+  if (first_start) free (first_start);
 }
 #endif
 
@@ -938,12 +972,14 @@ gomp_team_end (void)
 
 /* Constructors for this file.  */
 
+#if !defined HAVE_TLS && !defined USE_EMUTLS
+static struct gomp_thread initial_thread_tls_data;
+#endif
+
 static void __attribute__((constructor))
 initialize_team (void)
 {
 #if !defined HAVE_TLS && !defined USE_EMUTLS
-  static struct gomp_thread initial_thread_tls_data;
-
   pthread_key_create (&gomp_tls_key, NULL);
   pthread_setspecific (gomp_tls_key, &initial_thread_tls_data);
 #endif
@@ -958,6 +994,12 @@ team_destructor (void)
   /* Without this dlclose on libgomp could lead to subsequent
      crashes.  */
   pthread_key_delete (gomp_thread_destructor);
+}
+
+static void __attribute__((destructor))
+popcorn_profiling_destructor (void)
+{
+  if(popcorn_profiling) fclose(popcorn_prof_fp);
 }
 #endif
 

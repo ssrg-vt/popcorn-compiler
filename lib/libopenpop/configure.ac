@@ -118,9 +118,13 @@ AC_SUBST(CFLAGS)
 # in both places for now and restore CFLAGS at the end of config.
 save_CFLAGS="$CFLAGS"
 
+###############################################################################
+# Popcorn note: removing Werror from XCFLAGS
+###############################################################################
+
 # Add -Wall -Werror if we are using GCC.
 if test "x$GCC" = "xyes"; then
-  XCFLAGS="$XCFLAGS -Wall -Werror"
+  XCFLAGS="$XCFLAGS -Wall" # -Werror
 fi
 
 # Find other programs we need.

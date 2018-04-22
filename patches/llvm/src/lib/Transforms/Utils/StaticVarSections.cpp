@@ -62,7 +62,7 @@ public:
       }
   
       // InternalLinkage is specifically for STATIC variables
-      if(gl->hasInternalLinkage()) {
+      if(gl->hasInternalLinkage() && !gl->hasSection()) {
         if(gl->isConstant()) {
           //Belongs in RODATA
           assert(!gl->isThreadLocal() && "TLS data should not be in .rodata");

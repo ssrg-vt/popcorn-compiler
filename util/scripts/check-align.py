@@ -8,6 +8,7 @@ import sys, subprocess, os, re
 
 binA = None
 binB = None
+binC = None
 verbose = False
 continueCheck = True
 consideredSections = [".text", ".data", ".rodata", ".bss", ".tdata", ".tbss",
@@ -88,7 +89,7 @@ def getSymbols(binFile):
 		symbols[symbol] = (int(toks[0], base=16), toks[1])
 	return symbols
 
-def checkSymbols(symbolsA, symbolsB, sectionInfo):
+def checkSymbols(symbolsA, symbolsB, symbolsC, sectionInfo):
 	global verbose
 	global continueCheck
 	retCode = 0
@@ -98,8 +99,13 @@ def checkSymbols(symbolsA, symbolsB, sectionInfo):
 			continue
 		if symbol not in symbolsB:
 			if verbose:
-				print("Warning: found '" + symbol + "' in binary A but not binary B")
+				print("Warning: found '" + symbol + "' in " + binA + " but not in " + binB)
 			continue
+		if symbolsC and symbol not in symbolsC:
+			if verbose:
+				print("Warning: found '" + symbol + "' in " + binA + " but not in " + binC)
+			continue
+
 		else:
 			if symbolsA[symbol][0] != symbolsB[symbol][0]:
 				print("Error: '" + symbol + "' (" + symbolsA[symbol][1] + \
@@ -108,6 +114,14 @@ def checkSymbols(symbolsA, symbolsB, sectionInfo):
 				retCode = 1
 				if not continueCheck:
 					break
+			if symbolsC and symbolsA[symbol][0] != symbolsC[symbol][0]:
+				print("Error: '" + symbol + "' (" + symbolsA[symbol][1] + \
+							") not aligned (" + hex(symbolsA[symbol][0]) + " vs. " + \
+							hex(symbolsC[symbol][0]) + ")")
+				retCode = 1
+				if not continueCheck:
+					break
+
 			elif verbose:
 				print("'" + symbol + "' (" + symbolsA[symbol][1] + ") aligned @ " + \
 							hex(symbolsA[symbol][0]))
@@ -121,13 +135,15 @@ if len(sys.argv) < 3:
 	if len(sys.argv) == 2 and (sys.argv[1] == "-h" or sys.argv[1] == "--help"):
 		retCode = 0
 	else:
-		print("Error: please supply 2 binaries!")
+		print("Error: please supply 2 or 3 binaries!")
 		retCode = 1
 	printHelp()
 	sys.exit(retCode)
 
 binA = sys.argv[1]
 binB = sys.argv[2]
+if(len(sys.argv) == 4):
+    binC = sys.argv[3]
 
 skip = False
 for i in range(len(sys.argv)):
@@ -146,6 +162,9 @@ for i in range(len(sys.argv)):
 
 symbolsA = getSymbols(binA)
 symbolsB = getSymbols(binB)
+symbolsC = {}
+if binC:
+    symbolsC = getSymbols(binC)
 sectionInfo = getSectionInfo(binA)
-sys.exit(checkSymbols(symbolsA, symbolsB, sectionInfo))
+sys.exit(checkSymbols(symbolsA, symbolsB, symbolsC, sectionInfo))
 

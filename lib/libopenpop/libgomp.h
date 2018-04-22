@@ -50,6 +50,7 @@
 #endif
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdarg.h>
 
 /* Needed for memset in priority_queue.c.  */
@@ -352,6 +353,7 @@ struct gomp_task_icv
 extern struct gomp_task_icv gomp_global_icv;
 #ifndef HAVE_SYNC_BUILTINS
 extern gomp_mutex_t gomp_managed_threads_lock;
+extern gomp_mutex_t popcorn_tid_lock;
 #endif
 extern unsigned long gomp_max_active_levels_var;
 extern bool gomp_cancel_var;
@@ -367,6 +369,11 @@ extern unsigned int gomp_num_teams_var;
 extern int gomp_debug_var;
 extern int goacc_device_num;
 extern char *goacc_device_type;
+
+/* Popcorn profiling machinery. */
+extern bool popcorn_profiling;
+extern const char *popcorn_prof_fn;
+extern FILE *popcorn_prof_fp;
 
 enum gomp_task_kind
 {
@@ -613,6 +620,10 @@ struct gomp_thread
 
   /* User pthread thread pool */
   struct gomp_thread_pool *thread_pool;
+
+  /* Popcorn's TID, basically this thread's number out of the total number of
+     threads created by the runtime over the lifetime of the application. */
+  size_t popcorn_tid;
 };
 
 

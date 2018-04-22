@@ -13,6 +13,8 @@ void outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./stack_pointer_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./stack_pointer_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./stack_pointer_x86-64", outer_frame);
 #endif
@@ -34,7 +36,7 @@ int main(int argc, char** argv)
     max_depth = atoi(argv[1]);
 
   recurse(1, &myvar);
-  printf("%s: myvar = %d\n", argv[0], myvar);
+  printf("myvar = %d\n", myvar);
   return (myvar == 0 ? 1 : 0);
 }
 

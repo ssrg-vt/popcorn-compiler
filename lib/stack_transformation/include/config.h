@@ -18,7 +18,7 @@
  * debugging be enabled).
  */
 //#define _LOG 1
-#define LOG_FILE "stack-transform.log"
+#define LOG_FILE "/tmp/stack-transform.log"
 
 /* Enable sanity checks, increases transformation overhead. */
 //#define _CHECKS 1
@@ -77,6 +77,7 @@
  * Environment variables specifying AArch64 & x86-64 binary names.
  */
 #define ENV_AARCH64_BIN "ST_AARCH64_BIN"
+#define ENV_POWERPC64_BIN "ST_POWERPC64_BIN"
 #define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*

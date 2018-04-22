@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #ifdef HAVE_INTTYPES_H
 # include <inttypes.h>	/* For PRIu64.  */
 #endif
@@ -1210,6 +1211,7 @@ initialize_env (void)
   parse_int ("GOMP_DEBUG", &gomp_debug_var, true);
 #ifndef HAVE_SYNC_BUILTINS
   gomp_mutex_init (&gomp_managed_threads_lock);
+  gomp_mutex_init (&popcorn_tid_lock);
 #endif
   gomp_init_num_threads ();
   gomp_available_cpus = gomp_global_icv.nthreads_var;
@@ -1269,6 +1271,17 @@ initialize_env (void)
     gomp_throttled_spin_count_var = 100LL;
   if (gomp_throttled_spin_count_var > gomp_spin_count_var)
     gomp_throttled_spin_count_var = gomp_spin_count_var;
+
+  /* Popcorn's page access trace files don't provide a clean mapping of task
+     IDs to user-land threads (including OpenMP threads).  If profiling is
+     enabled, dump a file listing the mapping. */
+  parse_boolean ("POPCORN_PROFILING", &popcorn_profiling);
+  if(popcorn_profiling)
+    {
+      popcorn_prof_fp = fopen(popcorn_prof_fn, "w");
+      if(!popcorn_prof_fp) popcorn_profiling = false;
+      else fprintf(popcorn_prof_fp, "%d 0\n", gettid());
+    }
 
   /* Not strictly environment related, but ordering constructors is tricky.  */
   pthread_attr_init (&gomp_thread_attr);

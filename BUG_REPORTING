@@ -1,0 +1,94 @@
+Please follow the following procedures for reporting bugs about the compiler
+and runtimes.  You can report bugs at
+https://github.com/ssrg-vt/popcorn-compiler/issues and assign them to rlyerly.
+
+--------
+Compiler
+--------
+
+When you should report this type of bug:
+
+- When I compile using clang with "-popcorn-migratable", the compiler crashes
+- When I compile using clang with "-popcorn-migratable", the compiler spits out
+  arcane errors or warnings related to live values, stackmaps, or stack
+  transformation
+
+When you should *not* report this type of bug:
+
+- When I compile using clang with or without "-popcorn-migratable", the
+  compiler crashes.
+
+    - This is a clang/LLVM problem, not a Popcorn compiler one!
+
+What you should include with your bug report:
+
+- Branch & commit from which you installed the compiler
+
+- *Minimal* working code sample (should compile without "-popcorn-migratable"),
+  including detailed directions for reproducing the bug
+
+  - If you built clang/LLVM with debugging information, the compiler will spit
+    out a preprocessed source file and shell script if it crashes, e.g.:
+
+    PLEASE ATTACH THE FOLLOWING FILES TO THE BUG REPORT:
+    Preprocessed source(s) and associated run script(s) are located at:
+    clang-3.7: note: diagnostic msg: /tmp/<file>.c
+    clang-3.7: note: diagnostic msg: /tmp/<file>.sh
+    clang-3.7: note: diagnostic msg:
+
+    This makes it very easy to reproduce the bug, so please use this output if
+    available.
+
+- Behavior of the bug, including any warnings or errors dumped by clang
+
+- Compiler output when adding the following flags (note that it may produce a
+  very large file):
+
+  -mllvm -debug-only=regalloc -mllvm -debug-only=stacktransform
+
+-------
+Runtime
+-------
+
+When you should report this type of bug:
+
+- When I run the application, it segfaults or otherwise exits inside of the
+  must-libc startup or exit code
+- When I run the application and attempt to perform a migration, it dies
+  during stack transformation
+- When I run the application and attempt to perform a migration, it dies
+  after migration
+
+When you need to do more investigation before reporting:
+
+- When I run the application without migrating, the application dies
+  prematurely *after* starting the main() function
+
+  - You need to compile the application using clang without
+    "-popcorn-migratable".  One of two situations that will arise:
+
+    1. Without "-popcorn-migratable", the application compiles & runs
+       correctly. This is a Popcorn compiler bug and should be reported.
+
+    2. Even without "-popcorn-migratable", the application either doesn't
+       compile or doesn't run correctly.
+
+        - This is a clang/LLVM problem, not a Popcorn compiler one!
+
+What you should report with this bug:
+
+- Branch & commit from which you installed the compiler
+
+- *Minimal* working code sample for reproducing the bug, including detailed
+  directions for compiling and running the application in order to reproduce
+  the bug
+
+- Behavior of the bug, including any output from the application
+
+- Stack transformation log
+
+    - Note: you may need to reinstall the runtime with
+      "--debug-stack-transformation" in order to generate the log
+
+- Any kernel output in dmesg related to thread or page migration, especially if
+  the application successfully migrated

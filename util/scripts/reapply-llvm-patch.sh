@@ -6,8 +6,9 @@ CLANG_SRC="n/a"
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PATCHES=$(readlink -f $CUR_DIR/../../patches/llvm)
 BACKUP=$CUR_DIR/llvm-bak
+BUILD=1
 NTHREADS=$(cat /proc/cpuinfo | grep processor | wc -l)
-UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt"
+UNTRACKED_SKIP=".ycm_extra_conf.py TODO build projects/compiler-rt projects/openmp tools/polly"
 
 function print_help {
   echo "Re-apply clang/LLVM patches & re-install compiler"
@@ -18,6 +19,7 @@ function print_help {
   echo "  -s source   : LLVM source directory (required)"
   echo "  -p dir      : directory containing patches"
   echo "                default: $PATCHES"
+  echo "  --no-build  : only apply patches, don't re-build compiler"
   echo
   echo "Note: we assume the clang source is at <LLVM src>/tools/clang"
   echo "Note: the compiler must have already been built/installed by" \
@@ -126,6 +128,8 @@ while [ "$1" != "" ]; do
     -p)
       PATCHES=$2
       shift ;;
+    --no-build)
+      BUILD=0 ;;
     -h | --help)
       print_help
       exit 0 ;;
@@ -139,6 +143,8 @@ echo "Re-applying patches for clang/LLVM"
 # Re-apply LLVM/clang patches & reinstall
 reapply_patch $PATCHES/llvm-${LLVM_VER}.patch $LLVM_SRC $BACKUP
 reapply_patch $PATCHES/clang-${LLVM_VER}.patch $CLANG_SRC $BACKUP/tools/clang
-make -j $NTHREADS -C $LLVM_SRC/build install || die "could not re-install"
+if [ $BUILD -eq 1 ]; then
+  make -j $NTHREADS -C $LLVM_SRC/build install || die "could not re-install"
+fi
 rm -r $BACKUP
 

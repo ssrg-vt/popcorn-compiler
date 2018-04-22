@@ -165,10 +165,10 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
       unsigned long i;
       if (__builtin_expect (cpyfn != NULL, 0))
 	{
-	  struct gomp_task task[num_tasks];
+	  struct gomp_task *task = gomp_malloc(sizeof(struct gomp_task) * num_tasks);
 	  struct gomp_task *parent = thr->task;
 	  arg_size = (arg_size + arg_align - 1) & ~(arg_align - 1);
-	  char buf[num_tasks * arg_size + arg_align - 1];
+	  char *buf = gomp_malloc(sizeof(char) * (num_tasks * arg_size + arg_align - 1));
 	  char *arg = (char *) (((uintptr_t) buf + arg_align - 1)
 				& ~(uintptr_t) (arg_align - 1));
 	  char *orig_arg = arg;
@@ -208,6 +208,8 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
 		}
 	      gomp_end_task ();
 	    }
+         free(buf);
+         free(task);
 	}
       else
 	for (i = 0; i < num_tasks; i++)
@@ -243,7 +245,7 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
     }
   else
     {
-      struct gomp_task *tasks[num_tasks];
+      struct gomp_task **tasks = gomp_malloc(sizeof(struct gomp_task *) * num_tasks);
       struct gomp_task *parent = thr->task;
       struct gomp_taskgroup *taskgroup = parent->taskgroup;
       char *arg;
@@ -334,6 +336,7 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
       gomp_mutex_unlock (&team->task_lock);
       if (do_wake)
 	gomp_team_barrier_wake (&team->barrier, do_wake);
+      free(tasks);
     }
   if ((flags & GOMP_TASK_FLAG_NOGROUP) == 0)
     ialias_call (GOMP_taskgroup_end) ();

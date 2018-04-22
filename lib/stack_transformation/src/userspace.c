@@ -24,6 +24,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 static st_handle aarch64_handle = NULL;
+static st_handle powerpc64_handle = NULL;
 static st_handle x86_64_handle = NULL;
 #if _TLS_IMPL == COMPILER_TLS
 static __thread stack_bounds bounds = { .high = NULL, .low = NULL };
@@ -32,8 +33,8 @@ static pthread_key_t stack_bounds_key = 0;
 #endif
 
 /*
- * Set inside of musl at __libc_start_main() to point to where function
- * activations begin on the stack.
+ * Set inside of musl at __libc_start_main() to point to where environment
+ * variables begin on the stack.
  */
 extern void* __popcorn_stack_base;
 
@@ -55,14 +56,14 @@ static bool get_main_stack(stack_bounds* bounds);
 static bool get_thread_stack(stack_bounds* bounds);
 
 /*
- * Rewrite from the current stack (metadata provided by handle_a) to a
- * transformed stack (handle_b).
+ * Rewrite from the current stack (metadata provided by src_handle) to a
+ * transformed stack (dest_handle).
  */
 static int userspace_rewrite_internal(void* sp,
-                                      void* regs,
+                                      void* src_regs,
                                       void* dest_regs,
-                                      st_handle handle_a,
-                                      st_handle handle_b);
+                                      st_handle src_handle,
+                                      st_handle dest_handle);
 
 ///////////////////////////////////////////////////////////////////////////////
 // User-space initialization, rewriting & teardown
@@ -80,6 +81,8 @@ extern const char *__progname;
  */
 char* __attribute__((weak)) aarch64_fn = NULL;
 static bool alloc_aarch64_fn = false;
+char* __attribute__((weak)) powerpc64_fn = NULL;
+static bool alloc_powerpc64_fn = false;
 char* __attribute__((weak)) x86_64_fn = NULL;
 static bool alloc_x86_64_fn = false;
 
@@ -116,26 +119,31 @@ void __st_userspace_ctor(void)
   else {
     aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
     snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", __progname);
-    aarch64_handle = st_init(aarch64_fn);
-    alloc_aarch64_fn = true;
   }
+  aarch64_handle = st_init(aarch64_fn);
+  if(aarch64_handle) alloc_aarch64_fn = true;
+  else { ST_WARN("could not initialize aarch64 handle\n"); }
 
-  if(!aarch64_handle) {
-    ST_WARN("could not initialize aarch64 handle\n");
+  if(getenv(ENV_POWERPC64_BIN))
+    powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
+  else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
+  else {
+    powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", __progname);
   }
+  powerpc64_handle = st_init(powerpc64_fn);
+  if(powerpc64_handle) alloc_powerpc64_fn = true;
+  else { ST_WARN("could not initialize powerpc64 handle\n"); }
 
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
     x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
     snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", __progname);
-    x86_64_handle = st_init(x86_64_fn);
-    alloc_x86_64_fn = true;
   }
-
-  if(!x86_64_handle) {
-    ST_WARN("could not initialize x86-64 handle\n");
-  }
+  x86_64_handle = st_init(x86_64_fn);
+  if(x86_64_handle) alloc_x86_64_fn = true;
+  else { ST_WARN("could not initialize x86-64 handle\n"); }
 }
 
 /*
@@ -147,6 +155,12 @@ void __st_userspace_dtor(void)
   {
     st_destroy(aarch64_handle);
     if(alloc_aarch64_fn) free(aarch64_fn);
+  }
+
+  if(powerpc64_handle)
+  {
+    st_destroy(powerpc64_handle);
+    if(alloc_powerpc64_fn) free(powerpc64_fn);
   }
 
   if(x86_64_handle)
@@ -189,6 +203,8 @@ stack_bounds get_stack_bounds()
   /* Determine which half of stack we're currently using. */
 #ifdef __aarch64__
   asm volatile("mov %0, sp" : "=r"(cur_stack) ::);
+#elif defined __powerpc64__
+  asm volatile("mr %0, 1" : "=r"(cur_stack) ::);
 #elif defined __x86_64__
   asm volatile("movq %%rsp, %0" : "=g"(cur_stack) ::);
 #endif
@@ -199,104 +215,47 @@ stack_bounds get_stack_bounds()
   return cur_bounds;
 }
 
-/* Public-facing rewrite macros */
-
-// TODO: the program location stored in the regset doesn't correspond to a call
-// site, only the location where the inline assembly grabbed the PC.  For now,
-// correct the program location using the rewrite API's return address.
-
 /*
  * Rewrite from source to destination stack.
  */
 int st_userspace_rewrite(void* sp,
-                         void* regs,
+                         enum arch src_arch,
+                         void* src_regs,
+                         enum arch dest_arch,
                          void* dest_regs)
 {
-  if(!aarch64_handle || !x86_64_handle)
+  st_handle src_handle, dest_handle;
+
+  switch(src_arch)
   {
-    ST_WARN("could not load user-space rewriting information\n");
+  case ARCH_AARCH64: src_handle = aarch64_handle; break;
+  case ARCH_POWERPC64: src_handle = powerpc64_handle; break;
+  case ARCH_X86_64: src_handle = x86_64_handle; break;
+  default: ST_WARN("Unsupported source architecture!\n"); return 1;
+  }
+
+  if(!src_handle)
+  {
+    ST_WARN("Could not load rewriting information for source!\n");
     return 1;
   }
 
-#ifdef __aarch64__
-  struct regset_aarch64* real_regs = (struct regset_aarch64*)regs;
-  real_regs->pc = __builtin_return_address(0);
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    aarch64_handle,
-                                    x86_64_handle);
-#elif defined __x86_64__
-  struct regset_x86_64* real_regs = (struct regset_x86_64*)regs;
-  real_regs->rip = __builtin_return_address(0);
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    x86_64_handle,
-                                    aarch64_handle);
-#endif
-}
-
-/*
- * Rewrite from aarch64 -> aarch64.
- */
-int st_userspace_rewrite_aarch64(void* sp,
-                                 struct regset_aarch64* regs,
-                                 struct regset_aarch64* dest_regs)
-{
-  if(!aarch64_handle)
+  switch(dest_arch)
   {
-    ST_WARN("could not load user-space rewriting information\n");
+  case ARCH_AARCH64: dest_handle = aarch64_handle; break;
+  case ARCH_POWERPC64: dest_handle = powerpc64_handle; break;
+  case ARCH_X86_64: dest_handle = x86_64_handle; break;
+  default: ST_WARN("Unsupported destination architecture!\n"); return 1;
+  }
+
+  if(!dest_handle)
+  {
+    ST_WARN("Could not rewriting information for destination!\n");
     return 1;
   }
 
-  regs->pc = __builtin_return_address(0);
-
-#ifdef _SIMPLIFY_HOMOGENEOUS_MIGRATION
-	unsigned long *rbp = __builtin_frame_address(1);
-	memcpy(dest_regs, regs, sizeof(*dest_regs));
-	dest_regs->x[29] = *rbp;
-	dest_regs->sp = (unsigned long)(rbp + 1); // XXX need to check
-
-	return 0;
-#else
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    aarch64_handle,
-                                    aarch64_handle);
-#endif
-}
-
-/*
- * Rewrite from x86_64 -> x86_64.
- */
-int st_userspace_rewrite_x86_64(void* sp,
-                                struct regset_x86_64* regs,
-                                struct regset_x86_64* dest_regs)
-{
-  if(!x86_64_handle)
-  {
-    ST_WARN("could not load user-space rewriting information\n");
-    return 1;
-  }
-
-  regs->rip = __builtin_return_address(0);
-
-#ifdef _SIMPLIFY_HOMOGENEOUS_MIGRATION
-	unsigned long *rbp = __builtin_frame_address(1);
-	memcpy(dest_regs, regs, sizeof(*dest_regs));
-	dest_regs->rbp = *rbp;
-	dest_regs->rsp = (unsigned long)(rbp + 1);
-
-	return 0;
-#else
-  return userspace_rewrite_internal(sp,
-                                    regs,
-                                    dest_regs,
-                                    x86_64_handle,
-                                    x86_64_handle);
-#endif
+  return userspace_rewrite_internal(sp, src_regs, dest_regs,
+                                    src_handle, dest_handle);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -332,7 +291,7 @@ static bool prep_stack(void)
     // check to ensure that the stack pointer is near the page being accessed.
     // To grow the stack:
     //   1. Save the current stack pointer
-    //   2. Move stack pointer to bottom of stack (according to rlimit)
+    //   2. Move stack pointer to lowest stack address (according to rlimit)
     //   3. Touch the page using the stack pointer
     //   4. Restore the original stack pointer
     bounds.low = bounds.high - rlim.rlim_cur;
@@ -341,6 +300,11 @@ static bool prep_stack(void)
                  "mov sp, %0;"
                  "ldr x28, [sp];"
                  "mov sp, x27" : : "r" (bounds.low) : "x27", "x28");
+#elif defined(__powerpc64__)
+    asm volatile("mr 28, 1;"
+                 "mr 1, %0;"
+                 "ld 29, 0(1);"
+                 "mr 1, 28" : : "r" (bounds.low) : "r28", "r29");
 #elif defined(__x86_64__)
     asm volatile("mov %%rsp, %%r14;"
                  "mov %0, %%rsp;"
@@ -369,13 +333,6 @@ static bool prep_stack(void)
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
-#ifdef _POPCORN_BUILD
-  // TODO hack -- Popcorn currently returns an incorrect PID, so hard-code in
-  // assuming we're at the top of the address space
-  bool found = true;
-  bounds->high = (void*)0x7ffffff000;
-  bounds->low = (void*)0x7ffffde000;
-#else
   /* /proc/<id>/maps fields */
   bool found = false;
   int fields;
@@ -410,7 +367,6 @@ static bool get_main_stack(stack_bounds* bounds)
   }
   free(lineptr);
   fclose(proc_fp);
-#endif
 
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
@@ -424,15 +380,20 @@ static bool get_thread_stack(stack_bounds* bounds)
   int ret;
   bool retval;
 
+  // musl-libc's implementation of pthread_attr_getstack returns the lowest
+  // stack address and the stack size to the highest stack address.  It doesn't
+  // include either the pthread data, TLS (above stack) or guard page (below
+  // stack).
   ret = pthread_getattr_np(pthread_self(), &attr);
   ret |= pthread_attr_getstack(&attr, &bounds->low, &stack_size);
   if(ret == 0)
   {
-    // TODO is there any important data stored above muslc/start's stack frame?
+    // Note: due to rounding the size of the pthread data & TLS, the stack size
+    // may not be exactly 8MB
     bounds->high = bounds->low + stack_size;
     if(stack_size != MAX_STACK_SIZE)
     {
-      ST_WARN("unexpected stack size: expected %lx, got %lx\n",
+      ST_INFO("unexpected stack size: expected %lx, got %lx\n",
               MAX_STACK_SIZE, stack_size);
       bounds->low = bounds->high - MAX_STACK_SIZE;
     }
@@ -451,13 +412,13 @@ static bool get_thread_stack(stack_bounds* bounds)
 
 /*
  * Rewrite from source to destination stack.  Logically, divides 8MB stack in
- * half, detects which half we're currently using and rewrite to the other.
+ * half, detects which half we're currently using and rewrites to the other.
  */
 static int userspace_rewrite_internal(void* sp,
-                                      void* regs,
+                                      void* src_regs,
                                       void* dest_regs,
-                                      st_handle handle_a,
-                                      st_handle handle_b)
+                                      st_handle src_handle,
+                                      st_handle dest_handle)
 {
   int retval = 0;
   void* stack_a, *stack_b, *cur_stack, *new_stack;
@@ -466,7 +427,7 @@ static int userspace_rewrite_internal(void* sp,
   stack_bounds* bounds_ptr;
 #endif
 
-  if(!sp || !regs || !dest_regs || !handle_a || !handle_b)
+  if(!sp || !src_regs || !dest_regs || !src_handle || !dest_handle)
   {
     ST_WARN("invalid arguments\n");
     return 1;
@@ -504,11 +465,11 @@ static int userspace_rewrite_internal(void* sp,
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
   new_stack = (sp >= stack_b) ? stack_b : stack_a;
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
-  if(st_rewrite_stack(handle_a, regs, cur_stack,
-                      handle_b, dest_regs, new_stack))
+  if(st_rewrite_stack(src_handle, src_regs, cur_stack,
+                      dest_handle, dest_regs, new_stack))
   {
     ST_WARN("stack transformation failed (%s -> %s)\n",
-            arch_name(handle_a->arch), arch_name(handle_b->arch));
+            arch_name(src_handle->arch), arch_name(dest_handle->arch));
     retval = 1;
   }
 

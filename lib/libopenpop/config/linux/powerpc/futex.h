@@ -25,6 +25,8 @@
 
 /* Provide target-specific access to the futex system call.  */
 
+#error Should use generic futex.h for cross-ISA compatibility!
+
 #include <sys/syscall.h>
 
 static inline long

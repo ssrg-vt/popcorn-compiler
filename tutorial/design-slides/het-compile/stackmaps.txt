@@ -1,0 +1,15 @@
+Reading section .llvm_stackmaps: Found 1 stackmaps
+Stackmap v1: 1 functions, 0 constants, 5 call sites
+  Function 0: address=0, stack size=24, number of unwinding entries: 4, offset into unwinding section: 0
+  Call site 0: function 0, offset @ 19, 1 locations, 0 live-outs, 0 arch-specific locations
+    Location: in register 14
+  Call site 1: function 0, offset @ 92, 2 locations, 0 live-outs, 0 arch-specific locations
+    Location: in register 3
+    Location: in register 14
+  Call site 2: function 0, offset @ 121, 2 locations, 0 live-outs, 0 arch-specific locations
+    Location: in register 3
+    Location: in register 14
+  Call site 3: function 0, offset @ 154, 2 locations, 0 live-outs, 0 arch-specific locations
+    Location: in register 3
+    Location: in register 14
+  Call site 4: function 0, offset @ 180, 0 locations, 0 live-outs, 0 arch-specific locations

@@ -15,10 +15,13 @@ int outer_frame()
     printf("--> child beginning re-write <--\n");
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./rewrite_thread_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./rewrite_thread_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./rewrite_thread_x86-64", outer_frame);
 #endif
   }
+  printf("--> child finished re-write <--\n");
   return rand();
 }
 
@@ -41,6 +44,7 @@ int main(int argc, char** argv)
   if(argc > 1)
     max_depth = atoi(argv[1]);
 
+  srand(0);
   if(pthread_create(&child, NULL, thread_main, NULL))
   {
     printf("Couldn't spawn child thread\n");

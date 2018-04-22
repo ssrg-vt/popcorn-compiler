@@ -14,6 +14,8 @@ long outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./rewrite_many_aarch64", outer_frame);
+#elif defined(__powerpc64__)
+    TIME_AND_TEST_REWRITE("./rewrite_many_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./rewrite_many_x86-64", outer_frame);
 #endif
@@ -86,6 +88,7 @@ int main(int argc, char** argv)
   if(argc > 1)
     max_depth = atoi(argv[1]);
 
+  srand(0);
   return recurse(1);
 }
 

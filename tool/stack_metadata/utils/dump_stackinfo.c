@@ -228,7 +228,7 @@ bool print_arch_val_record(arch_live_value *record)
   }
 
   switch(record->inst_type) {
-#define X(name, pseudo) \
+#define X(name) \
   case name: printf(", " #name " "); break;
 VALUE_GEN_INST
 #undef X

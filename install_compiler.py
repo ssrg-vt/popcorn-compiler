@@ -3,17 +3,31 @@
 from __future__ import print_function
 
 import argparse
+import multiprocessing
 import os, os.path
+import platform
 import shutil
 import subprocess
 import sys
 import tarfile
 import urllib
-import multiprocessing
 
 #================================================
 # GLOBALS
 #================================================
+
+# The machine on which we're compiling
+host = platform.machine()
+
+# Supported targets
+supported_targets = ['aarch64', 'x86_64']
+# LLVM names for targets
+llvm_targets = {
+    'aarch64' : 'AArch64',
+    'powerpc64' : 'PowerPC',
+    'powerpc64le' : 'PowerPC',
+    'x86_64' : 'X86'
+}
 
 # LLVM 3.7.1 SVN URL
 llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
@@ -38,6 +52,8 @@ class Log(object):
 # ARGUMENT PARSING
 #================================================
 def setup_argument_parsing():
+    global supported_targets
+
     parser = argparse.ArgumentParser(
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -53,7 +69,8 @@ def setup_argument_parsing():
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",
                         type=int,
-                        default=multiprocessing.cpu_count())
+                        default=multiprocessing.cpu_count(),
+                        dest="threads")
     process_opts = parser.add_argument_group('Process Options (skip steps)')
     process_opts.add_argument("--skip-prereq-check",
                         help="Skip checking for prerequisites (see README)",
@@ -79,23 +96,25 @@ def setup_argument_parsing():
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
-    process_opts.add_argument("--skip-namespace",
-                        help="Skip building namespace tools",
+    process_opts.add_argument("--install-namespace",
+                        help="Install namespace tools (deprecated)",
                         action="store_true",
-                        dest="skip_namespace")
+                        dest="install_namespace")
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
                         dest="install_call_info_library")
 
+    selectable_targets = list(supported_targets)
+    selectable_targets.extend(["all"])
     build_opts = parser.add_argument_group('Build options (per-step)')
-    build_opts.add_argument("--make-all-targets",
-                        help="[LLVM/Clang] Build all LLVM targets, " + \
-                             "not only x86 & AArch64",
-                        action="store_true",
-                        dest="make_all_targets")
+    build_opts.add_argument("--targets",
+                        help="Comma-separated list of targets to build " \
+                             "(options: {})".format(selectable_targets),
+                        default="all",
+                        dest="targets")
     build_opts.add_argument("--debug-stack-transformation",
-                        help="Enable debug for stack transformation library",
+                        help="Enable debug output for stack transformation library",
                         action="store_true",
                         dest="debug_stack_transformation")
     build_opts.add_argument("--libmigration-type",
@@ -109,6 +128,39 @@ def setup_argument_parsing():
                         dest="enable_libmigration_timing")
 
     return parser
+
+def postprocess_args(args):
+    global supported_targets
+    global llvm_targets
+
+    # Clean up paths
+    args.base_path = os.path.abspath(args.base_path)
+    args.install_path = os.path.abspath(args.install_path)
+
+    # Sanity check targets requested & generate LLVM-equivalent names
+    user_targets = args.targets.split(',')
+    args.install_targets = []
+    for target in user_targets:
+        if target == "all":
+            args.install_targets = supported_targets
+            break
+        else:
+            if target not in supported_targets:
+                print("Unsupported target '{}'!".format(target))
+                sys.exit(1)
+            args.install_targets.append(target)
+
+    args.llvm_targets = ""
+    for target in args.install_targets:
+        args.llvm_targets += llvm_targets[target] + ";"
+    args.llvm_targets = args.llvm_targets[:-1]
+
+def warn_stupid(args):
+    if len(args.install_targets) < 2:
+        print("WARNING: installing Popcorn compiler with < 2 architectures!")
+    if platform.machine() != 'x86_64':
+        print("WARNING: installing Popcorn compiler on '{}', " \
+              "you may get errors!".format(platform.machine()))
 
 #================================================
 # PREREQUISITE CHECKING
@@ -126,25 +178,14 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
-def _check_javac():
-    try:
-        out = subprocess.check_output(['javac', '-version'],
-                    stderr=subprocess.STDOUT)
-    except Exception:
-        print('javac not found!')
-        return None
-    else:
-        out = out.split('\n')[0]
-        return out
-
-def check_for_prerequisites():
+def check_for_prerequisites(args):
     success = True
 
     print('Checking for prerequisites (see README for more info)...')
-    gcc_prerequisites = ['aarch64-linux-gnu-gcc',
-                         'x86_64-linux-gnu-gcc',
-                         'x86_64-linux-gnu-g++']
-    other_prequisites = ['flex', 'bison', 'svn', 'cmake']
+    gcc_prerequisites = ['x86_64-linux-gnu-g++']
+    for target in args.install_targets:
+        gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
+    other_prerequisites = ['flex', 'bison', 'svn', 'cmake', 'make', 'zip']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -157,31 +198,26 @@ def check_for_prerequisites():
         else:
             success = False
 
-    for prereq in other_prequisites:
+    for prereq in other_prerequisites:
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
 
-    if not _check_javac():
-        success = False
-
     return success
 
-def install_clang_llvm(base_path, install_path, num_threads, make_all_targets):
+def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     llvm_download_path = os.path.join(install_path, 'src/llvm')
     clang_download_path = os.path.join(llvm_download_path, 'tools/clang')
 
-
     llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
     clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
 
-    cmake_flags = ['-DCMAKE_BUILD_TYPE=Debug',
-                   '-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
-                   '-DLLVM_ENABLE_RTTI=ON']
-
-    if not make_all_targets:
-        cmake_flags += ['-DLLVM_TARGETS_TO_BUILD=AArch64;X86']
+    cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
+                   '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
+                   '-DCMAKE_BUILD_TYPE=Debug',
+                   '-DLLVM_ENABLE_RTTI=ON',
+                   '-DBUILD_SHARED_LIBS=ON']
 
     with open(os.devnull, 'wb') as FNULL:
 
@@ -369,20 +405,20 @@ def install_binutils(base_path, install_path, num_threads):
 
         os.chdir(cur_dir)
 
-def install_libraries(base_path, install_path, num_threads, st_debug,
+def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
-
+    global host
     cur_dir = os.getcwd()
-    aarch64_install_path = os.path.join(install_path, 'aarch64')
-    x86_64_install_path = os.path.join(install_path, 'x86_64')
 
+    # musl-libc & libelf are built individually per target
 
-    with open(os.devnull, 'wb') as FNULL:
+    for target in targets:
+        target_install_path = os.path.join(install_path, target)
 
         #=====================================================
         # CONFIGURE & INSTALL MUSL
         #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
+        os.chdir(os.path.join(base_path, 'lib/musl-1.1.18'))
 
         if os.path.isfile('Makefile'):
             try:
@@ -395,65 +431,19 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                     print('Make distclean failed.')
                     sys.exit(1)
 
-
-        print("Configuring musl (aarch64)...")
+        print("Configuring musl ({})...".format(target))
         try:
             rv = subprocess.check_call(" ".join(['./configure',
-                                '--prefix=' + aarch64_install_path,
-                                '--target=aarch64-linux-gnu',
-                                '--enable-debug',
-                                '--enable-gcc-wrapper',
+                                '--prefix=' + target_install_path,
+                                '--target={}-linux-gnu'.format(target),
                                 '--enable-optimize',
+                                '--enable-debug',
+                                '--enable-warnings',
+                                '--enable-wrapper=all',
                                 '--disable-shared',
                                 'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target aarch64-linux-gnu ' + 
-									'-popcorn-libc -fno-common"']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure musl({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('musl configure failed.')
-                sys.exit(1)
-
-        print('Making musl...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads)])
-            rv = subprocess.check_call(['make', 'install'])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        try:
-            rv = subprocess.check_call(['make', 'distclean'])
-        except Exception as e:
-            print('ERROR running distclean!')
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
-
-        print("Configuring musl (x86-64)...")
-        try:
-            rv = subprocess.check_call(" ".join(['./configure',
-                                '--prefix=' + x86_64_install_path,
-                                '--target=x86_64-linux-gnu',
-                                '--enable-debug',
-                                '--enable-gcc-wrapper',
-                                '--enable-optimize',
-                                '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
-                                'CFLAGS="-target x86_64-linux-gnu ' + 
-									'-popcorn-libc -fno-common"']),
+                                'CFLAGS="-target {}-linux-gnu -popcorn-libc"' \
+                                .format(target)]),
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT,
                                         shell=True)
@@ -496,15 +486,16 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                     print('Make distclean failed.')
                     sys.exit(1)
 
-        print("Configuring libelf (aarch64)...")
+        print("Configuring libelf ({})...".format(target))
         try:
-            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-        '-specs {}" LDFLAGS="-static"'.format(os.path.join(aarch64_install_path,
-                                                     'lib/musl-gcc.specs'))
+            cflags = 'CC={} CFLAGS="-O3 -popcorn-alignment" LDFLAGS="-static"' \
+                     .format(os.path.join(target_install_path, 'bin/musl-clang'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
-                                        '--host=aarch64-linux-gnu',
-                                        '--prefix=' + aarch64_install_path,
+                                        '--build={}-linux-gnu'.format(platform.machine()),
+                                        '--host={}-linux-gnu'.format(target),
+                                        '--prefix=' + target_install_path,
+                                        '--enable-compat',
                                         '--enable-elf64',
                                         '--disable-shared',
                                         '--enable-extended-format']),
@@ -532,39 +523,75 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                 print('Make failed.')
                 sys.exit(1)
 
-        try:
-            rv = subprocess.check_call(['make', 'distclean'])
-        except Exception as e:
-            print('ERROR running distclean!')
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
+        os.chdir(cur_dir)
 
-        print("Configuring libelf (x86_64)...")
-        try:
-            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' +\
-        '-specs {}" LDFLAGS="-static"'.format(os.path.join(x86_64_install_path,
-                                                     'lib/musl-gcc.specs'))
-            rv = subprocess.check_call(" ".join([cflags,
-                                        './configure',
-                                        '--prefix=' + x86_64_install_path,
-                                        '--enable-elf64',
-                                        '--disable-shared',
-                                        '--enable-extended-format']),
-                                        #stdout=FNULL,
-                                        stderr=subprocess.STDOUT,
-                                        shell=True)
-        except Exception as e:
-            print('Could not configure libelf({})!'.format(e))
-            sys.exit(1)
-        else:
-            if rv != 0:
-                print('libelf configure failed.')
+        #=====================================================
+<<<<<<< HEAD
+        # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
+=======
+        # CONFIGURE & INSTALL LIBOPENPOP
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
                 sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
 
-        print('Making libelf...')
+        print("Configuring libopenpop ({})...".format(target))
+        try:
+            # Get the libgcc file name
+            # NOTE: this won't be needed if we force clang to emit 64-bit
+            # doubles when compiling musl (currently, it needs soft-FP
+            # emulation for 128-bit long doubles)
+            args = [ '{}-linux-gnu-gcc'.format(target),
+                     '-print-libgcc-file-name' ]
+            libgcc = subprocess.check_output(args, stderr=subprocess.STDOUT,
+                                             shell=False).decode("utf-8")
+            libgcc = libgcc.strip()
+
+            # Note: for build repeatability, we have to use the *same* include
+            # path for *all* targets
+            include_dir = os.path.join(install_path, targets[0], 'include')
+            lib_dir = os.path.join(target_install_path, 'lib')
+
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g -Wall ' \
+                                   '-nostdinc -isystem {} ' \
+                                   '-popcorn-metadata ' \
+                                   '-popcorn-target={}-linux-gnu' \
+                                    .format(host, include_dir, target)
+            os.environ['LDFLAGS'] = '-nostdlib -L{}'.format(lib_dir)
+            os.environ['LIBS'] = '{}/crt1.o -lc {}' \
+                                 .format(lib_dir, libgcc)
+            args = ['./configure',
+                    '--prefix=' + target_install_path,
+                    '--target={}-linux-gnu'.format(target),
+                    '--host={}-linux-gnu'.format(target),
+                    '--enable-static',
+                    '--disable-shared',
+                    '--disable-tls']
+            rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
+            del os.environ['CC']
+            del os.environ['CFLAGS']
+            del os.environ['LDFLAGS']
+            del os.environ['LIBS']
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
         try:
             print('Running Make...')
             rv = subprocess.check_call(['make', '-j', str(num_threads)])
@@ -579,75 +606,78 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
-        #=====================================================
-        # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
+    # The build systems for the following already build for all ISAs
 
-        if not st_debug:
-            flags = ''
-        else:
-            flags = 'type=debug'
+    #=====================================================
+    # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
 
-        print('Making stack_transformation...')
-        try:
-            print('Running Make...')
-            if flags != '':
-                rv = subprocess.check_call(['make', flags, '-j',
-                                            str(num_threads),
-                                            'POPCORN={}'.format(install_path)])
-            else:
-                rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                            'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
+    if not st_debug:
+        flags = ''
+    else:
+        flags = 'type=debug'
+>>>>>>> master
+
+    print('Making stack_transformation...')
+    try:
+        print('Running Make...')
+        if flags != '':
+            rv = subprocess.check_call(['make', flags, '-j',
+                                        str(num_threads),
                                         'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
         else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
-
-        os.chdir(cur_dir)
-
-        #=====================================================
-        # CONFIGURE & INSTALL MIGRATION LIBRARY
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/migration'))
-
-        if not libmigration_type and not enable_libmigration_timing:
-            flags = ''
-        else:
-            flags = 'type='
-            if libmigration_type and enable_libmigration_timing:
-                flags += libmigration_type + ',timing'
-            elif libmigration_type:
-                flags += libmigration_type
-            elif enable_libmigration_timing:
-                flags += 'timing'
-
-        print('Making libmigration...')
-        try:
-            print('Running Make...')
-            if flags != '':
-                rv = subprocess.check_call(['make', flags, '-j',
-                                            str(num_threads),
-                                            'POPCORN={}'.format(install_path)])
-            else:
-                rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                            'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
+            rv = subprocess.check_call(['make', '-j', str(num_threads),
                                         'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
+        rv = subprocess.check_call(['make', 'install',
+                                    'POPCORN={}'.format(install_path)])
+    except Exception as e:
+        print('Could not run Make ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed.')
             sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
 
-        os.chdir(cur_dir)
+    os.chdir(cur_dir)
+
+    #=====================================================
+    # CONFIGURE & INSTALL MIGRATION LIBRARY
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'lib/migration'))
+
+    if not libmigration_type and not enable_libmigration_timing:
+        flags = ''
+    else:
+        flags = 'type='
+        if libmigration_type and enable_libmigration_timing:
+            flags += libmigration_type + ',timing'
+        elif libmigration_type:
+            flags += libmigration_type
+        elif enable_libmigration_timing:
+            flags += 'timing'
+
+    print('Making libmigration...')
+    try:
+        print('Running Make...')
+        if flags != '':
+            rv = subprocess.check_call(['make', flags, '-j',
+                                        str(num_threads),
+                                        'POPCORN={}'.format(install_path)])
+        else:
+            rv = subprocess.check_call(['make', '-j', str(num_threads),
+                                        'POPCORN={}'.format(install_path)])
+        rv = subprocess.check_call(['make', 'install',
+                                    'POPCORN={}'.format(install_path)])
+    except Exception as e:
+        print('Could not run Make ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed.')
+            sys.exit(1)
+
+    os.chdir(cur_dir)
 
 
 def install_secondary_libraries(base_path, install_path, num_threads, st_debug,
@@ -718,110 +748,85 @@ def install_secondary_libraries(base_path, install_path, num_threads, st_debug,
         os.chdir(cur_dir)
 
 def install_tools(base_path, install_path, num_threads):
-        cur_dir = os.getcwd()
+    cur_dir = os.getcwd()
 
-        #=====================================================
-        # INSTALL ALIGNMENT TOOL
-        #=====================================================
-        
-		# 1. Old java tool, TODO remove it later
-        os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
+    #=====================================================
+    # INSTALL ALIGNMENT TOOL
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'tool/alignment'))
 
-        print('Making java alignment tool...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                        'POPCORN={}'.format(install_path)])
-            tmp = install_path.replace('/', '\/')
-            sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_armObjs.sh".format(tmp)
-            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-            sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_x86Objs.sh".format(tmp)
-            rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-            rv = subprocess.check_call(['make', 'install',
-                                        'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
+    print('Making pyalign...')
+    try:
+        print('Running Make...')
+        rv = subprocess.check_call(['make', '-j', str(num_threads),
+           'POPCORN={}'.format(install_path), 'install'])
+    except Exception as e:
+         print('Could not run Make ({})!'.format(e))
+         sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed')
             sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
 
-        os.chdir(cur_dir)
+    os.chdir(cur_dir)
 
-		# 2. Pyalign
-        os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
+    #=====================================================
+    # INSTALL STACK METADATA TOOL
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'tool/stack_metadata'))
 
-        print('Making pyalign...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-               'POPCORN={}'.format(install_path), 'install'])
-        except Exception as e:
-             print('Could not run Make ({})!'.format(e))
-             sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed')
-                sys.exit(1)
-
-        os.chdir(cur_dir)
-
-        #=====================================================
-        # INSTALL STACK METADATA TOOL
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'tool/stack_metadata'))
-
-        print('Making stack metadata tool...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                        'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
-                                        'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
+    print('Making stack metadata tool...')
+    try:
+        print('Running Make...')
+        rv = subprocess.check_call(['make', '-j', str(num_threads),
+                                    'POPCORN={}'.format(install_path)])
+        rv = subprocess.check_call(['make', 'install',
+                                    'POPCORN={}'.format(install_path)])
+    except Exception as e:
+        print('Could not run Make ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed.')
             sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
 
-        os.chdir(cur_dir)
+    os.chdir(cur_dir)
 
 def install_call_info_library(base_path, install_path, num_threads):
-        cur_dir = os.getcwd()
+    cur_dir = os.getcwd()
 
-        #=====================================================
-        # INSTALL STACK DEPTH LIBRARY
-        #=====================================================
-        os.chdir(os.path.join(base_path, 'lib/stack_depth'))
+    #=====================================================
+    # INSTALL STACK DEPTH LIBRARY
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'lib/stack_depth'))
 
-        print('Making stack depth library...')
-        try:
-            print('Running Make...')
-            rv = subprocess.check_call(['make', '-j', str(num_threads),
-                                        'POPCORN={}'.format(install_path)])
-            rv = subprocess.check_call(['make', 'install',
-                                        'POPCORN={}'.format(install_path)])
-        except Exception as e:
-            print('Could not run Make ({})!'.format(e))
+    print('Making stack depth library...')
+    try:
+        print('Running Make...')
+        rv = subprocess.check_call(['make', '-j', str(num_threads),
+                                    'POPCORN={}'.format(install_path)])
+        rv = subprocess.check_call(['make', 'install',
+                                    'POPCORN={}'.format(install_path)])
+    except Exception as e:
+        print('Could not run Make ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make failed.')
             sys.exit(1)
-        else:
-            if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
 
-        os.chdir(cur_dir)
+    os.chdir(cur_dir)
 
 def install_utils(base_path, install_path, num_threads):
     #=====================================================
     # MODIFY MAKEFILE TEMPLATE
     #=====================================================
-    print("Updating util/Makefile.template to reflect system setup and install path...")
+    print("Updating util/Makefile.template to reflect install path...")
+
     try:
         tmp = install_path.replace('/', '\/')
-        sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' ./util/Makefile.template".format(tmp)
+        sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' " \
+                  "./util/Makefile.template".format(tmp)
         rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
     except Exception as e:
         print('Could not modify Makefile.template ({})'.format(e))
@@ -836,7 +841,8 @@ def install_utils(base_path, install_path, num_threads):
     for item in os.listdir('./util/scripts'):
         s = os.path.join('./util/scripts/', item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
-        shutil.copy(s, d)
+        if item != 'README':
+            shutil.copy(s, d)
 
     #=====================================================
     # COPY COMPILATION SCRIPTS
@@ -872,32 +878,38 @@ def build_namespace(base_path):
 
 def main(args):
 
-    cpus = multiprocessing.cpu_count()
-
     if not args.skip_llvm_clang_install:
-        install_clang_llvm(args.base_path, args.install_path, cpus,
-                           args.make_all_targets)
+        install_clang_llvm(args.base_path, args.install_path, args.threads,
+                           args.llvm_targets)
 
     if not args.skip_binutils_install:
-        install_binutils(args.base_path, args.install_path, cpus)
+        install_binutils(args.base_path, args.install_path, args.threads)
 
 
     if not args.skip_libraries_install:
-        install_libraries(args.base_path, args.install_path, cpus,
+        install_libraries(args.base_path, args.install_path,
+                          args.install_targets, args.threads,
                           args.debug_stack_transformation,
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
+<<<<<<< HEAD
+=======
+    if not args.skip_tools_install:
+        install_tools(args.base_path, args.install_path, args.threads)
+
+>>>>>>> master
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
-                                  cpus)
+                                  args.threads)
 
     if not args.skip_tools_install:
         install_tools(args.base_path, args.install_path, args.threads)
 
     if not args.skip_utils_install:
-        install_utils(args.base_path, args.install_path, cpus)
+        install_utils(args.base_path, args.install_path, args.threads)
 
+<<<<<<< HEAD
     if not args.skip_libraries_install:
         install_secondary_libraries(args.base_path, args.install_path, cpus,
                           args.debug_stack_transformation,
@@ -905,14 +917,19 @@ def main(args):
                           args.enable_libmigration_timing)
 
     if not args.skip_namespace:
+=======
+    if args.install_namespace:
+>>>>>>> master
         build_namespace(args.base_path)
 
 if __name__ == '__main__':
     parser = setup_argument_parsing()
     args = parser.parse_args()
+    postprocess_args(args)
+    warn_stupid(args)
 
     if not args.skip_prereq_check:
-        success = check_for_prerequisites()
+        success = check_for_prerequisites(args)
         if success != True:
             print('All prerequisites were not satisfied!')
             sys.exit(1)

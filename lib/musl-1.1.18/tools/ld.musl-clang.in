@@ -1,0 +1,52 @@
+#!/bin/sh
+cc="@CC@"
+target="-target @TARGET@-linux-gnu"
+libc_lib="@LIBDIR@"
+ldso="@LDSO@"
+cleared=
+shared=
+userlinkdir=
+userlink=
+
+for x ; do
+    test "$cleared" || set -- ; cleared=1
+
+    case "$x" in
+        -L-user-start)
+            userlinkdir=1
+            ;;
+        -L-user-end)
+            userlinkdir=
+            ;;
+        -L*)
+            test "$userlinkdir" && set -- "$@" "$x"
+            ;;
+        -l-user-start)
+            userlink=1
+            ;;
+        -l-user-end)
+            userlink=
+            ;;
+        crtbegin*.o|crtend*.o)
+            set -- "$@" $($cc $target -print-file-name=$x)
+            ;;
+        -lgcc|-lgcc_eh)
+            file=lib${x#-l}.a
+            set -- "$@" $($cc $target -print-file-name=$file)
+            ;;
+        -l*)
+            test "$userlink" && set -- "$@" "$x"
+            ;;
+        -shared)
+            shared=1
+            set -- "$@" -shared
+            ;;
+        -sysroot=*|--sysroot=*)
+            ;;
+        *)
+            set -- "$@" "$x"
+            ;;
+    esac
+done
+
+exec $($cc $target -print-prog-name=ld) -nostdlib "$@" -lc -lgcc -lgcc_eh -dynamic-linker "$ldso"

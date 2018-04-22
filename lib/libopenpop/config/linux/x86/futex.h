@@ -25,6 +25,8 @@
 
 /* Provide target-specific access to the futex system call.  */
 
+#error Should use generic futex.h for cross-ISA compatibility!
+
 #ifdef __x86_64__
 # ifndef SYS_futex
 #  define SYS_futex	202

@@ -11,6 +11,7 @@
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCObjectFileInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 
@@ -28,17 +29,31 @@ void UnwindInfo::recordUnwindInfo(const MachineFunction &MF) {
   // implemented using FBPs, and thus prevent the FP-elimination optimization).
   if(!MF.getFrameInfo()->hasStackMap()) return;
 
-  // Get this function's saved registers & FBP offset
-  const unsigned FBPOff = AP.getFBPOffset();
+  DEBUG(dbgs() << "**** UnwindInfo: Analyzing " << MF.getName() << "****\n");
+
   const MachineFrameInfo *MFI = MF.getFrameInfo();
+  assert(MFI->isCalleeSavedInfoValid() && "No callee-saved information!");
+
+  // Get this function's saved registers
+  unsigned FrameReg;
+  const TargetFrameLowering *TFL = MF.getSubtarget().getFrameLowering();
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
   const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
 
+  DEBUG(dbgs() << CSI.size() << " saved registers\n");
+
   // Get DWARF register number and FBP offset using callee saved information
-  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
   CalleeSavedRegisters SavedRegs(CSI.size());
   for(unsigned i = 0; i < CSI.size(); i++) {
     SavedRegs[i].DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
-    SavedRegs[i].Offset = MFI->getObjectOffset(CSI[i].getFrameIdx()) + FBPOff;
+    SavedRegs[i].Offset =
+      TFL->getFrameIndexReferenceFromFP(MF, CSI[i].getFrameIdx(), FrameReg);
+
+    DEBUG(dbgs() << "Register " << SavedRegs[i].DwarfReg << " at register "
+                 << PrintReg(FrameReg, TRI) << " + " << SavedRegs[i].Offset
+                 << "\n");
+    assert(FrameReg == TRI->getFrameRegister(MF) &&
+           "Invalid register used as offset for unwinding information");
   }
 
   // Save the information for when we emit the section

@@ -7,32 +7,23 @@
 #include <pthread.h>
 #include <stack_transform.h>
 #include <sys/prctl.h>
+#include "platform.h"
 #include "migrate.h"
+#include "config.h"
+#include "arch.h"
+#include "internal.h"
+#include "mapping.h"
+#include "debug.h"
 
-#ifdef _TIME_REWRITE
-#include <time.h>
+#if _SIG_MIGRATION == 1
+#include "trigger.h"
 #endif
 
-/* Architecture-specific assembly for migrating between architectures. */
-#ifdef __aarch64__
-# include <arch/aarch64/migrate.h>
-#else
-# include <arch/x86_64/migrate.h>
+#if _TIME_REWRITE == 1
+#include "timer.h"
 #endif
 
-/* Pierre: due to the-fdata-sections flags, in combination with the way the
- * library is compiled for each architecture, global variables here end up
- * placed into sections with different names, making them difficult to link
- * back together from the alignment tool  perspective without ugly hacks.
- * So, the solution here is to force these global variables to be in a custom
- * section. By construction it will have the same name on both architecture.
- * However for some reason this doesn't work if the global variable is static so
- * I had to remove the static keyword for the concerned variables. They are:
- * - migrate_callback
- * - migrate_callback_data
- * - archs
- */
-
+/* Thread migration status information. */
 struct popcorn_thread_status {
 	int current_nid;
 	int proposed_nid;
@@ -40,7 +31,7 @@ struct popcorn_thread_status {
 	int peer_pid;
 } status;
 
-#ifdef _ENV_SELECT_MIGRATE
+#if _ENV_SELECT_MIGRATE == 1
 
 /*
  * The user can specify at which point a thread should migrate by specifying
@@ -50,17 +41,22 @@ struct popcorn_thread_status {
 /* Environment variables specifying at which function to migrate */
 static const char *env_start_aarch64 = "AARCH64_MIGRATE_START";
 static const char *env_end_aarch64 = "AARCH64_MIGRATE_END";
+static const char *env_start_powerpc64 = "POWERPC64_MIGRATE_START";
+static const char *env_end_powerpc64 = "POWERPC64_MIGRATE_END";
 static const char *env_start_x86_64 = "X86_64_MIGRATE_START";
 static const char *env_end_x86_64 = "X86_64_MIGRATE_END";
 
 /* Per-arch functions (specified via address range) at which to migrate */
 static void *start_aarch64 = NULL;
 static void *end_aarch64 = NULL;
+static void *start_powerpc64 = NULL;
+static void *end_powerpc64 = NULL;
 static void *start_x86_64 = NULL;
 static void *end_x86_64 = NULL;
 
 /* TLS keys indicating if the thread has previously migrated */
 static pthread_key_t num_migrated_aarch64 = 0;
+static pthread_key_t num_migrated_powerpc64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
 /* Read environment variables to setup migration points. */
@@ -70,6 +66,7 @@ __init_migrate_testing(void)
   const char *start;
   const char *end;
 
+#ifdef __aarch64__
   start = getenv(env_start_aarch64);
   end = getenv(env_end_aarch64);
   if(start && end)
@@ -79,7 +76,17 @@ __init_migrate_testing(void)
     if(start_aarch64 && end_aarch64)
       pthread_key_create(&num_migrated_aarch64, NULL);
   }
-
+#elif defined(__powerpc64__)
+  start = getenv(env_start_powerpc64);
+  end = getenv(env_end_powerpc64);
+  if(start && end)
+  {
+    start_powerpc64 = (void *)strtoll(start, NULL, 16);
+    end_powerpc64 = (void *)strtoll(end, NULL, 16);
+    if(start_powerpc64 && end_powerpc64)
+      pthread_key_create(&num_migrated_powerpc64, NULL);
+  }
+#else
   start = getenv(env_start_x86_64);
   end = getenv(env_end_x86_64);
   if(start && end)
@@ -89,6 +96,7 @@ __init_migrate_testing(void)
     if(start_x86_64 && end_x86_64)
       pthread_key_create(&num_migrated_x86_64, NULL);
   }
+#endif
 }
 
 /*
@@ -98,21 +106,28 @@ __init_migrate_testing(void)
 static inline int do_migrate(void *addr)
 {
   int retval = -1;
-# ifdef __aarch64__
+#ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
       pthread_setspecific(num_migrated_aarch64, (void *)1);
       retval = 0;
     }
   }
-# elif defined __x86_64__
-  if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
-    if(start_x86_64 <= addr && addr < end_x86_64) {
-      pthread_setspecific(num_migrated_x86_64, (void *)1);
+#elif defined(__powerpc64__)
+  if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
+    if(start_powerpc64 <= addr && addr < end_powerpc64) {
+      pthread_setspecific(num_migrated_powerpc64, (void *)1);
       retval = 1;
     }
   }
-# endif
+#else
+  if(start_x86_64 && !pthread_getspecific(num_migrated_x86_64)) {
+    if(start_x86_64 <= addr && addr < end_x86_64) {
+      pthread_setspecific(num_migrated_x86_64, (void *)1);
+      retval = 2;
+    }
+  }
+#endif
   return retval;
 }
 
@@ -122,7 +137,7 @@ static inline int do_migrate(void *addr)
 //Need TLS support!
 __thread char __migrate_to_node=-1;
 #endif
-static inline int do_migrate(void *fn)
+static inline int do_migrate(void __attribute__((unused)) *fn)
 {
 #if MIGRATE_USING_GLOBAL_VARIABLE
 	/* TODO: use POSIX signal to set the variable */
@@ -137,33 +152,24 @@ static inline int do_migrate(void *fn)
 
 #endif /* _ENV_SELECT_MIGRATE */
 
-int origin_nid = -1;
+static struct node_info {
+  unsigned int status;
+  int arch;
+  int distance;
+} ni[MAX_POPCORN_NODES];
 
-int archs[MAX_POPCORN_NODES] __attribute__ ((section (".data.archs"))) = { 0 };
-
-static void __attribute__((constructor)) __init_nodes_info(void)
+int node_available(int nid)
 {
-	int ret;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni[MAX_POPCORN_NODES];
+  if(nid < 0 || nid >= MAX_POPCORN_NODES) return 0;
+  else return ni[nid].status;
+}
 
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		archs[i] = ARCH_UNKNOWN;
-	}
+enum arch current_arch(void)
+{
+	int nid = current_nid();
+	if (nid < 0 || nid >= MAX_POPCORN_NODES) return ARCH_UNKNOWN;
 
-	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
-	if (ret) {
-		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
-		return;
-	}
-	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
-		if (ni[i].status == 1) {
-			archs[i] = ni[i].arch;	
-		}
-	}
+	return ni[nid].arch;
 }
 
 int current_nid(void)
@@ -174,23 +180,34 @@ int current_nid(void)
 	return status.current_nid;
 }
 
-enum arch current_arch(void)
+static void __attribute__((constructor)) __init_nodes_info(void)
 {
-	int nid = current_nid();
-	if (nid < 0) return ARCH_UNKNOWN;
+	int ret;
+	int origin_nid = -1;
 
-	return archs[nid];
+	set_default_node(current_nid());
+	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
+	if (ret)
+	{
+		perror("Cannot retrieve Popcorn node information");
+		for (int i = 0; i < MAX_POPCORN_NODES; i++)
+		{
+			ni[i].status = 0;
+			ni[i].arch = ARCH_UNKNOWN;
+			ni[i].distance = -1;
+		}
+	}
 }
-
 
 /* Data needed post-migration. */
 struct shim_data {
   void (*callback)(void *);
   void *callback_data;
   void *regset;
+  void *post_syscall;
 };
 
-#ifdef _DEBUG
+#if _DEBUG == 1
 /*
  * Flag indicating we should spin post-migration in order to wait until a
  * debugger can attach.
@@ -198,120 +215,138 @@ struct shim_data {
 static volatile int __hold = 1;
 #endif
 
+/* Generate a call site to get rewriting metadata for outermost frame. */
+static void* __attribute__((noinline))
+get_call_site() { return __builtin_return_address(0); };
+
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.
-static void inline __migrate_shim_internal(int nid,
-    void (*callback)(void *), void *callback_data)
+void
+__migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 {
+  int err;
   struct shim_data data;
   struct shim_data *data_ptr = *pthread_migrate_args();
 
-  if(data_ptr) // Post-migration
+  if(!node_available(nid))
   {
-#ifdef _DEBUG
+    fprintf(stderr, "Destination node is not available!\n");
+    return;
+  }
+
+  if(!data_ptr) // Invoke migration
+  {
+    unsigned long sp = 0, bp = 0;
+    const enum arch dst_arch = ni[nid].arch;
+    union {
+       struct regset_aarch64 aarch;
+       struct regset_powerpc64 powerpc;
+       struct regset_x86_64 x86;
+    } regs_src, regs_dst;
+#if _TIME_REWRITE == 1
+    unsigned long long start, end;
+#endif
+    GET_LOCAL_REGSET(regs_src);
+
+#if _TIME_REWRITE == 1
+    TIMESTAMP(start);
+#endif
+    if(REWRITE_STACK(regs_src, regs_dst, dst_arch))
+    {
+#if _TIME_REWRITE == 1
+      TIMESTAMP(end);
+      printf("Stack transformation time: %lluns\n", TIMESTAMP_DIFF(start, end));
+#endif
+      data.callback = callback;
+      data.callback_data = callback_data;
+      data.regset = &regs_dst;
+      *pthread_migrate_args() = &data;
+#if _SIG_MIGRATION == 1
+      clear_migrate_flag();
+#endif
+
+      switch(dst_arch) {
+      case ARCH_AARCH64:
+        regs_dst.aarch.pc = __migrate_fixup_aarch64;
+        sp = (unsigned long)regs_dst.aarch.sp;
+        bp = (unsigned long)regs_dst.aarch.x[29];
+#if _LOG == 1
+        dump_regs_aarch64(&regs_dst.aarch, LOG_FILE);
+#endif
+        break;
+      case ARCH_POWERPC64:
+        regs_dst.powerpc.pc = __migrate_fixup_powerpc64;
+        sp = (unsigned long)regs_dst.powerpc.r[1];
+        bp = (unsigned long)regs_dst.powerpc.r[31];
+#if _LOG == 1
+        dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE);
+#endif
+        break;
+      case ARCH_X86_64:
+        regs_dst.x86.rip = __migrate_fixup_x86_64;
+        sp = (unsigned long)regs_dst.x86.rsp;
+        bp = (unsigned long)regs_dst.x86.rbp;
+#if _LOG == 1
+        dump_regs_x86_64(&regs_dst.x86, LOG_FILE);
+#endif
+        break;
+      default: assert(0 && "Unsupported architecture!");
+      }
+
+      // This code has different behavior depending on the type of migration:
+      //
+      // - Heterogeneous: we transformed the stack assuming we're re-entering
+      //   __migrate_shim_internal, so we'll resume at the beginning
+      //
+      // - Homogeneous: we copied the existing register set.  Rather than
+      //   re-entering at the beginning (which would push another frame onto
+      //   the stack), resume after the migration syscall.
+      //
+      // Note that when migration fails, we resume after the syscall and
+      // err is set to 1.
+      MIGRATE(err);
+      if(err) perror("Could not migrate to node");
+    }
+    // Stack transformation failed, but clear the args just in case we try
+    // another migration
+    else fprintf(stderr, "Could not rewrite stack!\n");
+  }
+  else // Post-migration
+  {
+#if _DEBUG == 1
     // Hold until we can attach post-migration
     while(__hold);
 #endif
 
     if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
-    *pthread_migrate_args() = NULL;
-
-    // Hack: the kernel can't set floating-point registers, so we have to
-    // manually copy them over in userspace
-    SET_FP_REGS;
   }
-  else // Invoke migration
-  {
-    // TODO support flexible node configuration
-    const int dst_arch = archs[nid];
 
-    GET_LOCAL_REGSET;
-	union {
-		struct regset_aarch64 aarch;
-		struct regset_x86_64 x86;
-	} regs_dst;
-	unsigned long sp = 0, bp = 0;
-
-#ifdef _TIME_REWRITE
-    struct timespec start, end;
-    unsigned long start_ns, end_ns;
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
-
-	if (REWRITE_STACK) {
-		fprintf(stderr, "Could not rewrite stack!\n");
-		return;
-	}
-
-#ifdef _TIME_REWRITE
-	clock_gettime(CLOCK_MONOTONIC, &end);
-	start_ns = start.tv_sec * 1000000000 + start.tv_nsec;
-	end_ns = end.tv_sec * 1000000000 + end.tv_nsec;
-	printf("Stack transformation time: %ldns\n", end_ns - start_ns);
-#endif
-
-    data.callback = callback;
-    data.callback_data = callback_data;
-	data.regset = &regs_dst;
-    *pthread_migrate_args() = &data;
-
-	if (dst_arch == ARCH_X86_64) {
-		regs_dst.x86.rip = __migrate_shim_internal;
-		sp = (unsigned long)regs_dst.x86.rsp;
-		bp = (unsigned long)regs_dst.x86.rbp;
-	} else if (dst_arch == ARCH_AARCH64) {
-		regs_dst.aarch.pc = __migrate_shim_internal;
-		sp = (unsigned long)regs_dst.aarch.sp;
-		bp = (unsigned long)regs_dst.aarch.x[29];
-	} else {
-		assert(0 && "Unsupported architecture!");
-	}
-
-	MIGRATE;
-	assert(0 && "Couldn't migrate!");
-  }
+  *pthread_migrate_args() = NULL;
 }
 
 /* Check if we should migrate, and invoke migration. */
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
-  if (nid >= 0)
+  if (nid >= 0 && nid != current_nid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Externally-visible function to invoke migration. */
+/* Invoke migration to a particular node if we're not already there. */
 void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
-  __migrate_shim_internal(nid, callback, callback_data);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
 }
 
-/* Callback function & data for migration points inserted via compiler. */
-void (*migrate_callback)(void *) __attribute__ ((section(".bss.migrate_callback"))) = NULL;
-void *migrate_callback_data __attribute__ ((section(".bss.migrate_callback_data"))) = NULL;
-
-/* Register callback function for compiler-inserted migration points. */
-void register_migrate_callback(void (*callback)(void*), void *callback_data)
+/* Invoke migration to a particular node according to a thread schedule. */
+void migrate_schedule(size_t region,
+                      int popcorn_tid,
+                      void (*callback)(void *),
+                      void *callback_data)
 {
-  migrate_callback = callback;
-  migrate_callback_data = callback_data;
+  int nid = get_node_mapping(region, popcorn_tid);
+  if (nid != current_nid())
+    __migrate_shim_internal(nid, callback, callback_data);
 }
-
-/* Hook inserted by compiler at the beginning of a function. */
-void __cyg_profile_func_enter(void *this_fn, void *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
-
-/* Hook inserted by compiler at the end of a function. */
-void __cyg_profile_func_exit(void *this_fn, void *call_site)
-{
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
-}
-

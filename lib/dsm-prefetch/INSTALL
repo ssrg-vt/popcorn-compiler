@@ -1,0 +1,40 @@
+--------------------------
+Installing libdsm-prefetch
+--------------------------
+
+The libdsm-prefetch library is an optional library used to optimizing memory
+placement in a cluster Popcorn setting.  The Makefile will handle building and
+installing the library for all architectures.
+
+NOTE: libdsm-prefetch is built against Popcorn's musl-libc.  Please install it
+for all architectures in /usr/local/popcorn/<arch> before continuing -- it is
+important to compile against musl-libc, otherwise the compiler will default to
+compiling against glibc and glibc-specific symbols will creep into the library.
+This will lead to undefined/unresolved symbols when compiling applications.
+
+1. Build & install libmigration for aarch64 & x86_64:
+
+  $ make install
+
+2. You can speed up the build by enabling parallel jobs:
+
+  $ make -j<# of parallel jobs>
+
+3. The library can be built in several different configurations:
+
+  - Debug: check invariants with assertions & print out memory ranges being
+    batched/prefetched by the library.
+
+  $ make type=debug
+
+  - Manual prefetching in userspace: rather than using madvise() to inform the
+    kernel of memory ranges to prefetch, create per-node worker threads to
+    force DSM prefetching by manually touching pages in userspace.
+
+  $ make type=manual
+
+  - Statistics: record information about the number of pages prefetched and the
+    time to prefetch.
+
+  $ make type=statistics
+

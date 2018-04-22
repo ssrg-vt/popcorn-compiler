@@ -17,11 +17,10 @@ public:
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 
 private:
-  void genADDInstructions(const MachineInstr *MI,
-                          MachineGeneratedVal::ValueGenInstList &IL) const;
-  void
-  genBitfieldInstructions(const MachineInstr *MI,
-                          MachineGeneratedVal::ValueGenInstList &IL) const;
+  MachineLiveVal *genADDInstructions(const MachineInstr *MI) const;
+  MachineLiveVal *genADRPInstructions(const MachineInstr *MI) const;
+  MachineLiveVal *genBitfieldInstructions(const MachineInstr *MI) const;
+  MachineLiveVal *genLoadRegValue(const MachineInstr *MI) const;
 };
 
 }

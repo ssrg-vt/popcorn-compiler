@@ -174,7 +174,8 @@ GOACC_parallel_keyed (int device, void (*fn) (void *),
   tgt = gomp_map_vars (acc_dev, mapnum, hostaddrs, NULL, sizes, kinds, true,
 		       GOMP_MAP_VARS_OPENACC);
 
-  devaddrs = gomp_alloca (sizeof (void *) * mapnum);
+  /* Popcorn: converted alloca to malloc */
+  devaddrs = gomp_malloc (sizeof (void *) * mapnum);
   for (i = 0; i < mapnum; i++)
     devaddrs[i] = (void *) (tgt->list[i].key->tgt->tgt_start
 			    + tgt->list[i].key->tgt_offset);
@@ -189,6 +190,9 @@ GOACC_parallel_keyed (int device, void (*fn) (void *),
     tgt->device_descr->openacc.register_async_cleanup_func (tgt, async);
 
   acc_dev->openacc.async_set_async_func (acc_async_sync);
+
+  /* Popcorn: converted alloca to malloc, needs to be freed */
+  free(devaddrs);
 }
 
 /* Legacy entry point, only provide host execution.  */

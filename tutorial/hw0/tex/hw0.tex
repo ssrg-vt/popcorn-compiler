@@ -1,0 +1,425 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Programming/Coding Assignment
+% LaTeX Template
+%
+% This template has been downloaded from:
+% http://www.latextemplates.com
+%
+% Original author:
+% Ted Pavlic (http://www.tedpavlic.com)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass{article}
+
+\usepackage{fancyhdr} % Required for custom headers
+\usepackage{lastpage} % Required to determine the last page for the footer
+\usepackage{extramarks} % Required for headers and footers
+\usepackage[usenames,dvipsnames]{color} % Required for custom colors
+\usepackage{graphicx} % Required to insert images
+\usepackage{listings} % Required for insertion of code
+\usepackage{courier} % Required for the courier font
+\usepackage{comment} % Required to add lengthy comments
+\usepackage{hyperref} % Required to correctly format & link URLs
+
+\newcommand{\prog}[1]{\texttt{\textbf{#1}}}
+
+\setlength{\parskip}{\baselineskip}
+
+% Margins
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+
+\linespread{1.1} % Line spacing
+
+% Set up the header and footer
+\pagestyle{fancy}
+\lhead{} % Top left header
+\chead{\hmwkTitle} % Top center head
+\rhead{} %\firstxmark} % Top right header
+\lfoot{} %\lastxmark} % Bottom left footer
+\cfoot{\hmwkClass} % Bottom center footer
+\rfoot{Page\ \thepage\ of\ \protect\pageref{LastPage}} % Bottom right footer
+\renewcommand\headrulewidth{0.4pt} % Size of the header rule
+\renewcommand\footrulewidth{0.4pt} % Size of the footer rule
+
+\setlength\parindent{0pt} % Removes all indentation from paragraphs
+
+%----------------------------------------------------------------------------------------
+%	CODE INCLUSION CONFIGURATION
+%----------------------------------------------------------------------------------------
+
+\lstloadlanguages{bash}
+\lstset{language=bash, % Use Perl in this example
+        frame=single, % Single frame around code
+        basicstyle=\small\ttfamily, % Use small true type font
+        showstringspaces=false, % Don't put marks in string spaces
+        tabsize=4, % 4 spaces per tab
+        numbers=left, % Line numbers on left
+        firstnumber=1, % Line numbers start with line 1
+        numberstyle=\tiny\color{Blue}, % Line numbers are blue and small
+        keywordstyle=\small\ttfamily
+}
+
+%----------------------------------------------------------------------------------------
+%	DOCUMENT STRUCTURE COMMANDS
+%	Skip this unless you know what you're doing
+%----------------------------------------------------------------------------------------
+
+% Header and footer for when a page split occurs within a problem environment
+\newcommand{\enterProblemHeader}[1]{
+\nobreak\extramarks{#1}{#1 continued on next page\ldots}\nobreak
+\nobreak\extramarks{#1 (continued)}{#1 continued on next page\ldots}\nobreak
+}
+
+% Header and footer for when a page split occurs between problem environments
+\newcommand{\exitProblemHeader}[1]{
+\nobreak\extramarks{#1 (continued)}{#1 continued on next page\ldots}\nobreak
+\nobreak\extramarks{#1}{}\nobreak
+}
+
+\setcounter{secnumdepth}{0} % Removes default section numbers
+\newcounter{homeworkProblemCounter} % Creates a counter to keep track of the number of problems
+%
+\newcommand{\homeworkProblemName}{}
+\newenvironment{homeworkProblem}[1]{ % Makes a new environment called homeworkProblem which takes 1 argument (custom name)
+\stepcounter{homeworkProblemCounter} % Increase counter for number of problems
+\renewcommand{\homeworkProblemName}{Problem \#\arabic{homeworkProblemCounter}: #1} % Assign \homeworkProblemName the name of the problem
+\section{\homeworkProblemName} % Make a section in the document with the custom problem count
+\enterProblemHeader{\homeworkProblemName} % Header and footer within the environment
+}{
+\exitProblemHeader{\homeworkProblemName} % Header and footer after the environment
+}
+
+\newcommand{\problemAnswer}[1]{ % Defines the problem answer command with the content as the only argument
+\noindent\framebox[\columnwidth][c]{\begin{minipage}{0.98\columnwidth}#1\end{minipage}} % Makes the box around the problem answer and puts the content inside
+}
+
+\newcommand{\homeworkSectionName}{}
+\newenvironment{homeworkSection}[1]{ % New environment for sections within homework problems, takes 1 argument - the name of the section
+\renewcommand{\homeworkSectionName}{#1} % Assign \homeworkSectionName to the name of the section from the environment argument
+\subsection{\homeworkSectionName} % Make a subsection with the custom name of the subsection
+\label{p:#1}
+\enterProblemHeader{\homeworkProblemName\ [\homeworkSectionName]} % Header and footer within the environment
+}{
+\enterProblemHeader{\homeworkProblemName} % Header and footer after the environment
+}
+
+%----------------------------------------------------------------------------------------
+%	NAME AND CLASS SECTION
+%----------------------------------------------------------------------------------------
+
+\newcommand{\hmwkNumber}{\normalsize{Assignment \#0}}
+\newcommand{\hmwkTitle}{\normalsize{Setting up the Popcorn compiler toolchain}} % Assignment title
+\newcommand{\hmwkClass}{Popcorn Compiler Internals 101} % Course/class
+
+%----------------------------------------------------------------------------------------
+%	TITLE PAGE
+%----------------------------------------------------------------------------------------
+
+\title{
+\vspace{2in}
+\textmd{\textbf{\hmwkClass:\\ \hmwkNumber -- \hmwkTitle}}\\
+\vspace{3in}
+}
+
+%\author{\textbf{\hmwkAuthorName}}
+%\date{} % Insert date here if you want it to appear below your name
+
+%----------------------------------------------------------------------------------------
+
+\begin{document}
+
+\maketitle
+
+%----------------------------------------------------------------------------------------
+%	TABLE OF CONTENTS
+%----------------------------------------------------------------------------------------
+
+%\setcounter{tocdepth}{1} % Uncomment this line if you don't want subsections listed in the ToC
+
+\newpage
+\tableofcontents
+\newpage
+
+%----------------------------------------------------------------------------------------
+%	INTRODUCTION & LEARNING OBJECTIVES
+%----------------------------------------------------------------------------------------
+
+\section{Introduction}
+
+The purpose of this assignment is to install the Popcorn compiler toolchain to build applications for Popcorn Linux.  The Popcorn compiler toolchain is distributed as part of Popcorn Linux, and is responsible for building multi-ISA binaries suitable for migration between heterogeneous-ISA machines.  The toolchain is built on top of several pieces of open-source software, most notably clang/LLVM (see \hyperref[s:licenses]{\textbf{Licenses}} for a complete list).  The compiler supports POSIX-compliant standard C/C++ applications, and is being extended to support full-blown OpenMP~\cite{openmp} applications.  For a more detailed description of the toolchain and what it supports, see~\cite{lyerly2016popcorn,Barbalace:2017:BBH:3037697.3037738}
+
+\subsection{Disclaimer}
+
+The toolchain is a research prototype, and as such is unstable.  The compiler is being updated constantly; be sure to check the master branch of the repository for bug-fixes and new features.
+
+\textbf{Use at your own peril and sanity!}
+
+\subsection{Prerequisites}
+
+We assume the person installing the Popcorn compiler toolchain (hereafter creatively referred to as ``user'') is installing and running the toolchain on an x86-64 machine.  Although in theory it should work on other machines (you'll need a working C and C++ compiler for all target architectures, preferably \prog{gcc}/\prog{g++}), the toolchain's installation and use has only been tested on x86-64.  Note that although the toolchain is run on an x86-64 machine (the ``host'' in traditional autoconf parlance), it builds multi-ISA binaries to be run on multiple ISAs (the ``targets'').  In essence, it is a cross-compiler.
+
+We assume the following ``host'', i.e., the environment on which the toolchain will be installed and used to build multi-ISA binaries:
+
+\begin{itemize}
+	\item Ubuntu 16.04 LTS ``Xenial Xerus'' or later on x86-64
+	\item Debian 8.8 ``Jessie'' or later on x86-64
+\end{itemize}
+
+We use these systems because their package managers have all the necessary tools for installation readily available.  If you use a different GNU/Linux distribution you'll need to install equivalent versions or possibly even build them from source; your mileage may vary.
+
+\subsection{Learning Objectives}
+
+After completing the assignment, you should have accomplished the following:
+
+\begin{enumerate}
+	\item Installed the Popcorn compiler toolchain (Problem 1)
+	\item Verified that clang/LLVM have Popcorn-specific functionality enabled (Problem 2)
+	\item Explored the installation directory, including where the toolchain's binaries/utilities/ISA-specific libraries reside (Problem 3)
+\end{enumerate}
+
+\subsection{Licenses}
+\label{s:licenses}
+
+Onto the boring but necessary stuff.  The Popcorn compiler toolchain is built on top of the following free and open-source software:
+
+\begin{itemize}
+	\item clang/LLVM version 3.7.1~\cite{1281665}, released under the \href{http://releases.llvm.org/4.0.0/LICENSE.TXT}{University of Illinois Open Source License}
+	\item GNU gold version 2.27~\cite{binutils}, released under the \href{https://www.gnu.org/licenses/gpl.html}{GNU General Public License}
+	\item musl-libc version 1.1.18~\cite{musl-libc}, released under the \href{http://git.musl-libc.org/cgit/musl/tree/COPYRIGHT}{MIT License}
+	\item libelf version 0.8.13~\cite{libelf}, released under the \href{http://www.mr511.de/software/COPYING.LIB-2.0}{GNU Library General Public License}
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+%	PROBLEM 1
+%----------------------------------------------------------------------------------------
+
+\begin{homeworkProblem}{Installing the compiler toolchain}
+
+\begin{comment}
+TODO -- when we open up the repository to the public, this needs to be changed to clone the repo using anonymous read-only access.
+\end{comment}
+
+The Popcorn compiler repository is hosted on SSRG's organization GitHub page, located at \url{https://github.com/ssrg-vt/}.  \textbf{For now, access to the repository is private.  In order to get access, you'll either need to be a part of the compiler team in the SSRG GitHub, or have an SSRG administrator add you as an outside collaborator}.  Contact \href{mailto:rlyerly@vt.edu}{Rob Lyerly} with your name and GitHub username to be added as an outside collaborator.
+
+\begin{enumerate}
+
+	\item First, install prerequisite packages needed to build all components of the compiler toolchain.
+
+\begin{lstlisting}
+$ sudo apt-get install build-essential gcc-aarch64-linux-gnu flex bison \
+						subversion cmake
+\end{lstlisting}
+
+A few notes about why these packages are required:
+
+\begin{comment}
+Remove gcc prerequisites when we get libelf compiling with clang.
+\end{comment}
+
+\begin{itemize}
+	\item The toolchain requires \prog{gcc} for each ISA to be targeted by multi-ISA binaries.  Currently, compiling \texttt{libelf} requires \prog{gcc}, although in the future it will be compiled with \prog{clang}.  For now, each new supported ISA requires installing \prog{gcc-<ISA>-linux-gnu}, e.g., \prog{gcc-powerpc64le-linux-gnu} for little-endian POWER8.
+	
+	\item \prog{build-essential} provides \prog{gcc}, \prog{g++}, \prog{make} and several development libraries.  \prog{g++} is needed to compile clang/LLVM, and build systems for many of the components in the toolchain are driven using \prog{make}.
+	
+	\item \prog{bison}/\prog{flex} are used during the installation of binutils.
+	
+	\item \prog{subversion}/\prog{cmake} are required for downloading and building clang/LLVM
+\end{itemize}
+
+  \item After you've created your GitHub account and have been given access to the repo, clone it into a local directory:
+
+\begin{lstlisting}
+$ git clone git@github.com:ssrg-vt/popcorn-compiler.git popcorn-compiler
+Cloning into 'popcorn-compiler'...
+...(enter your credentials)...
+...(git processing)...
+
+$ cd popcorn-compiler && ls
+APPLICATIONS  INSTALL              ISSUES  patches  tool      util
+common        install_compiler.py  lib     README   tutorial
+\end{lstlisting}
+
+	\item Finally, install the toolchain using the \prog{install\_compiler.py} script in the root of the repository.  To start, list all available options with \texttt{-h}.
+
+\begin{lstlisting}
+$ ./install_compiler.py -h
+usage: install_compiler.py [-h] [--base-path BASE_PATH]
+                           [--install-path INSTALL_PATH] [--threads THREADS]
+                           [--skip-prereq-check] [--skip-llvm-clang-install]
+                           [--skip-binutils-install]
+                           [--skip-libraries-install] [--skip-tools-install]
+                           [--skip-utils-install] [--skip-namespace]
+                           [--install-call-info-library] [--targets TARGETS]
+                           [--debug-stack-transformation]
+                           [--libmigration-type {env_select,native,debug}]
+                           [--enable-libmigration-timing]
+
+...(explanation of options)...
+\end{lstlisting}
+
+There are a large number of options for configuration, many of which are used to select which components of the toolchain are installed.  If in the future you need to reinstall a subset of components you can selectively disable installing certain parts of the toolchain using these options\footnote{Many of the libraries and tools are driven using simple Makefiles.  The user can modify/reinstall a library or tool from directly inside its source folder in the Popcorn compiler source tree.}.  For now, we need to install all parts of the compiler so we only need to specify where to install the toolchain and that the stack transformation library should be built to enable debugging output.
+
+\begin{lstlisting}
+$ ./install_compiler.py --install-path <install folder> \
+						--debug-stack-transformation
+...(lots of output)...
+\end{lstlisting}
+
+Depending on the beefiness of your machine (hopefully multi-core with lots of RAM), this could take a half hour or so.  Go get a coffee in the meantime.
+
+At this point the entire toolchain should be installed in the directory \texttt{<install folder>}.  You can use the the default installation folder, \texttt{/usr/local/popcorn}, but on most systems you'll need super-user privileges to do so.  Note that you'll need the debug build of the stack transformation library for later homeworks, but for a production environment where performance matters you'll want to build the library without debugging as it dumps a lot of information to disk.
+
+\end{enumerate}
+
+At this point the compiler should be installed -- if you had any errors, you'll need to investigate at which phase the install script died.  As a convenience, you may want to add the folder containing the toolchain's binaries to your path for ease of reference (or, for example inside your \texttt{.bashrc}):
+
+\begin{lstlisting}
+$ export PATH=$PATH:<install folder>/bin
+\end{lstlisting}
+
+\end{homeworkProblem}
+
+%----------------------------------------------------------------------------------------
+
+%----------------------------------------------------------------------------------------
+%	PROBLEM 2
+%----------------------------------------------------------------------------------------
+
+\begin{homeworkProblem}{Verifying Popcorn-specific functionality in clang/LLVM}
+
+Let's verify that clang/LLVM have been installed properly and that they have Popcorn-specific functionality enabled for building multi-ISA binaries.
+
+\begin{homeworkSection}{Investigate clang's command-line options}
+Print the available command-line options from \prog{clang} relevant to Popcorn and write them in the space below:
+
+\begin{lstlisting}
+$ <install folder>/bin/clang -help | grep "popcorn"
+\end{lstlisting}
+
+\problemAnswer{
+\vspace{50pt}
+}
+
+What these flags do are a subject of later homeworks; for now, it's enough to verify that \prog{clang} recognizes them.
+\end{homeworkSection}
+
+\begin{homeworkSection}{View available targets}
+Print out all targets supported by the LLVM installation using \prog{llc}, a tool that generates ISA-specific machine code from ISA-agnostic LLVM intermediate representation (``LLVM IR'') and write them in the space below:
+
+\begin{lstlisting}
+$ <install folder>/bin/llc -version
+LLVM (http://llvm.org/):
+  LLVM version 3.7.1
+  DEBUG build with assertions.
+  Built Nov 27 2017 (20:51:52).
+  Default target: x86_64-unknown-linux-gnu
+  Host CPU: haswell
+
+  Registered Targets:
+    ...(available targets)...
+\end{lstlisting}
+
+\problemAnswer{
+	\vspace{90pt}
+}
+
+You can also use \prog{llc} to get detailed target-specific information, including options for tuning the backend to optimize for specific CPUs and features:
+
+\begin{lstlisting}
+# Format: llc -march <ISA> -mattr=help, e.g.,
+$ <install folder>/bin/llc -march aarch64 -mattr=help
+Available CPUs for this target:
+
+cortex-a53 - Select the cortex-a53 processor.
+cortex-a57 - Select the cortex-a57 processor.
+cortex-a72 - Select the cortex-a72 processor.
+cyclone    - Select the cyclone processor.
+generic    - Select the generic processor.
+
+Available features for this target:
+
+a53      - Cortex-A53 ARM processors.
+a57      - Cortex-A57 ARM processors.
+crc      - Enable ARMv8 CRC-32 checksum instructions.
+crypto   - Enable cryptographic instructions.
+cyclone  - Cyclone.
+fp-armv8 - Enable ARMv8 FP.
+neon     - Enable Advanced SIMD instructions.
+v8.1a    - Support ARM v8.1a instructions.
+zcm      - Has zero-cycle register moves.
+zcz      - Has zero-cycle zeroing instructions.
+
+Use +feature to enable a feature, or -feature to disable it.
+For example, llc -mcpu=mycpu -mattr=+feature1,-feature2
+'+help' is not a recognized feature for this target (ignoring feature)
+\end{lstlisting}
+
+\end{homeworkSection}
+	
+\begin{homeworkSection}{Verify Popcorn-specific middle-end passes}
+LLVM drives the compilation process by applying a set of passes to analyze and transform code in the middle-end (ISA-agnostic) and back-end (ISA-specific).  There are several Popcorn-specific passes in both phases to prepare applications for migration.  The passes in the middle-end are exposed via \prog{opt}, LLVM's ISA-agnostic optimizer (the passes in the back-end have no such tool).  Print all available passes in \prog{opt}:
+
+\begin{lstlisting}
+$ <install folder>/bin/opt -help
+...(lots of output)...
+\end{lstlisting}
+
+You should see the following passes:
+
+\begin{itemize}
+	\item \texttt{-select-migration-points} -- the compiler is responsible for inserting call-outs to a migration library in order to invoke cross-node migration (see~\cite{lyerly2016popcorn,Barbalace:2017:BBH:3037697.3037738} for more details).  This pass selects locations at which to insert migration points.
+
+	\item \texttt{-migration-points} -- inserts call-outs to the migration library at points selected by the previous pass
+
+	\item \texttt{-live-values} -- runs a live-value analysis over the IR, which determines the set of all function-local variables that are live at a give location inside of the function.  See~\cite{brandner2011computing} for more information.
+
+	\item \texttt{-insert-stackmaps} -- the compiler uses LLVM stackmaps to trigger stack transformation metadata generation, the subject of future homeworks.  This pass uses the liveness analysis to instruct the back-end to capture where live values are located in each ISA-specific stack frame.
+
+	\item \texttt{-libc-stackmaps} -- similar to \texttt{-insert-stackmaps}, but hard-codes a few specific cases in musl-libc required for terminating stack transformation.
+\end{itemize}
+
+\end{homeworkSection}
+
+\end{homeworkProblem}
+
+%----------------------------------------------------------------------------------------
+
+%----------------------------------------------------------------------------------------
+%	PROBLEM 3
+%----------------------------------------------------------------------------------------
+
+\begin{homeworkProblem}{Exploring the installation directory}
+
+Let's take a deeper look into the installation of the Popcorn compiler:
+
+\begin{lstlisting}
+$ ls <install folder>
+aarch64  bin  include  lib  share  src  x86_64  x86_64-pc-linux-gnu
+\end{lstlisting}
+
+\begin{itemize}
+	\item \texttt{src} contains the patched source code for clang/LLVM and binutils; the Popcorn compiler applies a set of patches to downloaded source rather than forking the entire repositories.  You can modify, rebuild and reinstall the components from inside the build folder of each subdirectory, e.g., \texttt{<install folder>/src/llvm/build}.  The source for all other Popcorn components lives in the repository you cloned earlier.
+	
+	\item \texttt{bin} contains the executables for clang/LLVM, binutils, and Popcorn-specific alignment/post-processing utilities.  This is where the components comprising the Popcorn compiler toolchain reside in your system.  These may also reference headers and libraries in \texttt{include} and \texttt{lib}.
+	
+	\item Finally, there is a sub-folder for each target ISA supported by the toolchain, e.g., \texttt{aarch64} and \texttt{x86\_64}.  Each of these folders contains the cross-compilation environment required for each target in the multi-ISA binary (how these are used is the subject of future homeworks).  Inside each target subdirectory, you'll find headers, libraries and musl-specific build tools.  musl provides most of this, as it provides the C library used by virtually all applications, \texttt{libc.a}.  Additionally, you'll find \texttt{libelf.a}, \texttt{libmigrate.a} and \texttt{libstack-transform.a} compiled for each architecture.  How the Popcorn compiler uses these target subdirectories is beyond the scope of this assignment, but it's important to note that when linking against new libraries, the user must provide a version compiled for each target and placed inside the relevant target folder inside the installation.
+\end{itemize}
+
+\end{homeworkProblem}
+
+%----------------------------------------------------------------------------------------
+
+\bibliographystyle{acm}
+\bibliography{thebib}
+
+\end{document}
