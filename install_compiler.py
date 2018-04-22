@@ -767,7 +767,8 @@ def install_utils(base_path, install_path, num_threads):
     for item in os.listdir('./util/scripts'):
         s = os.path.join('./util/scripts/', item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
-        shutil.copy(s, d)
+        if item != 'README':
+            shutil.copy(s, d)
 
 def build_namespace(base_path):
     print("Building namespace tools...")
