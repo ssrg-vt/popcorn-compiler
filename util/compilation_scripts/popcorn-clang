@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
+#set -x
 
 
 echo "$0: called with $*"
+#echo "$0: called from $(pwd)"
 
 #for /usr/local/popcorn/ld
 export POPCORN_COMPILATION_SCRIPTS=1
@@ -14,5 +16,55 @@ CC=$POPCORN/bin/clang
 HET_CFLAGS="-nostdinc -nostdlib -popcorn-migratable -fno-common -ftls-model=initial-exec"
 ARM64_INC="-isystem $ARM64_POPCORN/include"
 
+#filter "-o" options and "*.o" files
+options=()  # the buffer array for the parameters
+eoo=0       # end of options reached
+COMPILE=0
+OBJS=()
+while [[ $1 ]]
+do
+    if ! ((eoo)); then
+	case "$1" in
+	  -o)
+	      BIN=$2
+	      shift
+	      shift
+	      ;;
+	  *.o)
+	      OBJS+=("$1")
+	      shift
+	      ;;
+	  -c)
+	      COMPILE=1
+	      shift
+	      ;;
+	  *)
+	      options+=("$1")
+	      shift
+	      ;;
+	  --)
+	      eoo=1
+	      options+=("$1")
+	      shift
+	      ;;
+	esac
+    else
+	options+=("$1")
+	shift
+    fi
+done
 
-$CC $HET_CFLAGS $ARM64_INC $LINKER $*
+ALL_OBJS="${OBJS[@]}"
+echo obj: otab ${OBJS[@]}
+echo OBJS: ${OBJS[@]}
+
+if ! ((COMPILE)); then
+	SUFF_OBJS="${ALL_OBJS//.o/_aarch64.o}" #arms obj have no extension
+else
+	SUFF_OBJS="-c ${ALL_OBJS}"
+fi
+
+echo obj: tab ${SUFF_OBJS[@]}
+echo opt: ${options[@]}
+
+$CC $HET_CFLAGS $ARM64_INC $LINKER $SUFF_OBJS ${options[@]} -o $BIN

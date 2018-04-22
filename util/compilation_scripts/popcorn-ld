@@ -6,7 +6,7 @@ echo $0: called with "$*"
 
 POPCORN=/usr/local/popcorn
 LD="$POPCORN/bin/ld.gold"
-ALIGN=$POPCORN/bin/pyalign
+ALIGN="$POPCORN/bin/pyalign --compiler-inst $POPCORN"
 POST_PROCESS=$POPCORN/bin/gen-stackinfo
 X86_64_POPCORN="$POPCORN/x86_64"
 ARM64_POPCORN="$POPCORN/aarch64"
@@ -111,14 +111,15 @@ if [ $PRINT_VERSION = "1" ]; then
 	exit
 fi
 
-echo OPTIONS: ${options[@]}
+echo OPTIONS: 
 echo OBJS: ${OBJS[@]}
 echo USER_LIBS: ${_USR_LIBS[@]}
 echo STANDARD_USR_LIBS: ${STANDARD_USR_LIBS[@]}
 
 ALL_OBJS="${OBJS[@]}"
 ARM64_OBJ="$ALL_OBJS" #arms obj have no extension
-X86_64_OBJ="${ALL_OBJS//.o/_x86_64.o}"
+#ARM64_OBJ="${ALL_OBJS//.o/_aarch64.o}"#arms obj have no extension
+X86_64_OBJ="${ALL_OBJS//_aarch64.o/_x86_64.o}"
 #ARGS_WO_OBJS=$(echo $ARGS | sed -n "s/[a-zA-Z0-9]*.o//gp") # The filter is better?
   	      
 USR_LIBRARY_PATH=${_USR_LIBRARY_PATH[@]}
