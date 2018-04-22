@@ -14,9 +14,25 @@
 using namespace clang;
 using namespace llvm;
 
+const static std::vector<std::string> PopcornSupported = {
+  "aarch64-linux-gnu",
+  "x86_64-linux-gnu"
+};
+
+bool Popcorn::SupportedTarget(const StringRef Target) {
+  for(auto SupportedTarget : PopcornSupported)
+    if(Target == SupportedTarget) return true;
+  return false;
+}
+
+void Popcorn::GetAllTargets(SmallVector<std::string, 2> &Targets) {
+  Targets.clear();
+  for(auto Target : PopcornSupported) Targets.push_back(Target);
+}
+
 typedef std::shared_ptr<TargetOptions> TargetOptionsPtr;
 
-TargetOptionsPtr Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
+TargetOptionsPtr Popcorn::GetPopcornTargetOpts(const StringRef TripleStr) {
   Triple Triple(Triple::normalize(TripleStr));
   assert(!Triple.getTriple().empty() && "Invalid target triple");
 
@@ -38,6 +54,7 @@ TargetOptionsPtr Popcorn::GetPopcornTargetOpts(StringRef TripleStr) {
     break;
   case Triple::ArchType::x86_64:
     Opts->CPU = "x86-64";
+    Opts->FPMath = "sse";
     Opts->FeaturesAsWritten.push_back("+sse");
     Opts->FeaturesAsWritten.push_back("+sse2");
     Opts->FeaturesAsWritten.push_back("+rtm");

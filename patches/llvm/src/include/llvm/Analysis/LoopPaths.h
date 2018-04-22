@@ -182,6 +182,14 @@ private:
   SmallPtrSet<const BasicBlock *, 4> Latches;
   BlockSet SubLoopBlocks;
 
+  /// Set if analysis had to bail out because there are too many paths through
+  /// the function.
+  bool TooManyPaths;
+
+  /// Set if analysis had to bail out because it found a non-loop cycle due to
+  /// complect control flow (usually due to goto's).
+  bool DetectedCycle;
+
   /// Depth-first search information for the current path being explored.
   struct LoopDFSInfo {
   public:
@@ -189,6 +197,16 @@ private:
     std::vector<PathNode> PathNodes;
     bool StartsAtHeader;
   };
+
+  /// Empty all data structures.
+  void reset() {
+    Paths.clear();
+    HasSpPath.clear();
+    HasEqPointPath.clear();
+    CurLoop = nullptr;
+    Latches.clear();
+    SubLoopBlocks.clear();
+  }
 
   /// Search exit blocks of the loop containing Successor.  Add the terminating
   /// instruction of the block to either of the two vectors, depending if there
@@ -200,13 +218,14 @@ private:
   /// Run a depth-first search for paths in the loop starting at an instruction.
   /// Any paths found are added to the vector of paths, and new paths to explore
   /// are added to the search list.
-  void loopDFS(const Instruction *I,
+  bool loopDFS(const Instruction *I,
                LoopDFSInfo &DFSI,
                std::vector<LoopPath> &CurPaths,
                std::list<const Instruction *> &NewPaths);
 
-  /// Enumerate all paths within a loop, stored in the vector argument.
-  void analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
+  /// Enumerate all paths within a loop, stored in the vector argument.  Return
+  /// true if the analysis was successful or false otherwise.
+  bool analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths);
 
 public:
   static char ID;
@@ -219,6 +238,15 @@ public:
   /// Re-run analysis to enumerate paths through a loop.  Invalidates all APIs
   /// below which populate containers with paths (for this loop only).
   void rerunOnLoop(Loop *L);
+
+  /// Query whether analysis failed.
+  bool analysisFailed() const { return TooManyPaths || DetectedCycle; }
+
+  /// Query whether there were too many paths to enumerate in the function.
+  bool tooManyPaths() const { return TooManyPaths; }
+
+  /// Query whether analysis detected a non-loop cycle.
+  bool detectedCycle() const { return DetectedCycle; }
 
   bool hasPaths(const Loop *L) const { return Paths.count(L); }
 

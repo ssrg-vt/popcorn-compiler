@@ -53,8 +53,9 @@
 # define MIGRATE_SIGNAL SIGRTMIN
 #endif
 
-/* Maximum number of nodes supported by the operating system. */
-#define MAX_POPCORN_NODES 32
+/* Dump verbose migration information to a log file. */
+//#define _LOG 1
+#define LOG_FILE "/tmp/migrate.log"
 
 /*
  * Debug the migration process by spinning on the destination post-migration.

@@ -16,6 +16,9 @@ import urllib
 # GLOBALS
 #================================================
 
+# The machine on which we're compiling
+host = platform.machine()
+
 # Supported targets
 supported_targets = ['aarch64', 'x86_64']
 # LLVM names for targets
@@ -93,10 +96,10 @@ def setup_argument_parsing():
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
-    process_opts.add_argument("--skip-namespace",
-                        help="Skip building namespace tools (deprecated)",
-                        action="store_false",
-                        dest="skip_namespace")
+    process_opts.add_argument("--install-namespace",
+                        help="Install namespace tools (deprecated)",
+                        action="store_true",
+                        dest="install_namespace")
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
@@ -182,7 +185,7 @@ def check_for_prerequisites(args):
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
     for target in args.install_targets:
         gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
-    other_prequisites = ['flex', 'bison', 'svn', 'cmake', 'make']
+    other_prerequisites = ['flex', 'bison', 'svn', 'cmake', 'make', 'zip']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -195,7 +198,7 @@ def check_for_prerequisites(args):
         else:
             success = False
 
-    for prereq in other_prequisites:
+    for prereq in other_prerequisites:
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
@@ -404,6 +407,7 @@ def install_binutils(base_path, install_path, num_threads):
 
 def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                       libmigration_type, enable_libmigration_timing):
+    global host
     cur_dir = os.getcwd()
 
     # musl-libc & libelf are built individually per target
@@ -484,11 +488,11 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         print("Configuring libelf ({})...".format(target))
         try:
-            cflags = 'CFLAGS="-O3 -ffunction-sections -fdata-sections ' + \
-                     '-specs {}" LDFLAGS="-static"'.format(os.path.join(target_install_path,
-                                                     'lib/musl-gcc.specs'))
+            cflags = 'CC={} CFLAGS="-O3 -popcorn-alignment" LDFLAGS="-static"' \
+                     .format(os.path.join(target_install_path, 'bin/musl-clang'))
             rv = subprocess.check_call(" ".join([cflags,
                                         './configure',
+                                        '--build={}-linux-gnu'.format(platform.machine()),
                                         '--host={}-linux-gnu'.format(target),
                                         '--prefix=' + target_install_path,
                                         '--enable-compat',
@@ -521,6 +525,91 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
         os.chdir(cur_dir)
 
+<<<<<<< HEAD
+=======
+        #=====================================================
+<<<<<<< HEAD
+        # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
+=======
+        # CONFIGURE & INSTALL LIBOPENPOP
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
+
+        print("Configuring libopenpop ({})...".format(target))
+        try:
+            # Get the libgcc file name
+            # NOTE: this won't be needed if we force clang to emit 64-bit
+            # doubles when compiling musl (currently, it needs soft-FP
+            # emulation for 128-bit long doubles)
+            args = [ '{}-linux-gnu-gcc'.format(target),
+                     '-print-libgcc-file-name' ]
+            libgcc = subprocess.check_output(args, stderr=subprocess.STDOUT,
+                                             shell=False).decode("utf-8")
+            libgcc = libgcc.strip()
+
+            # Note: for build repeatability, we have to use the *same* include
+            # path for *all* targets
+            include_dir = os.path.join(install_path, targets[0], 'include')
+            lib_dir = os.path.join(target_install_path, 'lib')
+
+            os.environ['CC'] = '{}/bin/clang'.format(install_path)
+            os.environ['CFLAGS'] = '-target {}-linux-gnu -O2 -g -Wall ' \
+                                   '-nostdinc -isystem {} ' \
+                                   '-popcorn-metadata ' \
+                                   '-popcorn-target={}-linux-gnu' \
+                                    .format(host, include_dir, target)
+            os.environ['LDFLAGS'] = '-nostdlib -L{}'.format(lib_dir)
+            os.environ['LIBS'] = '{}/crt1.o -lc {}' \
+                                 .format(lib_dir, libgcc)
+            args = ['./configure',
+                    '--prefix=' + target_install_path,
+                    '--target={}-linux-gnu'.format(target),
+                    '--host={}-linux-gnu'.format(target),
+                    '--enable-static',
+                    '--disable-shared',
+                    '--disable-tls']
+            rv = subprocess.check_call(args, stderr=subprocess.STDOUT, shell=False)
+            del os.environ['CC']
+            del os.environ['CFLAGS']
+            del os.environ['LDFLAGS']
+            del os.environ['LIBS']
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+            rv = subprocess.check_call(['make', 'install'])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        os.chdir(cur_dir)
+
+    # The build systems for the following already build for all ISAs
+>>>>>>> 57a450ecf994f47b67ef40f10c633036275246c2
 
     #=====================================================
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
@@ -531,6 +620,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         flags = ''
     else:
         flags = 'type=debug'
+>>>>>>> master
 
     print('Making stack_transformation...')
     try:
@@ -592,6 +682,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
     os.chdir(cur_dir)
 
+<<<<<<< HEAD
     #=====================================================
     # CONFIGURE & INSTALL LIBOPENPOP
     #=====================================================
@@ -652,6 +743,75 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
 
     os.chdir(cur_dir)
+=======
+
+def install_secondary_libraries(base_path, install_path, num_threads, st_debug,
+                      libmigration_type, enable_libmigration_timing):
+
+    cur_dir = os.getcwd()
+
+    with open(os.devnull, 'wb') as FNULL:
+
+        #depends on the migration library and util and tool
+        #=====================================================
+        # CONFIGURE & INSTALL LIBOPENPOP
+        #=====================================================
+        os.chdir(os.path.join(base_path, 'lib/libopenpop'))
+
+        if os.path.isfile('Makefile'):
+            try:
+                rv = subprocess.check_call(['make', 'distclean'])
+            except Exception as e:
+                print('ERROR running distclean!')
+                sys.exit(1)
+            else:
+                if rv != 0:
+                    print('Make distclean failed.')
+                    sys.exit(1)
+
+        print("Configuring libopenpop ...")
+        try:
+            rv = subprocess.check_call(" ".join(['./popcorn-config.sh',
+                                        install_path]),
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+        print('Making libopenpop...')
+        try:
+            print('Running Make...')
+            rv = subprocess.check_call(['make', '-j', str(num_threads)])
+        except Exception as e:
+            print('Could not run Make ({})!'.format(e))
+            sys.exit(1)
+        else:
+            if rv != 0:
+                print('Make failed.')
+                sys.exit(1)
+
+        print("Installing libopenpop ...")
+        try:
+            rv = subprocess.check_call(" ".join(['./popcorn-install.sh',
+                                        install_path]),
+                                        stderr=subprocess.STDOUT,
+                                        shell=True)
+        except Exception as e:
+           print('Could not configure libopenpop ({})!'.format(e))
+           sys.exit(1)
+        else:
+           if rv != 0:
+               print('libopenpop configure failed.')
+               sys.exit(1)
+
+
+        os.chdir(cur_dir)
+>>>>>>> 57a450ecf994f47b67ef40f10c633036275246c2
 
 def install_tools(base_path, install_path, num_threads):
     cur_dir = os.getcwd()
@@ -747,7 +907,28 @@ def install_utils(base_path, install_path, num_threads):
     for item in os.listdir('./util/scripts'):
         s = os.path.join('./util/scripts/', item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
-        shutil.copy(s, d)
+        if item != 'README':
+            shutil.copy(s, d)
+
+    #=====================================================
+    # COPY COMPILATION SCRIPTS
+    #=====================================================
+    #TODO: support != installation path
+    print("backing up default ld {}/bin/ld...".format(install_path))
+    s = os.path.join(os.path.join(install_path, 'bin'), 'ld')
+    d = os.path.join(os.path.join(install_path, 'bin'), 'ld.default')
+    shutil.copy(s, d)
+    try:
+        os.remove(s)
+    except:
+        pass
+    print("Copying util/compilation_scripts/ to {}/bin...".format(install_path))
+    for item in os.listdir('./util/compilation_scripts/'):
+        if not item.startswith('.'): #don't copy hidden files
+            s = os.path.join('./util/compilation_scripts/', item)
+            d = os.path.join(os.path.join(install_path, 'bin'), item)
+            shutil.copy(s, d)
+    
 
     #=====================================================
     # COPY COMPILATION SCRIPTS
@@ -790,12 +971,15 @@ def main(args):
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
 
+<<<<<<< HEAD
     #compilation tools needed by libopenpop
     if not args.skip_utils_install:
         install_utils(args.base_path, args.install_path, args.threads)
 
     if not args.skip_tools_install:
         install_tools(args.base_path, args.install_path, args.threads)
+=======
+>>>>>>> 57a450ecf994f47b67ef40f10c633036275246c2
 
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path,
@@ -804,12 +988,39 @@ def main(args):
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+    if not args.skip_tools_install:
+        install_tools(args.base_path, args.install_path, args.threads)
+>>>>>>> 57a450ecf994f47b67ef40f10c633036275246c2
 
+>>>>>>> master
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
                                   args.threads)
 
+<<<<<<< HEAD
+=======
+    if not args.skip_tools_install:
+        install_tools(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_utils_install:
+        install_utils(args.base_path, args.install_path, args.threads)
+
+<<<<<<< HEAD
+    if not args.skip_libraries_install:
+        install_secondary_libraries(args.base_path, args.install_path, cpus,
+                          args.debug_stack_transformation,
+                          args.libmigration_type,
+                          args.enable_libmigration_timing)
+
+>>>>>>> 57a450ecf994f47b67ef40f10c633036275246c2
     if not args.skip_namespace:
+=======
+    if args.install_namespace:
+>>>>>>> master
         build_namespace(args.base_path)
 
 if __name__ == '__main__':

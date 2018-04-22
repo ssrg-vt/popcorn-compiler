@@ -23,12 +23,17 @@
 #include <queue>
 #include "llvm/Analysis/LoopPaths.h"
 #include "llvm/Analysis/PopcornUtil.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "looppaths"
+
+const static cl::opt<unsigned>
+MaxNumPaths("max-num-paths", cl::Hidden, cl::init(10000),
+  cl::desc("Max number of paths to analyze"));
 
 void LoopPathUtilities::populateLoopNest(Loop *L, LoopNest &Nest) {
   std::queue<Loop *> ToVisit;
@@ -137,6 +142,14 @@ static inline void pushIfNotPresent(const Instruction *I,
   if(std::find(List.begin(), List.end(), I) == List.end()) List.push_back(I);
 }
 
+/// Return whether the current path contains a basic block.
+static inline bool pathContains(const std::vector<PathNode> &Path,
+                                const BasicBlock *BB) {
+  for(auto &Node : Path)
+    if(Node.getBlock() == BB) return true;
+  return false;
+}
+
 // TODO this needs to be converted to iteration rather than recursion
 
 void
@@ -171,7 +184,7 @@ static inline void printNewPath(raw_ostream &O, const LoopPath &Path) {
   Path.print(O);
 }
 
-void EnumerateLoopPaths::loopDFS(const Instruction *I,
+bool EnumerateLoopPaths::loopDFS(const Instruction *I,
                                  LoopDFSInfo &DFSI,
                                  std::vector<LoopPath> &CurPaths,
                                  std::list<const Instruction *> &NewPaths) {
@@ -180,10 +193,22 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
   std::vector<const Instruction *> EqPointInsts, SpanningInsts;
 
   if(!SubLoopBlocks.count(BB)) {
+    if(pathContains(DFSI.PathNodes, BB)) {
+      DetectedCycle = true;
+      return false;
+    }
+
     DFSI.PathNodes.emplace_back(BB, false);
+
     if((EqPoint = hasEquivalencePoint(I))) {
       CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, EqPoint,
                             DFSI.StartsAtHeader, false);
+
+      if(CurPaths.size() > MaxNumPaths) {
+        TooManyPaths = true;
+        return false;
+      }
+
       for(auto Node : DFSI.PathNodes) {
         PathBlock = Node.getBlock();
         if(!SubLoopBlocks.count(PathBlock))
@@ -205,7 +230,7 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
             getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
             for(auto SLE : EqPointInsts) pushIfNotPresent(SLE, NewPaths);
             for(auto SLE : SpanningInsts)
-              loopDFS(SLE, DFSI, CurPaths, NewPaths);
+              if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
           }
         }
       }
@@ -215,6 +240,12 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
     else if(Latches.count(BB)) {
       CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start, BB->getTerminator(),
                             DFSI.StartsAtHeader, true);
+
+      if(CurPaths.size() > MaxNumPaths) {
+        TooManyPaths = true;
+        return false;
+      }
+
       if(DFSI.StartsAtHeader) {
         for(auto Node : DFSI.PathNodes) {
           PathBlock = Node.getBlock();
@@ -235,8 +266,10 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
     else {
       for(auto Succ : successors(BB)) {
         if(!CurLoop->contains(Succ)) continue;
-        else if(!SubLoopBlocks.count(Succ))
-          loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
+        else if(!SubLoopBlocks.count(Succ)) {
+          if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
+            return false;
+        }
         else {
           getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
           for(auto SLE : EqPointInsts) {
@@ -249,24 +282,39 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
             CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
                                   BB->getTerminator(),
                                   DFSI.StartsAtHeader, false);
+
+            if(CurPaths.size() > MaxNumPaths) {
+              TooManyPaths = true;
+              return false;
+            }
+
             pushIfNotPresent(SLE, NewPaths);
             DEBUG(printNewPath(dbgs(), CurPaths.back()));
           }
-          for(auto SLE : SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
+          for(auto SLE : SpanningInsts)
+            if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
         }
       }
     }
     DFSI.PathNodes.pop_back();
   }
   else {
+    if(pathContains(DFSI.PathNodes, BB)) {
+      DetectedCycle = true;
+      return false;
+    }
+
     // This is a sub-loop block; we only want to explore successors who are not
     // contained in this sub-loop but are still contained in the current loop.
     DFSI.PathNodes.emplace_back(BB, true);
+
     const Loop *WeedOutLoop = LI->getLoopFor(BB);
     for(auto Succ : successors(BB)) {
       if(WeedOutLoop->contains(Succ) || !CurLoop->contains(Succ)) continue;
-      else if(!SubLoopBlocks.count(Succ))
-        loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths);
+      else if(!SubLoopBlocks.count(Succ)) {
+        if(!loopDFS(&Succ->front(), DFSI, CurPaths, NewPaths))
+          return false;
+      }
       else {
         getSubLoopSuccessors(Succ, EqPointInsts, SpanningInsts);
         for(auto SLE : EqPointInsts) {
@@ -276,17 +324,26 @@ void EnumerateLoopPaths::loopDFS(const Instruction *I,
           CurPaths.emplace_back(DFSI.PathNodes, DFSI.Start,
                                 BB->getTerminator(),
                                 DFSI.StartsAtHeader, false);
+
+          if(CurPaths.size() > MaxNumPaths) {
+            TooManyPaths = true;
+            return false;
+          }
+
           DEBUG(printNewPath(dbgs(), CurPaths.back()));
           pushIfNotPresent(SLE, NewPaths);
         }
-        for(auto SLE: SpanningInsts) loopDFS(SLE, DFSI, CurPaths, NewPaths);
+        for(auto SLE: SpanningInsts)
+          if(!loopDFS(SLE, DFSI, CurPaths, NewPaths)) return false;
       }
     }
     DFSI.PathNodes.pop_back();
   }
+
+  return true;
 }
 
-void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
+bool EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
   std::list<const Instruction *> NewPaths;
   SmallVector<BasicBlock *, 4> LatchVec;
   LoopDFSInfo DFSI;
@@ -317,23 +374,26 @@ void EnumerateLoopPaths::analyzeLoop(Loop *L, std::vector<LoopPath> &CurPaths) {
 
   DFSI.Start = &L->getHeader()->front();
   DFSI.StartsAtHeader = true;
-  loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+  if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
   assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
 
   DFSI.StartsAtHeader = false;
   while(!NewPaths.empty()) {
     DFSI.Start = NewPaths.front();
     NewPaths.pop_front();
-    loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths);
+    if(!loopDFS(DFSI.Start, DFSI, CurPaths, NewPaths)) return false;
     assert(DFSI.PathNodes.size() == 0 && "Invalid traversal");
   }
+
+  return true;
 }
 
 bool EnumerateLoopPaths::runOnFunction(Function &F) {
   DEBUG(dbgs() << "\n********** ENUMERATE LOOP PATHS **********\n"
                << "********** Function: " << F.getName() << "\n\n");
 
-  Paths.clear();
+  reset();
+  TooManyPaths = DetectedCycle = false;
   LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
   std::vector<LoopNest> Nests;
 
@@ -352,8 +412,20 @@ bool EnumerateLoopPaths::runOnFunction(Function &F) {
     for(auto L : Nest) {
       std::vector<LoopPath> &CurPaths = Paths[L];
       assert(CurPaths.size() == 0 && "Re-processing loop?");
-      analyzeLoop(L, CurPaths);
+      if(!analyzeLoop(L, CurPaths)) break;
     }
+
+    if(analysisFailed()) break;
+  }
+
+  if(TooManyPaths) {
+    DEBUG(dbgs() << "WARNING: too many paths, bailing on analysis\n");
+    reset();
+  }
+
+  if(DetectedCycle) {
+    DEBUG(dbgs() << "WARNING: detected a cycle, bailing on analysis\n");
+    reset();
   }
 
   return false;
@@ -363,7 +435,7 @@ void EnumerateLoopPaths::rerunOnLoop(Loop *L) {
   // We *should* be analyzing a loop for the 2+ time
   std::vector<LoopPath> &CurPaths = Paths[L];
   DEBUG(if(!CurPaths.size()) dbgs() << "  -> No previous analysis?\n");
-  analyzeLoop(L, CurPaths);
+  if(!analyzeLoop(L, CurPaths)) reset();
 }
 
 void EnumerateLoopPaths::getPaths(const Loop *L,

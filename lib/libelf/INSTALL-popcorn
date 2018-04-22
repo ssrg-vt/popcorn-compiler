@@ -7,9 +7,9 @@ needs to be compiled for all architectures in the system.
 
 NOTE: libelf is built against Popcorn's musl-libc.  Please install musl-libc
 for all architectures in /usr/local/popcorn/<arch> before continuing -- it is
-important to compile against musl-libc, otherwise gcc will default to compiling
-against glibc and glibc-specific symbols will creep into the library.  This
-will lead to undefined/unresolved symbols when compiling applications.
+important to compile against musl-libc, otherwise the compiler will default to
+compiling against glibc and glibc-specific symbols will creep into the library.
+This will lead to undefined/unresolved symbols when compiling applications.
 
 NOTE: do a "make distclean" in-between building for individual architectures
 

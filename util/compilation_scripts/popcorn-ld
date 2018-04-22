@@ -2,7 +2,7 @@
 set -e
 #set -x
 
-#echo $0: called with "$*"
+echo $0: called with "$*"
 
 POPCORN=/usr/local/popcorn
 LD="$POPCORN/bin/ld.gold"
@@ -55,7 +55,6 @@ do
   	      STANDARD_USR_LIBS+=("$1")
 	      shift
 		;;
-
 	  -l*)
   	      _USR_LIBS+=("$1")
 	      shift
