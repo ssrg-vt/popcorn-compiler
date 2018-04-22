@@ -56,14 +56,14 @@ __migrate_fixup_aarch64:
 
   /* Floating-point registers */
   add x2, x2, #264 /* Update base, otherwise offsets will be out of range */
-  ldr q8, [x2,#128]
-  ldr q9, [x2,#144]
-  ldr q10, [x2,#160]
-  ldr q11, [x2,#176]
-  ldr q12, [x2,#192]
-  ldr q13, [x2,#208]
-  ldr q14, [x2,#224]
-  ldr q15, [x2,#240]
+  ldr d8, [x2,#128]
+  ldr d9, [x2,#144]
+  ldr d10, [x2,#160]
+  ldr d11, [x2,#176]
+  ldr d12, [x2,#192]
+  ldr d13, [x2,#208]
+  ldr d14, [x2,#224]
+  ldr d15, [x2,#240]
 
   /* Cleanup & return to C! */
   ldr x30, [sp], #16
