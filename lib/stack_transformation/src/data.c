@@ -179,7 +179,7 @@ void* points_to_stack(const rewrite_context ctx,
   void* stack_addr = NULL;
 
   /* Is it a pointer (NOT an alloca/stack value)? */
-  if(val->is_ptr && !val->is_alloca)
+  if(val->is_ptr)
   {
     /* Get the pointed-to address */
     switch(val->type)
@@ -191,10 +191,6 @@ void* points_to_stack(const rewrite_context ctx,
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
       break;
     case SM_DIRECT:
-      // Note: SM_DIRECT live values are allocated to the stack (allocas) and
-      // thus should have been weeded out in the if-statement above
-      ST_ERR(1, "incorrectly encoded live value\n");
-      break;
     case SM_INDIRECT:
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,

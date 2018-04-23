@@ -6369,16 +6369,16 @@ Index: lib/CodeGen/StackMaps.cpp
 +  Type *Ty = Op->getType();
 +  if(Ty->isPointerTy())
 +  {
-+    isPtr = true;
-+
 +    // Walk through cast operations that potentially hide allocas
 +    while(!isa<AllocaInst>(Op) && (Op = getPointerCastSrc(Op)));
 +    if(Op && isa<AllocaInst>(Op)) {
 +      PointerType *PTy = cast<PointerType>(Ty);
 +      assert(PTy->getElementType()->isSized() && "Alloca of unknown size?");
++      isPtr = PTy->getElementType()->isPointerTy();
 +      isAlloca = true;
 +      AllocaSize = DL.getTypeAllocSize(PTy->getElementType());
 +    }
++    else isPtr = true;
 +  }
 +}
 +
