@@ -163,6 +163,17 @@ class StackTransformMetadata : public MachineFunctionPass {
   typedef std::pair<int, CopyLocVecPtr> StackSlotCopyPair;
   typedef std::map<int, CopyLocVecPtr> StackSlotCopies;
 
+  /// A work item to analyze in dataflow analysis.  Can selectively enable
+  /// traversing definitions.
+  struct WorkItem {
+    WorkItem() : Vreg(0), TraverseDefs(false) {}
+    WorkItem(unsigned Vreg, bool TraverseDefs)
+      : Vreg(Vreg), TraverseDefs(TraverseDefs) {}
+
+    unsigned Vreg;
+    bool TraverseDefs;
+  };
+
   /* Data */
 
   /// LLVM-provided analysis & metadata
@@ -257,7 +268,8 @@ class StackTransformMetadata : public MachineFunctionPass {
                         ValueVecPtr IRVals,
                         const SMInstBundle &SM,
                         SmallPtrSet<const MachineInstr *, 32> &Visited,
-                        std::queue<unsigned> &work);
+                        std::queue<WorkItem> &work,
+                        bool TraverseDefs);
 
   /// Find all alternate locations for virtual registers in a stackmap, and add
   /// them to the metadata to be generated.
@@ -876,10 +888,11 @@ bool StackTransformMetadata::addSSMetadata(int SS,
 /// work queue.
 void inline
 StackTransformMetadata::searchStackSlotCopies(int SS,
-                                       ValueVecPtr IRVals,
-                                       const SMInstBundle &SM,
-                                       SmallPtrSet<const MachineInstr *, 32> &Visited,
-                                       std::queue<unsigned> &work) {
+                                 ValueVecPtr IRVals,
+                                 const SMInstBundle &SM,
+                                 SmallPtrSet<const MachineInstr *, 32> &Visited,
+                                 std::queue<WorkItem> &work,
+                                 bool TraverseDefs) {
   StackSlotCopies::const_iterator Copies;
   CopyLocVecPtr CL;
   CopyLocVec::const_iterator Copy, CE;
@@ -893,7 +906,7 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
       if(!Visited.count(Instr)) {
         addVregMetadata(Vreg, IRVals, SM);
         Visited.insert(Instr);
-        work.push(Vreg);
+        work.emplace(Vreg, TraverseDefs);
       }
     }
   }
@@ -904,7 +917,7 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
 void
 StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
   RegValsMap &Regs = SMRegs[getMISM(SM)];
-  std::queue<unsigned> work;
+  std::queue<WorkItem> work;
   SmallPtrSet<const MachineInstr *, 32> Visited;
   StackCopyLoc *SCL;
   RegCopyLoc *RCL;
@@ -936,63 +949,85 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
     //   STACKMAP 0, 0, vreg1
     //
     // Here, vreg0 is *not* live across the stackmap, but <fi#0> *is*
-    //
-    work.push(origVreg);
+    work.emplace(origVreg, true);
     while(!work.empty()) {
-      unsigned cur, vreg;
+      WorkItem cur;
+      unsigned vreg;
       int ss;
 
       // Walk over definitions
       cur = work.front();
       work.pop();
-      for(auto instr = MRI->def_instr_begin(cur), ei = MRI->def_instr_end();
-          instr != ei;
-          instr++) {
-        if(Visited.count(&*instr)) continue;
-        CopyLocPtr loc = getCopyLocation(&*instr);
-        if(!loc) continue;
+      if(cur.TraverseDefs) {
+        for(auto instr = MRI->def_instr_begin(cur.Vreg),
+                 ei = MRI->def_instr_end();
+            instr != ei; instr++) {
 
-        switch(loc->getType()) {
-        case CopyLoc::VREG:
-          RCL = (RegCopyLoc *)loc.get();
-          vreg = RCL->SrcVreg;
-          addVregMetadata(vreg, IRVals, SM);
-          Visited.insert(&*instr);
-          work.push(vreg);
-          break;
-        case CopyLoc::STACK_LOAD:
-          SCL = (StackCopyLoc *)loc.get();
-          ss = SCL->StackSlot;
-          if(addSSMetadata(ss, IRVals, SM)) {
+          if(Visited.count(&*instr)) continue;
+          CopyLocPtr loc = getCopyLocation(&*instr);
+          if(!loc) continue;
+
+          switch(loc->getType()) {
+          case CopyLoc::VREG:
+            RCL = (RegCopyLoc *)loc.get();
+            vreg = RCL->SrcVreg;
+            addVregMetadata(vreg, IRVals, SM);
             Visited.insert(&*instr);
-            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
+            work.emplace(vreg, true);
+            break;
+          case CopyLoc::STACK_LOAD:
+            SCL = (StackCopyLoc *)loc.get();
+            ss = SCL->StackSlot;
+            if(addSSMetadata(ss, IRVals, SM)) {
+              Visited.insert(&*instr);
+              searchStackSlotCopies(ss, IRVals, SM, Visited, work, true);
+            }
+            break;
+          default: llvm_unreachable("Unknown/invalid location type"); break;
           }
-          break;
-        default: llvm_unreachable("Unknown/invalid location type"); break;
         }
       }
 
       // Walk over uses
-      for(auto instr = MRI->use_instr_begin(cur), ei = MRI->use_instr_end();
+      for(auto instr = MRI->use_instr_begin(cur.Vreg),
+               ei = MRI->use_instr_end();
           instr != ei; instr++) {
+
         if(Visited.count(&*instr)) continue;
         CopyLocPtr loc = getCopyLocation(&*instr);
         if(!loc) continue;
 
+        // Note: in traversing uses of the given vreg, we *don't* want to
+        // traverse definitions of sibling vregs.  Because we're in pseudo-SSA,
+        // it's possible we could be defining a register in separate dataflow
+        // paths, e.g.:
+        //
+        // BB A:
+        //   %vreg3<def> = COPY %vreg1
+        //   JMP <BB C>
+        //
+        // BB B:
+        //   %vreg3<def> = COPY %vreg2
+        //   JMP <BB C>
+        //
+        // ...
+        //
+        // If we discovered block A through vreg 1, we don't want to explore
+        // through block B in which vreg 3 is defined with a different value.
         switch(loc->getType()) {
         case CopyLoc::VREG:
           RCL = (RegCopyLoc *)loc.get();
           vreg = RCL->Vreg;
           addVregMetadata(vreg, IRVals, SM);
           Visited.insert(&*instr);
-          work.push(vreg);
+          work.emplace(vreg, false);
           break;
         case CopyLoc::STACK_STORE:
           SCL = (StackCopyLoc *)loc.get();
           ss = SCL->StackSlot;
           if(addSSMetadata(ss, IRVals, SM)) {
             Visited.insert(&*instr);
-            searchStackSlotCopies(ss, IRVals, SM, Visited, work);
+            searchStackSlotCopies(ss, IRVals, SM, Visited, work, false);
           }
           break;
         default: llvm_unreachable("Unknown/invalid location type"); break;
