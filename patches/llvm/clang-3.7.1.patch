@@ -156,7 +156,7 @@ Index: include/clang/AST/Prefetch.h
 +  bool PrefetchEnabled;
 +
 +public:
-+  Prefetchable(bool PrefetchEnabled = true)
++  Prefetchable(bool PrefetchEnabled = false)
 +    : PrefetchEnabled(PrefetchEnabled) {}
 +
 +  void setPrefetchEnabled(bool Enable) { PrefetchEnabled = Enable; }
@@ -379,6 +379,25 @@ Index: include/clang/Basic/DiagnosticParseKinds.td
  
  // Pragma loop support.
  def err_pragma_loop_missing_argument : Error<
+@@ -1008,6 +1016,18 @@
+ def warn_pragma_unroll_cuda_value_in_parens : Warning<
+   "argument to '#pragma unroll' should not be in parentheses in CUDA C/C++">,
+   InGroup<CudaCompat>;
++
++// Pragma popcorn support.
++def warn_pragma_popcorn_ignored : Warning<
++  "Popcorn: unexpected '#pragma popcorn...' in program">, DefaultIgnore;
++def warn_pragma_popcorn_no_arg : Warning<
++  "Popcorn: missing argument; expected 'prefetch'">;
++def warn_pragma_popcorn_invalid_option : Warning<
++  "Popcorn: invalid pragma argument '%0'; expected 'prefetch'">;
++
++// Pragma popcorn prefetch support.
++def warn_pragma_popcorn_prefetch_invalid_stmt : Warning<
++  "Popcorn: cannot prefetch for this statement">;
+ } // end of Parse Issue category.
+ 
+ let CategoryName = "Modules Issue" in {
 Index: include/clang/Basic/DiagnosticSemaKinds.td
 ===================================================================
 --- include/clang/Basic/DiagnosticSemaKinds.td	(revision 320332)
@@ -500,6 +519,23 @@ Index: include/clang/Basic/OpenMPKinds.h
  OpenMPDirectiveKind getOpenMPDirectiveKind(llvm::StringRef Str);
  const char *getOpenMPDirectiveName(OpenMPDirectiveKind Kind);
  
+Index: include/clang/Basic/TokenKinds.def
+===================================================================
+--- include/clang/Basic/TokenKinds.def	(revision 320332)
++++ include/clang/Basic/TokenKinds.def	(working copy)
+@@ -752,6 +752,12 @@
+ ANNOTATION(module_begin)
+ ANNOTATION(module_end)
+ 
++// Annotations for Popcorn Linux - #pragma popcorn ...
++// The lexer produces these so that they only take effect when the parser
++// handles #pragma popcorn ... directives.
++ANNOTATION(pragma_popcorn_prefetch)
++ANNOTATION(pragma_popcorn_prefetch_end)
++
+ #undef ANNOTATION
+ #undef TESTING_KEYWORD
+ #undef OBJC2_AT_KEYWORD
 Index: include/clang/CodeGen/BackendUtil.h
 ===================================================================
 --- include/clang/CodeGen/BackendUtil.h	(revision 320332)
@@ -838,7 +874,26 @@ Index: include/clang/Parse/Parser.h
 ===================================================================
 --- include/clang/Parse/Parser.h	(revision 320332)
 +++ include/clang/Parse/Parser.h	(working copy)
-@@ -2418,6 +2418,10 @@
+@@ -167,6 +167,7 @@
+   std::unique_ptr<PragmaHandler> LoopHintHandler;
+   std::unique_ptr<PragmaHandler> UnrollHintHandler;
+   std::unique_ptr<PragmaHandler> NoUnrollHintHandler;
++  std::unique_ptr<PragmaHandler> PopcornHandler;
+ 
+   std::unique_ptr<CommentHandler> CommentSemaHandler;
+ 
+@@ -528,6 +529,10 @@
+   /// #pragma clang loop and #pragma unroll.
+   bool HandlePragmaLoopHint(LoopHint &Hint);
+ 
++  /// \brief Handle the annotation token produced for
++  /// #pragma popcorn...
++  StmtResult HandlePragmaPopcorn();
++
+   /// GetLookAheadToken - This peeks ahead N tokens and returns that token
+   /// without consuming any tokens.  LookAhead(0) returns 'Tok', LookAhead(1)
+   /// returns the token after Tok, etc.
+@@ -2418,6 +2423,10 @@
  
    //===--------------------------------------------------------------------===//
    // OpenMP: Directives and clauses.
@@ -3066,6 +3121,197 @@ Index: lib/Parse/ParseOpenMP.cpp
 +      DepKind, DepLoc, PrefKind, PrefLoc);
  }
  
+Index: lib/Parse/ParsePragma.cpp
+===================================================================
+--- lib/Parse/ParsePragma.cpp	(revision 320332)
++++ lib/Parse/ParsePragma.cpp	(working copy)
+@@ -156,6 +156,23 @@
+                     Token &FirstToken) override;
+ };
+ 
++struct PragmaNoPopcornHandler: public PragmaHandler {
++  PragmaNoPopcornHandler() : PragmaHandler("popcorn") {}
++  void HandlePragma(Preprocessor &PP,  PragmaIntroducerKind Introducer,
++                    Token &FirstToken) override;
++};
++
++struct PragmaPopcornHandler : public PragmaHandler {
++  enum Type {
++    Prefetch, // Prefetch for the statement following the pragma
++    None      // Unknown pragma type
++  };
++
++  PragmaPopcornHandler() : PragmaHandler("popcorn") {}
++  void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
++                    Token &FirstToken) override;
++};
++
+ }  // end namespace
+ 
+ void Parser::initializePragmaHandlers() {
+@@ -235,6 +252,12 @@
+ 
+   NoUnrollHintHandler.reset(new PragmaUnrollHintHandler("nounroll"));
+   PP.AddPragmaHandler(NoUnrollHintHandler.get());
++
++  if (getLangOpts().DistributedOmp)
++    PopcornHandler.reset(new PragmaPopcornHandler());
++  else
++    PopcornHandler.reset(new PragmaNoPopcornHandler());
++  PP.AddPragmaHandler(PopcornHandler.get());
+ }
+ 
+ void Parser::resetPragmaHandlers() {
+@@ -304,6 +327,9 @@
+ 
+   PP.RemovePragmaHandler(NoUnrollHintHandler.get());
+   NoUnrollHintHandler.reset();
++
++  PP.RemovePragmaHandler(PopcornHandler.get());
++  PopcornHandler.reset();
+ }
+ 
+ /// \brief Handle the annotation token produced for #pragma unused(...)
+@@ -868,6 +894,32 @@
+   return true;
+ }
+ 
++StmtResult Parser::HandlePragmaPopcorn() {
++  assert(Tok.is(tok::annot_pragma_popcorn_prefetch));
++  ConsumeToken(); // The annotation token.
++
++  while (Tok.isNot(tok::annot_pragma_popcorn_prefetch_end)) {
++    // TODO handle clauses
++    ConsumeToken();
++  }
++  ConsumeToken(); // Consume final token.
++
++  StmtResult R = ParseStatement();
++
++  if (R.isInvalid()) return StmtError();
++  else if (isa<ForStmt>(R.get())) {
++    ForStmt *S = cast<ForStmt>(R.get());
++    S->setPrefetchEnabled(true);
++    PrefetchAnalysis PA(R.get());
++    PA.analyzeStmt();
++    getActions().getASTContext().addPrefetchAnalysis(R.get(), PA);
++  }
++  else PP.Diag(R.get()->getLocStart(),
++               diag::warn_pragma_popcorn_prefetch_invalid_stmt);
++
++  return R;
++}
++
+ // #pragma GCC visibility comes in two variants:
+ //   'push' '(' [visibility] ')'
+ //   'pop'
+@@ -1458,10 +1510,10 @@
+ PragmaNoOpenMPHandler::HandlePragma(Preprocessor &PP,
+                                     PragmaIntroducerKind Introducer,
+                                     Token &FirstTok) {
+-  if (!PP.getDiagnostics().isIgnored(diag::warn_pragma_omp_ignored,
++  if (!PP.getDiagnostics().isIgnored(diag::warn_pragma_popcorn_ignored,
+                                      FirstTok.getLocation())) {
+-    PP.Diag(FirstTok, diag::warn_pragma_omp_ignored);
+-    PP.getDiagnostics().setSeverity(diag::warn_pragma_omp_ignored,
++    PP.Diag(FirstTok, diag::warn_pragma_popcorn_ignored);
++    PP.getDiagnostics().setSeverity(diag::warn_pragma_popcorn_ignored,
+                                     diag::Severity::Ignored, SourceLocation());
+   }
+   PP.DiscardUntilEndOfDirective();
+@@ -2119,3 +2171,66 @@
+   PP.EnterTokenStream(TokenArray, 1, /*DisableMacroExpansion=*/false,
+                       /*OwnsTokens=*/true);
+ }
++
++void PragmaNoPopcornHandler::HandlePragma(Preprocessor &PP,
++                                          PragmaIntroducerKind Introducer,
++                                          Token &Tok) {
++  if (!PP.getDiagnostics().isIgnored(diag::warn_pragma_omp_ignored,
++                                     Tok.getLocation())) {
++    PP.Diag(Tok, diag::warn_pragma_omp_ignored);
++    PP.getDiagnostics().setSeverity(diag::warn_pragma_omp_ignored,
++                                    diag::Severity::Ignored, SourceLocation());
++  }
++  PP.DiscardUntilEndOfDirective();
++}
++
++void PragmaPopcornHandler::HandlePragma(Preprocessor &PP,
++                                        PragmaIntroducerKind Introducer,
++                                        Token &Tok) {
++  // Incoming token is "popcorn" for "#pragma popcorn".
++  PP.Lex(Tok);
++  if (Tok.isNot(tok::identifier)) {
++    PP.Diag(Tok.getLocation(), diag::warn_pragma_popcorn_no_arg);
++    return;
++  }
++
++  IdentifierInfo *OptionInfo = Tok.getIdentifierInfo();
++  enum PragmaPopcornHandler::Type Ty =
++    llvm::StringSwitch<enum PragmaPopcornHandler::Type>(OptionInfo->getName())
++                             .Case("prefetch", PragmaPopcornHandler::Prefetch)
++                             .Default(PragmaPopcornHandler::None);
++  if (Ty == PragmaPopcornHandler::None) {
++    PP.Diag(Tok.getLocation(), diag::warn_pragma_popcorn_invalid_option)
++        << OptionInfo->getName();
++    return;
++  }
++
++  switch(Ty) {
++  default: llvm_unreachable("Should have weeded out invalid types"); break;
++  case PragmaPopcornHandler::Prefetch: {
++    // Capture all tokens to be included for prefetching analysis.
++    SmallVector<Token, 16> Pragma;
++    Token NextTok;
++
++    NextTok.startToken();
++    NextTok.setKind(tok::annot_pragma_popcorn_prefetch);
++    NextTok.setLocation(Tok.getLocation());
++    while (NextTok.isNot(tok::eod)) {
++      Pragma.push_back(NextTok);
++      PP.Lex(NextTok);
++    }
++    SourceLocation EodLoc = NextTok.getLocation();
++    NextTok.startToken();
++    NextTok.setKind(tok::annot_pragma_popcorn_prefetch_end);
++    NextTok.setLocation(EodLoc);
++    Pragma.push_back(NextTok);
++  
++    Token *Toks = new Token[Pragma.size()];
++    std::copy(Pragma.begin(), Pragma.end(), Toks);
++    PP.EnterTokenStream(Toks, Pragma.size(),
++                        /*DisableMacroExpansion=*/false, /*OwnsTokens=*/true);
++    break;
++  }
++  }
++}
++
+Index: lib/Parse/ParseStmt.cpp
+===================================================================
+--- lib/Parse/ParseStmt.cpp	(revision 320332)
++++ lib/Parse/ParseStmt.cpp	(working copy)
+@@ -357,6 +357,9 @@
+   case tok::annot_pragma_loop_hint:
+     ProhibitAttributes(Attrs);
+     return ParsePragmaLoopHint(Stmts, OnlyStatement, TrailingElseLoc, Attrs);
++
++  case tok::annot_pragma_popcorn_prefetch:
++    return HandlePragmaPopcorn();
+   }
+ 
+   // If we reached this code, the statement must end in a semicolon.
+Index: lib/Parse/Parser.cpp
+===================================================================
+--- lib/Parse/Parser.cpp	(revision 320332)
++++ lib/Parse/Parser.cpp	(working copy)
+@@ -282,6 +282,7 @@
+       // Ran out of tokens.
+       return false;
+ 
++    case tok::annot_pragma_popcorn_prefetch_end:
+     case tok::annot_pragma_openmp_end:
+       // Stop before an OpenMP pragma boundary.
+     case tok::annot_module_begin:
 Index: lib/Sema/SemaOpenMP.cpp
 ===================================================================
 --- lib/Sema/SemaOpenMP.cpp	(revision 320332)
@@ -3188,40 +3434,6 @@ Index: lib/Sema/SemaOpenMP.cpp
 +                                   SecondColonLoc, EndLoc);
 +}
 +
-Index: lib/Sema/SemaStmt.cpp
-===================================================================
---- lib/Sema/SemaStmt.cpp	(revision 320332)
-+++ lib/Sema/SemaStmt.cpp	(working copy)
-@@ -20,6 +20,7 @@
- #include "clang/AST/EvaluatedExprVisitor.h"
- #include "clang/AST/ExprCXX.h"
- #include "clang/AST/ExprObjC.h"
-+#include "clang/AST/PrefetchAnalysis.h"
- #include "clang/AST/RecursiveASTVisitor.h"
- #include "clang/AST/StmtCXX.h"
- #include "clang/AST/StmtObjC.h"
-@@ -1649,8 +1650,19 @@
-   if (isa<NullStmt>(Body))
-     getCurCompoundScope().setHasEmptyLoopBodies();
- 
--  return new (Context) ForStmt(Context, First, SecondResult.get(), ConditionVar,
--                               Third, Body, ForLoc, LParenLoc, RParenLoc);
-+  ForStmt *NewStmt = new (Context) ForStmt(Context, First, SecondResult.get(),
-+                                           ConditionVar, Third, Body, ForLoc,
-+                                           LParenLoc, RParenLoc);
-+
-+  // TODO set PrefetchEnabled via pragmas or command line
-+  if(NewStmt->prefetchEnabled()) {
-+    ASTContext &Ctx = getASTContext();
-+    PrefetchAnalysis PA(NewStmt);
-+    PA.analyzeStmt();
-+    Ctx.addPrefetchAnalysis(NewStmt, PA);
-+  }
-+
-+  return NewStmt;
- }
- 
- /// In an Objective C collection iteration statement:
 Index: lib/Sema/TreeTransform.h
 ===================================================================
 --- lib/Sema/TreeTransform.h	(revision 320332)

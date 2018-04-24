@@ -25,7 +25,7 @@ protected:
   bool PrefetchEnabled;
 
 public:
-  Prefetchable(bool PrefetchEnabled = true)
+  Prefetchable(bool PrefetchEnabled = false)
     : PrefetchEnabled(PrefetchEnabled) {}
 
   void setPrefetchEnabled(bool Enable) { PrefetchEnabled = Enable; }
