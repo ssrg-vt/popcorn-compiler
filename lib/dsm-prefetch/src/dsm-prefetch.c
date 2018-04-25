@@ -5,6 +5,8 @@
  * Date: February 13th, 2018
  */
 
+#include <stdlib.h>
+#include <stdio.h>
 #include <assert.h>
 #include <migrate.h>
 #include <semaphore.h>
@@ -40,13 +42,6 @@ typedef struct {
 /* Statically-allocated lists. */
 static node_requests_t requests[MAX_POPCORN_NODES];
 
-#ifdef _MAPREFETCH
-/* Threads for asynchronous manual prefetching */
-static pthread_t prefetch_threads[MAX_POPCORN_NODES];
-static thread_arg_t prefetch_params[MAX_POPCORN_NODES];
-static void *prefetch_thread_main(void *arg);
-#endif
-
 /* Statistics about prefetching */
 typedef struct {
   size_t num; // Number of prefetch requests
@@ -54,7 +49,20 @@ typedef struct {
   size_t time; // Time to prefetch, in nanoseconds
 } stats_t;
 
-#define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
+#ifdef _MAPREFETCH
+/* Threads for asynchronous manual prefetching */
+static pthread_t prefetch_threads[MAX_POPCORN_NODES];
+static thread_arg_t prefetch_params[MAX_POPCORN_NODES];
+static void *prefetch_thread_main(void *arg);
+#elif defined _STATISTICS
+stats_t total_stats = { .num = 0, .pages = 0, .time = 0 };
+
+static void accumulate_global_stats(stats_t *stats) {
+  __atomic_fetch_add(&total_stats.num, stats->num, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&total_stats.pages, stats->pages, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&total_stats.time, stats->time, __ATOMIC_RELAXED);
+}
+#endif
 
 /* Get a human-readable string for the access type. */
 static inline const char * __attribute__((unused))
@@ -121,6 +129,21 @@ static void __attribute__((destructor)) prefetch_end()
     pthread_join(prefetch_threads[i], NULL);
     sem_destroy(&prefetch_params[i].work);
   }
+}
+#elif defined _STATISTICS
+static void __attribute__((destructor)) print_stats() {
+  const char *fn = NULL;
+  FILE *out = stderr;
+
+  if((fn = getenv(ENV_STAT_LOG_FN))) out = fopen(fn, "w");
+
+  if(out)
+    fprintf(out, "Executed %lu prefetch requests\n"
+                 "Prefetched %lu pages\n"
+                 "Prefetching took %lu nanoseconds\n",
+            total_stats.num, total_stats.pages, total_stats.time);
+
+  if(fn && out) fclose(out);
 }
 #endif
 
@@ -269,17 +292,13 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
   const node_t *n, *end;
   const memory_span_t *span;
 #ifdef _STATISTICS
-  struct timespec start, end;
+  struct timespec start_time, end_time;
 #endif
   stats->num = 0;
   stats->pages = 0;
   stats->time = 0;
 
-  // Ensure prefetch request is for a valid node.
-  if(nid < 0 || nid >= MAX_POPCORN_NODES) {
-    warn("Invalid node ID %d\n", nid);
-    return;
-  }
+  assert(0 <= nid && nid < MAX_POPCORN_NODES && "Invalid node ID");
 
   // We can't prefetch to another node, so warn & clear out lists to prevent
   // them from growing forever due to failed prefetch executions.
@@ -292,6 +311,8 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
     return;
   }
 
+  // Acquire locks to prevent other threads from trying to add new requests
+  // while we're processing the lists.
   list_atomic_start(&requests[nid].read);
   list_atomic_start(&requests[nid].write);
   list_atomic_start(&requests[nid].release);
@@ -315,13 +336,13 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
           nid, span->low, span->high);
 
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 #endif
     prefetch_span(WRITE, span);
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
     stats->pages += SPAN_NUM_PAGES(*span);
-    stats->time += NS(end) - NS(start);
+    stats->time += NS(end_time) - NS(start_time);
 #endif
     stats->num++;
 
@@ -345,13 +366,13 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
           nid, span->low, span->high);
 
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 #endif
     prefetch_span(READ, span);
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
     stats->pages += SPAN_NUM_PAGES(*span);
-    stats->time += NS(end) - NS(start);
+    stats->time += NS(end_time) - NS(start_time);
 #endif
     stats->num++;
 
@@ -371,13 +392,13 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
           nid, span->low, span->high);
 
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 #endif
     prefetch_span(RELEASE, span);
 #ifdef _STATISTICS
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
     stats->pages += SPAN_NUM_PAGES(*span);
-    stats->time += NS(end) - NS(start);
+    stats->time += NS(end_time) - NS(start_time);
 #endif
     stats->num++;
 
@@ -413,6 +434,9 @@ size_t popcorn_prefetch_execute_node(int nid)
   if(current != nid) migrate(nid, NULL, NULL);
   popcorn_prefetch_execute_internal(nid, &stats);
   if(current != nid) migrate(current, NULL, NULL);
+#ifdef _STATISTICS
+  accumulate_global_stats(&stats);
+#endif
 #endif
 
   return stats.num;
@@ -446,10 +470,11 @@ prefetch_thread_main(void *arg)
 
   migrate(0, NULL, NULL);
 
-  debug("PID %d: executed %lu prefetch requests\n", gettid(), stats.num);
-#ifdef _STATISTICS
-  debug("PID %d: touched %lu pages, took %lu ns\n", gettid(),
-        stats.pages, stats.time);
+#ifndef _STATISTICS
+  debug("PID %d: executed %lu requests\n", gettid(), stats.num);
+#else
+  debug("PID %d: executed %lu requests, touched %lu pages, took %lu ns\n",
+        gettid(), stats.num, stats.pages, stats.time);
 #endif
 
   return NULL;

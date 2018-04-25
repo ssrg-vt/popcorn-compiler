@@ -45,5 +45,11 @@ typedef struct {
 #define _MAPREFETCH
 #endif
 
+/* Convert a struct timespec to raw nanoseconds */
+#define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
+
+/* Environment variable to set log file for statistics */
+#define ENV_STAT_LOG_FN "POPCORN_PREFETCH_STATS_FN"
+
 #endif
 
