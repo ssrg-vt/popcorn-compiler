@@ -161,7 +161,10 @@ void popcorn_prefetch_node(int nid,
                            const void *low,
                            const void *high)
 {
-  memory_span_t span = { .low = (uint64_t)low, .high = (uint64_t)high };
+  memory_span_t span = {
+    .low = PAGE_ROUND_DOWN((uint64_t)low),
+    .high = PAGE_ROUND_UP((uint64_t)high)
+  };
 
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
@@ -256,26 +259,14 @@ static void prefetch_span(access_type_t type, const memory_span_t *span)
 #ifdef _MANUAL_PREFETCH
   // Note: no manual analog to releasing ownership
   if(type != RELEASE) prefetch_span_manual(type, span);
-  else
-  {
-    memory_span_t align = {
-      .low = PAGE_ROUND_DOWN((uint64_t)span->low),
-      .high = PAGE_ROUND_UP((uint64_t)span->high)
-    };
-    madvise((void *)align.low, SPAN_SIZE(align), MADV_RELEASE);
-  }
+  else madvise((void *)span->low, SPAN_SIZE(*span), MADV_RELEASE);
 #else
-  memory_span_t align = {
-    .low = PAGE_ROUND_DOWN((uint64_t)span->low),
-    .high = PAGE_ROUND_UP((uint64_t)span->high)
-  };
-
   switch(type)
   {
-  case READ: madvise((void *)align.low, SPAN_SIZE(align), MADV_READ); break;
-  case WRITE: madvise((void *)align.low, SPAN_SIZE(align), MADV_WRITE); break;
+  case READ: madvise((void *)span->low, SPAN_SIZE(*span), MADV_READ); break;
+  case WRITE: madvise((void *)span->low, SPAN_SIZE(*span), MADV_WRITE); break;
   case RELEASE:
-    madvise((void *)align.low, SPAN_SIZE(align), MADV_RELEASE);
+    madvise((void *)span->low, SPAN_SIZE(*span), MADV_RELEASE);
     break;
   default: assert(false && "Unknown access type"); break;
   }
