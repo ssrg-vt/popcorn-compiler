@@ -19,12 +19,15 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 
 namespace clang {
 
 class ASTContext;
+class InductionVariable;
 
 /// A range of memory to be prefetched.
 class PrefetchRange {
@@ -61,12 +64,16 @@ private:
 
 class PrefetchAnalysis {
 public:
+  typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
+  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
+  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
+
   /// Default constructor, really only defined to enable storage in a DenseMap.
-  PrefetchAnalysis() : S(nullptr) {}
+  PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
 
   /// Construct a new prefetch analysis object to analyze a statement.  Doesn't
   /// run the analysis.
-  PrefetchAnalysis(Stmt *S) : S(S) {}
+  PrefetchAnalysis(ASTContext *Ctx, Stmt *S) : Ctx(Ctx), S(S) {}
 
   /// Analyze the statement.
   void analyzeStmt();
@@ -75,15 +82,47 @@ public:
   const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
   { return ToPrefetch; }
 
-  void print(llvm::raw_ostream &O, ASTContext &Ctx) const;
-  void dump(ASTContext &Ctx) const { print(llvm::errs(), Ctx); }
+  void print(llvm::raw_ostream &O) const;
+  void dump() const { print(llvm::errs()); }
 
 private:
+  ASTContext *Ctx;
   Stmt *S;
   llvm::SmallVector<PrefetchRange, 8> ToPrefetch;
 
   /// Analyze individual types of statements.
   void analyzeForStmt();
+
+  /// Reconstruct expressions with induction variable uses replaced by their
+  /// upper (Upper = true) & lower bounds (Upper = false).
+  Expr *cloneWithIV(Expr *E, const IVMap &IVs, bool Upper) const;
+
+  /// Clone an expression, but don't replace any variables.
+  Expr *clone(Expr *E) const;
+
+  /// Clone a binary operation.
+  Expr *cloneBinaryOperation(BinaryOperator *B,
+                             const IVMap &IVs,
+                             bool Upper) const;
+
+  /// Clone a unary operation.
+  Expr *cloneUnaryOperation(UnaryOperator *U,
+                            const IVMap &IVs,
+                            bool Upper) const;
+
+  /// Clone a declaration reference.  If it's an induction variable, replace
+  /// with the bound specified by the Upper flag.
+  Expr *cloneDeclRefExpr(DeclRefExpr *D, const IVMap &IVs, bool Upper) const;
+
+  /// Clone an implicit cast.
+  Expr *cloneImplicitCastExpr(ImplicitCastExpr *E,
+                              const IVMap &IVs,
+                              bool Upper) const;
+
+  /// Clone an integer literal.
+  Expr *cloneIntegerLiteral(IntegerLiteral *L,
+                            const IVMap &IVs,
+                            bool Upper) const;
 };
 
 } // end namespace clang
