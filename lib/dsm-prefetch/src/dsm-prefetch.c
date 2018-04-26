@@ -49,19 +49,21 @@ typedef struct {
   size_t time; // Time to prefetch, in nanoseconds
 } stats_t;
 
+static stats_t total_stats = { .num = 0, .pages = 0, .time = 0 };
+
+static void accumulate_global_stats(stats_t *stats) {
+  __atomic_fetch_add(&total_stats.num, stats->num, __ATOMIC_RELAXED);
+#ifdef _STATISTICS
+  __atomic_fetch_add(&total_stats.pages, stats->pages, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&total_stats.time, stats->time, __ATOMIC_RELAXED);
+#endif
+}
+
 #ifdef _MAPREFETCH
 /* Threads for asynchronous manual prefetching */
 static pthread_t prefetch_threads[MAX_POPCORN_NODES];
 static thread_arg_t prefetch_params[MAX_POPCORN_NODES];
 static void *prefetch_thread_main(void *arg);
-#elif defined _STATISTICS
-stats_t total_stats = { .num = 0, .pages = 0, .time = 0 };
-
-static void accumulate_global_stats(stats_t *stats) {
-  __atomic_fetch_add(&total_stats.num, stats->num, __ATOMIC_RELAXED);
-  __atomic_fetch_add(&total_stats.pages, stats->pages, __ATOMIC_RELAXED);
-  __atomic_fetch_add(&total_stats.time, stats->time, __ATOMIC_RELAXED);
-}
 #endif
 
 /* Get a human-readable string for the access type. */
@@ -200,7 +202,7 @@ size_t popcorn_prefetch_num_requests(int nid, access_type_t type)
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    warn("Invalid node ID %d", nid);
+    warn("Invalid node ID %d\n", nid);
     return 0;
   }
 
@@ -304,9 +306,9 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 
   // Acquire locks to prevent other threads from trying to add new requests
   // while we're processing the lists.
+  list_atomic_start(&requests[nid].release);
   list_atomic_start(&requests[nid].read);
   list_atomic_start(&requests[nid].write);
-  list_atomic_start(&requests[nid].release);
 
   // Send write requests
   n = list_begin(&requests[nid].write);
@@ -411,7 +413,7 @@ size_t popcorn_prefetch_execute_node(int nid)
   // Ensure prefetch request is for a valid node.
   if(nid < 0 || nid >= MAX_POPCORN_NODES)
   {
-    warn("Invalid node ID %d", nid);
+    warn("Invalid node ID %d\n", nid);
     return 0;
   }
 
@@ -425,9 +427,7 @@ size_t popcorn_prefetch_execute_node(int nid)
   if(current != nid) migrate(nid, NULL, NULL);
   popcorn_prefetch_execute_internal(nid, &stats);
   if(current != nid) migrate(current, NULL, NULL);
-#ifdef _STATISTICS
   accumulate_global_stats(&stats);
-#endif
 #endif
 
   return stats.num;
