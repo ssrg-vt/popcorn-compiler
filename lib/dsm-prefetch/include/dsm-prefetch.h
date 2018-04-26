@@ -20,10 +20,10 @@ extern "C" {
 
 /* How a thread will access memory. */
 typedef enum {
-  READ,    /* Read/replicated permissions */
-  WRITE,   /* Write/exclusive permissions */
-  EXECUTE, /* Execution permissions -- currently unimplemented! */
-  RELEASE  /* Release current permissions */
+  READ = 0,    /* Read/replicated permissions */
+  WRITE,       /* Write/exclusive permissions */
+  EXECUTE,     /* Execution permissions -- currently unimplemented! */
+  RELEASE      /* Release current permissions */
 } access_type_t;
 
 /*

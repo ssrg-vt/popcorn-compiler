@@ -20,6 +20,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
@@ -68,12 +69,28 @@ public:
   typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
   typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
 
+  /// How an expression should be modified.
+  struct ExprModifier {
+    enum Type { Add, Sub, Mul, Div, None, Unknown };
+    void ClassifyModifier(Expr *E);
+    enum Type getType() const { return Ty; }
+    const llvm::APInt &getVal() const { return Val; }
+  private:
+    enum Type Ty;
+    llvm::APInt Val;
+  };
+
   /// Default constructor, really only defined to enable storage in a DenseMap.
   PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
 
   /// Construct a new prefetch analysis object to analyze a statement.  Doesn't
   /// run the analysis.
   PrefetchAnalysis(ASTContext *Ctx, Stmt *S) : Ctx(Ctx), S(S) {}
+
+  /// Ignore a set of variables during access analysis.  In other words, ignore
+  /// memory accesses which use these variables as their base.
+  void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
+  { this->Ignore = Ignore; }
 
   /// Analyze the statement.
   void analyzeStmt();
@@ -88,6 +105,8 @@ public:
 private:
   ASTContext *Ctx;
   Stmt *S;
+  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
+
   llvm::SmallVector<PrefetchRange, 8> ToPrefetch;
 
   /// Analyze individual types of statements.
@@ -123,6 +142,9 @@ private:
   Expr *cloneIntegerLiteral(IntegerLiteral *L,
                             const IVMap &IVs,
                             bool Upper) const;
+
+  /// Modify an expression according to a configuration.
+  Expr *modifyExpr(Expr *E, const ExprModifier &Mod) const;
 };
 
 } // end namespace clang

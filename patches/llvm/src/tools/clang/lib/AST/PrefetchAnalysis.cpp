@@ -117,6 +117,59 @@ struct ScopeInfo {
 };
 typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
 
+static unsigned getTypeSize(BuiltinType::Kind K) {
+  switch(K) {
+  case BuiltinType::Bool:
+  case BuiltinType::Char_U: case BuiltinType::UChar:
+  case BuiltinType::Char_S: case BuiltinType::SChar:
+    return 8;
+  case BuiltinType::WChar_U: case BuiltinType::Char16:
+  case BuiltinType::UShort:
+  case BuiltinType::WChar_S:
+  case BuiltinType::Short:
+    return 16;
+  case BuiltinType::Char32:
+  case BuiltinType::UInt:
+  case BuiltinType::Int:
+    return 32;
+  case BuiltinType::ULong:
+  case BuiltinType::ULongLong:
+  case BuiltinType::Long:
+  case BuiltinType::LongLong:
+    return 64;
+  case BuiltinType::UInt128:
+  case BuiltinType::Int128:
+    return 128;
+  default: return UINT32_MAX;
+  }
+}
+
+void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E) {
+  unsigned Bits;
+  BinaryOperator *B;
+
+  Ty = Unknown;
+  if(!E) return;
+
+  assert(isScalarIntType(E->getType()) && "Invalid expression type");
+  Bits = getTypeSize(cast<BuiltinType>(E->getType())->getKind());
+
+  if((B = dyn_cast<BinaryOperator>(E))) {
+    switch(B->getOpcode()) {
+    default: Ty = None; break;
+    case BO_LT:
+      Ty = Sub;
+      Val = llvm::APInt(Bits, 1, false);
+      break;
+    case BO_GT:
+      Ty = Add;
+      Val = llvm::APInt(Bits, 1, false);
+      break;
+    // TODO hybrid math/assign operations
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Prefetch analysis -- array accesses
 //
@@ -159,6 +212,9 @@ private:
 // TODO *** NEED TO LIMIT TO AFFINE ACCESSES ***
 class ArrayAccessPattern : public RecursiveASTVisitor<ArrayAccessPattern> {
 public:
+  ArrayAccessPattern(llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
+    : Ignore(Ignore) {}
+
   /// Which sub-tree of a binary operator we're traversing.  This determines
   /// whether we're reading or writing the array.
   enum TraverseStructure { LHS, RHS };
@@ -212,12 +268,10 @@ public:
     DeclRefExpr *DR;
     VarDecl *VD;
 
-    assert(Side.size() && "Unhandled tree structure");
-
     DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
     if(!DR) goto end;
     VD = dyn_cast<VarDecl>(DR->getDecl());
-    if(!VD) goto end;
+    if(!VD || Ignore.count(VD)) goto end;
     if(Side.back() == LHS) {
       ArrayWrites.emplace_back(VD, Idx, CurScope);
       CurAccess = &ArrayWrites.back();
@@ -248,6 +302,7 @@ end:
 private:
   llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
   ScopeInfoPtr CurScope;
+  llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
 
   // Traversal state
   llvm::SmallVector<enum TraverseStructure, 8> Side;
@@ -271,31 +326,33 @@ public:
   };
 
   InductionVariable() : Var(nullptr), Init(nullptr), Cond(nullptr),
-                        Update(nullptr), LowerB(nullptr), UpperB(nullptr),
-                        Dir(Unknown) {}
+                        Update(nullptr), Dir(Unknown), LowerB(nullptr),
+                        UpperB(nullptr) {}
 
   InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update)
-    : Var(Var), Init(Init), Cond(Cond), Update(Update), LowerB(nullptr),
-      UpperB(nullptr), Dir(Unknown) {
+    : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
+      LowerB(nullptr), UpperB(nullptr) {
 
     const UnaryOperator *Unary;
     assert(getVarIfScalarInt(Var) && "Invalid induction variable");
 
     // Try to classify update direction to determine upper/lower bounds
     if((Unary = dyn_cast<UnaryOperator>(Update))) {
-      classifyUnaryOpDirection(Unary->getOpcode());
+      Dir = classifyUnaryOpDirection(Unary->getOpcode());
       if(Dir != Unknown) goto end;
     }
 
 end:
-    // TODO if update is a math/assign operator, e.g., +=, need to update
-    // bounds expression to *unwind*
     if(Dir == Increases) {
+      LowerModifier.ClassifyModifier(Init);
       LowerB = stripInductionVar(Init);
+      UpperModifier.ClassifyModifier(Cond);
       UpperB = stripInductionVar(Cond);
     }
     else if(Dir == Decreases) {
+      LowerModifier.ClassifyModifier(Cond);
       LowerB = stripInductionVar(Cond);
+      UpperModifier.ClassifyModifier(Init);
       UpperB = stripInductionVar(Init);
     }
   }
@@ -304,9 +361,13 @@ end:
   Expr *getInit() const { return Init; }
   Expr *getCond() const { return Cond; }
   Expr *getUpdate() const { return Update; }
+  enum Direction getUpdateDirection() const { return Dir; }
   Expr *getLowerBound() const { return LowerB; }
   Expr *getUpperBound() const { return UpperB; }
-  enum Direction getUpdateDirection() const { return Dir; }
+  const PrefetchAnalysis::ExprModifier &
+  getLowerBoundModifier() const { return LowerModifier; }
+  const PrefetchAnalysis::ExprModifier &
+  getUpperBoundModifier() const { return UpperModifier; }
 
   void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
     O << "Induction Variable: " << Var->getName() << "\nDirection: ";
@@ -333,22 +394,21 @@ private:
 
   /// Expressions describing the lower & upper bounds of the induction variable
   /// and its update direction.
-  Expr *LowerB, *UpperB;
   enum Direction Dir;
+  Expr *LowerB, *UpperB;
+  PrefetchAnalysis::ExprModifier LowerModifier, UpperModifier;
 
   /// Try to classify the induction variable's update direction based on the
   /// unary operation type.
-  void classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
+  static enum Direction classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
     switch(Op) {
     case UO_PostInc:
     case UO_PreInc:
-      Dir = Increases;
-      break;
+      return Increases;
     case UO_PostDec:
     case UO_PreDec:
-      Dir = Decreases;
-      break;
-    default: break;
+      return Decreases;
+    default: return Unknown;
     }
   }
 
@@ -629,7 +689,7 @@ findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
 /// induction variables that can be prefetched at runtime.
 void PrefetchAnalysis::analyzeForStmt() {
   LoopNestTraversal Loops;
-  ArrayAccessPattern ArrAccesses;
+  ArrayAccessPattern ArrAccesses(Ignore);
 
   // Gather loop nest information, including induction variables
   Loops.InitTraversal();
@@ -707,7 +767,7 @@ PrefetchAnalysis::cloneWithIV(Expr *E, const IVMap &IVs, bool Upper) const {
 }
 
 Expr *PrefetchAnalysis::clone(Expr *E) const {
-  IVMap Dummy; // DeclRefExprs will never replace declaration usage
+  IVMap Dummy; // No induction variables, don't replace any DeclRefExprs
   return cloneWithIV(E, Dummy, false);
 }
 
@@ -747,8 +807,12 @@ Expr *PrefetchAnalysis::cloneDeclRefExpr(DeclRefExpr *D,
   if(!VD) goto no_replace;
   it = IVs.find(VD);
   if(it == IVs.end()) goto no_replace;
-  if(Upper) return clone(it->second->getUpperBound());
-  else return clone(it->second->getLowerBound());
+  if(Upper)
+    return modifyExpr(clone(it->second->getUpperBound()),
+                      it->second->getUpperBoundModifier());
+  else
+    return modifyExpr(clone(it->second->getLowerBound()),
+                      it->second->getLowerBoundModifier());
 
 no_replace:
   return new (*Ctx) DeclRefExpr(D->getDecl(),
@@ -765,6 +829,9 @@ Expr *PrefetchAnalysis::cloneImplicitCastExpr(ImplicitCastExpr *C,
   Expr *Sub = cloneWithIV(C->getSubExpr(), IVs, Upper);
   if(!Sub) return nullptr;
 
+  // Avoid the situation that when replacing an induction variable with another
+  // expression we accidentally chain together 2 implicit casts (which causes
+  // CodeGen to choke).
   if(C->getCastKind() == CastKind::CK_LValueToRValue &&
      Sub->getValueKind() == VK_RValue) return Sub;
   else
@@ -781,6 +848,27 @@ Expr *PrefetchAnalysis::cloneIntegerLiteral(IntegerLiteral *L,
   return new (*Ctx) IntegerLiteral(*Ctx, L->getValue(),
                                    L->getType(),
                                    SourceLocation());
+}
+
+Expr *PrefetchAnalysis::modifyExpr(Expr *E, const ExprModifier &Mod) const {
+  BinaryOperator::Opcode Op;
+  IntegerLiteral *RHS;
+
+  if(!E) return nullptr;
+  switch(Mod.getType()) {
+  case ExprModifier::Add: Op = BO_Add; break;
+  case ExprModifier::Sub: Op = BO_Sub; break;
+  case ExprModifier::Mul: Op = BO_Mul; break;
+  case ExprModifier::Div: Op = BO_Div; break;
+  case ExprModifier::None: return E; // Nothing to do
+  case ExprModifier::Unknown: return nullptr; // Couldn't classify
+  }
+ 
+  RHS = new (*Ctx) IntegerLiteral(*Ctx, Mod.getVal(),
+                                  E->getType(),
+                                  SourceLocation());
+  return new (*Ctx) BinaryOperator(E, RHS, Op, E->getType(), E->getValueKind(),
+                                   E->getObjectKind(), SourceLocation(), false);
 }
 
 //===----------------------------------------------------------------------===//

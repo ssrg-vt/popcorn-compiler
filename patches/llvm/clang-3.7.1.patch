@@ -171,7 +171,7 @@ Index: include/clang/AST/PrefetchAnalysis.h
 ===================================================================
 --- include/clang/AST/PrefetchAnalysis.h	(nonexistent)
 +++ include/clang/AST/PrefetchAnalysis.h	(working copy)
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,153 @@
 +//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -194,6 +194,7 @@ Index: include/clang/AST/PrefetchAnalysis.h
 +#include "clang/AST/Decl.h"
 +#include "clang/AST/Expr.h"
 +#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallPtrSet.h"
 +#include "llvm/ADT/SmallVector.h"
 +#include "llvm/Support/raw_ostream.h"
 +#include <memory>
@@ -242,12 +243,28 @@ Index: include/clang/AST/PrefetchAnalysis.h
 +  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
 +  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
 +
++  /// How an expression should be modified.
++  struct ExprModifier {
++    enum Type { Add, Sub, Mul, Div, None, Unknown };
++    void ClassifyModifier(Expr *E);
++    enum Type getType() const { return Ty; }
++    const llvm::APInt &getVal() const { return Val; }
++  private:
++    enum Type Ty;
++    llvm::APInt Val;
++  };
++
 +  /// Default constructor, really only defined to enable storage in a DenseMap.
 +  PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
 +
 +  /// Construct a new prefetch analysis object to analyze a statement.  Doesn't
 +  /// run the analysis.
 +  PrefetchAnalysis(ASTContext *Ctx, Stmt *S) : Ctx(Ctx), S(S) {}
++
++  /// Ignore a set of variables during access analysis.  In other words, ignore
++  /// memory accesses which use these variables as their base.
++  void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
++  { this->Ignore = Ignore; }
 +
 +  /// Analyze the statement.
 +  void analyzeStmt();
@@ -262,6 +279,8 @@ Index: include/clang/AST/PrefetchAnalysis.h
 +private:
 +  ASTContext *Ctx;
 +  Stmt *S;
++  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
++
 +  llvm::SmallVector<PrefetchRange, 8> ToPrefetch;
 +
 +  /// Analyze individual types of statements.
@@ -297,6 +316,9 @@ Index: include/clang/AST/PrefetchAnalysis.h
 +  Expr *cloneIntegerLiteral(IntegerLiteral *L,
 +                            const IVMap &IVs,
 +                            bool Upper) const;
++
++  /// Modify an expression according to a configuration.
++  Expr *modifyExpr(Expr *E, const ExprModifier &Mod) const;
 +};
 +
 +} // end namespace clang
@@ -418,7 +440,7 @@ Index: include/clang/Basic/DiagnosticParseKinds.td
  
  // Pragma loop support.
  def err_pragma_loop_missing_argument : Error<
-@@ -1008,6 +1016,18 @@
+@@ -1008,6 +1016,22 @@
  def warn_pragma_unroll_cuda_value_in_parens : Warning<
    "argument to '#pragma unroll' should not be in parentheses in CUDA C/C++">,
    InGroup<CudaCompat>;
@@ -430,6 +452,10 @@ Index: include/clang/Basic/DiagnosticParseKinds.td
 +  "Popcorn: missing argument; expected 'prefetch'">;
 +def warn_pragma_popcorn_invalid_option : Warning<
 +  "Popcorn: invalid pragma argument '%0'; expected 'prefetch'">;
++def err_pragma_popcorn_invalid_clause : Error<
++  "Popcorn: invalid clause '%0'; expected 'ignore'">;
++def err_pragma_popcorn_expected_var_name : Error<
++  "Popcorn: expected variable name">;
 +
 +// Pragma popcorn prefetch support.
 +def warn_pragma_popcorn_prefetch_invalid_stmt : Warning<
@@ -921,7 +947,7 @@ Index: include/clang/Parse/Parser.h
  
    std::unique_ptr<CommentHandler> CommentSemaHandler;
  
-@@ -528,6 +529,10 @@
+@@ -528,6 +529,13 @@
    /// #pragma clang loop and #pragma unroll.
    bool HandlePragmaLoopHint(LoopHint &Hint);
  
@@ -929,10 +955,13 @@ Index: include/clang/Parse/Parser.h
 +  /// #pragma popcorn...
 +  StmtResult HandlePragmaPopcorn();
 +
++  /// \brief Parse a comma-separated variable list
++  void ParseVarList(llvm::SmallPtrSet<VarDecl *, 4> &Vars);
++
    /// GetLookAheadToken - This peeks ahead N tokens and returns that token
    /// without consuming any tokens.  LookAhead(0) returns 'Tok', LookAhead(1)
    /// returns the token after Tok, etc.
-@@ -2418,6 +2423,10 @@
+@@ -2418,6 +2426,10 @@
  
    //===--------------------------------------------------------------------===//
    // OpenMP: Directives and clauses.
@@ -999,7 +1028,7 @@ Index: lib/AST/PrefetchAnalysis.cpp
 ===================================================================
 --- lib/AST/PrefetchAnalysis.cpp	(nonexistent)
 +++ lib/AST/PrefetchAnalysis.cpp	(working copy)
-@@ -0,0 +1,807 @@
+@@ -0,0 +1,895 @@
 +//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1119,6 +1148,59 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +};
 +typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
 +
++static unsigned getTypeSize(BuiltinType::Kind K) {
++  switch(K) {
++  case BuiltinType::Bool:
++  case BuiltinType::Char_U: case BuiltinType::UChar:
++  case BuiltinType::Char_S: case BuiltinType::SChar:
++    return 8;
++  case BuiltinType::WChar_U: case BuiltinType::Char16:
++  case BuiltinType::UShort:
++  case BuiltinType::WChar_S:
++  case BuiltinType::Short:
++    return 16;
++  case BuiltinType::Char32:
++  case BuiltinType::UInt:
++  case BuiltinType::Int:
++    return 32;
++  case BuiltinType::ULong:
++  case BuiltinType::ULongLong:
++  case BuiltinType::Long:
++  case BuiltinType::LongLong:
++    return 64;
++  case BuiltinType::UInt128:
++  case BuiltinType::Int128:
++    return 128;
++  default: return UINT32_MAX;
++  }
++}
++
++void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E) {
++  unsigned Bits;
++  BinaryOperator *B;
++
++  Ty = Unknown;
++  if(!E) return;
++
++  assert(isScalarIntType(E->getType()) && "Invalid expression type");
++  Bits = getTypeSize(cast<BuiltinType>(E->getType())->getKind());
++
++  if((B = dyn_cast<BinaryOperator>(E))) {
++    switch(B->getOpcode()) {
++    default: Ty = None; break;
++    case BO_LT:
++      Ty = Sub;
++      Val = llvm::APInt(Bits, 1, false);
++      break;
++    case BO_GT:
++      Ty = Add;
++      Val = llvm::APInt(Bits, 1, false);
++      break;
++    // TODO hybrid math/assign operations
++    }
++  }
++}
++
 +//===----------------------------------------------------------------------===//
 +// Prefetch analysis -- array accesses
 +//
@@ -1161,6 +1243,9 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +// TODO *** NEED TO LIMIT TO AFFINE ACCESSES ***
 +class ArrayAccessPattern : public RecursiveASTVisitor<ArrayAccessPattern> {
 +public:
++  ArrayAccessPattern(llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
++    : Ignore(Ignore) {}
++
 +  /// Which sub-tree of a binary operator we're traversing.  This determines
 +  /// whether we're reading or writing the array.
 +  enum TraverseStructure { LHS, RHS };
@@ -1214,12 +1299,10 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +    DeclRefExpr *DR;
 +    VarDecl *VD;
 +
-+    assert(Side.size() && "Unhandled tree structure");
-+
 +    DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
 +    if(!DR) goto end;
 +    VD = dyn_cast<VarDecl>(DR->getDecl());
-+    if(!VD) goto end;
++    if(!VD || Ignore.count(VD)) goto end;
 +    if(Side.back() == LHS) {
 +      ArrayWrites.emplace_back(VD, Idx, CurScope);
 +      CurAccess = &ArrayWrites.back();
@@ -1250,6 +1333,7 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +private:
 +  llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
 +  ScopeInfoPtr CurScope;
++  llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
 +
 +  // Traversal state
 +  llvm::SmallVector<enum TraverseStructure, 8> Side;
@@ -1273,31 +1357,33 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +  };
 +
 +  InductionVariable() : Var(nullptr), Init(nullptr), Cond(nullptr),
-+                        Update(nullptr), LowerB(nullptr), UpperB(nullptr),
-+                        Dir(Unknown) {}
++                        Update(nullptr), Dir(Unknown), LowerB(nullptr),
++                        UpperB(nullptr) {}
 +
 +  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update)
-+    : Var(Var), Init(Init), Cond(Cond), Update(Update), LowerB(nullptr),
-+      UpperB(nullptr), Dir(Unknown) {
++    : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
++      LowerB(nullptr), UpperB(nullptr) {
 +
 +    const UnaryOperator *Unary;
 +    assert(getVarIfScalarInt(Var) && "Invalid induction variable");
 +
 +    // Try to classify update direction to determine upper/lower bounds
 +    if((Unary = dyn_cast<UnaryOperator>(Update))) {
-+      classifyUnaryOpDirection(Unary->getOpcode());
++      Dir = classifyUnaryOpDirection(Unary->getOpcode());
 +      if(Dir != Unknown) goto end;
 +    }
 +
 +end:
-+    // TODO if update is a math/assign operator, e.g., +=, need to update
-+    // bounds expression to *unwind*
 +    if(Dir == Increases) {
++      LowerModifier.ClassifyModifier(Init);
 +      LowerB = stripInductionVar(Init);
++      UpperModifier.ClassifyModifier(Cond);
 +      UpperB = stripInductionVar(Cond);
 +    }
 +    else if(Dir == Decreases) {
++      LowerModifier.ClassifyModifier(Cond);
 +      LowerB = stripInductionVar(Cond);
++      UpperModifier.ClassifyModifier(Init);
 +      UpperB = stripInductionVar(Init);
 +    }
 +  }
@@ -1306,9 +1392,13 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +  Expr *getInit() const { return Init; }
 +  Expr *getCond() const { return Cond; }
 +  Expr *getUpdate() const { return Update; }
++  enum Direction getUpdateDirection() const { return Dir; }
 +  Expr *getLowerBound() const { return LowerB; }
 +  Expr *getUpperBound() const { return UpperB; }
-+  enum Direction getUpdateDirection() const { return Dir; }
++  const PrefetchAnalysis::ExprModifier &
++  getLowerBoundModifier() const { return LowerModifier; }
++  const PrefetchAnalysis::ExprModifier &
++  getUpperBoundModifier() const { return UpperModifier; }
 +
 +  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
 +    O << "Induction Variable: " << Var->getName() << "\nDirection: ";
@@ -1335,22 +1425,21 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +
 +  /// Expressions describing the lower & upper bounds of the induction variable
 +  /// and its update direction.
-+  Expr *LowerB, *UpperB;
 +  enum Direction Dir;
++  Expr *LowerB, *UpperB;
++  PrefetchAnalysis::ExprModifier LowerModifier, UpperModifier;
 +
 +  /// Try to classify the induction variable's update direction based on the
 +  /// unary operation type.
-+  void classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
++  static enum Direction classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
 +    switch(Op) {
 +    case UO_PostInc:
 +    case UO_PreInc:
-+      Dir = Increases;
-+      break;
++      return Increases;
 +    case UO_PostDec:
 +    case UO_PreDec:
-+      Dir = Decreases;
-+      break;
-+    default: break;
++      return Decreases;
++    default: return Unknown;
 +    }
 +  }
 +
@@ -1631,7 +1720,7 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +/// induction variables that can be prefetched at runtime.
 +void PrefetchAnalysis::analyzeForStmt() {
 +  LoopNestTraversal Loops;
-+  ArrayAccessPattern ArrAccesses;
++  ArrayAccessPattern ArrAccesses(Ignore);
 +
 +  // Gather loop nest information, including induction variables
 +  Loops.InitTraversal();
@@ -1709,7 +1798,7 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +}
 +
 +Expr *PrefetchAnalysis::clone(Expr *E) const {
-+  IVMap Dummy; // DeclRefExprs will never replace declaration usage
++  IVMap Dummy; // No induction variables, don't replace any DeclRefExprs
 +  return cloneWithIV(E, Dummy, false);
 +}
 +
@@ -1749,8 +1838,12 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +  if(!VD) goto no_replace;
 +  it = IVs.find(VD);
 +  if(it == IVs.end()) goto no_replace;
-+  if(Upper) return clone(it->second->getUpperBound());
-+  else return clone(it->second->getLowerBound());
++  if(Upper)
++    return modifyExpr(clone(it->second->getUpperBound()),
++                      it->second->getUpperBoundModifier());
++  else
++    return modifyExpr(clone(it->second->getLowerBound()),
++                      it->second->getLowerBoundModifier());
 +
 +no_replace:
 +  return new (*Ctx) DeclRefExpr(D->getDecl(),
@@ -1767,6 +1860,9 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +  Expr *Sub = cloneWithIV(C->getSubExpr(), IVs, Upper);
 +  if(!Sub) return nullptr;
 +
++  // Avoid the situation that when replacing an induction variable with another
++  // expression we accidentally chain together 2 implicit casts (which causes
++  // CodeGen to choke).
 +  if(C->getCastKind() == CastKind::CK_LValueToRValue &&
 +     Sub->getValueKind() == VK_RValue) return Sub;
 +  else
@@ -1783,6 +1879,27 @@ Index: lib/AST/PrefetchAnalysis.cpp
 +  return new (*Ctx) IntegerLiteral(*Ctx, L->getValue(),
 +                                   L->getType(),
 +                                   SourceLocation());
++}
++
++Expr *PrefetchAnalysis::modifyExpr(Expr *E, const ExprModifier &Mod) const {
++  BinaryOperator::Opcode Op;
++  IntegerLiteral *RHS;
++
++  if(!E) return nullptr;
++  switch(Mod.getType()) {
++  case ExprModifier::Add: Op = BO_Add; break;
++  case ExprModifier::Sub: Op = BO_Sub; break;
++  case ExprModifier::Mul: Op = BO_Mul; break;
++  case ExprModifier::Div: Op = BO_Div; break;
++  case ExprModifier::None: return E; // Nothing to do
++  case ExprModifier::Unknown: return nullptr; // Couldn't classify
++  }
++ 
++  RHS = new (*Ctx) IntegerLiteral(*Ctx, Mod.getVal(),
++                                  E->getType(),
++                                  SourceLocation());
++  return new (*Ctx) BinaryOperator(E, RHS, Op, E->getType(), E->getValueKind(),
++                                   E->getObjectKind(), SourceLocation(), false);
 +}
 +
 +//===----------------------------------------------------------------------===//
@@ -2099,7 +2216,7 @@ Index: lib/CodeGen/CGStmt.cpp
  #include "clang/Sema/LoopHint.h"
  #include "clang/Sema/SemaDiagnostic.h"
  #include "llvm/ADT/StringExtras.h"
-@@ -840,6 +841,16 @@
+@@ -840,6 +841,19 @@
  
    LexicalScope ForScope(*this, S.getSourceRange());
  
@@ -2107,16 +2224,19 @@ Index: lib/CodeGen/CGStmt.cpp
 +    const PrefetchAnalysis *PA = getContext().getPrefetchAnalysis(&S);
 +    if(PA) {
 +      PrefetchBuilder PB(this);
-+      PB.EmitPrefetchCallDeclarations();
-+      for(auto &Range : PA->getArraysToPrefetch()) PB.EmitPrefetchCall(Range);
-+      PB.EmitPrefetchExecuteCall();
++      const SmallVector<PrefetchRange, 8> &Pref = PA->getArraysToPrefetch();
++      if(Pref.size()) {
++        PB.EmitPrefetchCallDeclarations();
++        for(auto &Range : Pref) PB.EmitPrefetchCall(Range);
++        PB.EmitPrefetchExecuteCall();
++      }
 +    }
 +  }
 +
    // Evaluate the first part before the loop.
    if (S.getInit())
      EmitStmt(S.getInit());
-@@ -2147,6 +2158,69 @@
+@@ -2147,6 +2161,69 @@
    }
  }
  
@@ -2186,7 +2306,7 @@ Index: lib/CodeGen/CGStmt.cpp
  LValue CodeGenFunction::InitCapturedStruct(const CapturedStmt &S) {
    const RecordDecl *RD = S.getCapturedRecordDecl();
    QualType RecordTy = getContext().getRecordType(RD);
-@@ -2155,6 +2229,8 @@
+@@ -2155,6 +2232,8 @@
    LValue SlotLV = MakeNaturalAlignAddrLValue(
        CreateMemTemp(RecordTy, "agg.captured"), RecordTy);
  
@@ -2195,7 +2315,7 @@ Index: lib/CodeGen/CGStmt.cpp
    RecordDecl::field_iterator CurField = RD->field_begin();
    for (CapturedStmt::capture_init_iterator I = S.capture_init_begin(),
                                             E = S.capture_init_end();
-@@ -2164,7 +2240,18 @@
+@@ -2164,7 +2243,18 @@
        auto VAT = CurField->getCapturedVLAType();
        EmitStoreThroughLValue(RValue::get(VLASizeMap[VAT->getSizeExpr()]), LV);
      } else {
@@ -3555,28 +3675,101 @@ Index: lib/Parse/ParsePragma.cpp
  }
  
  /// \brief Handle the annotation token produced for #pragma unused(...)
-@@ -868,6 +894,35 @@
+@@ -868,6 +894,108 @@
    return true;
  }
  
++enum PopcornClauseKind {
++  PC_PrefetchIgnore, // Ignore array/pointer variable during prefetch analysis
++  PC_Unknown          // Unknown clause type
++};
++
++static const char *getPopcornClauseName(enum PopcornClauseKind K) {
++  switch(K) {
++  default: return "unknown";
++  case PC_PrefetchIgnore: return "ignore";
++  }
++}
++
++static enum PopcornClauseKind getPopcornClauseKind(llvm::StringRef Name) {
++  return llvm::StringSwitch<PopcornClauseKind>(Name)
++    .Case("ignore", PC_PrefetchIgnore)
++    .Default(PC_Unknown);
++}
++
++void Parser::ParseVarList(llvm::SmallPtrSet<VarDecl *, 4> &Vars) {
++  bool isComma = false;
++  DeclRefExpr *D;
++  VarDecl *VD;
++
++  while(isComma || (Tok.isNot(tok::r_paren) &&
++                    Tok.isNot(tok::annot_pragma_popcorn_prefetch_end))) {
++    // Parse variable
++    ExprResult VarExpr =
++      Actions.CorrectDelayedTyposInExpr(ParseAssignmentExpression());
++
++    if(VarExpr.isUsable()) {
++      Expr *E = VarExpr.get();
++      if((D = dyn_cast<DeclRefExpr>(E)) &&
++         (VD = dyn_cast<VarDecl>(D->getDecl())))
++        Vars.insert(VD);
++      else {
++        PP.Diag(E->getLocStart(), diag::err_pragma_popcorn_expected_var_name);
++        SkipUntil(tok::comma, tok::r_paren,
++                  tok::annot_pragma_popcorn_prefetch_end);
++      }
++    }
++
++    // Parse ',' if any
++    isComma = Tok.is(tok::comma);
++    if(isComma) ConsumeToken();
++  }
++}
++
 +StmtResult Parser::HandlePragmaPopcorn() {
++  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
++
 +  assert(Tok.is(tok::annot_pragma_popcorn_prefetch));
 +  ConsumeToken(); // The annotation token.
 +
-+  while (Tok.isNot(tok::annot_pragma_popcorn_prefetch_end)) {
-+    // TODO handle clauses
++  while(Tok.isNot(tok::annot_pragma_popcorn_prefetch_end)) {
++    // Parse clause type.
++    enum PopcornClauseKind Kind = getPopcornClauseKind(PP.getSpelling(Tok));
++    if(Kind == PC_Unknown) {
++      PP.Diag(Tok.getLocation(),
++              diag::err_pragma_popcorn_invalid_clause) << PP.getSpelling(Tok);
++      SkipUntil(tok::r_paren, tok::annot_pragma_popcorn_prefetch_end,
++                Parser::StopBeforeMatch);
++      continue;
++    }
 +    ConsumeToken();
++
++    // Parse '('.
++    BalancedDelimiterTracker T(*this, tok::l_paren,
++                               tok::annot_pragma_popcorn_prefetch_end);
++    if(T.expectAndConsume(diag::err_expected_lparen_after,
++                          getPopcornClauseName(Kind)))
++      return StmtError();
++
++    switch(Kind) {
++    default: llvm_unreachable("Unknown '#pragma popcorn' clause type"); break;
++    case PC_PrefetchIgnore: ParseVarList(Ignore); break;
++    }
++
++    // Parse ')'.
++    T.consumeClose();
 +  }
 +  ConsumeToken(); // Consume final token.
 +
 +  StmtResult R = ParseStatement();
 +
-+  if (R.isInvalid()) return StmtError();
-+  else if (isa<ForStmt>(R.get())) {
++  if(R.isInvalid()) return StmtError();
++  else if(isa<ForStmt>(R.get())) {
 +    ASTContext &Ctx = getActions().getASTContext();
 +    ForStmt *S = cast<ForStmt>(R.get());
 +    S->setPrefetchEnabled(true);
 +    PrefetchAnalysis PA(&Ctx, R.get());
++    PA.ignoreVars(Ignore);
 +    PA.analyzeStmt();
 +    // TODO remove
 +    PA.dump();
@@ -3591,7 +3784,7 @@ Index: lib/Parse/ParsePragma.cpp
  // #pragma GCC visibility comes in two variants:
  //   'push' '(' [visibility] ')'
  //   'pop'
-@@ -1458,10 +1513,10 @@
+@@ -1458,10 +1586,10 @@
  PragmaNoOpenMPHandler::HandlePragma(Preprocessor &PP,
                                      PragmaIntroducerKind Introducer,
                                      Token &FirstTok) {
@@ -3605,7 +3798,7 @@ Index: lib/Parse/ParsePragma.cpp
                                      diag::Severity::Ignored, SourceLocation());
    }
    PP.DiscardUntilEndOfDirective();
-@@ -2119,3 +2174,66 @@
+@@ -2119,3 +2247,66 @@
    PP.EnterTokenStream(TokenArray, 1, /*DisableMacroExpansion=*/false,
                        /*OwnsTokens=*/true);
  }
@@ -3686,18 +3879,6 @@ Index: lib/Parse/ParseStmt.cpp
    }
  
    // If we reached this code, the statement must end in a semicolon.
-Index: lib/Parse/Parser.cpp
-===================================================================
---- lib/Parse/Parser.cpp	(revision 320332)
-+++ lib/Parse/Parser.cpp	(working copy)
-@@ -282,6 +282,7 @@
-       // Ran out of tokens.
-       return false;
- 
-+    case tok::annot_pragma_popcorn_prefetch_end:
-     case tok::annot_pragma_openmp_end:
-       // Stop before an OpenMP pragma boundary.
-     case tok::annot_module_begin:
 Index: lib/Sema/SemaOpenMP.cpp
 ===================================================================
 --- lib/Sema/SemaOpenMP.cpp	(revision 320332)
