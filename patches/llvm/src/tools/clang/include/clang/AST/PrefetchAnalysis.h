@@ -69,10 +69,10 @@ public:
   typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
   typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
 
-  /// How an expression should be modified.
+  /// How a statement should be modified.
   struct ExprModifier {
     enum Type { Add, Sub, Mul, Div, None, Unknown };
-    void ClassifyModifier(Expr *E);
+    void ClassifyModifier(Expr *E, const ASTContext &Ctx);
     enum Type getType() const { return Ty; }
     const llvm::APInt &getVal() const { return Val; }
   private:
@@ -111,6 +111,12 @@ private:
 
   /// Analyze individual types of statements.
   void analyzeForStmt();
+
+  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
+  void mergeArrayAccesses();
+
+  /// Remove trivial array accesses.
+  void pruneEmptyArrayAccesses();
 
   /// Reconstruct expressions with induction variable uses replaced by their
   /// upper (Upper = true) & lower bounds (Upper = false).

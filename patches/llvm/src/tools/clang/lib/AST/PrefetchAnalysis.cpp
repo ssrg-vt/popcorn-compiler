@@ -44,6 +44,34 @@ static VarDecl *getVarIfScalarInt(ValueDecl *VD) {
   return nullptr;
 }
 
+/// Get the size in bits for builtin integer types.
+static unsigned getTypeSize(BuiltinType::Kind K) {
+  switch(K) {
+  case BuiltinType::Bool:
+  case BuiltinType::Char_U: case BuiltinType::UChar:
+  case BuiltinType::Char_S: case BuiltinType::SChar:
+    return 8;
+  case BuiltinType::WChar_U: case BuiltinType::Char16:
+  case BuiltinType::UShort:
+  case BuiltinType::WChar_S:
+  case BuiltinType::Short:
+    return 16;
+  case BuiltinType::Char32:
+  case BuiltinType::UInt:
+  case BuiltinType::Int:
+    return 32;
+  case BuiltinType::ULong:
+  case BuiltinType::ULongLong:
+  case BuiltinType::Long:
+  case BuiltinType::LongLong:
+    return 64;
+  case BuiltinType::UInt128:
+  case BuiltinType::Int128:
+    return 128;
+  default: return UINT32_MAX;
+  }
+}
+
 // Filter functions to only select appropriate operator types.  Return true if
 // the operator is of a type that should be analyzed, or false otherwise.
 typedef bool (*UnaryOpFilter)(UnaryOperator::Opcode);
@@ -117,44 +145,23 @@ struct ScopeInfo {
 };
 typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
 
-static unsigned getTypeSize(BuiltinType::Kind K) {
-  switch(K) {
-  case BuiltinType::Bool:
-  case BuiltinType::Char_U: case BuiltinType::UChar:
-  case BuiltinType::Char_S: case BuiltinType::SChar:
-    return 8;
-  case BuiltinType::WChar_U: case BuiltinType::Char16:
-  case BuiltinType::UShort:
-  case BuiltinType::WChar_S:
-  case BuiltinType::Short:
-    return 16;
-  case BuiltinType::Char32:
-  case BuiltinType::UInt:
-  case BuiltinType::Int:
-    return 32;
-  case BuiltinType::ULong:
-  case BuiltinType::ULongLong:
-  case BuiltinType::Long:
-  case BuiltinType::LongLong:
-    return 64;
-  case BuiltinType::UInt128:
-  case BuiltinType::Int128:
-    return 128;
-  default: return UINT32_MAX;
-  }
-}
-
-void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E) {
+void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E,
+                                                      const ASTContext &Ctx) {
   unsigned Bits;
+  DeclRefExpr *DR;
   BinaryOperator *B;
+  QualType BaseTy;
 
   Ty = Unknown;
   if(!E) return;
 
-  assert(isScalarIntType(E->getType()) && "Invalid expression type");
-  Bits = getTypeSize(cast<BuiltinType>(E->getType())->getKind());
-
+  E = E->IgnoreImpCasts();
   if((B = dyn_cast<BinaryOperator>(E))) {
+    // Note: both operands *must* have same type
+    BaseTy = B->getLHS()->getType().getDesugaredType(Ctx);
+    assert(isScalarIntType(BaseTy) && "Invalid expression type");
+    Bits = getTypeSize(cast<BuiltinType>(BaseTy)->getKind());
+
     switch(B->getOpcode()) {
     default: Ty = None; break;
     case BO_LT:
@@ -168,6 +175,7 @@ void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E) {
     // TODO hybrid math/assign operations
     }
   }
+  else if((DR = dyn_cast<DeclRefExpr>(E))) Ty = None;
 }
 
 //===----------------------------------------------------------------------===//
@@ -269,9 +277,9 @@ public:
     VarDecl *VD;
 
     DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
-    if(!DR) goto end;
+    if(!DR) return true;
     VD = dyn_cast<VarDecl>(DR->getDecl());
-    if(!VD || Ignore.count(VD)) goto end;
+    if(!VD || Ignore.count(VD)) return true;
     if(Side.back() == LHS) {
       ArrayWrites.emplace_back(VD, Idx, CurScope);
       CurAccess = &ArrayWrites.back();
@@ -280,7 +288,6 @@ public:
       ArrayReads.emplace_back(VD, Idx, CurScope);
       CurAccess = &ArrayReads.back();
     }
-end:
     return true;
   }
 
@@ -309,6 +316,14 @@ private:
   ArrayAccess *CurAccess;
 };
 
+void PrefetchAnalysis::mergeArrayAccesses() {
+  // TODO!
+}
+
+void PrefetchAnalysis::pruneEmptyArrayAccesses() {
+  // TODO!
+}
+
 //===----------------------------------------------------------------------===//
 // Prefetch analysis -- ForStmts
 //
@@ -329,7 +344,8 @@ public:
                         Update(nullptr), Dir(Unknown), LowerB(nullptr),
                         UpperB(nullptr) {}
 
-  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update)
+  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update,
+                    const ASTContext &Ctx)
     : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
       LowerB(nullptr), UpperB(nullptr) {
 
@@ -337,22 +353,19 @@ public:
     assert(getVarIfScalarInt(Var) && "Invalid induction variable");
 
     // Try to classify update direction to determine upper/lower bounds
-    if((Unary = dyn_cast<UnaryOperator>(Update))) {
+    if((Unary = dyn_cast<UnaryOperator>(Update)))
       Dir = classifyUnaryOpDirection(Unary->getOpcode());
-      if(Dir != Unknown) goto end;
-    }
 
-end:
     if(Dir == Increases) {
-      LowerModifier.ClassifyModifier(Init);
+      LowerModifier.ClassifyModifier(Init, Ctx);
       LowerB = stripInductionVar(Init);
-      UpperModifier.ClassifyModifier(Cond);
+      UpperModifier.ClassifyModifier(Cond, Ctx);
       UpperB = stripInductionVar(Cond);
     }
     else if(Dir == Decreases) {
-      LowerModifier.ClassifyModifier(Cond);
+      LowerModifier.ClassifyModifier(Cond, Ctx);
       LowerB = stripInductionVar(Cond);
-      UpperModifier.ClassifyModifier(Init);
+      UpperModifier.ClassifyModifier(Init, Ctx);
       UpperB = stripInductionVar(Init);
     }
   }
@@ -412,22 +425,40 @@ private:
     }
   }
 
-  Expr *stripInductionVar(Expr *E) {
-    Expr *Stripped = nullptr;
-    BinaryOperator *B;
+  Expr *stripInductionVarFromBinOp(BinaryOperator *B) {
     DeclRefExpr *D;
     VarDecl *VD;
 
-    B = dyn_cast<BinaryOperator>(E);
-    if(!B) goto end;
     D = dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreImpCasts());
-    if(!D) goto end;
+    if(!D) return nullptr;
     VD = dyn_cast<VarDecl>(D->getDecl());
-    if(!VD) goto end;
+    if(!VD) return nullptr;
     if(VD == Var) return B->getRHS();
+    return nullptr;
+  }
 
-end:
-    return Stripped;
+  Expr *stripInductionVarFromExpr(Expr *E) {
+    DeclRefExpr *D;
+    VarDecl *VD;
+
+    D = dyn_cast<DeclRefExpr>(E->IgnoreImpCasts());
+    if(!D) return nullptr;
+    VD = dyn_cast<VarDecl>(D->getDecl());
+    if(!VD) return nullptr;
+    if(VD != this->Var) return D;
+    return nullptr;
+  }
+
+  /// Remove the induction variable & operator from the expression, leaving
+  /// only a bounds expression.
+  Expr *stripInductionVar(Expr *E) {
+    BinaryOperator *B;
+    IntegerLiteral *L;
+
+    if((B = dyn_cast<BinaryOperator>(E))) return stripInductionVarFromBinOp(B);
+    else if((L = dyn_cast<IntegerLiteral>(E))) return L;
+    else if(E) return stripInductionVarFromExpr(E);
+    else return nullptr;
   }
 };
 
@@ -449,19 +480,18 @@ public:
     VarDecl *Var;
 
     // Filter out irrelevant operation types
-    if(!BinaryFilt(B->getOpcode())) goto end;
+    if(!BinaryFilt(B->getOpcode())) return true;
 
     // Look for DeclRefExprs -- these reference induction variables
     LHS = B->getLHS();
     DR = dyn_cast<DeclRefExpr>(LHS->IgnoreImpCasts());
-    if(!DR) goto end;
+    if(!DR) return true;
 
     // Make sure that both the expression acting on the induction variable &
     // the variable itself are scalar integers (casts may change types)
     Var = getVarIfScalarInt(DR->getDecl());
-    if(!isScalarIntType(LHS->getType()) || !Var) goto end;
+    if(!isScalarIntType(LHS->getType()) || !Var) return true;
     InductionVars[Var] = B;
-end:
     return true;
   }
 
@@ -472,19 +502,27 @@ end:
     VarDecl *Var;
 
     // Filter out irrelevant operation types
-    if(!UnaryFilt(U->getOpcode())) goto end;
+    if(!UnaryFilt(U->getOpcode())) return true;
 
     // Look for DeclRefExprs -- these reference induction variables
     SubExpr = U->getSubExpr();
     DR = dyn_cast<DeclRefExpr>(SubExpr->IgnoreImpCasts());
-    if(!DR) goto end;
+    if(!DR) return true;
 
     // Make sure that both the expression acting on the induction variable &
     // the variable itself are scalar integers (casts may change types)
     Var = getVarIfScalarInt(DR->getDecl());
-    if(!isScalarIntType(SubExpr->getType()) || !Var) goto end;
+    if(!isScalarIntType(SubExpr->getType()) || !Var) return true;
     InductionVars[Var] = U;
-end:
+    return true;
+  }
+
+  bool VisitDeclStmt(DeclStmt *D) {
+    for(auto &Child : D->getDeclGroup()) {
+      VarDecl *Var = getVarIfScalarInt(dyn_cast<VarDecl>(Child));
+      if(!Var || !Var->hasInit()) continue;
+      InductionVars[Var] = Var->getInit();
+    }
     return true;
   }
 
@@ -577,6 +615,8 @@ typedef std::shared_ptr<ForLoopInfo> ForLoopInfoPtr;
 /// Induction variable b has different ranges in each of the nested loops.
 class LoopNestTraversal : public RecursiveASTVisitor<LoopNestTraversal> {
 public:
+  LoopNestTraversal(const ASTContext &Ctx) : Ctx(Ctx) {}
+
   void InitTraversal() { if(!LoopNest.size()) LoopNest.emplace_back(nullptr); }
 
   bool VisitForStmt(ForStmt *S) {
@@ -606,7 +646,8 @@ public:
       UpdateExpr = Update.getVarBound(Var->first);
       if(InitExpr && CondExpr && UpdateExpr) {
         InductionVariablePtr IV(
-          new InductionVariable(Var->first, InitExpr, CondExpr, UpdateExpr));
+          new InductionVariable(Var->first, InitExpr, CondExpr,
+                                UpdateExpr, Ctx));
         Cur->addInductionVar(std::move(IV));
       }
     }
@@ -648,6 +689,8 @@ public:
   }
 
 private:
+  const ASTContext &Ctx;
+
   // A stack of nested loops to provide induction variable scoping information.
   llvm::SmallVector<ForLoopInfoPtr, 4> LoopNest;
 
@@ -688,7 +731,7 @@ findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
 /// Search a for-loop statement for array access patterns based on loop
 /// induction variables that can be prefetched at runtime.
 void PrefetchAnalysis::analyzeForStmt() {
-  LoopNestTraversal Loops;
+  LoopNestTraversal Loops(*Ctx);
   ArrayAccessPattern ArrAccesses(Ignore);
 
   // Gather loop nest information, including induction variables
@@ -745,6 +788,8 @@ PrefetchAnalysis::cloneWithIV(Expr *E, const IVMap &IVs, bool Upper) const {
   DeclRefExpr *D;
   ImplicitCastExpr *C;
   IntegerLiteral *I;
+
+  if(!E) return nullptr;
 
   // TODO better way to switch on type?
   if((B = dyn_cast<BinaryOperator>(E)))
@@ -803,24 +848,23 @@ Expr *PrefetchAnalysis::cloneDeclRefExpr(DeclRefExpr *D,
   VarDecl *VD;
   IVMap::const_iterator it;
 
-  VD = dyn_cast<VarDecl>(D->getDecl());
-  if(!VD) goto no_replace;
-  it = IVs.find(VD);
-  if(it == IVs.end()) goto no_replace;
-  if(Upper)
-    return modifyExpr(clone(it->second->getUpperBound()),
-                      it->second->getUpperBoundModifier());
-  else
-    return modifyExpr(clone(it->second->getLowerBound()),
-                      it->second->getLowerBoundModifier());
-
-no_replace:
-  return new (*Ctx) DeclRefExpr(D->getDecl(),
-                                D->refersToEnclosingVariableOrCapture(),
-                                D->getType(),
-                                D->getValueKind(),
-                                SourceLocation(),
-                                D->getNameInfo().getInfo());
+  if((VD = dyn_cast<VarDecl>(D->getDecl())) &&
+     (it = IVs.find(VD)) != IVs.end()) {
+    if(Upper)
+      return modifyExpr(clone(it->second->getUpperBound()),
+                        it->second->getUpperBoundModifier());
+    else
+      return modifyExpr(clone(it->second->getLowerBound()),
+                        it->second->getLowerBoundModifier());
+  }
+  else {
+    return new (*Ctx) DeclRefExpr(D->getDecl(),
+                                  D->refersToEnclosingVariableOrCapture(),
+                                  D->getType(),
+                                  D->getValueKind(),
+                                  SourceLocation(),
+                                  D->getNameInfo().getInfo());
+  }
 }
 
 Expr *PrefetchAnalysis::cloneImplicitCastExpr(ImplicitCastExpr *C,
@@ -855,6 +899,7 @@ Expr *PrefetchAnalysis::modifyExpr(Expr *E, const ExprModifier &Mod) const {
   IntegerLiteral *RHS;
 
   if(!E) return nullptr;
+
   switch(Mod.getType()) {
   case ExprModifier::Add: Op = BO_Add; break;
   case ExprModifier::Sub: Op = BO_Sub; break;
@@ -863,7 +908,7 @@ Expr *PrefetchAnalysis::modifyExpr(Expr *E, const ExprModifier &Mod) const {
   case ExprModifier::None: return E; // Nothing to do
   case ExprModifier::Unknown: return nullptr; // Couldn't classify
   }
- 
+
   RHS = new (*Ctx) IntegerLiteral(*Ctx, Mod.getVal(),
                                   E->getType(),
                                   SourceLocation());
@@ -880,6 +925,9 @@ void PrefetchAnalysis::analyzeStmt() {
 
   // TODO other types of statements
   if(isa<ForStmt>(S)) analyzeForStmt();
+
+  mergeArrayAccesses();
+  pruneEmptyArrayAccesses();
 }
 
 void PrefetchAnalysis::print(llvm::raw_ostream &O) const {
