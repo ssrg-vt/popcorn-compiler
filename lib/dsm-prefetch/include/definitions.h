@@ -51,5 +51,11 @@ typedef struct {
 /* Environment variable to set log file for statistics */
 #define ENV_STAT_LOG_FN "POPCORN_PREFETCH_STATS_FN"
 
+/*
+ * Size of statically-allocated per-node cache.  Should be a multiple of 128 to
+ * ensure caches pages for different nodes are placed on different pages.
+ */
+#define NODE_CACHE_SIZE 256
+
 #endif
 

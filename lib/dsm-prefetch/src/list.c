@@ -24,14 +24,39 @@ typedef struct node_t {
   memory_span_t mem;
 } node_t;
 
-/* Allocate & initialize a new linked list node. */
+#ifndef _NOCACHE
+/* Pre-allocated linked list nodes */
+static node_t __attribute__((aligned(4096)))
+node_cache[MAX_POPCORN_NODES][NODE_CACHE_SIZE];
+
+/* "In use" flag for each node in the cache */
+static bool __attribute__((aligned(4096)))
+node_cache_used[MAX_POPCORN_NODES][PAGE_ROUND_UP(NODE_CACHE_SIZE)];
+#endif
+
+/* Allocate & initialize a new linked list node.  Note: not thread safe! */
 static node_t *node_create(const memory_span_t *mem, int nid)
 {
   int ret;
   node_t *n;
 
   assert(mem && "Invalid memory span pointer");
+  assert(0 <= nid && nid < MAX_POPCORN_NODES && "Invalid node ID");
 
+#ifndef _NOCACHE
+  // Try to allocate from the node cache before dropping to malloc
+  size_t i;
+  for(i = 0; i < NODE_CACHE_SIZE; i++) {
+    if(!node_cache_used[nid][i]) {
+      node_cache_used[nid][i] = true;
+      node_cache[nid][i].mem = *mem;
+#ifdef _CHECKS
+      node_cache[nid][i].prev = node_cache[nid][i].next = NULL;
+#endif
+      return &node_cache[nid][i];
+    }
+  }
+#endif
   // TODO extreme internal fragmentation, use node-aware memory allocator
   ret = posix_memalign((void **)&n, PAGESZ, sizeof(node_t));
   assert(n && "Invalid node pointer");
@@ -42,13 +67,32 @@ static node_t *node_create(const memory_span_t *mem, int nid)
   return n;
 }
 
-/* Free a linked list node. */
+/* Free a linked list node.  Note: note thread safe! */
 static void node_free(node_t *n)
 {
   assert(n && "Invalid node pointer");
 #ifdef _CHECKS
   n->prev = n->next = NULL;
   n->mem.low = n->mem.high = 0;
+#endif
+#ifndef _NOCACHE
+  // Determine if the node was allocated from the cache or heap
+  size_t node, entry;
+  void *cast = (void *)n, *cache_start = (void *)node_cache,
+       *cache_end = (void *)&node_cache[MAX_POPCORN_NODES];
+  if(cache_start <= cast && cast < cache_end) {
+    size_t offset = cast - cache_start,
+           per_node_size = sizeof(node_t) * NODE_CACHE_SIZE;
+    node = offset / per_node_size;
+    entry = (offset % per_node_size) / sizeof(node_t);
+
+    assert(node < MAX_POPCORN_NODES && entry < NODE_CACHE_SIZE &&
+           "Invalid node cache entry calculation");
+    assert(node_cache_used[node][entry] == true && "Invalid cache metadata");
+
+    node_cache_used[node][entry] = false;
+    return;
+  }
 #endif
   free(n);
 }
@@ -246,13 +290,17 @@ size_t list_size(const list_t *l)
 
 void list_insert(list_t *l, const memory_span_t *mem)
 {
-  node_t *cur, *prev, *next, *n = node_create(mem, l->nid);
+  node_t *cur, *prev, *next, *n;
 
   assert(l && mem && "Invalid arguments to list_insert()");
-  assert(n && "Invalid pointer returned by node_create()");
   assert(mem->low < mem->high && "Invalid memory span");
 
   pthread_mutex_lock(&l->lock);
+
+  n = node_create(mem, l->nid);
+
+  assert(n && "Invalid pointer returned by node_create()");
+
   if(!l->head)
   {
     // First node in the list
@@ -412,17 +460,32 @@ void list_clear(list_t *l)
   pthread_mutex_unlock(&l->lock);
 }
 
-void list_atomic_start(list_t *l) { pthread_mutex_lock(&l->lock); }
+void list_atomic_start(list_t *l) {
+  assert(l && "Invalid arguments to list_atomic_start()");
+  pthread_mutex_lock(&l->lock);
+}
 
-void list_atomic_end(list_t *l) { pthread_mutex_unlock(&l->lock); }
+void list_atomic_end(list_t *l) {
+  assert(l && "Invalid arguments to list_atomic_end()");
+  pthread_mutex_unlock(&l->lock);
+}
 
-const node_t *list_begin(list_t *l) { return l->head; }
+const node_t *list_begin(list_t *l) {
+  assert(l && "Invalid arguments to list_begin()");
+  return l->head;
+}
 
-const node_t *list_next(const node_t *n) { return n->next; }
+const node_t *list_next(const node_t *n) {
+  if(n) return n->next;
+  else return NULL;
+}
 
 const node_t *list_end(list_t *l) { return NULL; }
 
-const memory_span_t *list_get_span(const node_t *n) { return &n->mem; }
+const memory_span_t *list_get_span(const node_t *n) {
+  assert(n && "Invalid arguments to list_get_span()");
+  return &n->mem;
+}
 
 void list_print(list_t *l)
 {

@@ -17,6 +17,9 @@ endif
 ifneq ($(findstring statistics,$(type)),)
 CFLAGS	+= -D_STATISTICS
 endif
+ifneq ($(findstring nocache,$(type)),)
+CFLAGS	+= -D_NOCACHE
+endif
 
 COMMON	:= $(shell readlink -f ../../common/include)
 INC			:= -I./include -I$(COMMON) -isystem $(SYSROOT)/include

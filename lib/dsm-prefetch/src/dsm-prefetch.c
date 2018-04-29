@@ -287,11 +287,13 @@ static void popcorn_prefetch_execute_internal(int nid, stats_t *stats)
 #ifdef _STATISTICS
   struct timespec start_time, end_time;
 #endif
+
+  assert(0 <= nid && nid < MAX_POPCORN_NODES && "Invalid node ID");
+  assert(stats && "Invalid stats parameter");
+
   stats->num = 0;
   stats->pages = 0;
   stats->time = 0;
-
-  assert(0 <= nid && nid < MAX_POPCORN_NODES && "Invalid node ID");
 
   // We can't prefetch to another node, so warn & clear out lists to prevent
   // them from growing forever due to failed prefetch executions.
@@ -423,10 +425,7 @@ size_t popcorn_prefetch_execute_node(int nid)
               list_size(&requests[nid].release);
   sem_post(&prefetch_params[nid].work);
 #else
-  int current = current_nid();
-  if(current != nid) migrate(nid, NULL, NULL);
   popcorn_prefetch_execute_internal(nid, &stats);
-  if(current != nid) migrate(current, NULL, NULL);
   accumulate_global_stats(&stats);
 #endif
 
