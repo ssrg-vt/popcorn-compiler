@@ -7,8 +7,9 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <assert.h>
 
 #include "definitions.h"
 #include "list.h"
@@ -24,18 +25,31 @@ typedef struct node_t {
   memory_span_t mem;
 } node_t;
 
-#ifndef _NOCACHE
-/* Pre-allocated linked list nodes */
-static node_t __attribute__((aligned(4096)))
-node_cache[MAX_POPCORN_NODES][NODE_CACHE_SIZE];
+/* Per-node linked list node cache */
+typedef struct node_cache_t {
+  node_t node[NODE_CACHE_SIZE];
+  bool node_used[NODE_CACHE_SIZE];
+  char padding[PAGESZ - ((sizeof(node_t) * NODE_CACHE_SIZE +
+                          sizeof(bool) * NODE_CACHE_SIZE) % PAGESZ)];
+} __attribute__((aligned(PAGESZ))) node_cache_t;
 
-/* "In use" flag for each node in the cache */
-static bool __attribute__((aligned(4096)))
-node_cache_used[MAX_POPCORN_NODES][PAGE_ROUND_UP(NODE_CACHE_SIZE)];
+#ifndef _NOCACHE
+
+/*
+ * The total number of per-list caches.  Provides space for 3 lists (read,
+ * write, release) per node.
+  */
+#define NUM_CACHE (MAX_POPCORN_NODES * 3)
+
+/* Pre-allocated linked list nodes */
+static node_cache_t cache[NUM_CACHE];
+
 #endif
 
-/* Allocate & initialize a new linked list node.  Note: not thread safe! */
-static node_t *node_create(const memory_span_t *mem, int nid)
+/* Allocate & initialize a new linked list node */
+static node_t *node_create(node_cache_t *cache,
+                           const memory_span_t *mem,
+                           int nid)
 {
   int ret;
   node_t *n;
@@ -45,15 +59,17 @@ static node_t *node_create(const memory_span_t *mem, int nid)
 
 #ifndef _NOCACHE
   // Try to allocate from the node cache before dropping to malloc
+  assert(cache && "Invalid cache pointer");
+
   size_t i;
   for(i = 0; i < NODE_CACHE_SIZE; i++) {
-    if(!node_cache_used[nid][i]) {
-      node_cache_used[nid][i] = true;
-      node_cache[nid][i].mem = *mem;
+    if(!cache->node_used[i]) {
+      cache->node_used[i] = true;
+      cache->node[i].mem = *mem;
 #ifdef _CHECKS
-      node_cache[nid][i].prev = node_cache[nid][i].next = NULL;
+      cache->node[i].prev = cache->node[i].next = NULL;
 #endif
-      return &node_cache[nid][i];
+      return &cache->node[i];
     }
   }
 #endif
@@ -67,8 +83,8 @@ static node_t *node_create(const memory_span_t *mem, int nid)
   return n;
 }
 
-/* Free a linked list node.  Note: note thread safe! */
-static void node_free(node_t *n)
+/* Free a linked list node */
+static void node_free(node_cache_t *cache, node_t *n)
 {
   assert(n && "Invalid node pointer");
 #ifdef _CHECKS
@@ -76,21 +92,21 @@ static void node_free(node_t *n)
   n->mem.low = n->mem.high = 0;
 #endif
 #ifndef _NOCACHE
+  assert(cache && "Invalid cache pointer");
+
   // Determine if the node was allocated from the cache or heap
-  size_t node, entry;
-  void *cast = (void *)n, *cache_start = (void *)node_cache,
-       *cache_end = (void *)&node_cache[MAX_POPCORN_NODES];
+  size_t entry;
+  void *cast = (void *)n, *cache_start = (void *)cache,
+       *cache_end = cache_start + offsetof(node_cache_t, node_used);
   if(cache_start <= cast && cast < cache_end) {
-    size_t offset = cast - cache_start,
-           per_node_size = sizeof(node_t) * NODE_CACHE_SIZE;
-    node = offset / per_node_size;
-    entry = (offset % per_node_size) / sizeof(node_t);
+    entry = (cast - cache_start) / sizeof(node_t);
 
-    assert(node < MAX_POPCORN_NODES && entry < NODE_CACHE_SIZE &&
-           "Invalid node cache entry calculation");
-    assert(node_cache_used[node][entry] == true && "Invalid cache metadata");
+    assert((cast - cache_start) % sizeof(node_t) == 0 &&
+           "Pointer into middle of node");
+    assert(entry < NODE_CACHE_SIZE && "Invalid node cache entry calculation");
+    assert(cache->node_used[entry] == true && "Invalid cache metadata");
 
-    node_cache_used[node][entry] = false;
+    cache->node_used[entry] = false;
     return;
   }
 #endif
@@ -216,7 +232,7 @@ static node_t *list_merge(list_t *l, node_t *a, node_t *b)
   a->next = b->next;
   if(a->next) a->next->prev = a;
   else l->tail = a; // b was the tail
-  node_free(b);
+  node_free(l->cache, b);
   l->size--;
   return a;
 }
@@ -263,7 +279,7 @@ static node_t *list_delete(list_t *l, node_t *n)
     }
     l->size--;
   }
-  node_free(n);
+  node_free(l->cache, n);
   return next;
 }
 
@@ -273,6 +289,13 @@ void list_init(list_t *l, int nid)
 {
   pthread_mutexattr_t attr;
   assert(l && "Invalid list pointer");
+#ifndef _NOCACHE
+  static size_t cur_cache = 0;
+  assert(cur_cache < NUM_CACHE && "Initialized too many lists");
+  l->cache = &cache[cur_cache++];
+#else
+  l->cache = NULL;
+#endif
   l->head = l->tail = NULL;
   l->size = 0;
   l->nid = nid;
@@ -297,7 +320,7 @@ void list_insert(list_t *l, const memory_span_t *mem)
 
   pthread_mutex_lock(&l->lock);
 
-  n = node_create(mem, l->nid);
+  n = node_create(l->cache, mem, l->nid);
 
   assert(n && "Invalid pointer returned by node_create()");
 
@@ -451,7 +474,7 @@ void list_clear(list_t *l)
   while(cur)
   {
     next = cur->next;
-    node_free(cur);
+    node_free(l->cache, cur);
     cur = next;
   }
   l->head = NULL;

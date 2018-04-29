@@ -55,7 +55,7 @@ typedef struct {
  * Size of statically-allocated per-node cache.  Should be a multiple of 128 to
  * ensure caches pages for different nodes are placed on different pages.
  */
-#define NODE_CACHE_SIZE 256
+#define NODE_CACHE_SIZE 64
 
 #endif
 

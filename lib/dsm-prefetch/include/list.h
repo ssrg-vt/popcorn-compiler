@@ -16,8 +16,12 @@
 /* An opaque node type. */
 typedef struct node_t node_t;
 
+/* An opaque cache entry type. */
+typedef struct node_cache_t node_cache_t;
+
 /* A sorted linked list. */
 typedef struct {
+  node_cache_t *cache;
   node_t *head, *tail;
   size_t size;
   int nid;
