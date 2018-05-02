@@ -16,7 +16,7 @@
 #define LLVM_CLANG_CODEGEN_PREFETCHBUILDER_H
 
 #include "CodeGenFunction.h"
-#include "clang/AST/PrefetchAnalysis.h"
+#include "clang/Sema/PrefetchAnalysis.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace clang {

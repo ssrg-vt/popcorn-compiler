@@ -2,14 +2,14 @@ Index: include/clang/AST/ASTContext.h
 ===================================================================
 --- include/clang/AST/ASTContext.h	(revision 320332)
 +++ include/clang/AST/ASTContext.h	(working copy)
-@@ -21,6 +21,7 @@
- #include "clang/AST/Decl.h"
- #include "clang/AST/ExternalASTSource.h"
- #include "clang/AST/NestedNameSpecifier.h"
-+#include "clang/AST/PrefetchAnalysis.h"
- #include "clang/AST/PrettyPrinter.h"
- #include "clang/AST/RawCommentList.h"
- #include "clang/AST/TemplateName.h"
+@@ -32,6 +32,7 @@
+ #include "clang/Basic/PartialDiagnostic.h"
+ #include "clang/Basic/SanitizerBlacklist.h"
+ #include "clang/Basic/VersionTuple.h"
++#include "clang/Sema/PrefetchAnalysis.h"
+ #include "llvm/ADT/DenseMap.h"
+ #include "llvm/ADT/FoldingSet.h"
+ #include "llvm/ADT/IntrusiveRefCntPtr.h"
 @@ -295,6 +296,9 @@
    /// definitions of that entity.
    llvm::DenseMap<NamedDecl*, llvm::TinyPtrVector<Module*>> MergedDefModules;
@@ -161,170 +161,6 @@ Index: include/clang/AST/Prefetch.h
 +
 +  void setPrefetchEnabled(bool Enable) { PrefetchEnabled = Enable; }
 +  bool prefetchEnabled() const { return PrefetchEnabled; }
-+};
-+
-+} // end namespace clang
-+
-+#endif
-+
-Index: include/clang/AST/PrefetchAnalysis.h
-===================================================================
---- include/clang/AST/PrefetchAnalysis.h	(nonexistent)
-+++ include/clang/AST/PrefetchAnalysis.h	(working copy)
-@@ -0,0 +1,159 @@
-+//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
-+//
-+//                     The LLVM Compiler Infrastructure
-+//
-+// This file is distributed under the University of Illinois Open Source
-+// License. See LICENSE.TXT for details.
-+//
-+//===----------------------------------------------------------------------===//
-+//
-+// This file defines the interface for prefetching analysis over structured
-+// blocks.  The analysis traverses the AST to determine how arrays are accessed
-+// in structured blocks and generates expressions defining ranges of elements
-+// accessed inside arrays.
-+//
-+//===----------------------------------------------------------------------===//
-+
-+#ifndef LLVM_CLANG_AST_PREFETCHANALYSIS_H
-+#define LLVM_CLANG_AST_PREFETCHANALYSIS_H
-+
-+#include "clang/AST/Decl.h"
-+#include "clang/AST/Expr.h"
-+#include "llvm/ADT/DenseMap.h"
-+#include "llvm/ADT/SmallPtrSet.h"
-+#include "llvm/ADT/SmallVector.h"
-+#include "llvm/Support/raw_ostream.h"
-+#include <memory>
-+
-+namespace clang {
-+
-+class ASTContext;
-+class InductionVariable;
-+
-+/// A range of memory to be prefetched.
-+class PrefetchRange {
-+public:
-+  /// Access type for array.
-+  enum Type { Read, Write };
-+
-+  PrefetchRange(enum Type Ty, VarDecl *Array, Expr *Start, Expr *End)
-+    : Ty(Ty), Array(Array), Start(Start), End(End) {}
-+
-+  enum Type getType() const { return Ty; }
-+  VarDecl *getArray() const { return Array; }
-+  Expr *getStart() const { return Start; }
-+  Expr *getEnd() const { return End; }
-+  void setType(enum Type Ty) { this->Ty = Ty; }
-+  void setArray(VarDecl *Array) { this->Array = Array; }
-+  void setStart(Expr *Start) { this->Start = Start; }
-+  void setEnd(Expr *Start) { this->End = End; }
-+
-+  // TODO print & dump
-+  const char *getTypeName() const {
-+    switch(Ty) {
-+    case Read: return "read";
-+    case Write: return "write";
-+    default: return "unknown";
-+    }
-+  }
-+
-+private:
-+  enum Type Ty;
-+  VarDecl *Array;
-+  Expr *Start, *End;
-+};
-+
-+class PrefetchAnalysis {
-+public:
-+  typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
-+  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
-+  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
-+
-+  /// How a statement should be modified.
-+  struct ExprModifier {
-+    enum Type { Add, Sub, Mul, Div, None, Unknown };
-+    void ClassifyModifier(Expr *E, const ASTContext &Ctx);
-+    enum Type getType() const { return Ty; }
-+    const llvm::APInt &getVal() const { return Val; }
-+  private:
-+    enum Type Ty;
-+    llvm::APInt Val;
-+  };
-+
-+  /// Default constructor, really only defined to enable storage in a DenseMap.
-+  PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
-+
-+  /// Construct a new prefetch analysis object to analyze a statement.  Doesn't
-+  /// run the analysis.
-+  PrefetchAnalysis(ASTContext *Ctx, Stmt *S) : Ctx(Ctx), S(S) {}
-+
-+  /// Ignore a set of variables during access analysis.  In other words, ignore
-+  /// memory accesses which use these variables as their base.
-+  void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
-+  { this->Ignore = Ignore; }
-+
-+  /// Analyze the statement.
-+  void analyzeStmt();
-+
-+  /// Get prefetch ranges discovered by analysis.
-+  const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
-+  { return ToPrefetch; }
-+
-+  void print(llvm::raw_ostream &O) const;
-+  void dump() const { print(llvm::errs()); }
-+
-+private:
-+  ASTContext *Ctx;
-+  Stmt *S;
-+  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
-+
-+  llvm::SmallVector<PrefetchRange, 8> ToPrefetch;
-+
-+  /// Analyze individual types of statements.
-+  void analyzeForStmt();
-+
-+  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
-+  void mergeArrayAccesses();
-+
-+  /// Remove trivial array accesses.
-+  void pruneEmptyArrayAccesses();
-+
-+  /// Reconstruct expressions with induction variable uses replaced by their
-+  /// upper (Upper = true) & lower bounds (Upper = false).
-+  Expr *cloneWithIV(Expr *E, const IVMap &IVs, bool Upper) const;
-+
-+  /// Clone an expression, but don't replace any variables.
-+  Expr *clone(Expr *E) const;
-+
-+  /// Clone a binary operation.
-+  Expr *cloneBinaryOperation(BinaryOperator *B,
-+                             const IVMap &IVs,
-+                             bool Upper) const;
-+
-+  /// Clone a unary operation.
-+  Expr *cloneUnaryOperation(UnaryOperator *U,
-+                            const IVMap &IVs,
-+                            bool Upper) const;
-+
-+  /// Clone a declaration reference.  If it's an induction variable, replace
-+  /// with the bound specified by the Upper flag.
-+  Expr *cloneDeclRefExpr(DeclRefExpr *D, const IVMap &IVs, bool Upper) const;
-+
-+  /// Clone an implicit cast.
-+  Expr *cloneImplicitCastExpr(ImplicitCastExpr *E,
-+                              const IVMap &IVs,
-+                              bool Upper) const;
-+
-+  /// Clone an integer literal.
-+  Expr *cloneIntegerLiteral(IntegerLiteral *L,
-+                            const IVMap &IVs,
-+                            bool Upper) const;
-+
-+  /// Modify an expression according to a configuration.
-+  Expr *modifyExpr(Expr *E, const ExprModifier &Mod) const;
 +};
 +
 +} // end namespace clang
@@ -791,7 +627,7 @@ Index: include/clang/CodeGen/PrefetchBuilder.h
 +#define LLVM_CLANG_CODEGEN_PREFETCHBUILDER_H
 +
 +#include "CodeGenFunction.h"
-+#include "clang/AST/PrefetchAnalysis.h"
++#include "clang/Sema/PrefetchAnalysis.h"
 +#include "llvm/Support/raw_ostream.h"
 +
 +namespace clang {
@@ -978,6 +814,305 @@ Index: include/clang/Parse/Parser.h
    /// \brief Parses declarative OpenMP directives.
    DeclGroupPtrTy ParseOpenMPDeclarativeDirective();
    /// \brief Parses simple list of variables.
+Index: include/clang/Sema/PrefetchAnalysis.h
+===================================================================
+--- include/clang/Sema/PrefetchAnalysis.h	(nonexistent)
++++ include/clang/Sema/PrefetchAnalysis.h	(working copy)
+@@ -0,0 +1,122 @@
++//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file defines the interface for prefetching analysis over structured
++// blocks.  The analysis traverses the AST to determine how arrays are accessed
++// in structured blocks and generates expressions defining ranges of elements
++// accessed inside arrays.
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_CLANG_AST_PREFETCHANALYSIS_H
++#define LLVM_CLANG_AST_PREFETCHANALYSIS_H
++
++#include "clang/AST/Decl.h"
++#include "clang/AST/Expr.h"
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/Support/raw_ostream.h"
++#include <memory>
++
++namespace clang {
++
++class ASTContext;
++class InductionVariable;
++
++/// A range of memory to be prefetched.
++class PrefetchRange {
++public:
++  /// Access type for array.
++  enum Type { Read, Write };
++
++  PrefetchRange(enum Type Ty, VarDecl *Array, Expr *Start, Expr *End)
++    : Ty(Ty), Array(Array), Start(Start), End(End) {}
++
++  enum Type getType() const { return Ty; }
++  VarDecl *getArray() const { return Array; }
++  Expr *getStart() const { return Start; }
++  Expr *getEnd() const { return End; }
++  void setType(enum Type Ty) { this->Ty = Ty; }
++  void setArray(VarDecl *Array) { this->Array = Array; }
++  void setStart(Expr *Start) { this->Start = Start; }
++  void setEnd(Expr *Start) { this->End = End; }
++
++  // TODO print & dump
++  const char *getTypeName() const {
++    switch(Ty) {
++    case Read: return "read";
++    case Write: return "write";
++    default: return "unknown";
++    }
++  }
++
++private:
++  enum Type Ty;
++  VarDecl *Array;
++  Expr *Start, *End;
++};
++
++class PrefetchAnalysis {
++public:
++  typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
++  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
++  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
++
++  /// Default constructor, really only defined to enable storage in a DenseMap.
++  PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
++
++  /// Construct a new prefetch analysis object to analyze a statement.  Doesn't
++  /// run the analysis.
++  PrefetchAnalysis(ASTContext *Ctx, Stmt *S) : Ctx(Ctx), S(S) {}
++
++  /// Ignore a set of variables during access analysis.  In other words, ignore
++  /// memory accesses which use these variables as their base.
++  void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
++  { this->Ignore = Ignore; }
++
++  /// Analyze the statement.
++  void analyzeStmt();
++
++  /// Get prefetch ranges discovered by analysis.
++  const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
++  { return ToPrefetch; }
++
++  void print(llvm::raw_ostream &O) const;
++  void dump() const { print(llvm::errs()); }
++
++  /// Common utilities.
++  static bool isScalarIntType(const QualType &Ty);
++  static unsigned getTypeSize(BuiltinType::Kind K);
++  static VarDecl *getVarIfScalarInt(ValueDecl *VD);
++
++private:
++  ASTContext *Ctx;
++  Stmt *S;
++
++  /// Variables (i.e., arrays) to ignore during analysis
++  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
++
++  /// The good stuff -- ranges of memory to prefetch
++  llvm::SmallVector<PrefetchRange, 8> ToPrefetch;
++
++  /// Analyze individual types of statements.
++  void analyzeForStmt();
++
++  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
++  void mergeArrayAccesses();
++
++  /// Remove trivial array accesses.
++  void pruneEmptyArrayAccesses();
++};
++
++} // end namespace clang
++
++#endif
++
+Index: include/clang/Sema/PrefetchDataflow.h
+===================================================================
+--- include/clang/Sema/PrefetchDataflow.h	(nonexistent)
++++ include/clang/Sema/PrefetchDataflow.h	(working copy)
+@@ -0,0 +1,81 @@
++//=- PrefetchDataflow.cpp - Dataflow analysis for prefetching ------------*-==//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements the dataflow of expressions as required for prefetching
++// analysis.  This is required to correctly discover how variables are used in
++// memory accesses in order to construct memory access ranges.
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef _AST_PREFETCHDATAFLOW_H
++#define _AST_PREFETCHDATAFLOW_H
++
++#include "clang/Analysis/CFG.h"
++#include "clang/Analysis/CFGStmtMap.h"
++#include "clang/AST/ParentMap.h"
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include <memory>
++
++namespace clang {
++
++/// Data structures for containing symbolic execution values.
++typedef llvm::SmallPtrSet<Expr *, 1> ExprList;
++typedef llvm::DenseMap<const VarDecl *, ExprList> SymbolicValueMap;
++typedef std::pair<const VarDecl *, ExprList> SymbolicValuePair;
++typedef llvm::SmallPtrSet<const CFGBlock *, 32> CFGBlockSet;
++
++/// Class which runs dataflow analysis over the specified statement.  Tracks
++/// the value of a given set of variables as they change throughout the
++/// statement.
++class PrefetchDataflow {
++public:
++  typedef llvm::SmallPtrSet<const VarDecl *, 8> VarSet;
++
++  /// A lot of boilerplate so we can embed analysis into data structures like
++  /// llvm::DenseMap.  Required because objects use std::unique_ptrs.
++  PrefetchDataflow();
++  PrefetchDataflow(ASTContext *Ctx);
++  PrefetchDataflow(const PrefetchDataflow &RHS);
++
++  PrefetchDataflow &operator=(const PrefetchDataflow &RHS);
++
++  /// Run dataflow analysis over the statement specified at build time.
++  void runDataflow(Stmt *S, VarSet &VarsToTrack);
++
++  /// Get the value of a variable at a specific use in a statement, or nullptr
++  /// if analysis could not calculate its value.
++  Expr *getVariableValue(VarDecl *Var, const Stmt *Use) const;
++
++  /// Reset any previous analysis.
++  void reset();
++
++  void print(llvm::raw_ostream &O) const;
++  void dump() const;
++
++private:
++  ASTContext *Ctx;
++  Stmt *S;
++
++  /// Data used in analysis/retrieving results
++  std::unique_ptr<CFG> TheCFG;
++  std::unique_ptr<ParentMap> PMap;
++  std::unique_ptr<CFGStmtMap> StmtToBlock;
++
++  /// Analysis results -- keep an expression used to calculate a variable's
++  /// value for each control flow block.
++  typedef std::pair<const CFGBlock *, SymbolicValueMap> BlockValuesPair;
++  typedef llvm::DenseMap<const CFGBlock *, SymbolicValueMap> BlockValuesMap;
++  BlockValuesMap VarValues;
++};
++
++}
++
++#endif
++
+Index: include/clang/Sema/PrefetchExprBuilder.h
+===================================================================
+--- include/clang/Sema/PrefetchExprBuilder.h	(nonexistent)
++++ include/clang/Sema/PrefetchExprBuilder.h	(working copy)
+@@ -0,0 +1,81 @@
++//===- PrefetchExprBuilder.h - Prefetching expression builder -----*- C++ --*-//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file defines a set of utilities for building expressions for
++// prefetching.
++//
++//===----------------------------------------------------------------------===//
++
++#ifndef LLVM_CLANG_AST_PREFETCHEXPRBUILDER_H
++#define LLVM_CLANG_AST_PREFETCHEXPRBUILDER_H
++
++#include "clang/AST/Decl.h"
++#include "clang/AST/Expr.h"
++#include "llvm/ADT/DenseMap.h"
++
++namespace clang {
++
++class ASTContext;
++class InductionVariable;
++
++typedef std::pair<VarDecl *, Expr *> ReplacePair;
++typedef llvm::DenseMap<VarDecl *, Expr *> ReplaceMap;
++
++namespace PrefetchExprBuilder {
++
++/// How a statement should be modified.
++struct Modifier {
++  enum Type { Add, Sub, Mul, Div, None, Unknown };
++  void ClassifyModifier(Expr *E, const ASTContext &Ctx);
++  enum Type getType() const { return Ty; }
++  const llvm::APInt &getVal() const { return Val; }
++private:
++  enum Type Ty;
++  llvm::APInt Val;
++};
++
++/// Information needed for building expressions.
++struct BuildInfo {
++  ASTContext *Ctx;
++  const ReplaceMap &VarReplacements;
++  bool dumpInColor;
++};
++
++/// Reconstruct expressions with variables replaced by user-supplied
++/// expressions (in Info.VarReplacements).
++Expr *cloneWithReplacement(Expr *E, BuildInfo &Info);
++
++/// Clone an expression, but don't replace any variables.
++Expr *clone(Expr *E, ASTContext *Ctx);
++
++/// Clone a binary operation.
++Expr *cloneBinaryOperation(BinaryOperator *B, BuildInfo &Info);
++
++/// Clone a unary operation.
++Expr *cloneUnaryOperation(UnaryOperator *U, BuildInfo &Info);
++
++/// Clone a declaration reference.  If it's an induction variable, replace
++/// with the bound specified by the Upper flag.
++Expr *cloneDeclRefExpr(DeclRefExpr *D, BuildInfo &Info);
++
++/// Clone an implicit cast.
++Expr *cloneImplicitCastExpr(ImplicitCastExpr *E, BuildInfo &Info);
++
++/// Clone an integer literal.
++Expr *cloneIntegerLiteral(IntegerLiteral *L, BuildInfo &Info);
++
++/// Modify an expression according to a configuration.
++Expr *cloneAndModifyExpr(Expr *E, const Modifier &Mod, ASTContext *Ctx);
++
++} // end namespace PrefetchExprBuilder
++
++} // end namespace clang
++
++#endif
++
 Index: include/clang/Sema/Sema.h
 ===================================================================
 --- include/clang/Sema/Sema.h	(revision 320332)
@@ -1018,966 +1153,6 @@ Index: include/clang/Sema/Sema.h
    /// \brief The kind of conversion being performed.
    enum CheckedConversionKind {
      /// \brief An implicit conversion.
-Index: lib/AST/CMakeLists.txt
-===================================================================
---- lib/AST/CMakeLists.txt	(revision 320332)
-+++ lib/AST/CMakeLists.txt	(working copy)
-@@ -40,6 +40,7 @@
-   NestedNameSpecifier.cpp
-   NSAPI.cpp
-   ParentMap.cpp
-+  PrefetchAnalysis.cpp
-   RawCommentList.cpp
-   RecordLayout.cpp
-   RecordLayoutBuilder.cpp
-Index: lib/AST/PrefetchAnalysis.cpp
-===================================================================
---- lib/AST/PrefetchAnalysis.cpp	(nonexistent)
-+++ lib/AST/PrefetchAnalysis.cpp	(working copy)
-@@ -0,0 +1,943 @@
-+//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
-+//
-+//                     The LLVM Compiler Infrastructure
-+//
-+// This file is distributed under the University of Illinois Open Source
-+// License. See LICENSE.TXT for details.
-+//
-+//===----------------------------------------------------------------------===//
-+//
-+// This file implements prefetching analysis for structured blocks.  The
-+// analysis traverses the AST to determine how arrays are accessed in structured
-+// blocks and generates expressions defining ranges of elements accessed.
-+//
-+//===----------------------------------------------------------------------===//
-+
-+#include "clang/AST/ASTContext.h"
-+#include "clang/AST/PrefetchAnalysis.h"
-+#include "clang/AST/RecursiveASTVisitor.h"
-+#include "llvm/ADT/DenseMap.h"
-+#include "llvm/Support/Debug.h"
-+
-+using namespace clang;
-+
-+typedef PrefetchAnalysis::InductionVariablePtr InductionVariablePtr;
-+typedef PrefetchAnalysis::IVMap IVMap;
-+typedef PrefetchAnalysis::IVPair IVPair;
-+
-+//===----------------------------------------------------------------------===//
-+// Common utilities
-+//
-+
-+/// Return whether a type is both scalar and integer.
-+static bool isScalarIntType(const QualType &Ty) {
-+  return Ty->isIntegerType() && Ty->isScalarType();
-+}
-+
-+/// Return the variable declaration if the declared value is a variable and if
-+/// it is a scalar integer type or nullptr otherwise.
-+static VarDecl *getVarIfScalarInt(ValueDecl *VD) {
-+  if(isa<VarDecl>(VD)) {
-+    VarDecl *Var = cast<VarDecl>(VD);
-+    if(isScalarIntType(Var->getType())) return Var;
-+  }
-+  return nullptr;
-+}
-+
-+/// Get the size in bits for builtin integer types.
-+static unsigned getTypeSize(BuiltinType::Kind K) {
-+  switch(K) {
-+  case BuiltinType::Bool:
-+  case BuiltinType::Char_U: case BuiltinType::UChar:
-+  case BuiltinType::Char_S: case BuiltinType::SChar:
-+    return 8;
-+  case BuiltinType::WChar_U: case BuiltinType::Char16:
-+  case BuiltinType::UShort:
-+  case BuiltinType::WChar_S:
-+  case BuiltinType::Short:
-+    return 16;
-+  case BuiltinType::Char32:
-+  case BuiltinType::UInt:
-+  case BuiltinType::Int:
-+    return 32;
-+  case BuiltinType::ULong:
-+  case BuiltinType::ULongLong:
-+  case BuiltinType::Long:
-+  case BuiltinType::LongLong:
-+    return 64;
-+  case BuiltinType::UInt128:
-+  case BuiltinType::Int128:
-+    return 128;
-+  default: return UINT32_MAX;
-+  }
-+}
-+
-+// Filter functions to only select appropriate operator types.  Return true if
-+// the operator is of a type that should be analyzed, or false otherwise.
-+typedef bool (*UnaryOpFilter)(UnaryOperator::Opcode);
-+typedef bool (*BinaryOpFilter)(BinaryOperator::Opcode);
-+
-+// Don't analyze *any* operation types.
-+bool NoUnaryOp(UnaryOperator::Opcode Op) { return false; }
-+bool NoBinaryOp(BinaryOperator::Opcode Op) { return false; }
-+
-+// Filter out non-assignment binary operations.
-+bool FilterAssignOp(BinaryOperator::Opcode Op) {
-+  switch(Op) {
-+  case BO_Assign: case BO_MulAssign: case BO_DivAssign: case BO_RemAssign:
-+  case BO_AddAssign: case BO_SubAssign: case BO_ShlAssign: case BO_ShrAssign:
-+  case BO_AndAssign: case BO_XorAssign: case BO_OrAssign:
-+    return true;
-+  default: return false;
-+  }
-+}
-+
-+// Filter out non-relational binary operations.
-+bool FilterRelationalOp(BinaryOperator::Opcode Op) {
-+  switch(Op) {
-+  case BO_LT: case BO_GT: case BO_LE: case BO_GE: case BO_EQ: case BO_NE:
-+    return true;
-+  default: return false;
-+  }
-+}
-+
-+// Filter out non-math/logic binary operations.
-+bool FilterMathLogicOp(BinaryOperator::Opcode Op) {
-+  switch(Op) {
-+  case BO_Mul: case BO_Div: case BO_Rem: case BO_Add: case BO_Sub:
-+  case BO_Shl: case BO_Shr: case BO_And: case BO_Xor: case BO_Or:
-+    return true;
-+  default: return false;
-+  }
-+}
-+
-+// Filter out non-math unary operations.
-+bool FilterMathOp(UnaryOperator::Opcode Op) {
-+  switch(Op) {
-+  case UO_PostInc: case UO_PostDec: case UO_PreInc: case UO_PreDec:
-+    return true;
-+  default: return false;
-+  }
-+}
-+
-+/// A vector of variable declarations.
-+typedef llvm::SmallVector<VarDecl *, 4> VarVec;
-+
-+/// Return the statement if it is a scoping statement (e.g., for-loop) or
-+/// nullptr otherwise.
-+static bool isScopingStmt(Stmt *S) {
-+  if(isa<CapturedStmt>(S) || isa<CompoundStmt>(S) || isa<CXXCatchStmt>(S) ||
-+     isa<CXXForRangeStmt>(S) || isa<CXXTryStmt>(S) || isa<DoStmt>(S) ||
-+     isa<ForStmt>(S) || isa<IfStmt>(S) || isa<OMPExecutableDirective>(S) ||
-+     isa<SwitchStmt>(S) || isa<WhileStmt>(S)) return true;
-+  else return false;
-+}
-+
-+/// Scoping information for array analyses.  A node in a singly-linked list
-+/// which allows traversal from innermost scope outwards.  Nodes are reference
-+/// counted, so when array accesses which reference the scope (if any) are
-+/// deleted, the scoping chain itself gets deleted.
-+struct ScopeInfo {
-+  Stmt *ScopeStmt;                        // Statement providing scope
-+  std::shared_ptr<ScopeInfo> ParentScope; // The parent in the scope chain
-+  ScopeInfo(Stmt *ScopeStmt, std::shared_ptr<ScopeInfo> &ParentScope)
-+    : ScopeStmt(ScopeStmt), ParentScope(ParentScope) {}
-+};
-+typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
-+
-+void PrefetchAnalysis::ExprModifier::ClassifyModifier(Expr *E,
-+                                                      const ASTContext &Ctx) {
-+  unsigned Bits;
-+  DeclRefExpr *DR;
-+  BinaryOperator *B;
-+  QualType BaseTy;
-+
-+  Ty = Unknown;
-+  if(!E) return;
-+
-+  E = E->IgnoreImpCasts();
-+  if((B = dyn_cast<BinaryOperator>(E))) {
-+    // Note: both operands *must* have same type
-+    BaseTy = B->getLHS()->getType().getDesugaredType(Ctx);
-+    assert(isScalarIntType(BaseTy) && "Invalid expression type");
-+    Bits = getTypeSize(cast<BuiltinType>(BaseTy)->getKind());
-+
-+    switch(B->getOpcode()) {
-+    default: Ty = None; break;
-+    case BO_LT:
-+      Ty = Sub;
-+      Val = llvm::APInt(Bits, 1, false);
-+      break;
-+    case BO_GT:
-+      Ty = Add;
-+      Val = llvm::APInt(Bits, 1, false);
-+      break;
-+    // TODO hybrid math/assign operations
-+    }
-+  }
-+  else if((DR = dyn_cast<DeclRefExpr>(E))) Ty = None;
-+}
-+
-+//===----------------------------------------------------------------------===//
-+// Prefetch analysis -- array accesses
-+//
-+
-+/// An array access.
-+class ArrayAccess {
-+public:
-+  ArrayAccess(VarDecl *Base, Expr *Idx, const ScopeInfoPtr &AccessScope)
-+    : Valid(true), Base(Base), Idx(Idx), AccessScope(AccessScope) {}
-+
-+  bool isValid() const { return Valid; }
-+  VarDecl *getBase() const { return Base; }
-+  Expr *getIndex() const { return Idx; }
-+  const VarVec &getVarsInIdx() const { return VarsInIdx; }
-+  const ScopeInfoPtr &getScope() const { return AccessScope; }
-+
-+  void setInvalid() { Valid = false; }
-+  void addVarInIdx(VarDecl *V) { if(V != Base) VarsInIdx.push_back(V); }
-+
-+  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
-+    O << "Array: " << Base->getName() << "\nIndex expression: ";
-+    Idx->printPretty(O, nullptr, Policy);
-+    O << "\nScoping statement:\n";
-+    AccessScope->ScopeStmt->printPretty(O, nullptr, Policy);
-+    O << "\nVariables used in index calculation:";
-+    for(auto Var : VarsInIdx) O << " " << Var->getName();
-+    O << "\n";
-+  }
-+  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
-+
-+private:
-+  bool Valid;               // Is the access valid?
-+  VarDecl *Base;            // The array base
-+  Expr *Idx;                // Expression used to calculate index
-+  VarVec VarsInIdx;         // Variables used in index calculation
-+  ScopeInfoPtr AccessScope; // Scope of the array access
-+};
-+
-+/// Traverse a statement looking for array accesses.
-+// TODO *** NEED TO LIMIT TO AFFINE ACCESSES ***
-+class ArrayAccessPattern : public RecursiveASTVisitor<ArrayAccessPattern> {
-+public:
-+  ArrayAccessPattern(llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
-+    : Ignore(Ignore) {}
-+
-+  /// Which sub-tree of a binary operator we're traversing.  This determines
-+  /// whether we're reading or writing the array.
-+  enum TraverseStructure { LHS, RHS };
-+
-+  void InitTraversal() {
-+    Side.push_back(RHS);
-+    CurAccess = nullptr;
-+  }
-+
-+  /// Traverse a statement.  There's a couple of special traversal rules:
-+  ///
-+  ///  - If it's a scoping statement, add an enclosing scope to the scope chain
-+  //     before traversing the sub-tree
-+  ///  - If it's an assignment operation, record structure of the traversal
-+  ///    before visiting each of the left & right sub-trees
-+  ///  - If it's an array subscript, record all variables used to calculate
-+  ///    the index
-+  bool TraverseStmt(Stmt *S) {
-+    if(!S) return true;
-+
-+    bool isScope = isScopingStmt(S);
-+    BinaryOperator *BinOp = dyn_cast<BinaryOperator>(S);
-+    ArraySubscriptExpr *Subscript = dyn_cast<ArraySubscriptExpr>(S);
-+
-+    if(isScope) CurScope = ScopeInfoPtr(new ScopeInfo(S, CurScope));
-+
-+    if(BinOp && FilterAssignOp(BinOp->getOpcode())) {
-+      // For assignment operations, LHS = write and RHS = read
-+      Side.push_back(LHS);
-+      TraverseStmt(BinOp->getLHS());
-+      Side.pop_back();
-+      Side.push_back(RHS);
-+      TraverseStmt(BinOp->getRHS());
-+      Side.pop_back();
-+    }
-+    else if(Subscript) {
-+      // TODO doesn't work for nested accesses, e.g., a[b[i]]
-+      RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
-+      CurAccess = nullptr; // Don't record any more variables
-+    }
-+    else RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
-+
-+    if(isScope) CurScope = CurScope->ParentScope;
-+
-+    return true;
-+  }
-+
-+  /// Analyze an array access; in particular, the index.
-+  bool VisitArraySubscriptExpr(ArraySubscriptExpr *Sub) {
-+    Expr *Base = Sub->getBase(), *Idx = Sub->getIdx();
-+    DeclRefExpr *DR;
-+    VarDecl *VD;
-+
-+    DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
-+    if(!DR) return true;
-+    VD = dyn_cast<VarDecl>(DR->getDecl());
-+    if(!VD || Ignore.count(VD)) return true;
-+    if(Side.back() == LHS) {
-+      ArrayWrites.emplace_back(VD, Idx, CurScope);
-+      CurAccess = &ArrayWrites.back();
-+    }
-+    else {
-+      ArrayReads.emplace_back(VD, Idx, CurScope);
-+      CurAccess = &ArrayReads.back();
-+    }
-+    return true;
-+  }
-+
-+  /// Record any variables seen during traversing
-+  bool VisitDeclRefExpr(DeclRefExpr *DR) {
-+    if(CurAccess) {
-+      VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
-+      if(VD) CurAccess->addVarInIdx(VD);
-+      else CurAccess->setInvalid(); // Can't analyze if decl != variable
-+    }
-+    return true;
-+  }
-+
-+  const llvm::SmallVector<ArrayAccess, 8> &getArrayReads() const
-+  { return ArrayReads; }
-+  const llvm::SmallVector<ArrayAccess, 8> &getArrayWrites() const
-+  { return ArrayWrites; }
-+
-+private:
-+  llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
-+  ScopeInfoPtr CurScope;
-+  llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
-+
-+  // Traversal state
-+  llvm::SmallVector<enum TraverseStructure, 8> Side;
-+  ArrayAccess *CurAccess;
-+};
-+
-+void PrefetchAnalysis::mergeArrayAccesses() {
-+  // TODO!
-+}
-+
-+void PrefetchAnalysis::pruneEmptyArrayAccesses() {
-+  // TODO!
-+}
-+
-+//===----------------------------------------------------------------------===//
-+// Prefetch analysis -- ForStmts
-+//
-+
-+namespace clang {
-+
-+/// An induction variable and expressions describing its range.
-+class InductionVariable {
-+public:
-+  /// The direction of change for the induction variable
-+  enum Direction {
-+    Increases, // Update changes variable from lower to higher values
-+    Decreases, // Update changes variable from higher to lower values
-+    Unknown // Update has an unknown effect, e.g., container interators
-+  };
-+
-+  InductionVariable() : Var(nullptr), Init(nullptr), Cond(nullptr),
-+                        Update(nullptr), Dir(Unknown), LowerB(nullptr),
-+                        UpperB(nullptr) {}
-+
-+  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update,
-+                    const ASTContext &Ctx)
-+    : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
-+      LowerB(nullptr), UpperB(nullptr) {
-+
-+    const UnaryOperator *Unary;
-+    assert(getVarIfScalarInt(Var) && "Invalid induction variable");
-+
-+    // Try to classify update direction to determine upper/lower bounds
-+    if((Unary = dyn_cast<UnaryOperator>(Update)))
-+      Dir = classifyUnaryOpDirection(Unary->getOpcode());
-+
-+    if(Dir == Increases) {
-+      LowerModifier.ClassifyModifier(Init, Ctx);
-+      LowerB = stripInductionVar(Init);
-+      UpperModifier.ClassifyModifier(Cond, Ctx);
-+      UpperB = stripInductionVar(Cond);
-+    }
-+    else if(Dir == Decreases) {
-+      LowerModifier.ClassifyModifier(Cond, Ctx);
-+      LowerB = stripInductionVar(Cond);
-+      UpperModifier.ClassifyModifier(Init, Ctx);
-+      UpperB = stripInductionVar(Init);
-+    }
-+  }
-+
-+  VarDecl *getVariable() const { return Var; }
-+  Expr *getInit() const { return Init; }
-+  Expr *getCond() const { return Cond; }
-+  Expr *getUpdate() const { return Update; }
-+  enum Direction getUpdateDirection() const { return Dir; }
-+  Expr *getLowerBound() const { return LowerB; }
-+  Expr *getUpperBound() const { return UpperB; }
-+  const PrefetchAnalysis::ExprModifier &
-+  getLowerBoundModifier() const { return LowerModifier; }
-+  const PrefetchAnalysis::ExprModifier &
-+  getUpperBoundModifier() const { return UpperModifier; }
-+
-+  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
-+    O << "Induction Variable: " << Var->getName() << "\nDirection: ";
-+    switch(Dir) {
-+    case Increases: O << "increases\n"; break;
-+    case Decreases: O << "decreases\n"; break;
-+    case Unknown: O << "unknown update direction\n"; break;
-+    }
-+    if(LowerB && UpperB) {
-+      O << "Lower bound: ";
-+      LowerB->printPretty(O, nullptr, Policy);
-+      O << "\nUpper bound: ";
-+      UpperB->printPretty(O, nullptr, Policy);
-+    }
-+    else O << "-> Could not determine bounds <-";
-+    O << "\n";
-+  }
-+
-+  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
-+
-+private:
-+  VarDecl *Var;
-+  Expr *Init, *Cond, *Update;
-+
-+  /// Expressions describing the lower & upper bounds of the induction variable
-+  /// and its update direction.
-+  enum Direction Dir;
-+  Expr *LowerB, *UpperB;
-+  PrefetchAnalysis::ExprModifier LowerModifier, UpperModifier;
-+
-+  /// Try to classify the induction variable's update direction based on the
-+  /// unary operation type.
-+  static enum Direction classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
-+    switch(Op) {
-+    case UO_PostInc:
-+    case UO_PreInc:
-+      return Increases;
-+    case UO_PostDec:
-+    case UO_PreDec:
-+      return Decreases;
-+    default: return Unknown;
-+    }
-+  }
-+
-+  Expr *stripInductionVarFromBinOp(BinaryOperator *B) {
-+    DeclRefExpr *D;
-+    VarDecl *VD;
-+
-+    D = dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreImpCasts());
-+    if(!D) return nullptr;
-+    VD = dyn_cast<VarDecl>(D->getDecl());
-+    if(!VD) return nullptr;
-+    if(VD == Var) return B->getRHS();
-+    return nullptr;
-+  }
-+
-+  Expr *stripInductionVarFromExpr(Expr *E) {
-+    DeclRefExpr *D;
-+    VarDecl *VD;
-+
-+    D = dyn_cast<DeclRefExpr>(E->IgnoreImpCasts());
-+    if(!D) return nullptr;
-+    VD = dyn_cast<VarDecl>(D->getDecl());
-+    if(!VD) return nullptr;
-+    if(VD != this->Var) return D;
-+    return nullptr;
-+  }
-+
-+  /// Remove the induction variable & operator from the expression, leaving
-+  /// only a bounds expression.
-+  Expr *stripInductionVar(Expr *E) {
-+    BinaryOperator *B;
-+    IntegerLiteral *L;
-+
-+    if((B = dyn_cast<BinaryOperator>(E))) return stripInductionVarFromBinOp(B);
-+    else if((L = dyn_cast<IntegerLiteral>(E))) return L;
-+    else if(E) return stripInductionVarFromExpr(E);
-+    else return nullptr;
-+  }
-+};
-+
-+} /* end namespace clang */
-+
-+/// Map an induction variable to an expression describing a bound.
-+typedef llvm::DenseMap<VarDecl *, Expr *> IVBoundMap;
-+typedef std::pair<VarDecl *, Expr *> IVBoundPair;
-+
-+/// Traversal to find induction variables in loop initialization, condition and
-+/// update expressions.
-+template<UnaryOpFilter UnaryFilt, BinaryOpFilter BinaryFilt>
-+class IVFinder : public RecursiveASTVisitor<IVFinder<UnaryFilt, BinaryFilt>> {
-+public:
-+  // Visit binary operators to find induction variables.
-+  bool VisitBinaryOperator(BinaryOperator *B) {
-+    Expr *LHS;
-+    DeclRefExpr *DR;
-+    VarDecl *Var;
-+
-+    // Filter out irrelevant operation types
-+    if(!BinaryFilt(B->getOpcode())) return true;
-+
-+    // Look for DeclRefExprs -- these reference induction variables
-+    LHS = B->getLHS();
-+    DR = dyn_cast<DeclRefExpr>(LHS->IgnoreImpCasts());
-+    if(!DR) return true;
-+
-+    // Make sure that both the expression acting on the induction variable &
-+    // the variable itself are scalar integers (casts may change types)
-+    Var = getVarIfScalarInt(DR->getDecl());
-+    if(!isScalarIntType(LHS->getType()) || !Var) return true;
-+    InductionVars[Var] = B;
-+    return true;
-+  }
-+
-+  // Visit unary operators to find induction variables.
-+  bool VisitUnaryOperator(UnaryOperator *U) {
-+    Expr *SubExpr;
-+    DeclRefExpr *DR;
-+    VarDecl *Var;
-+
-+    // Filter out irrelevant operation types
-+    if(!UnaryFilt(U->getOpcode())) return true;
-+
-+    // Look for DeclRefExprs -- these reference induction variables
-+    SubExpr = U->getSubExpr();
-+    DR = dyn_cast<DeclRefExpr>(SubExpr->IgnoreImpCasts());
-+    if(!DR) return true;
-+
-+    // Make sure that both the expression acting on the induction variable &
-+    // the variable itself are scalar integers (casts may change types)
-+    Var = getVarIfScalarInt(DR->getDecl());
-+    if(!isScalarIntType(SubExpr->getType()) || !Var) return true;
-+    InductionVars[Var] = U;
-+    return true;
-+  }
-+
-+  bool VisitDeclStmt(DeclStmt *D) {
-+    for(auto &Child : D->getDeclGroup()) {
-+      VarDecl *Var = getVarIfScalarInt(dyn_cast<VarDecl>(Child));
-+      if(!Var || !Var->hasInit()) continue;
-+      InductionVars[Var] = Var->getInit();
-+    }
-+    return true;
-+  }
-+
-+  /// Return all induction variables found.
-+  const IVBoundMap &getInductionVars() const { return InductionVars; }
-+
-+  /// Return the bounds expression for a given induction variable, or nullptr
-+  /// if none was found.
-+  Expr *getVarBound(VarDecl *Var) {
-+    IVBoundMap::iterator it = InductionVars.find(Var);
-+    if(it != InductionVars.end()) return it->second;
-+    else return nullptr;
-+  }
-+
-+private:
-+  IVBoundMap InductionVars;
-+};
-+
-+/// Structural information about a for-loop, including induction variables and
-+/// parent/child loops.
-+class ForLoopInfo {
-+public:
-+  ForLoopInfo(ForStmt *Loop, std::shared_ptr<ForLoopInfo> &Parent, int Level)
-+    : Loop(Loop), Parent(Parent), Level(Level) {}
-+
-+  /// Add an induction variable.
-+  void addInductionVar(const InductionVariablePtr &IV)
-+  { InductionVars.insert(IVPair(IV->getVariable(), IV)); }
-+
-+  /// Remove an induction variable if present.  Return true if removed or false
-+  /// if we don't have the variable.
-+  bool removeInductionVar(const InductionVariablePtr &IV) {
-+    IVMap::iterator it = InductionVars.find(IV->getVariable());
-+    if(it != InductionVars.end()) {
-+      InductionVars.erase(it);
-+      return true;
-+    }
-+    else return false;
-+  }
-+
-+  /// Add a child loop.
-+  void addChildLoop(std::shared_ptr<ForLoopInfo> &S) { Children.push_back(S); }
-+
-+  ForStmt *getLoop() const { return Loop; }
-+  const std::shared_ptr<ForLoopInfo> &getParent() const { return Parent; }
-+  int getLevel() const { return Level; }
-+  const IVMap &getInductionVars() const { return InductionVars; }
-+  const llvm::SmallVector<std::shared_ptr<ForLoopInfo>, 4> &getChildren() const
-+  { return Children; }
-+
-+  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
-+    O << "Loop @ " << this << "\nDepth: " << Level
-+      << "\nParent: " << Parent.get();
-+    if(Children.size()) {
-+      O << "\nChildren:";
-+      for(auto &Child : Children) O << " " << Child.get();
-+    }
-+    O << "\n";
-+    Loop->printPretty(O, nullptr, Policy);
-+    O << "\n";
-+  }
-+  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
-+
-+private:
-+  ForStmt *Loop;
-+  std::shared_ptr<ForLoopInfo> Parent;
-+  size_t Level;
-+
-+  IVMap InductionVars;
-+  llvm::SmallVector<std::shared_ptr<ForLoopInfo>, 4> Children;
-+};
-+
-+typedef std::shared_ptr<ForLoopInfo> ForLoopInfoPtr;
-+
-+/// Search a sub-tree for loops, calculating induction variables found in any
-+/// loops along the way.  We *must* construct tree structural information in
-+/// order to correctly handle complex loop nests, e.g.:
-+///
-+/// int a, b;
-+/// for(a = ...; a < ...; a++) {
-+///   for(b = 0; b < 10; b++) {
-+///     ...
-+///   }
-+///
-+///   for(b = 10; b < 20; b++) {
-+///
-+///   }
-+/// }
-+///
-+/// Induction variable b has different ranges in each of the nested loops.
-+class LoopNestTraversal : public RecursiveASTVisitor<LoopNestTraversal> {
-+public:
-+  LoopNestTraversal(const ASTContext &Ctx) : Ctx(Ctx) {}
-+
-+  void InitTraversal() { if(!LoopNest.size()) LoopNest.emplace_back(nullptr); }
-+
-+  bool VisitForStmt(ForStmt *S) {
-+    Expr *InitExpr, *CondExpr, *UpdateExpr;
-+    IVFinder<NoUnaryOp, FilterAssignOp> Init;
-+    IVFinder<NoUnaryOp, FilterRelationalOp> Cond;
-+    IVFinder<FilterMathOp, FilterMathLogicOp> Update;
-+
-+    // Set up data & tree structure information.
-+    LoopNest.emplace_back(
-+      new ForLoopInfo(S, LoopNest.back(), LoopNest.size() - 1));
-+    ForLoopInfoPtr &Cur = LoopNest.back();
-+    Loops[S] = Cur;
-+    if(Cur->getParent()) Cur->getParent()->addChildLoop(Cur);
-+
-+    // Find the induction variables in the loop expressions.
-+    Init.TraverseStmt(S->getInit());
-+    Cond.TraverseStmt(S->getCond());
-+    Update.TraverseStmt(S->getInc());
-+
-+    // Find induction variables which are referenced in all three parts of the
-+    // for-loop header.
-+    const IVBoundMap &InitVars = Init.getInductionVars();
-+    for(auto Var = InitVars.begin(), E = InitVars.end(); Var != E; Var++) {
-+      InitExpr = Var->second;
-+      CondExpr = Cond.getVarBound(Var->first),
-+      UpdateExpr = Update.getVarBound(Var->first);
-+      if(InitExpr && CondExpr && UpdateExpr) {
-+        InductionVariablePtr IV(
-+          new InductionVariable(Var->first, InitExpr, CondExpr,
-+                                UpdateExpr, Ctx));
-+        Cur->addInductionVar(std::move(IV));
-+      }
-+    }
-+
-+    return true;
-+  }
-+
-+  bool TraverseStmt(Stmt *S) {
-+    if(!S) return true;
-+    RecursiveASTVisitor<LoopNestTraversal>::TraverseStmt(S);
-+    if(isa<ForStmt>(S)) LoopNest.pop_back();
-+    return true;
-+  }
-+
-+  /// Prune induction variables so each each loop only maintains its own
-+  /// induction variables and not those of any nested loops.
-+  // TODO this may not be necessary...
-+  void PruneInductionVars() {
-+    // Each loop nest is a tree in a forest of all loop nests
-+    for(auto &Info : Loops)
-+      if(Info.second->getLevel() == 0)
-+        PruneInductionVars(Info.second);
-+  }
-+
-+  /// Get all loops discovered during the tree traversal.
-+  const llvm::DenseMap<ForStmt *, ForLoopInfoPtr> &getLoops() const
-+  { return Loops; }
-+
-+  /// Get the enclosing loop's information for an array access.
-+  const ForLoopInfoPtr getEnclosingLoop(const ArrayAccess &A) const {
-+    ScopeInfoPtr S = A.getScope();
-+    while(S && !isa<ForStmt>(S->ScopeStmt)) S = S->ParentScope;
-+    if(!S) return ForLoopInfoPtr(nullptr);
-+
-+    llvm::DenseMap<ForStmt *, ForLoopInfoPtr>::const_iterator it
-+      = Loops.find(cast<ForStmt>(S->ScopeStmt));
-+    if(it != Loops.end()) return it->second;
-+    else return ForLoopInfoPtr(nullptr);
-+  }
-+
-+private:
-+  const ASTContext &Ctx;
-+
-+  // A stack of nested loops to provide induction variable scoping information.
-+  llvm::SmallVector<ForLoopInfoPtr, 4> LoopNest;
-+
-+  // Map loop statements to information gathered during traversal.
-+  llvm::DenseMap<ForStmt *, ForLoopInfoPtr> Loops;
-+
-+  // Recursively prune induction variables in a bottom-up fashion (post-order
-+  // traversal).
-+  void PruneInductionVars(ForLoopInfoPtr Loop) {
-+    for(auto &Child : Loop->getChildren()) {
-+      PruneInductionVars(Child);
-+      for(auto &IV : Child->getInductionVars())
-+        Loop->removeInductionVar(IV.second);
-+    }
-+  }
-+};
-+
-+/// Search the loop scoping chain for an induction variable.  Return the
-+/// induction variable information if found, or nullptr otherwise.
-+static const InductionVariablePtr
-+findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
-+  assert(V && Scope && "Invalid arguments");
-+
-+  ForLoopInfoPtr TmpScope = Scope;
-+  InductionVariablePtr IV(nullptr);
-+  do {
-+    const IVMap &IVs = TmpScope->getInductionVars();
-+    IVMap::const_iterator it = IVs.find(V);
-+    if(it != IVs.end()) {
-+      IV = it->second;
-+      break;
-+    }
-+    else TmpScope = TmpScope->getParent();
-+  } while(TmpScope);
-+  return IV;
-+}
-+
-+/// Search a for-loop statement for array access patterns based on loop
-+/// induction variables that can be prefetched at runtime.
-+void PrefetchAnalysis::analyzeForStmt() {
-+  LoopNestTraversal Loops(*Ctx);
-+  ArrayAccessPattern ArrAccesses(Ignore);
-+
-+  // Gather loop nest information, including induction variables
-+  Loops.InitTraversal();
-+  Loops.TraverseStmt(S);
-+  Loops.PruneInductionVars();
-+
-+  // Find array/pointer accesses.
-+  ArrAccesses.InitTraversal();
-+  ArrAccesses.TraverseStmt(S);
-+
-+  // Reconstruct array subscript expressions with induction variable references
-+  // replaced by their bounds.
-+  for(auto &Read : ArrAccesses.getArrayReads()) {
-+    IVMap IVs;
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
-+    for(auto &Var : Read.getVarsInIdx()) {
-+      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-+      if(IV) IVs.insert(IVPair(Var, std::move(IV)));
-+    }
-+
-+    Expr *UpperBound = cloneWithIV(Read.getIndex(), IVs, true),
-+         *LowerBound = cloneWithIV(Read.getIndex(), IVs, false);
-+    if(UpperBound && LowerBound)
-+      ToPrefetch.emplace_back(PrefetchRange::Read, Read.getBase(),
-+                              LowerBound, UpperBound);
-+  }
-+
-+  for(auto &Write : ArrAccesses.getArrayWrites()) {
-+    IVMap IVs;
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
-+    for(auto &Var : Write.getVarsInIdx()) {
-+      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-+      if(IV) IVs.insert(IVPair(Var, std::move(IV)));
-+    }
-+
-+    Expr *UpperBound = cloneWithIV(Write.getIndex(), IVs, true),
-+         *LowerBound = cloneWithIV(Write.getIndex(), IVs, false);
-+    if(UpperBound && LowerBound)
-+      ToPrefetch.emplace_back(PrefetchRange::Write, Write.getBase(),
-+                              LowerBound, UpperBound);
-+  }
-+}
-+
-+//===----------------------------------------------------------------------===//
-+// Reconstruction API
-+//
-+
-+Expr *
-+PrefetchAnalysis::cloneWithIV(Expr *E, const IVMap &IVs, bool Upper) const {
-+  Expr *NewE = nullptr;
-+  BinaryOperator *B;
-+  UnaryOperator *U;
-+  DeclRefExpr *D;
-+  ImplicitCastExpr *C;
-+  IntegerLiteral *I;
-+
-+  if(!E) return nullptr;
-+
-+  // TODO better way to switch on type?
-+  if((B = dyn_cast<BinaryOperator>(E)))
-+    NewE = cloneBinaryOperation(B, IVs, Upper);
-+  else if((U = dyn_cast<UnaryOperator>(E)))
-+    NewE = cloneUnaryOperation(U, IVs, Upper);
-+  else if((D = dyn_cast<DeclRefExpr>(E)))
-+    NewE = cloneDeclRefExpr(D, IVs, Upper);
-+  else if((C = dyn_cast<ImplicitCastExpr>(E)))
-+    NewE = cloneImplicitCastExpr(C, IVs, Upper);
-+  else if((I = dyn_cast<IntegerLiteral>(E)))
-+    NewE = cloneIntegerLiteral(I, IVs, Upper);
-+  else {
-+    // TODO delete
-+    llvm::dbgs() << "Unhandled expression:\n";
-+    E->dump();
-+  }
-+
-+  return NewE;
-+}
-+
-+Expr *PrefetchAnalysis::clone(Expr *E) const {
-+  IVMap Dummy; // No induction variables, don't replace any DeclRefExprs
-+  return cloneWithIV(E, Dummy, false);
-+}
-+
-+Expr *PrefetchAnalysis::cloneBinaryOperation(BinaryOperator *B,
-+                                             const IVMap &IVs,
-+                                             bool Upper) const {
-+  Expr *LHS = cloneWithIV(B->getLHS(), IVs, Upper),
-+       *RHS = cloneWithIV(B->getRHS(), IVs, Upper);
-+  if(!LHS || !RHS) return nullptr;
-+  return new (*Ctx) BinaryOperator(LHS, RHS, B->getOpcode(),
-+                                   B->getType(),
-+                                   B->getValueKind(),
-+                                   B->getObjectKind(),
-+                                   SourceLocation(),
-+                                   B->isFPContractable());
-+}
-+
-+Expr *PrefetchAnalysis::cloneUnaryOperation(UnaryOperator *U,
-+                                            const IVMap &IVs,
-+                                            bool Upper) const {
-+  Expr *Sub = cloneWithIV(U->getSubExpr(), IVs, Upper);
-+  if(!Sub) return nullptr;
-+  return new (*Ctx) UnaryOperator(Sub, U->getOpcode(),
-+                                  U->getType(),
-+                                  U->getValueKind(),
-+                                  U->getObjectKind(),
-+                                  SourceLocation());
-+}
-+
-+Expr *PrefetchAnalysis::cloneDeclRefExpr(DeclRefExpr *D,
-+                                         const IVMap &IVs,
-+                                         bool Upper) const {
-+  VarDecl *VD;
-+  IVMap::const_iterator it;
-+
-+  if((VD = dyn_cast<VarDecl>(D->getDecl())) &&
-+     (it = IVs.find(VD)) != IVs.end()) {
-+    if(Upper)
-+      return modifyExpr(clone(it->second->getUpperBound()),
-+                        it->second->getUpperBoundModifier());
-+    else
-+      return modifyExpr(clone(it->second->getLowerBound()),
-+                        it->second->getLowerBoundModifier());
-+  }
-+  else {
-+    return new (*Ctx) DeclRefExpr(D->getDecl(),
-+                                  D->refersToEnclosingVariableOrCapture(),
-+                                  D->getType(),
-+                                  D->getValueKind(),
-+                                  SourceLocation(),
-+                                  D->getNameInfo().getInfo());
-+  }
-+}
-+
-+Expr *PrefetchAnalysis::cloneImplicitCastExpr(ImplicitCastExpr *C,
-+                                              const IVMap &IVs,
-+                                              bool Upper) const {
-+  Expr *Sub = cloneWithIV(C->getSubExpr(), IVs, Upper);
-+  if(!Sub) return nullptr;
-+
-+  // Avoid the situation that when replacing an induction variable with another
-+  // expression we accidentally chain together 2 implicit casts (which causes
-+  // CodeGen to choke).
-+  if(C->getCastKind() == CastKind::CK_LValueToRValue &&
-+     Sub->getValueKind() == VK_RValue) return Sub;
-+  else
-+    return new (*Ctx) ImplicitCastExpr(ImplicitCastExpr::OnStack,
-+                                       C->getType(),
-+                                       C->getCastKind(),
-+                                       Sub,
-+                                       C->getValueKind());
-+}
-+
-+Expr *PrefetchAnalysis::cloneIntegerLiteral(IntegerLiteral *L,
-+                                            const IVMap &IVs,
-+                                            bool Upper) const {
-+  return new (*Ctx) IntegerLiteral(*Ctx, L->getValue(),
-+                                   L->getType(),
-+                                   SourceLocation());
-+}
-+
-+Expr *PrefetchAnalysis::modifyExpr(Expr *E, const ExprModifier &Mod) const {
-+  BinaryOperator::Opcode Op;
-+  IntegerLiteral *RHS;
-+
-+  if(!E) return nullptr;
-+
-+  switch(Mod.getType()) {
-+  case ExprModifier::Add: Op = BO_Add; break;
-+  case ExprModifier::Sub: Op = BO_Sub; break;
-+  case ExprModifier::Mul: Op = BO_Mul; break;
-+  case ExprModifier::Div: Op = BO_Div; break;
-+  case ExprModifier::None: return E; // Nothing to do
-+  case ExprModifier::Unknown: return nullptr; // Couldn't classify
-+  }
-+
-+  RHS = new (*Ctx) IntegerLiteral(*Ctx, Mod.getVal(),
-+                                  E->getType(),
-+                                  SourceLocation());
-+  return new (*Ctx) BinaryOperator(E, RHS, Op, E->getType(), E->getValueKind(),
-+                                   E->getObjectKind(), SourceLocation(), false);
-+}
-+
-+//===----------------------------------------------------------------------===//
-+// Prefetch analysis API
-+//
-+
-+void PrefetchAnalysis::analyzeStmt() {
-+  if(!Ctx || !S) return;
-+
-+  // TODO other types of statements
-+  if(isa<ForStmt>(S)) analyzeForStmt();
-+
-+  mergeArrayAccesses();
-+  pruneEmptyArrayAccesses();
-+}
-+
-+void PrefetchAnalysis::print(llvm::raw_ostream &O) const {
-+  PrintingPolicy Policy(Ctx->getLangOpts());
-+  for(auto &Range : ToPrefetch) {
-+    O << "Array '" << Range.getArray()->getName() << "': ";
-+    Range.getStart()->printPretty(O, nullptr, Policy);
-+    O << " to ";
-+    Range.getEnd()->printPretty(O, nullptr, Policy);
-+    O << " (" << Range.getTypeName() << ")\n";
-+  }
-+}
-+
 Index: lib/AST/Stmt.cpp
 ===================================================================
 --- lib/AST/Stmt.cpp	(revision 320332)
@@ -2055,6 +1230,16 @@ Index: lib/AST/StmtProfile.cpp
  
  void
  StmtProfiler::VisitOMPExecutableDirective(const OMPExecutableDirective *S) {
+Index: lib/Analysis/CFG.cpp
+===================================================================
+--- lib/Analysis/CFG.cpp	(revision 320332)
++++ lib/Analysis/CFG.cpp	(working copy)
+@@ -1,4 +1,4 @@
+-  //===--- CFG.cpp - Classes for representing and building CFGs----*- C++ -*-===//
++//===--- CFG.cpp - Classes for representing and building CFGs----*- C++ -*-===//
+ //
+ //                     The LLVM Compiler Infrastructure
+ //
 Index: lib/Basic/OpenMPKinds.cpp
 ===================================================================
 --- lib/Basic/OpenMPKinds.cpp	(revision 320332)
@@ -2652,9 +1837,12 @@ Index: lib/CodeGen/CodeGenAction.cpp
        // Install an inline asm handler so that diagnostics get printed through
        // our diagnostics hooks.
        LLVMContext &Ctx = TheModule->getContext();
-@@ -261,6 +268,76 @@
+@@ -259,8 +266,78 @@
+     void OptimizationFailureHandler(
+         const llvm::DiagnosticInfoOptimizationFailure &D);
    };
-   
+-  
++
    void BackendConsumer::anchor() {}
 +
 +  class MultiBackendConsumer : public BackendConsumer {
@@ -3443,6 +2631,18 @@ Index: lib/FrontendTool/ExecuteCompilerInvocation.cpp
    case FixIt:                  return new FixItAction();
    case GenerateModule:         return new GenerateModuleAction;
    case GeneratePCH:            return new GeneratePCHAction;
+Index: lib/Parse/CMakeLists.txt
+===================================================================
+--- lib/Parse/CMakeLists.txt	(revision 320332)
++++ lib/Parse/CMakeLists.txt	(working copy)
+@@ -23,6 +23,7 @@
+ 
+   LINK_LIBS
+   clangAST
++  clangAnalysis
+   clangBasic
+   clangLex
+   clangSema
 Index: lib/Parse/ParseOpenMP.cpp
 ===================================================================
 --- lib/Parse/ParseOpenMP.cpp	(revision 320332)
@@ -3909,7 +3109,7 @@ Index: lib/Parse/ParsePragma.cpp
 +    NextTok.setKind(tok::annot_pragma_popcorn_prefetch_end);
 +    NextTok.setLocation(EodLoc);
 +    Pragma.push_back(NextTok);
-+  
++
 +    Token *Toks = new Token[Pragma.size()];
 +    std::copy(Pragma.begin(), Pragma.end(), Toks);
 +    PP.EnterTokenStream(Toks, Pragma.size(),
@@ -3933,6 +3133,1276 @@ Index: lib/Parse/ParseStmt.cpp
    }
  
    // If we reached this code, the statement must end in a semicolon.
+Index: lib/Sema/CMakeLists.txt
+===================================================================
+--- lib/Sema/CMakeLists.txt	(revision 320332)
++++ lib/Sema/CMakeLists.txt	(working copy)
+@@ -11,6 +11,9 @@
+   IdentifierResolver.cpp
+   JumpDiagnostics.cpp
+   MultiplexExternalSemaSource.cpp
++  PrefetchAnalysis.cpp
++  PrefetchDataflow.cpp
++  PrefetchExprBuilder.cpp
+   Scope.cpp
+   ScopeInfo.cpp
+   Sema.cpp
+Index: lib/Sema/PrefetchAnalysis.cpp
+===================================================================
+--- lib/Sema/PrefetchAnalysis.cpp	(nonexistent)
++++ lib/Sema/PrefetchAnalysis.cpp	(working copy)
+@@ -0,0 +1,828 @@
++//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements prefetching analysis for structured blocks.  The
++// analysis traverses the AST to determine how arrays are accessed in structured
++// blocks and generates expressions defining ranges of elements accessed.
++//
++//===----------------------------------------------------------------------===//
++
++#include "clang/AST/ASTContext.h"
++#include "clang/AST/RecursiveASTVisitor.h"
++#include "clang/Sema/PrefetchAnalysis.h"
++#include "clang/Sema/PrefetchDataflow.h"
++#include "clang/Sema/PrefetchExprBuilder.h"
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/Support/Debug.h"
++
++using namespace clang;
++
++typedef PrefetchAnalysis::InductionVariablePtr InductionVariablePtr;
++typedef PrefetchAnalysis::IVMap IVMap;
++typedef PrefetchAnalysis::IVPair IVPair;
++
++//===----------------------------------------------------------------------===//
++// Common utilities
++//
++
++/// Return whether a type is both scalar and integer.
++bool PrefetchAnalysis::isScalarIntType(const QualType &Ty) {
++  return Ty->isIntegerType() && Ty->isScalarType();
++}
++
++/// Get the size in bits for builtin integer types.
++unsigned PrefetchAnalysis::getTypeSize(BuiltinType::Kind K) {
++  switch(K) {
++  case BuiltinType::Bool:
++  case BuiltinType::Char_U: case BuiltinType::UChar:
++  case BuiltinType::Char_S: case BuiltinType::SChar:
++    return 8;
++  case BuiltinType::WChar_U: case BuiltinType::Char16:
++  case BuiltinType::UShort:
++  case BuiltinType::WChar_S:
++  case BuiltinType::Short:
++    return 16;
++  case BuiltinType::Char32:
++  case BuiltinType::UInt:
++  case BuiltinType::Int:
++    return 32;
++  case BuiltinType::ULong:
++  case BuiltinType::ULongLong:
++  case BuiltinType::Long:
++  case BuiltinType::LongLong:
++    return 64;
++  case BuiltinType::UInt128:
++  case BuiltinType::Int128:
++    return 128;
++  default: return UINT32_MAX;
++  }
++}
++
++/// Return the variable declaration if the declared value is a variable and if
++/// it is a scalar integer type or nullptr otherwise.
++VarDecl *PrefetchAnalysis::getVarIfScalarInt(ValueDecl *VD) {
++  if(isa<VarDecl>(VD)) {
++    VarDecl *Var = cast<VarDecl>(VD);
++    if(isScalarIntType(Var->getType())) return Var;
++  }
++  return nullptr;
++}
++
++// Filter functions to only select appropriate operator types.  Return true if
++// the operator is of a type that should be analyzed, or false otherwise.
++typedef bool (*UnaryOpFilter)(UnaryOperator::Opcode);
++typedef bool (*BinaryOpFilter)(BinaryOperator::Opcode);
++
++// Don't analyze *any* operation types.
++bool NoUnaryOp(UnaryOperator::Opcode Op) { return false; }
++bool NoBinaryOp(BinaryOperator::Opcode Op) { return false; }
++
++// Filter out non-assignment binary operations.
++static bool FilterAssignOp(BinaryOperator::Opcode Op) {
++  switch(Op) {
++  case BO_Assign: case BO_MulAssign: case BO_DivAssign: case BO_RemAssign:
++  case BO_AddAssign: case BO_SubAssign: case BO_ShlAssign: case BO_ShrAssign:
++  case BO_AndAssign: case BO_XorAssign: case BO_OrAssign:
++    return true;
++  default: return false;
++  }
++}
++
++// Filter out non-relational binary operations.
++static bool FilterRelationalOp(BinaryOperator::Opcode Op) {
++  switch(Op) {
++  case BO_LT: case BO_GT: case BO_LE: case BO_GE: case BO_EQ: case BO_NE:
++    return true;
++  default: return false;
++  }
++}
++
++// Filter out non-math/logic binary operations.
++static bool FilterMathLogicOp(BinaryOperator::Opcode Op) {
++  switch(Op) {
++  case BO_Mul: case BO_Div: case BO_Rem: case BO_Add: case BO_Sub:
++  case BO_Shl: case BO_Shr: case BO_And: case BO_Xor: case BO_Or:
++    return true;
++  default: return false;
++  }
++}
++
++// Filter out non-math unary operations.
++static bool FilterMathOp(UnaryOperator::Opcode Op) {
++  switch(Op) {
++  case UO_PostInc: case UO_PostDec: case UO_PreInc: case UO_PreDec:
++    return true;
++  default: return false;
++  }
++}
++
++/// Return the statement if it is a scoping statement (e.g., for-loop) or
++/// nullptr otherwise.
++static bool isScopingStmt(Stmt *S) {
++  if(isa<CapturedStmt>(S) || isa<CompoundStmt>(S) || isa<CXXCatchStmt>(S) ||
++     isa<CXXForRangeStmt>(S) || isa<CXXTryStmt>(S) || isa<DoStmt>(S) ||
++     isa<ForStmt>(S) || isa<IfStmt>(S) || isa<OMPExecutableDirective>(S) ||
++     isa<SwitchStmt>(S) || isa<WhileStmt>(S)) return true;
++  else return false;
++}
++
++/// A vector of variable declarations.
++typedef llvm::SmallVector<VarDecl *, 4> VarVec;
++
++//===----------------------------------------------------------------------===//
++// Prefetch analysis -- array accesses
++//
++
++/// Scoping information for array analyses.  A node in a singly-linked list
++/// which allows traversal from innermost scope outwards.  Nodes are reference
++/// counted, so when array accesses which reference the scope (if any) are
++/// deleted, the scoping chain itself gets deleted.
++struct ScopeInfo {
++  Stmt *ScopeStmt;                        // Statement providing scope
++  std::shared_ptr<ScopeInfo> ParentScope; // The parent in the scope chain
++  ScopeInfo(Stmt *ScopeStmt, std::shared_ptr<ScopeInfo> &ParentScope)
++    : ScopeStmt(ScopeStmt), ParentScope(ParentScope) {}
++};
++typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
++
++/// An array access.
++class ArrayAccess {
++public:
++  ArrayAccess(VarDecl *Base, Expr *Idx, const ScopeInfoPtr &AccessScope)
++    : Valid(true), Base(Base), Idx(Idx), AccessScope(AccessScope) {}
++
++  bool isValid() const { return Valid; }
++  VarDecl *getBase() const { return Base; }
++  Expr *getIndex() const { return Idx; }
++  const VarVec &getVarsInIdx() const { return VarsInIdx; }
++  const ScopeInfoPtr &getScope() const { return AccessScope; }
++
++  void setInvalid() { Valid = false; }
++  void addVarInIdx(VarDecl *V) { if(V != Base) VarsInIdx.push_back(V); }
++
++  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
++    O << "Array: " << Base->getName() << "\nIndex expression: ";
++    Idx->printPretty(O, nullptr, Policy);
++    O << "\nScoping statement:\n";
++    AccessScope->ScopeStmt->printPretty(O, nullptr, Policy);
++    O << "\nVariables used in index calculation:";
++    for(auto Var : VarsInIdx) O << " " << Var->getName();
++    O << "\n";
++  }
++  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
++
++private:
++  bool Valid;               // Is the access valid?
++  VarDecl *Base;            // The array base
++  Expr *Idx;                // Expression used to calculate index
++  VarVec VarsInIdx;         // Variables used in index calculation
++  ScopeInfoPtr AccessScope; // Scope of the array access
++};
++
++/// Traverse a statement looking for array accesses.
++// TODO *** NEED TO LIMIT TO AFFINE ACCESSES ***
++class ArrayAccessPattern : public RecursiveASTVisitor<ArrayAccessPattern> {
++public:
++  ArrayAccessPattern(llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
++    : Ignore(Ignore) {}
++
++  /// Which sub-tree of a binary operator we're traversing.  This determines
++  /// whether we're reading or writing the array.
++  enum TraverseStructure { LHS, RHS };
++
++  void InitTraversal() {
++    Side.push_back(RHS);
++    CurAccess = nullptr;
++  }
++
++  /// Traverse a statement.  There's a couple of special traversal rules:
++  ///
++  ///  - If it's a scoping statement, add an enclosing scope to the scope chain
++  //     before traversing the sub-tree
++  ///  - If it's an assignment operation, record structure of the traversal
++  ///    before visiting each of the left & right sub-trees
++  ///  - If it's an array subscript, record all variables used to calculate
++  ///    the index
++  bool TraverseStmt(Stmt *S) {
++    if(!S) return true;
++
++    bool isScope = isScopingStmt(S);
++    BinaryOperator *BinOp = dyn_cast<BinaryOperator>(S);
++    ArraySubscriptExpr *Subscript = dyn_cast<ArraySubscriptExpr>(S);
++
++    if(isScope) CurScope = ScopeInfoPtr(new ScopeInfo(S, CurScope));
++
++    if(BinOp && FilterAssignOp(BinOp->getOpcode())) {
++      // For assignment operations, LHS = write and RHS = read
++      Side.push_back(LHS);
++      TraverseStmt(BinOp->getLHS());
++      Side.pop_back();
++      Side.push_back(RHS);
++      TraverseStmt(BinOp->getRHS());
++      Side.pop_back();
++    }
++    else if(Subscript) {
++      // TODO doesn't work for nested accesses, e.g., a[b[i]]
++      RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
++      CurAccess = nullptr; // Don't record any more variables
++    }
++    else RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
++
++    if(isScope) CurScope = CurScope->ParentScope;
++
++    return true;
++  }
++
++  /// Analyze an array access; in particular, the index.
++  bool VisitArraySubscriptExpr(ArraySubscriptExpr *Sub) {
++    Expr *Base = Sub->getBase(), *Idx = Sub->getIdx();
++    DeclRefExpr *DR;
++    VarDecl *VD;
++
++    DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
++    if(!DR) return true;
++    VD = dyn_cast<VarDecl>(DR->getDecl());
++    if(!VD || Ignore.count(VD)) return true;
++    if(Side.back() == LHS) {
++      ArrayWrites.emplace_back(VD, Idx, CurScope);
++      CurAccess = &ArrayWrites.back();
++    }
++    else {
++      ArrayReads.emplace_back(VD, Idx, CurScope);
++      CurAccess = &ArrayReads.back();
++    }
++    return true;
++  }
++
++  /// Record any variables seen during traversing
++  bool VisitDeclRefExpr(DeclRefExpr *DR) {
++    if(CurAccess) {
++      VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
++      if(VD) CurAccess->addVarInIdx(VD);
++      else CurAccess->setInvalid(); // Can't analyze if decl != variable
++    }
++    return true;
++  }
++
++  const llvm::SmallVector<ArrayAccess, 8> &getArrayReads() const
++  { return ArrayReads; }
++  const llvm::SmallVector<ArrayAccess, 8> &getArrayWrites() const
++  { return ArrayWrites; }
++
++private:
++  llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
++  ScopeInfoPtr CurScope;
++  llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
++
++  // Traversal state
++  llvm::SmallVector<enum TraverseStructure, 8> Side;
++  ArrayAccess *CurAccess;
++};
++
++void PrefetchAnalysis::mergeArrayAccesses() {
++  // TODO!
++}
++
++void PrefetchAnalysis::pruneEmptyArrayAccesses() {
++  // TODO!
++}
++
++//===----------------------------------------------------------------------===//
++// Prefetch analysis -- ForStmts
++//
++
++namespace clang {
++
++/// An induction variable and expressions describing its range.
++class InductionVariable {
++public:
++  /// The direction of change for the induction variable
++  enum Direction {
++    Increases, // Update changes variable from lower to higher values
++    Decreases, // Update changes variable from higher to lower values
++    Unknown // Update has an unknown effect, e.g., container interators
++  };
++
++  InductionVariable() : Var(nullptr), Init(nullptr), Cond(nullptr),
++                        Update(nullptr), Dir(Unknown), LowerB(nullptr),
++                        UpperB(nullptr) {}
++
++  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update,
++                    ASTContext &Ctx)
++    : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
++      LowerB(nullptr), UpperB(nullptr) {
++
++    PrefetchExprBuilder::Modifier UpperMod, LowerMod;
++    const UnaryOperator *Unary;
++
++    assert(PrefetchAnalysis::isScalarIntType(Var->getType()) &&
++           "Invalid induction variable");
++
++    // Try to classify update direction to determine which expression specifies
++    // lower and upper bounds
++    if((Unary = dyn_cast<UnaryOperator>(Update)))
++      Dir = classifyUnaryOpDirection(Unary->getOpcode());
++
++    if(Dir == Increases) {
++      LowerMod.ClassifyModifier(Init, Ctx);
++      UpperMod.ClassifyModifier(Cond, Ctx);
++      LowerB = stripInductionVar(Init);
++      UpperB = stripInductionVar(Cond);
++    }
++    else if(Dir == Decreases) {
++      LowerMod.ClassifyModifier(Cond, Ctx);
++      UpperMod.ClassifyModifier(Init, Ctx);
++      LowerB = stripInductionVar(Cond);
++      UpperB = stripInductionVar(Init);
++    }
++
++    if(LowerB && UpperB) {
++      LowerB = PrefetchExprBuilder::cloneAndModifyExpr(LowerB, LowerMod, &Ctx);
++      UpperB = PrefetchExprBuilder::cloneAndModifyExpr(UpperB, UpperMod, &Ctx);
++    }
++  }
++
++  VarDecl *getVariable() const { return Var; }
++  Expr *getInit() const { return Init; }
++  Expr *getCond() const { return Cond; }
++  Expr *getUpdate() const { return Update; }
++  enum Direction getUpdateDirection() const { return Dir; }
++  Expr *getLowerBound() const { return LowerB; }
++  Expr *getUpperBound() const { return UpperB; }
++
++  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
++    O << "Induction Variable: " << Var->getName() << "\nDirection: ";
++    switch(Dir) {
++    case Increases: O << "increases\n"; break;
++    case Decreases: O << "decreases\n"; break;
++    case Unknown: O << "unknown update direction\n"; break;
++    }
++    if(LowerB && UpperB) {
++      O << "Lower bound: ";
++      LowerB->printPretty(O, nullptr, Policy);
++      O << "\nUpper bound: ";
++      UpperB->printPretty(O, nullptr, Policy);
++    }
++    else O << "-> Could not determine bounds <-";
++    O << "\n";
++  }
++
++  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
++
++private:
++  VarDecl *Var;
++  Expr *Init, *Cond, *Update;
++
++  /// Expressions describing the lower & upper bounds of the induction variable
++  /// and its update direction.
++  enum Direction Dir;
++  Expr *LowerB, *UpperB;
++
++  /// Try to classify the induction variable's update direction based on the
++  /// unary operation type.
++  static enum Direction classifyUnaryOpDirection(UnaryOperator::Opcode Op) {
++    switch(Op) {
++    case UO_PostInc:
++    case UO_PreInc:
++      return Increases;
++    case UO_PostDec:
++    case UO_PreDec:
++      return Decreases;
++    default: return Unknown;
++    }
++  }
++
++  Expr *stripInductionVarFromBinOp(BinaryOperator *B) {
++    DeclRefExpr *D;
++    VarDecl *VD;
++
++    D = dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreImpCasts());
++    if(!D) return nullptr;
++    VD = dyn_cast<VarDecl>(D->getDecl());
++    if(!VD) return nullptr;
++    if(VD == Var) return B->getRHS();
++    return nullptr;
++  }
++
++  Expr *stripInductionVarFromExpr(Expr *E) {
++    DeclRefExpr *D;
++    VarDecl *VD;
++
++    D = dyn_cast<DeclRefExpr>(E->IgnoreImpCasts());
++    if(!D) return nullptr;
++    VD = dyn_cast<VarDecl>(D->getDecl());
++    if(!VD) return nullptr;
++    if(VD != Var) return D;
++    return nullptr;
++  }
++
++  /// Remove the induction variable & operator from the expression, leaving
++  /// only a bounds expression.
++  Expr *stripInductionVar(Expr *E) {
++    BinaryOperator *B;
++    IntegerLiteral *L;
++
++    if((B = dyn_cast<BinaryOperator>(E))) return stripInductionVarFromBinOp(B);
++    else if((L = dyn_cast<IntegerLiteral>(E))) return L;
++    else if(E) return stripInductionVarFromExpr(E);
++    else return nullptr;
++  }
++};
++
++} /* end namespace clang */
++
++/// Map an induction variable to an expression describing a bound.
++typedef llvm::DenseMap<VarDecl *, Expr *> IVBoundMap;
++typedef std::pair<VarDecl *, Expr *> IVBoundPair;
++
++/// Traversal to find induction variables in loop initialization, condition and
++/// update expressions.
++template<UnaryOpFilter UnaryFilt, BinaryOpFilter BinaryFilt>
++class IVFinder : public RecursiveASTVisitor<IVFinder<UnaryFilt, BinaryFilt>> {
++public:
++  // Visit binary operators to find induction variables.
++  bool VisitBinaryOperator(BinaryOperator *B) {
++    Expr *LHS;
++    DeclRefExpr *DR;
++    VarDecl *Var;
++
++    // Filter out irrelevant operation types
++    if(!BinaryFilt(B->getOpcode())) return true;
++
++    // Look for DeclRefExprs of scalar integer type -- these reference
++    // induction variables
++    LHS = B->getLHS();
++    if(!PrefetchAnalysis::isScalarIntType(LHS->getType())) return true;
++    DR = dyn_cast<DeclRefExpr>(LHS->IgnoreImpCasts());
++    if(!DR) return true;
++
++    // Make sure the expression acting on the induction variable is a scalar
++    // integer (casts may change types)
++    Var = PrefetchAnalysis::getVarIfScalarInt(DR->getDecl());
++    if(!Var) return true;
++    InductionVars[Var] = B;
++    return true;
++  }
++
++  // Visit unary operators to find induction variables.
++  bool VisitUnaryOperator(UnaryOperator *U) {
++    Expr *SubExpr;
++    DeclRefExpr *DR;
++    VarDecl *Var;
++
++    // Filter out irrelevant operation types
++    if(!UnaryFilt(U->getOpcode())) return true;
++
++    // Look for DeclRefExprs of scalar integer type -- these reference
++    // induction variables
++    SubExpr = U->getSubExpr();
++    if(!PrefetchAnalysis::isScalarIntType(SubExpr->getType())) return true;
++    DR = dyn_cast<DeclRefExpr>(SubExpr->IgnoreImpCasts());
++    if(!DR) return true;
++
++    // Make sure the expression acting on the induction variable is a scalar
++    // integer (casts may change types)
++    Var = PrefetchAnalysis::getVarIfScalarInt(DR->getDecl());
++    if(!Var) return true;
++    InductionVars[Var] = U;
++    return true;
++  }
++
++  bool VisitDeclStmt(DeclStmt *D) {
++    VarDecl *Var;
++    for(auto &Child : D->getDeclGroup()) {
++      Var = PrefetchAnalysis::getVarIfScalarInt(dyn_cast<VarDecl>(Child));
++      if(!Var || !Var->hasInit()) continue;
++      InductionVars[Var] = Var->getInit();
++    }
++    return true;
++  }
++
++  /// Return all induction variables found.
++  const IVBoundMap &getInductionVars() const { return InductionVars; }
++
++  /// Return the bounds expression for a given induction variable, or nullptr
++  /// if none was found.
++  Expr *getVarBound(VarDecl *Var) {
++    IVBoundMap::iterator it = InductionVars.find(Var);
++    if(it != InductionVars.end()) return it->second;
++    else return nullptr;
++  }
++
++private:
++  IVBoundMap InductionVars;
++};
++
++/// Structural information about a for-loop, including induction variables and
++/// parent/child loops.
++class ForLoopInfo {
++public:
++  ForLoopInfo(ForStmt *Loop, std::shared_ptr<ForLoopInfo> &Parent, int Level)
++    : Loop(Loop), Parent(Parent), Level(Level) {}
++
++  /// Add an induction variable.
++  void addInductionVar(const InductionVariablePtr &IV)
++  { InductionVars.insert(IVPair(IV->getVariable(), IV)); }
++
++  /// Remove an induction variable if present.  Return true if removed or false
++  /// if we don't have the variable.
++  bool removeInductionVar(const InductionVariablePtr &IV) {
++    IVMap::iterator it = InductionVars.find(IV->getVariable());
++    if(it != InductionVars.end()) {
++      InductionVars.erase(it);
++      return true;
++    }
++    else return false;
++  }
++
++  /// Add a child loop.
++  void addChildLoop(std::shared_ptr<ForLoopInfo> &S) { Children.push_back(S); }
++
++  ForStmt *getLoop() const { return Loop; }
++  const std::shared_ptr<ForLoopInfo> &getParent() const { return Parent; }
++  int getLevel() const { return Level; }
++  const IVMap &getInductionVars() const { return InductionVars; }
++  const llvm::SmallVector<std::shared_ptr<ForLoopInfo>, 4> &getChildren() const
++  { return Children; }
++
++  void print(llvm::raw_ostream &O, PrintingPolicy &Policy) const {
++    O << "Loop @ " << this << "\nDepth: " << Level
++      << "\nParent: " << Parent.get();
++    if(Children.size()) {
++      O << "\nChildren:";
++      for(auto &Child : Children) O << " " << Child.get();
++    }
++    O << "\n";
++    Loop->printPretty(O, nullptr, Policy);
++    O << "\n";
++  }
++  void dump(PrintingPolicy &Policy) const { print(llvm::dbgs(), Policy); }
++
++private:
++  ForStmt *Loop;
++  std::shared_ptr<ForLoopInfo> Parent;
++  size_t Level;
++
++  IVMap InductionVars;
++  llvm::SmallVector<std::shared_ptr<ForLoopInfo>, 4> Children;
++};
++typedef std::shared_ptr<ForLoopInfo> ForLoopInfoPtr;
++
++/// Search a sub-tree for loops, calculating induction variables found in any
++/// loops along the way.  We *must* construct tree structural information in
++/// order to correctly handle complex loop nests, e.g.:
++///
++/// int a, b;
++/// for(a = ...; a < ...; a++) {
++///   for(b = 0; b < 10; b++) {
++///     ...
++///   }
++///
++///   for(b = 10; b < 20; b++) {
++///
++///   }
++/// }
++///
++/// In this example, induction variable 'b' has different ranges in each of the
++/// nested loops.
++class LoopNestTraversal : public RecursiveASTVisitor<LoopNestTraversal> {
++public:
++  LoopNestTraversal(ASTContext &Ctx) : Ctx(Ctx) {}
++
++  void InitTraversal() { if(!LoopNest.size()) LoopNest.emplace_back(nullptr); }
++
++  bool VisitForStmt(ForStmt *S) {
++    Expr *InitExpr, *CondExpr, *UpdateExpr;
++    IVFinder<NoUnaryOp, FilterAssignOp> Init;
++    IVFinder<NoUnaryOp, FilterRelationalOp> Cond;
++    IVFinder<FilterMathOp, FilterMathLogicOp> Update;
++
++    // Set up data & tree structure information.
++    LoopNest.emplace_back(
++      new ForLoopInfo(S, LoopNest.back(), LoopNest.size() - 1));
++    ForLoopInfoPtr &Cur = LoopNest.back();
++    Loops[S] = Cur;
++    if(Cur->getParent()) Cur->getParent()->addChildLoop(Cur);
++
++    // Find the induction variables in the loop expressions.
++    Init.TraverseStmt(S->getInit());
++    Cond.TraverseStmt(S->getCond());
++    Update.TraverseStmt(S->getInc());
++
++    // Find induction variables which are referenced in all three parts of the
++    // for-loop header.
++    const IVBoundMap &InitVars = Init.getInductionVars();
++    for(auto Var = InitVars.begin(), E = InitVars.end(); Var != E; Var++) {
++      InitExpr = Var->second;
++      CondExpr = Cond.getVarBound(Var->first),
++      UpdateExpr = Update.getVarBound(Var->first);
++      if(InitExpr && CondExpr && UpdateExpr) {
++        InductionVariablePtr IV(
++          new InductionVariable(Var->first, InitExpr, CondExpr,
++                                UpdateExpr, Ctx));
++        Cur->addInductionVar(std::move(IV));
++      }
++    }
++
++    return true;
++  }
++
++  bool TraverseStmt(Stmt *S) {
++    if(!S) return true;
++    RecursiveASTVisitor<LoopNestTraversal>::TraverseStmt(S);
++    if(isa<ForStmt>(S)) LoopNest.pop_back();
++    return true;
++  }
++
++  /// Prune induction variables so each each loop only maintains its own
++  /// induction variables and not those of any nested loops.
++  // TODO this may not be necessary...
++  void PruneInductionVars() {
++    // Each loop nest is a tree in a forest of all loop nests
++    for(auto &Info : Loops)
++      if(Info.second->getLevel() == 0)
++        PruneInductionVars(Info.second);
++  }
++
++  /// Get all loops discovered during the tree traversal.
++  const llvm::DenseMap<ForStmt *, ForLoopInfoPtr> &getLoops() const
++  { return Loops; }
++
++  /// Get the enclosing loop's information for an array access.
++  const ForLoopInfoPtr getEnclosingLoop(const ArrayAccess &A) const {
++    ScopeInfoPtr S = A.getScope();
++    while(S && !isa<ForStmt>(S->ScopeStmt)) S = S->ParentScope;
++    if(!S) return ForLoopInfoPtr(nullptr);
++
++    llvm::DenseMap<ForStmt *, ForLoopInfoPtr>::const_iterator it
++      = Loops.find(cast<ForStmt>(S->ScopeStmt));
++    if(it != Loops.end()) return it->second;
++    else return ForLoopInfoPtr(nullptr);
++  }
++
++private:
++  ASTContext &Ctx;
++
++  // A stack of nested loops to provide induction variable scoping information.
++  llvm::SmallVector<ForLoopInfoPtr, 4> LoopNest;
++
++  // Map loop statements to information gathered during traversal.
++  llvm::DenseMap<ForStmt *, ForLoopInfoPtr> Loops;
++
++  // Recursively prune induction variables in a bottom-up fashion (post-order
++  // traversal).
++  void PruneInductionVars(ForLoopInfoPtr Loop) {
++    for(auto &Child : Loop->getChildren()) {
++      PruneInductionVars(Child);
++      for(auto &IV : Child->getInductionVars())
++        Loop->removeInductionVar(IV.second);
++    }
++  }
++};
++
++/// Search the loop scoping chain for an induction variable.  Return the
++/// induction variable information if found, or nullptr otherwise.
++static const InductionVariablePtr
++findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
++  assert(V && Scope && "Invalid arguments");
++
++  ForLoopInfoPtr TmpScope = Scope;
++  InductionVariablePtr IV(nullptr);
++  do {
++    const IVMap &IVs = TmpScope->getInductionVars();
++    IVMap::const_iterator it = IVs.find(V);
++    if(it != IVs.end()) {
++      IV = it->second;
++      break;
++    }
++    else TmpScope = TmpScope->getParent();
++  } while(TmpScope);
++  return IV;
++}
++
++/// Search a for-loop statement for array access patterns based on loop
++/// induction variables that can be prefetched at runtime.
++void PrefetchAnalysis::analyzeForStmt() {
++  LoopNestTraversal Loops(*Ctx);
++  ArrayAccessPattern ArrAccesses(Ignore);
++  PrefetchDataflow Dataflow(Ctx);
++  PrefetchDataflow::VarSet VarsToTrack;
++  ReplaceMap LowerBounds, UpperBounds;
++  Expr *UpperBound, *LowerBound;
++  PrefetchExprBuilder::BuildInfo LowerBuild = { Ctx, LowerBounds, true },
++                                 UpperBuild = { Ctx, UpperBounds, true };
++
++  // Gather loop nest information, including induction variables
++  Loops.InitTraversal();
++  Loops.TraverseStmt(S);
++  Loops.PruneInductionVars();
++
++  // Find array/pointer accesses.
++  ArrAccesses.InitTraversal();
++  ArrAccesses.TraverseStmt(S);
++
++  // Run the dataflow analysis to see if induction variables are used in any
++  // expressions which initialize other variables.
++  for(auto &Read : ArrAccesses.getArrayReads()) {
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
++    for(auto &Var : Read.getVarsInIdx()) {
++      if(!findInductionVariable(Var, Scope))
++        VarsToTrack.insert(Var);
++    }
++  }
++
++  for(auto &Write: ArrAccesses.getArrayWrites()) {
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
++    for(auto &Var : Write.getVarsInIdx()) {
++      if(!findInductionVariable(Var, Scope))
++        VarsToTrack.insert(Var);
++    }
++  }
++
++  Dataflow.reset();
++  Dataflow.runDataflow(cast<ForStmt>(S)->getBody(), VarsToTrack);
++
++  // TODO delete
++  Dataflow.dump();
++
++  // Reconstruct array subscript expressions with induction variable references
++  // replaced by their bounds.
++  for(auto &Read : ArrAccesses.getArrayReads()) {
++    LowerBounds.clear();
++    UpperBounds.clear();
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
++
++    // Get upper & lower bounds of induction variable for replacement
++    for(auto &Var : Read.getVarsInIdx()) {
++      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
++      if(IV) {
++        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
++        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
++      }
++    }
++
++    // Create array access bounds expressions
++    LowerBound =
++      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), LowerBuild),
++    UpperBound =
++      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), UpperBuild);
++    if(LowerBound && UpperBound)
++      ToPrefetch.emplace_back(PrefetchRange::Read, Read.getBase(),
++                              LowerBound, UpperBound);
++  }
++
++  for(auto &Write : ArrAccesses.getArrayWrites()) {
++    LowerBounds.clear();
++    UpperBounds.clear();
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
++
++    for(auto &Var : Write.getVarsInIdx()) {
++      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
++      if(IV) {
++        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
++        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
++      }
++    }
++
++    LowerBound =
++      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), LowerBuild),
++    UpperBound =
++      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), UpperBuild);
++    if(LowerBound && UpperBound)
++      ToPrefetch.emplace_back(PrefetchRange::Write, Write.getBase(),
++                              LowerBound, UpperBound);
++  }
++}
++
++
++//===----------------------------------------------------------------------===//
++// Prefetch analysis API
++//
++
++void PrefetchAnalysis::analyzeStmt() {
++  if(!Ctx || !S) return;
++
++  // TODO other types of statements
++  if(isa<ForStmt>(S)) analyzeForStmt();
++
++  mergeArrayAccesses();
++  pruneEmptyArrayAccesses();
++}
++
++void PrefetchAnalysis::print(llvm::raw_ostream &O) const {
++  PrintingPolicy Policy(Ctx->getLangOpts());
++  for(auto &Range : ToPrefetch) {
++    O << "Array '" << Range.getArray()->getName() << "': ";
++    Range.getStart()->printPretty(O, nullptr, Policy);
++    O << " to ";
++    Range.getEnd()->printPretty(O, nullptr, Policy);
++    O << " (" << Range.getTypeName() << ")\n";
++  }
++}
++
+Index: lib/Sema/PrefetchDataflow.cpp
+===================================================================
+--- lib/Sema/PrefetchDataflow.cpp	(nonexistent)
++++ lib/Sema/PrefetchDataflow.cpp	(working copy)
+@@ -0,0 +1,214 @@
++//=- PrefetchDataflow.cpp - Dataflow analysis for prefetching ------------*-==//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file implements the dataflow of expressions as required for prefetching
++// analysis.  This is required to correctly discover how variables are used in
++// memory accesses in order to construct memory access ranges.
++//
++//===----------------------------------------------------------------------===//
++
++#include "clang/AST/ASTContext.h"
++#include "clang/AST/ParentMap.h"
++#include "clang/Sema/PrefetchDataflow.h"
++#include "clang/Sema/PrefetchExprBuilder.h"
++#include "llvm/Support/Debug.h"
++#include <queue>
++
++using namespace clang;
++
++//===----------------------------------------------------------------------===//
++// Common utilities
++//
++
++/// Return whether a statement is a loop construct.
++static inline bool isLoopStmt(const Stmt *S) {
++  if(isa<DoStmt>(S) || isa<ForStmt>(S) || isa<WhileStmt>(S)) return true;
++  else return false;
++}
++
++/// Return whether a binary operator is an assign expression.
++static inline bool isAssign(const BinaryOperator *B) {
++  if(B->getOpcode() == BO_Assign) return true;
++  return false;
++}
++
++/// Return whether a binary operator is an operation + assign expression.
++static inline bool isMathAssign(const BinaryOperator *B) {
++  switch(B->getOpcode()) {
++  case BO_MulAssign: case BO_DivAssign: case BO_RemAssign:
++  case BO_AddAssign: case BO_SubAssign: case BO_ShlAssign:
++  case BO_ShrAssign: case BO_AndAssign: case BO_XorAssign:
++  case BO_OrAssign:
++    return true;
++  default: return false;
++  }
++}
++
++/// Return the variable referenced by the expression E, or a nullptr if none
++/// were referenced.
++static const VarDecl *getVariableIfReference(const Expr *E) {
++  const DeclRefExpr *DR;
++  const VarDecl *VD;
++
++  DR = dyn_cast<DeclRefExpr>(E->IgnoreImpCasts());
++  if(!DR) return nullptr;
++  VD = dyn_cast<VarDecl>(DR->getDecl());
++  return VD;
++}
++
++//===----------------------------------------------------------------------===//
++// Expression dataflow API
++//
++
++PrefetchDataflow::PrefetchDataflow() : Ctx(nullptr) {}
++PrefetchDataflow::PrefetchDataflow(ASTContext *Ctx) : Ctx(Ctx) {}
++PrefetchDataflow::PrefetchDataflow(const PrefetchDataflow &RHS)
++  : Ctx(RHS.Ctx) {}
++
++PrefetchDataflow &PrefetchDataflow::operator=(const PrefetchDataflow &RHS) {
++  Ctx = RHS.Ctx;
++  return *this;
++}
++
++void PrefetchDataflow::runDataflow(Stmt *S, VarSet &VarsToTrack) {
++  Expr *Clone;
++  const DeclStmt *DS;
++  const BinaryOperator *BO;
++  const VarDecl *VD;
++  const CFGBlock *Block;
++  CFGBlock::const_succ_iterator Succ, SE;
++  Optional<CFGStmt> StmtNode;
++  CFGBlockSet Seen;
++  std::queue<const CFGBlock *> Work;
++  BlockValuesMap::iterator BVIt;
++
++  if(!VarsToTrack.size()) return;
++  this->S = S;
++  TheCFG = CFG::buildCFG(nullptr, S, Ctx, CFG::BuildOptions());
++
++  Work.push(&TheCFG->getEntry());
++  while(!Work.empty()) {
++    Block = Work.front();
++    Work.pop();
++    Seen.insert(Block);
++
++    // Find assignment operations within the block.  Because of the forward
++    // dataflow algorithm, predecessors should have already pushed dataflow
++    // expressions, if any, to this block.
++    SymbolicValueMap &CurMap = VarValues[Block];
++    for(auto &Elem : *Block) {
++      StmtNode = Elem.getAs<CFGStmt>();
++      if(!StmtNode) continue;
++
++      DS = dyn_cast<DeclStmt>(StmtNode->getStmt());
++      if(DS) {
++        for(auto D : DS->getDeclGroup()) {
++          VD = dyn_cast<VarDecl>(D);
++          if(VD && VD->hasInit() && VarsToTrack.count(VD)) {
++            // TODO unfortunately CFG & accompanying classes expose statements
++            // & expressions with const qualifiers.  But, we *really* need them
++            // to not be const qualified in order to clone them (in particular,
++            // cloning DeclRefExprs is nasty).
++            Clone = PrefetchExprBuilder::clone((Expr *)VD->getInit(), Ctx);
++            if(Clone) CurMap[VD].insert(Clone);
++          }
++        }
++        continue;
++      }
++
++      BO = dyn_cast<BinaryOperator>(StmtNode->getStmt());
++      if(!BO) continue;
++
++      // Check for assignment operation to a relevant variable.  If we had
++      // previous expression(s) describing the variable's value the assignment
++      // overwrites them.
++      if(isAssign(BO)) {
++        VD = getVariableIfReference(BO->getLHS());
++        if(VD && VarsToTrack.count(VD)) {
++          ExprList &VarExprs = CurMap[VD];
++          VarExprs.clear();
++          Clone = PrefetchExprBuilder::clone(BO->getRHS(), Ctx);
++          if(Clone) VarExprs.insert(Clone);
++        }
++      }
++      // TODO we currently don't handle math + assign operations, so the
++      // dataflow analysis clamps to 'unknown' (i.e., no expressions).
++      else if(isMathAssign(BO)) {
++        VD = getVariableIfReference(BO->getLHS());
++        if(VD && VarsToTrack.count(VD)) CurMap.erase(VD);
++      }
++    }
++
++    // Push dataflow expressions to successors.
++    for(Succ = Block->succ_begin(), SE = Block->succ_end();
++        Succ != SE; Succ++) {
++      if(!Succ->isReachable()) continue;
++      SymbolicValueMap &SuccMap = VarValues[*Succ];
++      for(auto &Pair : CurMap) {
++        ExprList &VarExprs = SuccMap[Pair.first];
++        for(auto Expr : Pair.second) VarExprs.insert(Expr);
++      }
++    }
++
++    // TODO do we need to deal with sub-scopes, e.g., loops, here?
++
++    // Add unvisited CFG blocks to the work queue.
++    for(Succ = Block->succ_begin(), SE = Block->succ_end();
++        Succ != SE; Succ++) {
++      if(Succ->isReachable() && !Seen.count(Succ->getReachableBlock()))
++        Work.push(Succ->getReachableBlock());
++    }
++  }
++
++  // Make it easier to look up analysis for statements
++  PMap.reset(new ParentMap(S));
++  PMap->addStmt(S);
++  StmtToBlock.reset(CFGStmtMap::Build(TheCFG.get(), PMap.get()));
++}
++
++Expr *PrefetchDataflow::getVariableValue(VarDecl *Var, const Stmt *Use) const {
++  // TODO
++  return nullptr;
++}
++
++void PrefetchDataflow::reset() {
++  S = nullptr;
++  StmtToBlock.reset();
++  PMap.reset();
++  TheCFG.reset();
++  VarValues.clear();
++}
++
++void PrefetchDataflow::print(llvm::raw_ostream &O) const {
++  if(!S || !TheCFG || !VarValues.size()) {
++    O << "<Prefetch Dataflow> No analysis -- did you run with runDataflow()?\n";
++    return;
++  }
++
++  O << "<Prefetch Dataflow> Analysis results:\n";
++  PrintingPolicy PP(Ctx->getLangOpts());
++  for(auto Node : *TheCFG) {
++    Node->print(O, TheCFG.get(), Ctx->getLangOpts(), true);
++    O << "\n";
++    BlockValuesMap::const_iterator BVIt = VarValues.find(Node);
++    if(BVIt != VarValues.end()) {
++      for(auto VarValPair : BVIt->second) {
++        O << "Values for '" << VarValPair.first->getName() << "':\n";
++        for(auto E : VarValPair.second) {
++          E->printPretty(O, nullptr, PP);
++          O << "\n";
++        }
++      }
++    }
++    else O << "\n-> No dataflow values <-\n";
++  }
++}
++
++void PrefetchDataflow::dump() const { print(llvm::dbgs()); }
++
+Index: lib/Sema/PrefetchExprBuilder.cpp
+===================================================================
+--- lib/Sema/PrefetchExprBuilder.cpp	(nonexistent)
++++ lib/Sema/PrefetchExprBuilder.cpp	(working copy)
+@@ -0,0 +1,199 @@
++//=- PrefetchExprBuilder.cpp - Prefetching expression builder ------------*-==//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file defines a set of utilities for building expressions for
++// prefetching.
++//
++//===----------------------------------------------------------------------===//
++
++#include "clang/AST/ASTContext.h"
++#include "clang/Sema/PrefetchAnalysis.h"
++#include "clang/Sema/PrefetchExprBuilder.h"
++#include "llvm/Support/Debug.h"
++
++using namespace clang;
++
++typedef PrefetchExprBuilder::BuildInfo BuildInfo;
++
++//===----------------------------------------------------------------------===//
++// Modifier class definitions
++//
++
++void PrefetchExprBuilder::Modifier::ClassifyModifier(Expr *E,
++                                                     const ASTContext &Ctx) {
++  unsigned Bits;
++  DeclRefExpr *DR;
++  BinaryOperator *B;
++  QualType BaseTy;
++
++  Ty = Unknown;
++  if(!E) return;
++
++  E = E->IgnoreImpCasts();
++  if((B = dyn_cast<BinaryOperator>(E))) {
++    // Note: both operands *must* have same type
++    BaseTy = B->getLHS()->getType().getDesugaredType(Ctx);
++    assert(PrefetchAnalysis::isScalarIntType(BaseTy) &&
++           "Invalid expression type");
++    Bits = PrefetchAnalysis::getTypeSize(cast<BuiltinType>(BaseTy)->getKind());
++
++    switch(B->getOpcode()) {
++    default: Ty = None; break;
++    case BO_LT:
++      Ty = Sub;
++      Val = llvm::APInt(Bits, 1, false);
++      break;
++    case BO_GT:
++      Ty = Add;
++      Val = llvm::APInt(Bits, 1, false);
++      break;
++    // TODO hybrid math/assign operations
++    }
++  }
++  else if((DR = dyn_cast<DeclRefExpr>(E))) Ty = None;
++}
++
++//===----------------------------------------------------------------------===//
++// Prefetch expression builder definitions
++//
++
++Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
++  BinaryOperator *B;
++  UnaryOperator *U;
++  DeclRefExpr *D;
++  ImplicitCastExpr *C;
++  IntegerLiteral *I;
++
++  if(!E) return nullptr;
++
++  // TODO better way to switch on type?
++  if((B = dyn_cast<BinaryOperator>(E)))
++    return cloneBinaryOperation(B, Info);
++  else if((U = dyn_cast<UnaryOperator>(E)))
++    return cloneUnaryOperation(U, Info);
++  else if((D = dyn_cast<DeclRefExpr>(E)))
++    return cloneDeclRefExpr(D, Info);
++  else if((C = dyn_cast<ImplicitCastExpr>(E)))
++    return cloneImplicitCastExpr(C, Info);
++  else if((I = dyn_cast<IntegerLiteral>(E)))
++    return cloneIntegerLiteral(I, Info);
++  else {
++    // TODO delete
++    llvm::dbgs() << "Unhandled expression:\n";
++    if(Info.dumpInColor) E->dumpColor();
++    else E->dump();
++  }
++
++  return nullptr;
++}
++
++Expr *PrefetchExprBuilder::clone(Expr *E, ASTContext *Ctx) {
++  ReplaceMap Dummy; // No variables, don't replace any DeclRefExprs
++  BuildInfo DummyInfo = { Ctx, Dummy };
++  return cloneWithReplacement(E, DummyInfo);
++}
++
++Expr *PrefetchExprBuilder::cloneBinaryOperation(BinaryOperator *B,
++                                                BuildInfo &Info) {
++  Expr *LHS = cloneWithReplacement(B->getLHS(), Info),
++       *RHS = cloneWithReplacement(B->getRHS(), Info);
++  if(!LHS || !RHS) return nullptr;
++  return new (*Info.Ctx) BinaryOperator(LHS, RHS, B->getOpcode(),
++                                        B->getType(),
++                                        B->getValueKind(),
++                                        B->getObjectKind(),
++                                        SourceLocation(),
++                                        B->isFPContractable());
++}
++
++Expr *PrefetchExprBuilder::cloneUnaryOperation(UnaryOperator *U,
++                                               BuildInfo &Info) {
++  Expr *Sub = cloneWithReplacement(U->getSubExpr(), Info);
++  if(!Sub) return nullptr;
++  return new (*Info.Ctx) UnaryOperator(Sub, U->getOpcode(),
++                                       U->getType(),
++                                       U->getValueKind(),
++                                       U->getObjectKind(),
++                                       SourceLocation());
++}
++
++Expr *PrefetchExprBuilder::cloneDeclRefExpr(DeclRefExpr *D,
++                                            BuildInfo &Info) {
++  VarDecl *VD;
++  ReplaceMap::const_iterator it;
++
++  if((VD = dyn_cast<VarDecl>(D->getDecl())) &&
++     (it = Info.VarReplacements.find(VD)) != Info.VarReplacements.end())
++    return clone(it->second, Info.Ctx);
++  else
++    return new (*Info.Ctx) DeclRefExpr(D->getDecl(),
++                                       D->refersToEnclosingVariableOrCapture(),
++                                       D->getType(),
++                                       D->getValueKind(),
++                                       SourceLocation(),
++                                       D->getNameInfo().getInfo());
++}
++
++Expr *PrefetchExprBuilder::cloneImplicitCastExpr(ImplicitCastExpr *C,
++                                                 BuildInfo &Info) {
++  Expr *Sub = cloneWithReplacement(C->getSubExpr(), Info);
++  if(!Sub) return nullptr;
++
++  
++
++  // Avoid the situation that when replacing an induction variable with another
++  // expression we accidentally chain together 2 implicit casts (which causes
++  // CodeGen to choke).
++  if(C->getCastKind() == CastKind::CK_LValueToRValue &&
++     Sub->getValueKind() == VK_RValue)
++    return Sub;
++  else
++    return new (*Info.Ctx) ImplicitCastExpr(ImplicitCastExpr::OnStack,
++                                            C->getType(),
++                                            C->getCastKind(),
++                                            Sub,
++                                            C->getValueKind());
++}
++
++Expr *PrefetchExprBuilder::cloneIntegerLiteral(IntegerLiteral *L,
++                                               BuildInfo &Info) {
++  return new (*Info.Ctx) IntegerLiteral(*Info.Ctx, L->getValue(),
++                                        L->getType(),
++                                        SourceLocation());
++}
++
++Expr *PrefetchExprBuilder::cloneAndModifyExpr(Expr *E,
++                                              const Modifier &Mod,
++                                              ASTContext *Ctx) {
++  BinaryOperator::Opcode Op;
++  IntegerLiteral *RHS;
++
++  E = clone(E, Ctx);
++  if(!E) return nullptr;
++
++  switch(Mod.getType()) {
++  case Modifier::Add: Op = BO_Add; break;
++  case Modifier::Sub: Op = BO_Sub; break;
++  case Modifier::Mul: Op = BO_Mul; break;
++  case Modifier::Div: Op = BO_Div; break;
++  case Modifier::None: return E; // Nothing to do
++  case Modifier::Unknown: return nullptr; // Couldn't classify
++  }
++
++  RHS = new (*Ctx) IntegerLiteral(*Ctx, Mod.getVal(),
++                                  E->getType(),
++                                  SourceLocation());
++  return new (*Ctx) BinaryOperator(E, RHS, Op,
++                                   E->getType(),
++                                   E->getValueKind(),
++                                   E->getObjectKind(),
++                                   SourceLocation(),
++                                   false);
++}
++
 Index: lib/Sema/SemaOpenMP.cpp
 ===================================================================
 --- lib/Sema/SemaOpenMP.cpp	(revision 320332)
