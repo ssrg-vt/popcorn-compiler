@@ -22,17 +22,16 @@
 namespace clang {
 
 class ASTContext;
-class InductionVariable;
 
 typedef std::pair<VarDecl *, Expr *> ReplacePair;
 typedef llvm::DenseMap<VarDecl *, Expr *> ReplaceMap;
 
 namespace PrefetchExprBuilder {
 
-/// How a statement should be modified.
+/// Information describing how a statement should be modified.
 struct Modifier {
   enum Type { Add, Sub, Mul, Div, None, Unknown };
-  void ClassifyModifier(Expr *E, const ASTContext &Ctx);
+  void ClassifyModifier(const Expr *E, const ASTContext *Ctx);
   enum Type getType() const { return Ty; }
   const llvm::APInt &getVal() const { return Val; }
 private:
@@ -42,9 +41,19 @@ private:
 
 /// Information needed for building expressions.
 struct BuildInfo {
+public:
+  BuildInfo(ASTContext *Ctx, ReplaceMap &VarReplace, bool dumpInColor)
+    : Ctx(Ctx), VarReplace(VarReplace), dumpInColor(dumpInColor) {}
+
   ASTContext *Ctx;
-  const ReplaceMap &VarReplacements;
+  ReplaceMap &VarReplace;
+  llvm::SmallPtrSet<VarDecl *, 8> SeenVars;
   bool dumpInColor;
+
+  void reset() {
+    VarReplace.clear();
+    SeenVars.clear();
+  }
 };
 
 /// Reconstruct expressions with variables replaced by user-supplied

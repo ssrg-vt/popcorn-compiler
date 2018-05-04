@@ -818,7 +818,7 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 ===================================================================
 --- include/clang/Sema/PrefetchAnalysis.h	(nonexistent)
 +++ include/clang/Sema/PrefetchAnalysis.h	(working copy)
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,124 @@
 +//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -849,7 +849,6 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +namespace clang {
 +
 +class ASTContext;
-+class InductionVariable;
 +
 +/// A range of memory to be prefetched.
 +class PrefetchRange {
@@ -886,10 +885,6 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +
 +class PrefetchAnalysis {
 +public:
-+  typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
-+  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
-+  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
-+
 +  /// Default constructor, really only defined to enable storage in a DenseMap.
 +  PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
 +
@@ -909,13 +904,20 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
 +  { return ToPrefetch; }
 +
++  /// Return true if the QualType is both scalar and of integer type, or false
++  /// otherwise.
++  static bool isScalarIntType(const QualType &Ty);
++
++  /// Return the size in bits of a builtin integer type, or UINT32_MAX if not a
++  /// builtin integer type.
++  static unsigned getTypeSize(BuiltinType::Kind K);
++
++  /// Cast the value declaration to a variable declaration if it is a varaible
++  /// of scalar integer type.
++  static VarDecl *getVarIfScalarInt(ValueDecl *VD);
++
 +  void print(llvm::raw_ostream &O) const;
 +  void dump() const { print(llvm::errs()); }
-+
-+  /// Common utilities.
-+  static bool isScalarIntType(const QualType &Ty);
-+  static unsigned getTypeSize(BuiltinType::Kind K);
-+  static VarDecl *getVarIfScalarInt(ValueDecl *VD);
 +
 +private:
 +  ASTContext *Ctx;
@@ -945,7 +947,7 @@ Index: include/clang/Sema/PrefetchDataflow.h
 ===================================================================
 --- include/clang/Sema/PrefetchDataflow.h	(nonexistent)
 +++ include/clang/Sema/PrefetchDataflow.h	(working copy)
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,84 @@
 +//=- PrefetchDataflow.cpp - Dataflow analysis for prefetching ------------*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -990,16 +992,19 @@ Index: include/clang/Sema/PrefetchDataflow.h
 +  /// llvm::DenseMap.  Required because objects use std::unique_ptrs.
 +  PrefetchDataflow();
 +  PrefetchDataflow(ASTContext *Ctx);
++
++  /// Copy constructor -- only copies the AST.
 +  PrefetchDataflow(const PrefetchDataflow &RHS);
 +
++  /// Assignment operator -- only copies the AST.
 +  PrefetchDataflow &operator=(const PrefetchDataflow &RHS);
 +
 +  /// Run dataflow analysis over the statement specified at build time.
 +  void runDataflow(Stmt *S, VarSet &VarsToTrack);
 +
-+  /// Get the value of a variable at a specific use in a statement, or nullptr
-+  /// if analysis could not calculate its value.
-+  Expr *getVariableValue(VarDecl *Var, const Stmt *Use) const;
++  /// Get possible values of a variable at a specific use in a statement, if
++  /// any.  The list argument will be populated with expressions.
++  void getVariableValues(VarDecl *Var, const Stmt *Use, ExprList &Exprs) const;
 +
 +  /// Reset any previous analysis.
 +  void reset();
@@ -1031,7 +1036,7 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 ===================================================================
 --- include/clang/Sema/PrefetchExprBuilder.h	(nonexistent)
 +++ include/clang/Sema/PrefetchExprBuilder.h	(working copy)
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,90 @@
 +//===- PrefetchExprBuilder.h - Prefetching expression builder -----*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1056,17 +1061,16 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 +namespace clang {
 +
 +class ASTContext;
-+class InductionVariable;
 +
 +typedef std::pair<VarDecl *, Expr *> ReplacePair;
 +typedef llvm::DenseMap<VarDecl *, Expr *> ReplaceMap;
 +
 +namespace PrefetchExprBuilder {
 +
-+/// How a statement should be modified.
++/// Information describing how a statement should be modified.
 +struct Modifier {
 +  enum Type { Add, Sub, Mul, Div, None, Unknown };
-+  void ClassifyModifier(Expr *E, const ASTContext &Ctx);
++  void ClassifyModifier(const Expr *E, const ASTContext *Ctx);
 +  enum Type getType() const { return Ty; }
 +  const llvm::APInt &getVal() const { return Val; }
 +private:
@@ -1076,9 +1080,19 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 +
 +/// Information needed for building expressions.
 +struct BuildInfo {
++public:
++  BuildInfo(ASTContext *Ctx, ReplaceMap &VarReplace, bool dumpInColor)
++    : Ctx(Ctx), VarReplace(VarReplace), dumpInColor(dumpInColor) {}
++
 +  ASTContext *Ctx;
-+  const ReplaceMap &VarReplacements;
++  ReplaceMap &VarReplace;
++  llvm::SmallPtrSet<VarDecl *, 8> SeenVars;
 +  bool dumpInColor;
++
++  void reset() {
++    VarReplace.clear();
++    SeenVars.clear();
++  }
 +};
 +
 +/// Reconstruct expressions with variables replaced by user-supplied
@@ -3151,7 +3165,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 ===================================================================
 --- lib/Sema/PrefetchAnalysis.cpp	(nonexistent)
 +++ lib/Sema/PrefetchAnalysis.cpp	(working copy)
-@@ -0,0 +1,828 @@
+@@ -0,0 +1,841 @@
 +//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3177,9 +3191,8 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +
 +using namespace clang;
 +
-+typedef PrefetchAnalysis::InductionVariablePtr InductionVariablePtr;
-+typedef PrefetchAnalysis::IVMap IVMap;
-+typedef PrefetchAnalysis::IVPair IVPair;
++/// A set of variable declarations.
++typedef PrefetchDataflow::VarSet VarSet;
 +
 +//===----------------------------------------------------------------------===//
 +// Common utilities
@@ -3308,10 +3321,29 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +/// An array access.
 +class ArrayAccess {
 +public:
-+  ArrayAccess(VarDecl *Base, Expr *Idx, const ScopeInfoPtr &AccessScope)
-+    : Valid(true), Base(Base), Idx(Idx), AccessScope(AccessScope) {}
++  ArrayAccess(PrefetchRange::Type Ty, ArraySubscriptExpr *S,
++              const ScopeInfoPtr &AccessScope)
++    : Valid(true), Ty(Ty), S(S), Base(nullptr), Idx(S->getIdx()),
++      AccessScope(AccessScope) {
++    DeclRefExpr *DR;
++    VarDecl *VD;
++
++    if(!(DR = dyn_cast<DeclRefExpr>(S->getBase()->IgnoreImpCasts()))) {
++      Valid = false;
++      return;
++    }
++
++    if(!(VD = dyn_cast<VarDecl>(DR->getDecl()))) {
++      Valid = false;
++      return;
++    }
++
++    Base = VD;
++  }
 +
 +  bool isValid() const { return Valid; }
++  Stmt *getStmt() const { return S; }
++  PrefetchRange::Type getAccessType() const { return Ty; }
 +  VarDecl *getBase() const { return Base; }
 +  Expr *getIndex() const { return Idx; }
 +  const VarVec &getVarsInIdx() const { return VarsInIdx; }
@@ -3333,6 +3365,8 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +
 +private:
 +  bool Valid;               // Is the access valid?
++  PrefetchRange::Type Ty;   // The type of access
++  Stmt *S;                  // The entire array access statement
 +  VarDecl *Base;            // The array base
 +  Expr *Idx;                // Expression used to calculate index
 +  VarVec VarsInIdx;         // Variables used in index calculation
@@ -3395,42 +3429,35 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +
 +  /// Analyze an array access; in particular, the index.
 +  bool VisitArraySubscriptExpr(ArraySubscriptExpr *Sub) {
-+    Expr *Base = Sub->getBase(), *Idx = Sub->getIdx();
-+    DeclRefExpr *DR;
-+    VarDecl *VD;
-+
-+    DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
-+    if(!DR) return true;
-+    VD = dyn_cast<VarDecl>(DR->getDecl());
-+    if(!VD || Ignore.count(VD)) return true;
-+    if(Side.back() == LHS) {
-+      ArrayWrites.emplace_back(VD, Idx, CurScope);
-+      CurAccess = &ArrayWrites.back();
-+    }
-+    else {
-+      ArrayReads.emplace_back(VD, Idx, CurScope);
-+      CurAccess = &ArrayReads.back();
-+    }
++    PrefetchRange::Type Ty =
++      (Side.back() == LHS ? PrefetchRange::Write : PrefetchRange::Read);
++    ArrayAccess Access(Ty, Sub, CurScope);
++    if(!Access.isValid() || Ignore.count(Access.getBase())) return true;
++    ArrayAccesses.emplace_back(std::move(Access));
++    CurAccess = &ArrayAccesses.back();
 +    return true;
 +  }
 +
 +  /// Record any variables seen during traversing
 +  bool VisitDeclRefExpr(DeclRefExpr *DR) {
-+    if(CurAccess) {
++    if(CurAccess && CurAccess) {
 +      VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
 +      if(VD) CurAccess->addVarInIdx(VD);
-+      else CurAccess->setInvalid(); // Can't analyze if decl != variable
++      else {
++        // Can't analyze if decl != variable
++        CurAccess->setInvalid();
++        CurAccess = nullptr;
++        ArrayAccesses.pop_back();
++      }
 +    }
 +    return true;
 +  }
 +
-+  const llvm::SmallVector<ArrayAccess, 8> &getArrayReads() const
-+  { return ArrayReads; }
-+  const llvm::SmallVector<ArrayAccess, 8> &getArrayWrites() const
-+  { return ArrayWrites; }
++  const llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses() const
++  { return ArrayAccesses; }
 +
 +private:
-+  llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
++  llvm::SmallVector<ArrayAccess, 8> ArrayAccesses;
 +  ScopeInfoPtr CurScope;
 +  llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
 +
@@ -3451,8 +3478,6 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +// Prefetch analysis -- ForStmts
 +//
 +
-+namespace clang {
-+
 +/// An induction variable and expressions describing its range.
 +class InductionVariable {
 +public:
@@ -3468,7 +3493,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +                        UpperB(nullptr) {}
 +
 +  InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update,
-+                    ASTContext &Ctx)
++                    ASTContext *Ctx)
 +    : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
 +      LowerB(nullptr), UpperB(nullptr) {
 +
@@ -3497,8 +3522,8 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +    }
 +
 +    if(LowerB && UpperB) {
-+      LowerB = PrefetchExprBuilder::cloneAndModifyExpr(LowerB, LowerMod, &Ctx);
-+      UpperB = PrefetchExprBuilder::cloneAndModifyExpr(UpperB, UpperMod, &Ctx);
++      LowerB = PrefetchExprBuilder::cloneAndModifyExpr(LowerB, LowerMod, Ctx);
++      UpperB = PrefetchExprBuilder::cloneAndModifyExpr(UpperB, UpperMod, Ctx);
 +    }
 +  }
 +
@@ -3589,7 +3614,10 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  }
 +};
 +
-+} /* end namespace clang */
++/// Syntactic sugar for InductionVariable containers.
++typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
++typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
++typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
 +
 +/// Map an induction variable to an expression describing a bound.
 +typedef llvm::DenseMap<VarDecl *, Expr *> IVBoundMap;
@@ -3713,6 +3741,8 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +      for(auto &Child : Children) O << " " << Child.get();
 +    }
 +    O << "\n";
++    for(auto &IV : InductionVars) IV.second->dump(Policy);
++    O << "\n";
 +    Loop->printPretty(O, nullptr, Policy);
 +    O << "\n";
 +  }
@@ -3747,7 +3777,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +/// nested loops.
 +class LoopNestTraversal : public RecursiveASTVisitor<LoopNestTraversal> {
 +public:
-+  LoopNestTraversal(ASTContext &Ctx) : Ctx(Ctx) {}
++  LoopNestTraversal(ASTContext *Ctx) : Ctx(Ctx) {}
 +
 +  void InitTraversal() { if(!LoopNest.size()) LoopNest.emplace_back(nullptr); }
 +
@@ -3821,7 +3851,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  }
 +
 +private:
-+  ASTContext &Ctx;
++  ASTContext *Ctx;
 +
 +  // A stack of nested loops to provide induction variable scoping information.
 +  llvm::SmallVector<ForLoopInfoPtr, 4> LoopNest;
@@ -3840,37 +3870,33 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  }
 +};
 +
-+/// Search the loop scoping chain for an induction variable.  Return the
-+/// induction variable information if found, or nullptr otherwise.
-+static const InductionVariablePtr
-+findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
-+  assert(V && Scope && "Invalid arguments");
++/// Get all induction variables for a scope, including induction variables from
++/// any enclosing scopes.
++static void getAllInductionVars(const ForLoopInfoPtr &Scope, IVMap &IVs) {
++  assert(Scope && "Invalid arguments");
 +
 +  ForLoopInfoPtr TmpScope = Scope;
-+  InductionVariablePtr IV(nullptr);
 +  do {
-+    const IVMap &IVs = TmpScope->getInductionVars();
-+    IVMap::const_iterator it = IVs.find(V);
-+    if(it != IVs.end()) {
-+      IV = it->second;
-+      break;
-+    }
-+    else TmpScope = TmpScope->getParent();
++    const IVMap &LoopIVs = TmpScope->getInductionVars();
++    for(auto IV : LoopIVs) IVs[IV.first] = IV.second;
++    TmpScope = TmpScope->getParent();
 +  } while(TmpScope);
-+  return IV;
 +}
 +
 +/// Search a for-loop statement for array access patterns based on loop
 +/// induction variables that can be prefetched at runtime.
 +void PrefetchAnalysis::analyzeForStmt() {
-+  LoopNestTraversal Loops(*Ctx);
++  LoopNestTraversal Loops(Ctx);
 +  ArrayAccessPattern ArrAccesses(Ignore);
 +  PrefetchDataflow Dataflow(Ctx);
-+  PrefetchDataflow::VarSet VarsToTrack;
++  IVMap AllIVs;
++  IVMap::const_iterator IVIt;
++  VarSet VarsToTrack;
++  ExprList VarExprs;
 +  ReplaceMap LowerBounds, UpperBounds;
 +  Expr *UpperBound, *LowerBound;
-+  PrefetchExprBuilder::BuildInfo LowerBuild = { Ctx, LowerBounds, true },
-+                                 UpperBuild = { Ctx, UpperBounds, true };
++  PrefetchExprBuilder::BuildInfo LowerBuild(Ctx, LowerBounds, true),
++                                 UpperBuild(Ctx, UpperBounds, true);
 +
 +  // Gather loop nest information, including induction variables
 +  Loops.InitTraversal();
@@ -3881,75 +3907,76 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  ArrAccesses.InitTraversal();
 +  ArrAccesses.TraverseStmt(S);
 +
-+  // Run the dataflow analysis to see if induction variables are used in any
-+  // expressions which initialize other variables.
-+  for(auto &Read : ArrAccesses.getArrayReads()) {
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
-+    for(auto &Var : Read.getVarsInIdx()) {
-+      if(!findInductionVariable(Var, Scope))
-+        VarsToTrack.insert(Var);
++  // TODO the following could probably be optimized to reduce re-computing
++  // induction variable sets.
++
++  // Run the dataflow analysis.  Collect all non-induction variables used to
++  // construct array indices to see if induction variables are used in any
++  // assignmend expressions.
++  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
++    AllIVs.clear();
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
++    getAllInductionVars(Scope, AllIVs);
++    for(auto &Var : Acc.getVarsInIdx()) {
++      if(!AllIVs.count(Var)) VarsToTrack.insert(Var);
 +    }
 +  }
 +
-+  for(auto &Write: ArrAccesses.getArrayWrites()) {
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
-+    for(auto &Var : Write.getVarsInIdx()) {
-+      if(!findInductionVariable(Var, Scope))
-+        VarsToTrack.insert(Var);
-+    }
-+  }
-+
-+  Dataflow.reset();
 +  Dataflow.runDataflow(cast<ForStmt>(S)->getBody(), VarsToTrack);
 +
-+  // TODO delete
-+  Dataflow.dump();
-+
 +  // Reconstruct array subscript expressions with induction variable references
-+  // replaced by their bounds.
-+  for(auto &Read : ArrAccesses.getArrayReads()) {
-+    LowerBounds.clear();
-+    UpperBounds.clear();
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
++  // replaced by their bounds.  This includes variables defined using
++  // expressions containing induction variables.
++  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
++    LowerBuild.reset();
++    UpperBuild.reset();
++    AllIVs.clear();
 +
-+    // Get upper & lower bounds of induction variable for replacement
-+    for(auto &Var : Read.getVarsInIdx()) {
-+      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-+      if(IV) {
-+        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
-+        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
++    // Get the expressions for replacing upper & lower bounds of induction
++    // variables.  Note that we *must* add all induction variables even if
++    // they're not directly used, as other variables used in the index
++    // calculation may be defined based on induction variables.  For example:
++    //
++    // for(int i = ...; i < ...; i++) {
++    //   int j = i + offset;
++    //   ...
++    //   arr[j] = ...
++    // }
++    //
++    // In this example, 'i' is not directly used in addressing but the dataflow
++    // analysis determines that 'j' is defined based on 'i', and hence we need
++    // to replace 'j' with induction variable bounds expressions.
++    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
++    getAllInductionVars(Scope, AllIVs);
++    for(auto &Pair : AllIVs) {
++      const InductionVariablePtr &IV = Pair.second;
++      LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
++      UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
++    }
++
++    // Add other variables used in array calculation that may be defined using
++    // induction variable expressions.
++    for(auto &Var : Acc.getVarsInIdx()) {
++      IVIt = AllIVs.find(Var);
++      if(IVIt == AllIVs.end()) {
++        Dataflow.getVariableValues(Var, Acc.getStmt(), VarExprs);
++        // TODO currently if a variable used in an index calculation can take
++        // on more than one value due to control flow, we just avoid inserting
++        // prefetch expressions due to all the possible permutations.
++        if(VarExprs.size() == 1) {
++          LowerBounds.insert(ReplacePair(Var, *VarExprs.begin()));
++          UpperBounds.insert(ReplacePair(Var, *VarExprs.begin()));
++        }
 +      }
 +    }
 +
 +    // Create array access bounds expressions
 +    LowerBound =
-+      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), LowerBuild),
++      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), LowerBuild),
 +    UpperBound =
-+      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), UpperBuild);
++      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), UpperBuild);
 +    if(LowerBound && UpperBound)
-+      ToPrefetch.emplace_back(PrefetchRange::Read, Read.getBase(),
-+                              LowerBound, UpperBound);
-+  }
-+
-+  for(auto &Write : ArrAccesses.getArrayWrites()) {
-+    LowerBounds.clear();
-+    UpperBounds.clear();
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
-+
-+    for(auto &Var : Write.getVarsInIdx()) {
-+      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-+      if(IV) {
-+        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
-+        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
-+      }
-+    }
-+
-+    LowerBound =
-+      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), LowerBuild),
-+    UpperBound =
-+      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), UpperBuild);
-+    if(LowerBound && UpperBound)
-+      ToPrefetch.emplace_back(PrefetchRange::Write, Write.getBase(),
++      ToPrefetch.emplace_back(Acc.getAccessType(), Acc.getBase(),
 +                              LowerBound, UpperBound);
 +  }
 +}
@@ -3984,7 +4011,7 @@ Index: lib/Sema/PrefetchDataflow.cpp
 ===================================================================
 --- lib/Sema/PrefetchDataflow.cpp	(nonexistent)
 +++ lib/Sema/PrefetchDataflow.cpp	(working copy)
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,290 @@
 +//=- PrefetchDataflow.cpp - Dataflow analysis for prefetching ------------*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4002,6 +4029,7 @@ Index: lib/Sema/PrefetchDataflow.cpp
 +
 +#include "clang/AST/ASTContext.h"
 +#include "clang/AST/ParentMap.h"
++#include "clang/AST/RecursiveASTVisitor.h"
 +#include "clang/Sema/PrefetchDataflow.h"
 +#include "clang/Sema/PrefetchExprBuilder.h"
 +#include "llvm/Support/Debug.h"
@@ -4063,17 +4091,63 @@ Index: lib/Sema/PrefetchDataflow.cpp
 +  return *this;
 +}
 +
-+void PrefetchDataflow::runDataflow(Stmt *S, VarSet &VarsToTrack) {
++/// Analyze a statement to determine if we're defining a relevant variable.  If
++/// so, clone & store the defining expression.
++static void checkAndUpdateVarDefs(ASTContext *Ctx, const Stmt *S,
++                                  const PrefetchDataflow::VarSet &VarsToTrack,
++                                  SymbolicValueMap &VarExprs) {
 +  Expr *Clone;
 +  const DeclStmt *DS;
 +  const BinaryOperator *BO;
 +  const VarDecl *VD;
++
++  // Check for variable declarations with initializers, the initial definition.
++  if((DS = dyn_cast<DeclStmt>(S))) {
++    for(auto D : DS->getDeclGroup()) {
++      VD = dyn_cast<VarDecl>(D);
++      if(VD && VD->hasInit() && VarsToTrack.count(VD)) {
++        // TODO unfortunately CFG & accompanying classes expose statements
++        // & expressions with const qualifiers.  But, we *really* need them
++        // to not be const qualified in order to clone them (in particular,
++        // cloning DeclRefExprs becomes a headache).
++        Clone = PrefetchExprBuilder::clone((Expr *)VD->getInit(), Ctx);
++        if(Clone) VarExprs[VD].insert(Clone);
++      }
++    }
++    return;
++  }
++
++  BO = dyn_cast<BinaryOperator>(S);
++  if(!BO) return;
++
++  // Check for assignment operation to a relevant variable.  If we had
++  // previous expression(s) describing the variable's value the assignment
++  // overwrites them.
++  if(isAssign(BO)) {
++    VD = getVariableIfReference(BO->getLHS());
++    if(VD && VarsToTrack.count(VD)) {
++      ExprList &Exprs = VarExprs[VD];
++      Exprs.clear();
++      Clone = PrefetchExprBuilder::clone(BO->getRHS(), Ctx);
++      if(Clone) Exprs.insert(Clone);
++    }
++  }
++  // TODO we currently don't handle math + assign operations, so the
++  // dataflow analysis clamps to 'unknown' (i.e., no expressions).
++  else if(isMathAssign(BO)) {
++    VD = getVariableIfReference(BO->getLHS());
++    if(VD && VarsToTrack.count(VD)) VarExprs.erase(VD);
++  }
++}
++
++void PrefetchDataflow::runDataflow(Stmt *S, VarSet &VarsToTrack) {
 +  const CFGBlock *Block;
 +  CFGBlock::const_succ_iterator Succ, SE;
-+  Optional<CFGStmt> StmtNode;
 +  CFGBlockSet Seen;
 +  std::queue<const CFGBlock *> Work;
++  Optional<CFGStmt> StmtNode;
 +  BlockValuesMap::iterator BVIt;
++  SymbolicValueMap CurMap;
 +
 +  if(!VarsToTrack.size()) return;
 +  this->S = S;
@@ -4088,80 +4162,99 @@ Index: lib/Sema/PrefetchDataflow.cpp
 +    // Find assignment operations within the block.  Because of the forward
 +    // dataflow algorithm, predecessors should have already pushed dataflow
 +    // expressions, if any, to this block.
-+    SymbolicValueMap &CurMap = VarValues[Block];
++    CurMap = VarValues[Block];
 +    for(auto &Elem : *Block) {
 +      StmtNode = Elem.getAs<CFGStmt>();
 +      if(!StmtNode) continue;
-+
-+      DS = dyn_cast<DeclStmt>(StmtNode->getStmt());
-+      if(DS) {
-+        for(auto D : DS->getDeclGroup()) {
-+          VD = dyn_cast<VarDecl>(D);
-+          if(VD && VD->hasInit() && VarsToTrack.count(VD)) {
-+            // TODO unfortunately CFG & accompanying classes expose statements
-+            // & expressions with const qualifiers.  But, we *really* need them
-+            // to not be const qualified in order to clone them (in particular,
-+            // cloning DeclRefExprs is nasty).
-+            Clone = PrefetchExprBuilder::clone((Expr *)VD->getInit(), Ctx);
-+            if(Clone) CurMap[VD].insert(Clone);
-+          }
-+        }
-+        continue;
-+      }
-+
-+      BO = dyn_cast<BinaryOperator>(StmtNode->getStmt());
-+      if(!BO) continue;
-+
-+      // Check for assignment operation to a relevant variable.  If we had
-+      // previous expression(s) describing the variable's value the assignment
-+      // overwrites them.
-+      if(isAssign(BO)) {
-+        VD = getVariableIfReference(BO->getLHS());
-+        if(VD && VarsToTrack.count(VD)) {
-+          ExprList &VarExprs = CurMap[VD];
-+          VarExprs.clear();
-+          Clone = PrefetchExprBuilder::clone(BO->getRHS(), Ctx);
-+          if(Clone) VarExprs.insert(Clone);
-+        }
-+      }
-+      // TODO we currently don't handle math + assign operations, so the
-+      // dataflow analysis clamps to 'unknown' (i.e., no expressions).
-+      else if(isMathAssign(BO)) {
-+        VD = getVariableIfReference(BO->getLHS());
-+        if(VD && VarsToTrack.count(VD)) CurMap.erase(VD);
-+      }
++      checkAndUpdateVarDefs(Ctx, StmtNode->getStmt(), VarsToTrack, CurMap);
 +    }
 +
-+    // Push dataflow expressions to successors.
++    // Push dataflow expressions to successors & add not-yet visited blocks to
++    // the work queue.
 +    for(Succ = Block->succ_begin(), SE = Block->succ_end();
 +        Succ != SE; Succ++) {
-+      if(!Succ->isReachable()) continue;
-+      SymbolicValueMap &SuccMap = VarValues[*Succ];
-+      for(auto &Pair : CurMap) {
-+        ExprList &VarExprs = SuccMap[Pair.first];
-+        for(auto Expr : Pair.second) VarExprs.insert(Expr);
++      if(!Succ->isReachable() || Seen.count(*Succ)) continue;
++      else {
++        SymbolicValueMap &SuccMap = VarValues[*Succ];
++        for(auto &Pair : CurMap) {
++          ExprList &VarExprs = SuccMap[Pair.first];
++          for(auto Expr : Pair.second) VarExprs.insert(Expr);
++        }
++        Work.push(*Succ);
 +      }
 +    }
 +
-+    // TODO do we need to deal with sub-scopes, e.g., loops, here?
-+
-+    // Add unvisited CFG blocks to the work queue.
-+    for(Succ = Block->succ_begin(), SE = Block->succ_end();
-+        Succ != SE; Succ++) {
-+      if(Succ->isReachable() && !Seen.count(Succ->getReachableBlock()))
-+        Work.push(Succ->getReachableBlock());
-+    }
++    // TODO do we need to treat sub-scopes, e.g., loops, differently?
 +  }
 +
 +  // Make it easier to look up analysis for statements
 +  PMap.reset(new ParentMap(S));
-+  PMap->addStmt(S);
 +  StmtToBlock.reset(CFGStmtMap::Build(TheCFG.get(), PMap.get()));
 +}
 +
-+Expr *PrefetchDataflow::getVariableValue(VarDecl *Var, const Stmt *Use) const {
-+  // TODO
-+  return nullptr;
++/// Search for statements in sub-trees.
++class StmtFinder : public RecursiveASTVisitor<StmtFinder> {
++public:
++  void initialize(const Stmt *TheStmt) {
++    this->TheStmt = TheStmt;
++    Found = false;
++  }
++
++  bool TraverseStmt(Stmt *S) {
++    if(S == TheStmt) {
++      Found = true;
++      return false;
++    }
++    else return RecursiveASTVisitor::TraverseStmt(S);
++  }
++
++  bool foundStmt() const { return Found; }
++
++private:
++  const Stmt *TheStmt;
++  bool Found;
++};
++
++void PrefetchDataflow::getVariableValues(VarDecl *Var,
++                                         const Stmt *Use,
++                                         ExprList &Exprs) const {
++  SymbolicValueMap TmpMap;
++  VarSet VarsToTrack;
++  Optional<CFGStmt> StmtNode;
++  StmtFinder Finder;
++
++  Exprs.clear();
++
++  // Find analysis for the given variable, if any, at the start of the block
++  // containing the statement.
++  if(!StmtToBlock) return;
++  const CFGBlock *B = StmtToBlock->getBlock(Use);
++  if(!B) return;
++  BlockValuesMap::const_iterator ValIt = VarValues.find(B);
++  if(ValIt == VarValues.end()) return;
++  const SymbolicValueMap &Values = ValIt->second;
++  SymbolicValueMap::const_iterator SymIt = Values.find(Var);
++
++  // Walk through the block to the statement, searching for definitions between
++  // the start of the block and the statement argument
++  VarsToTrack.insert(Var);
++  if(SymIt != Values.end()) TmpMap[Var] = SymIt->second;
++  else TmpMap[Var] = ExprList();
++  for(auto &Elem : *B) {
++    StmtNode = Elem.getAs<CFGStmt>();
++    if(!StmtNode) continue;
++
++    // TODO CFG exposes statements with const qualifiers while the
++    // RecursiveASTVisitor requires non-const qualified statements.
++    Finder.initialize(Use);
++    Finder.TraverseStmt((Stmt *)StmtNode->getStmt());
++    if(Finder.foundStmt()) {
++      Exprs = TmpMap[Var];
++      return;
++    }
++
++    checkAndUpdateVarDefs(Ctx, StmtNode->getStmt(), VarsToTrack, TmpMap);
++  }
 +}
 +
 +void PrefetchDataflow::reset() {
@@ -4173,8 +4266,18 @@ Index: lib/Sema/PrefetchDataflow.cpp
 +}
 +
 +void PrefetchDataflow::print(llvm::raw_ostream &O) const {
-+  if(!S || !TheCFG || !VarValues.size()) {
++  if(!S) {
 +    O << "<Prefetch Dataflow> No analysis -- did you run with runDataflow()?\n";
++    return;
++  }
++
++  if(!TheCFG) {
++    O << "<Prefetch Dataflow> No variables to track\n";
++    return;
++  }
++
++  if(!VarValues.size()) {
++    O << "<Prefetch Dataflow> No symbolic expressions detected\n";
 +    return;
 +  }
 +
@@ -4203,7 +4306,7 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 ===================================================================
 --- lib/Sema/PrefetchExprBuilder.cpp	(nonexistent)
 +++ lib/Sema/PrefetchExprBuilder.cpp	(working copy)
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,211 @@
 +//=- PrefetchExprBuilder.cpp - Prefetching expression builder ------------*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4231,11 +4334,12 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +// Modifier class definitions
 +//
 +
-+void PrefetchExprBuilder::Modifier::ClassifyModifier(Expr *E,
-+                                                     const ASTContext &Ctx) {
++void PrefetchExprBuilder::Modifier::ClassifyModifier(const Expr *E,
++                                                     const ASTContext *Ctx) {
 +  unsigned Bits;
-+  DeclRefExpr *DR;
-+  BinaryOperator *B;
++  const DeclRefExpr *DR;
++  const BinaryOperator *B;
++  const IntegerLiteral *L;
 +  QualType BaseTy;
 +
 +  Ty = Unknown;
@@ -4244,7 +4348,7 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +  E = E->IgnoreImpCasts();
 +  if((B = dyn_cast<BinaryOperator>(E))) {
 +    // Note: both operands *must* have same type
-+    BaseTy = B->getLHS()->getType().getDesugaredType(Ctx);
++    BaseTy = B->getLHS()->getType().getDesugaredType(*Ctx);
 +    assert(PrefetchAnalysis::isScalarIntType(BaseTy) &&
 +           "Invalid expression type");
 +    Bits = PrefetchAnalysis::getTypeSize(cast<BuiltinType>(BaseTy)->getKind());
@@ -4263,6 +4367,7 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +    }
 +  }
 +  else if((DR = dyn_cast<DeclRefExpr>(E))) Ty = None;
++  else if((L = dyn_cast<IntegerLiteral>(E))) Ty = None;
 +}
 +
 +//===----------------------------------------------------------------------===//
@@ -4301,7 +4406,7 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +
 +Expr *PrefetchExprBuilder::clone(Expr *E, ASTContext *Ctx) {
 +  ReplaceMap Dummy; // No variables, don't replace any DeclRefExprs
-+  BuildInfo DummyInfo = { Ctx, Dummy };
++  BuildInfo DummyInfo(Ctx, Dummy, true);
 +  return cloneWithReplacement(E, DummyInfo);
 +}
 +
@@ -4331,19 +4436,29 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +
 +Expr *PrefetchExprBuilder::cloneDeclRefExpr(DeclRefExpr *D,
 +                                            BuildInfo &Info) {
++  Expr *Clone = nullptr;
 +  VarDecl *VD;
 +  ReplaceMap::const_iterator it;
 +
++  // If the variable is relevant and we haven't replaced it before, replace it
++  // with the specified expression.
 +  if((VD = dyn_cast<VarDecl>(D->getDecl())) &&
-+     (it = Info.VarReplacements.find(VD)) != Info.VarReplacements.end())
-+    return clone(it->second, Info.Ctx);
-+  else
-+    return new (*Info.Ctx) DeclRefExpr(D->getDecl(),
-+                                       D->refersToEnclosingVariableOrCapture(),
-+                                       D->getType(),
-+                                       D->getValueKind(),
-+                                       SourceLocation(),
-+                                       D->getNameInfo().getInfo());
++     (it = Info.VarReplace.find(VD)) != Info.VarReplace.end() &&
++     !Info.SeenVars.count(VD)) {
++    Info.SeenVars.insert(VD);
++    Clone = cloneWithReplacement(it->second, Info);
++    Info.SeenVars.erase(VD);
++    return Clone;
++  }
++
++  // Clone the DeclRefExpr if the variable isn't relevant or if cloning the
++  // replacement failed.
++  return new (*Info.Ctx) DeclRefExpr(D->getDecl(),
++                                     D->refersToEnclosingVariableOrCapture(),
++                                     D->getType(),
++                                     D->getValueKind(),
++                                     SourceLocation(),
++                                     D->getNameInfo().getInfo());
 +}
 +
 +Expr *PrefetchExprBuilder::cloneImplicitCastExpr(ImplicitCastExpr *C,

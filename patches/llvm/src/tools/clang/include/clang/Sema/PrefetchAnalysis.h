@@ -28,7 +28,6 @@
 namespace clang {
 
 class ASTContext;
-class InductionVariable;
 
 /// A range of memory to be prefetched.
 class PrefetchRange {
@@ -65,10 +64,6 @@ private:
 
 class PrefetchAnalysis {
 public:
-  typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
-  typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
-  typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
-
   /// Default constructor, really only defined to enable storage in a DenseMap.
   PrefetchAnalysis() : Ctx(nullptr), S(nullptr) {}
 
@@ -88,13 +83,20 @@ public:
   const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
   { return ToPrefetch; }
 
+  /// Return true if the QualType is both scalar and of integer type, or false
+  /// otherwise.
+  static bool isScalarIntType(const QualType &Ty);
+
+  /// Return the size in bits of a builtin integer type, or UINT32_MAX if not a
+  /// builtin integer type.
+  static unsigned getTypeSize(BuiltinType::Kind K);
+
+  /// Cast the value declaration to a variable declaration if it is a varaible
+  /// of scalar integer type.
+  static VarDecl *getVarIfScalarInt(ValueDecl *VD);
+
   void print(llvm::raw_ostream &O) const;
   void dump() const { print(llvm::errs()); }
-
-  /// Common utilities.
-  static bool isScalarIntType(const QualType &Ty);
-  static unsigned getTypeSize(BuiltinType::Kind K);
-  static VarDecl *getVarIfScalarInt(ValueDecl *VD);
 
 private:
   ASTContext *Ctx;

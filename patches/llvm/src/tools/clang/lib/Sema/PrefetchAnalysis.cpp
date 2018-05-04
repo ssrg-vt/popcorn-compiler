@@ -23,9 +23,8 @@
 
 using namespace clang;
 
-typedef PrefetchAnalysis::InductionVariablePtr InductionVariablePtr;
-typedef PrefetchAnalysis::IVMap IVMap;
-typedef PrefetchAnalysis::IVPair IVPair;
+/// A set of variable declarations.
+typedef PrefetchDataflow::VarSet VarSet;
 
 //===----------------------------------------------------------------------===//
 // Common utilities
@@ -154,10 +153,29 @@ typedef std::shared_ptr<ScopeInfo> ScopeInfoPtr;
 /// An array access.
 class ArrayAccess {
 public:
-  ArrayAccess(VarDecl *Base, Expr *Idx, const ScopeInfoPtr &AccessScope)
-    : Valid(true), Base(Base), Idx(Idx), AccessScope(AccessScope) {}
+  ArrayAccess(PrefetchRange::Type Ty, ArraySubscriptExpr *S,
+              const ScopeInfoPtr &AccessScope)
+    : Valid(true), Ty(Ty), S(S), Base(nullptr), Idx(S->getIdx()),
+      AccessScope(AccessScope) {
+    DeclRefExpr *DR;
+    VarDecl *VD;
+
+    if(!(DR = dyn_cast<DeclRefExpr>(S->getBase()->IgnoreImpCasts()))) {
+      Valid = false;
+      return;
+    }
+
+    if(!(VD = dyn_cast<VarDecl>(DR->getDecl()))) {
+      Valid = false;
+      return;
+    }
+
+    Base = VD;
+  }
 
   bool isValid() const { return Valid; }
+  Stmt *getStmt() const { return S; }
+  PrefetchRange::Type getAccessType() const { return Ty; }
   VarDecl *getBase() const { return Base; }
   Expr *getIndex() const { return Idx; }
   const VarVec &getVarsInIdx() const { return VarsInIdx; }
@@ -179,6 +197,8 @@ public:
 
 private:
   bool Valid;               // Is the access valid?
+  PrefetchRange::Type Ty;   // The type of access
+  Stmt *S;                  // The entire array access statement
   VarDecl *Base;            // The array base
   Expr *Idx;                // Expression used to calculate index
   VarVec VarsInIdx;         // Variables used in index calculation
@@ -241,42 +261,35 @@ public:
 
   /// Analyze an array access; in particular, the index.
   bool VisitArraySubscriptExpr(ArraySubscriptExpr *Sub) {
-    Expr *Base = Sub->getBase(), *Idx = Sub->getIdx();
-    DeclRefExpr *DR;
-    VarDecl *VD;
-
-    DR = dyn_cast<DeclRefExpr>(Base->IgnoreImpCasts());
-    if(!DR) return true;
-    VD = dyn_cast<VarDecl>(DR->getDecl());
-    if(!VD || Ignore.count(VD)) return true;
-    if(Side.back() == LHS) {
-      ArrayWrites.emplace_back(VD, Idx, CurScope);
-      CurAccess = &ArrayWrites.back();
-    }
-    else {
-      ArrayReads.emplace_back(VD, Idx, CurScope);
-      CurAccess = &ArrayReads.back();
-    }
+    PrefetchRange::Type Ty =
+      (Side.back() == LHS ? PrefetchRange::Write : PrefetchRange::Read);
+    ArrayAccess Access(Ty, Sub, CurScope);
+    if(!Access.isValid() || Ignore.count(Access.getBase())) return true;
+    ArrayAccesses.emplace_back(std::move(Access));
+    CurAccess = &ArrayAccesses.back();
     return true;
   }
 
   /// Record any variables seen during traversing
   bool VisitDeclRefExpr(DeclRefExpr *DR) {
-    if(CurAccess) {
+    if(CurAccess && CurAccess) {
       VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
       if(VD) CurAccess->addVarInIdx(VD);
-      else CurAccess->setInvalid(); // Can't analyze if decl != variable
+      else {
+        // Can't analyze if decl != variable
+        CurAccess->setInvalid();
+        CurAccess = nullptr;
+        ArrayAccesses.pop_back();
+      }
     }
     return true;
   }
 
-  const llvm::SmallVector<ArrayAccess, 8> &getArrayReads() const
-  { return ArrayReads; }
-  const llvm::SmallVector<ArrayAccess, 8> &getArrayWrites() const
-  { return ArrayWrites; }
+  const llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses() const
+  { return ArrayAccesses; }
 
 private:
-  llvm::SmallVector<ArrayAccess, 8> ArrayReads, ArrayWrites;
+  llvm::SmallVector<ArrayAccess, 8> ArrayAccesses;
   ScopeInfoPtr CurScope;
   llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
 
@@ -297,8 +310,6 @@ void PrefetchAnalysis::pruneEmptyArrayAccesses() {
 // Prefetch analysis -- ForStmts
 //
 
-namespace clang {
-
 /// An induction variable and expressions describing its range.
 class InductionVariable {
 public:
@@ -314,7 +325,7 @@ public:
                         UpperB(nullptr) {}
 
   InductionVariable(VarDecl *Var, Expr *Init, Expr *Cond, Expr *Update,
-                    ASTContext &Ctx)
+                    ASTContext *Ctx)
     : Var(Var), Init(Init), Cond(Cond), Update(Update), Dir(Unknown),
       LowerB(nullptr), UpperB(nullptr) {
 
@@ -343,8 +354,8 @@ public:
     }
 
     if(LowerB && UpperB) {
-      LowerB = PrefetchExprBuilder::cloneAndModifyExpr(LowerB, LowerMod, &Ctx);
-      UpperB = PrefetchExprBuilder::cloneAndModifyExpr(UpperB, UpperMod, &Ctx);
+      LowerB = PrefetchExprBuilder::cloneAndModifyExpr(LowerB, LowerMod, Ctx);
+      UpperB = PrefetchExprBuilder::cloneAndModifyExpr(UpperB, UpperMod, Ctx);
     }
   }
 
@@ -435,7 +446,10 @@ private:
   }
 };
 
-} /* end namespace clang */
+/// Syntactic sugar for InductionVariable containers.
+typedef std::shared_ptr<InductionVariable> InductionVariablePtr;
+typedef std::pair<VarDecl *, InductionVariablePtr> IVPair;
+typedef llvm::DenseMap<VarDecl *, InductionVariablePtr> IVMap;
 
 /// Map an induction variable to an expression describing a bound.
 typedef llvm::DenseMap<VarDecl *, Expr *> IVBoundMap;
@@ -559,6 +573,8 @@ public:
       for(auto &Child : Children) O << " " << Child.get();
     }
     O << "\n";
+    for(auto &IV : InductionVars) IV.second->dump(Policy);
+    O << "\n";
     Loop->printPretty(O, nullptr, Policy);
     O << "\n";
   }
@@ -593,7 +609,7 @@ typedef std::shared_ptr<ForLoopInfo> ForLoopInfoPtr;
 /// nested loops.
 class LoopNestTraversal : public RecursiveASTVisitor<LoopNestTraversal> {
 public:
-  LoopNestTraversal(ASTContext &Ctx) : Ctx(Ctx) {}
+  LoopNestTraversal(ASTContext *Ctx) : Ctx(Ctx) {}
 
   void InitTraversal() { if(!LoopNest.size()) LoopNest.emplace_back(nullptr); }
 
@@ -667,7 +683,7 @@ public:
   }
 
 private:
-  ASTContext &Ctx;
+  ASTContext *Ctx;
 
   // A stack of nested loops to provide induction variable scoping information.
   llvm::SmallVector<ForLoopInfoPtr, 4> LoopNest;
@@ -686,37 +702,33 @@ private:
   }
 };
 
-/// Search the loop scoping chain for an induction variable.  Return the
-/// induction variable information if found, or nullptr otherwise.
-static const InductionVariablePtr
-findInductionVariable(VarDecl *V, const ForLoopInfoPtr &Scope) {
-  assert(V && Scope && "Invalid arguments");
+/// Get all induction variables for a scope, including induction variables from
+/// any enclosing scopes.
+static void getAllInductionVars(const ForLoopInfoPtr &Scope, IVMap &IVs) {
+  assert(Scope && "Invalid arguments");
 
   ForLoopInfoPtr TmpScope = Scope;
-  InductionVariablePtr IV(nullptr);
   do {
-    const IVMap &IVs = TmpScope->getInductionVars();
-    IVMap::const_iterator it = IVs.find(V);
-    if(it != IVs.end()) {
-      IV = it->second;
-      break;
-    }
-    else TmpScope = TmpScope->getParent();
+    const IVMap &LoopIVs = TmpScope->getInductionVars();
+    for(auto IV : LoopIVs) IVs[IV.first] = IV.second;
+    TmpScope = TmpScope->getParent();
   } while(TmpScope);
-  return IV;
 }
 
 /// Search a for-loop statement for array access patterns based on loop
 /// induction variables that can be prefetched at runtime.
 void PrefetchAnalysis::analyzeForStmt() {
-  LoopNestTraversal Loops(*Ctx);
+  LoopNestTraversal Loops(Ctx);
   ArrayAccessPattern ArrAccesses(Ignore);
   PrefetchDataflow Dataflow(Ctx);
-  PrefetchDataflow::VarSet VarsToTrack;
+  IVMap AllIVs;
+  IVMap::const_iterator IVIt;
+  VarSet VarsToTrack;
+  ExprList VarExprs;
   ReplaceMap LowerBounds, UpperBounds;
   Expr *UpperBound, *LowerBound;
-  PrefetchExprBuilder::BuildInfo LowerBuild = { Ctx, LowerBounds, true },
-                                 UpperBuild = { Ctx, UpperBounds, true };
+  PrefetchExprBuilder::BuildInfo LowerBuild(Ctx, LowerBounds, true),
+                                 UpperBuild(Ctx, UpperBounds, true);
 
   // Gather loop nest information, including induction variables
   Loops.InitTraversal();
@@ -727,75 +739,76 @@ void PrefetchAnalysis::analyzeForStmt() {
   ArrAccesses.InitTraversal();
   ArrAccesses.TraverseStmt(S);
 
-  // Run the dataflow analysis to see if induction variables are used in any
-  // expressions which initialize other variables.
-  for(auto &Read : ArrAccesses.getArrayReads()) {
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
-    for(auto &Var : Read.getVarsInIdx()) {
-      if(!findInductionVariable(Var, Scope))
-        VarsToTrack.insert(Var);
+  // TODO the following could probably be optimized to reduce re-computing
+  // induction variable sets.
+
+  // Run the dataflow analysis.  Collect all non-induction variables used to
+  // construct array indices to see if induction variables are used in any
+  // assignmend expressions.
+  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
+    AllIVs.clear();
+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
+    getAllInductionVars(Scope, AllIVs);
+    for(auto &Var : Acc.getVarsInIdx()) {
+      if(!AllIVs.count(Var)) VarsToTrack.insert(Var);
     }
   }
 
-  for(auto &Write: ArrAccesses.getArrayWrites()) {
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
-    for(auto &Var : Write.getVarsInIdx()) {
-      if(!findInductionVariable(Var, Scope))
-        VarsToTrack.insert(Var);
-    }
-  }
-
-  Dataflow.reset();
   Dataflow.runDataflow(cast<ForStmt>(S)->getBody(), VarsToTrack);
 
-  // TODO delete
-  Dataflow.dump();
-
   // Reconstruct array subscript expressions with induction variable references
-  // replaced by their bounds.
-  for(auto &Read : ArrAccesses.getArrayReads()) {
-    LowerBounds.clear();
-    UpperBounds.clear();
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Read);
+  // replaced by their bounds.  This includes variables defined using
+  // expressions containing induction variables.
+  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
+    LowerBuild.reset();
+    UpperBuild.reset();
+    AllIVs.clear();
 
-    // Get upper & lower bounds of induction variable for replacement
-    for(auto &Var : Read.getVarsInIdx()) {
-      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-      if(IV) {
-        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
-        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
+    // Get the expressions for replacing upper & lower bounds of induction
+    // variables.  Note that we *must* add all induction variables even if
+    // they're not directly used, as other variables used in the index
+    // calculation may be defined based on induction variables.  For example:
+    //
+    // for(int i = ...; i < ...; i++) {
+    //   int j = i + offset;
+    //   ...
+    //   arr[j] = ...
+    // }
+    //
+    // In this example, 'i' is not directly used in addressing but the dataflow
+    // analysis determines that 'j' is defined based on 'i', and hence we need
+    // to replace 'j' with induction variable bounds expressions.
+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
+    getAllInductionVars(Scope, AllIVs);
+    for(auto &Pair : AllIVs) {
+      const InductionVariablePtr &IV = Pair.second;
+      LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
+      UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
+    }
+
+    // Add other variables used in array calculation that may be defined using
+    // induction variable expressions.
+    for(auto &Var : Acc.getVarsInIdx()) {
+      IVIt = AllIVs.find(Var);
+      if(IVIt == AllIVs.end()) {
+        Dataflow.getVariableValues(Var, Acc.getStmt(), VarExprs);
+        // TODO currently if a variable used in an index calculation can take
+        // on more than one value due to control flow, we just avoid inserting
+        // prefetch expressions due to all the possible permutations.
+        if(VarExprs.size() == 1) {
+          LowerBounds.insert(ReplacePair(Var, *VarExprs.begin()));
+          UpperBounds.insert(ReplacePair(Var, *VarExprs.begin()));
+        }
       }
     }
 
     // Create array access bounds expressions
     LowerBound =
-      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), LowerBuild),
+      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), LowerBuild),
     UpperBound =
-      PrefetchExprBuilder::cloneWithReplacement(Read.getIndex(), UpperBuild);
+      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), UpperBuild);
     if(LowerBound && UpperBound)
-      ToPrefetch.emplace_back(PrefetchRange::Read, Read.getBase(),
-                              LowerBound, UpperBound);
-  }
-
-  for(auto &Write : ArrAccesses.getArrayWrites()) {
-    LowerBounds.clear();
-    UpperBounds.clear();
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Write);
-
-    for(auto &Var : Write.getVarsInIdx()) {
-      const InductionVariablePtr IV = findInductionVariable(Var, Scope);
-      if(IV) {
-        LowerBounds.insert(ReplacePair(IV->getVariable(), IV->getLowerBound()));
-        UpperBounds.insert(ReplacePair(IV->getVariable(), IV->getUpperBound()));
-      }
-    }
-
-    LowerBound =
-      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), LowerBuild),
-    UpperBound =
-      PrefetchExprBuilder::cloneWithReplacement(Write.getIndex(), UpperBuild);
-    if(LowerBound && UpperBound)
-      ToPrefetch.emplace_back(PrefetchRange::Write, Write.getBase(),
+      ToPrefetch.emplace_back(Acc.getAccessType(), Acc.getBase(),
                               LowerBound, UpperBound);
   }
 }

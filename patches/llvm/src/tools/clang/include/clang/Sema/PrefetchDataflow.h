@@ -42,16 +42,19 @@ public:
   /// llvm::DenseMap.  Required because objects use std::unique_ptrs.
   PrefetchDataflow();
   PrefetchDataflow(ASTContext *Ctx);
+
+  /// Copy constructor -- only copies the AST.
   PrefetchDataflow(const PrefetchDataflow &RHS);
 
+  /// Assignment operator -- only copies the AST.
   PrefetchDataflow &operator=(const PrefetchDataflow &RHS);
 
   /// Run dataflow analysis over the statement specified at build time.
   void runDataflow(Stmt *S, VarSet &VarsToTrack);
 
-  /// Get the value of a variable at a specific use in a statement, or nullptr
-  /// if analysis could not calculate its value.
-  Expr *getVariableValue(VarDecl *Var, const Stmt *Use) const;
+  /// Get possible values of a variable at a specific use in a statement, if
+  /// any.  The list argument will be populated with expressions.
+  void getVariableValues(VarDecl *Var, const Stmt *Use, ExprList &Exprs) const;
 
   /// Reset any previous analysis.
   void reset();

@@ -25,11 +25,12 @@ typedef PrefetchExprBuilder::BuildInfo BuildInfo;
 // Modifier class definitions
 //
 
-void PrefetchExprBuilder::Modifier::ClassifyModifier(Expr *E,
-                                                     const ASTContext &Ctx) {
+void PrefetchExprBuilder::Modifier::ClassifyModifier(const Expr *E,
+                                                     const ASTContext *Ctx) {
   unsigned Bits;
-  DeclRefExpr *DR;
-  BinaryOperator *B;
+  const DeclRefExpr *DR;
+  const BinaryOperator *B;
+  const IntegerLiteral *L;
   QualType BaseTy;
 
   Ty = Unknown;
@@ -38,7 +39,7 @@ void PrefetchExprBuilder::Modifier::ClassifyModifier(Expr *E,
   E = E->IgnoreImpCasts();
   if((B = dyn_cast<BinaryOperator>(E))) {
     // Note: both operands *must* have same type
-    BaseTy = B->getLHS()->getType().getDesugaredType(Ctx);
+    BaseTy = B->getLHS()->getType().getDesugaredType(*Ctx);
     assert(PrefetchAnalysis::isScalarIntType(BaseTy) &&
            "Invalid expression type");
     Bits = PrefetchAnalysis::getTypeSize(cast<BuiltinType>(BaseTy)->getKind());
@@ -57,6 +58,7 @@ void PrefetchExprBuilder::Modifier::ClassifyModifier(Expr *E,
     }
   }
   else if((DR = dyn_cast<DeclRefExpr>(E))) Ty = None;
+  else if((L = dyn_cast<IntegerLiteral>(E))) Ty = None;
 }
 
 //===----------------------------------------------------------------------===//
@@ -95,7 +97,7 @@ Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
 
 Expr *PrefetchExprBuilder::clone(Expr *E, ASTContext *Ctx) {
   ReplaceMap Dummy; // No variables, don't replace any DeclRefExprs
-  BuildInfo DummyInfo = { Ctx, Dummy };
+  BuildInfo DummyInfo(Ctx, Dummy, true);
   return cloneWithReplacement(E, DummyInfo);
 }
 
@@ -125,19 +127,29 @@ Expr *PrefetchExprBuilder::cloneUnaryOperation(UnaryOperator *U,
 
 Expr *PrefetchExprBuilder::cloneDeclRefExpr(DeclRefExpr *D,
                                             BuildInfo &Info) {
+  Expr *Clone = nullptr;
   VarDecl *VD;
   ReplaceMap::const_iterator it;
 
+  // If the variable is relevant and we haven't replaced it before, replace it
+  // with the specified expression.
   if((VD = dyn_cast<VarDecl>(D->getDecl())) &&
-     (it = Info.VarReplacements.find(VD)) != Info.VarReplacements.end())
-    return clone(it->second, Info.Ctx);
-  else
-    return new (*Info.Ctx) DeclRefExpr(D->getDecl(),
-                                       D->refersToEnclosingVariableOrCapture(),
-                                       D->getType(),
-                                       D->getValueKind(),
-                                       SourceLocation(),
-                                       D->getNameInfo().getInfo());
+     (it = Info.VarReplace.find(VD)) != Info.VarReplace.end() &&
+     !Info.SeenVars.count(VD)) {
+    Info.SeenVars.insert(VD);
+    Clone = cloneWithReplacement(it->second, Info);
+    Info.SeenVars.erase(VD);
+    return Clone;
+  }
+
+  // Clone the DeclRefExpr if the variable isn't relevant or if cloning the
+  // replacement failed.
+  return new (*Info.Ctx) DeclRefExpr(D->getDecl(),
+                                     D->refersToEnclosingVariableOrCapture(),
+                                     D->getType(),
+                                     D->getValueKind(),
+                                     SourceLocation(),
+                                     D->getNameInfo().getInfo());
 }
 
 Expr *PrefetchExprBuilder::cloneImplicitCastExpr(ImplicitCastExpr *C,
