@@ -2067,7 +2067,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
      const TargetOptions &TargetOpts = CI.getTargetOpts();
      if (TheModule->getTargetTriple() != TargetOpts.Triple) {
        CI.getDiagnostics().Report(SourceLocation(),
-@@ -769,3 +866,140 @@
+@@ -769,3 +866,150 @@
  void EmitObjAction::anchor() { }
  EmitObjAction::EmitObjAction(llvm::LLVMContext *_VMContext)
    : CodeGenAction(Backend_EmitObj, _VMContext) {}
@@ -2083,6 +2083,15 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +  NewFile += TI->getTriple().getArchName();
 +  NewFile += File.substr(dot, StringRef::npos);
 +  return NewFile;
++}
++
++static llvm::SmallVector<std::string, 2>
++dedupTargets(llvm::SmallVector<std::string, 2> &Requested) {
++  std::set<std::string> Targets;
++  for(auto &Target : Requested) Targets.insert(Target);
++  llvm::SmallVector<std::string, 2> Ret;
++  for(auto Target : Targets) Ret.push_back(Target);
++  return Ret;
 +}
 +
 +/// Create target information & output streams for each target.
@@ -2110,6 +2119,7 @@ Index: lib/CodeGen/CodeGenAction.cpp
 +      }
 +      Targets.push_back(Target);
 +    }
++    Targets = dedupTargets(Targets);
 +  }
 +  else Popcorn::GetAllTargets(this->Targets);
 +
