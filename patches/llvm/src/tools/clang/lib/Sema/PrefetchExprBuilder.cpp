@@ -19,7 +19,77 @@
 
 using namespace clang;
 
-typedef PrefetchExprBuilder::BuildInfo BuildInfo;
+//===----------------------------------------------------------------------===//
+// Prefetch expression comparisondefinitions
+//
+
+static bool
+BinaryOperatorEqual(const BinaryOperator *A, const BinaryOperator *B) {
+  if(A->getOpcode() != B->getOpcode()) return false;
+  else return PrefetchExprEquality::exprEqual(A->getRHS(), B->getRHS()) &&
+              PrefetchExprEquality::exprEqual(A->getLHS(), B->getLHS());
+}
+
+static bool UnaryOperatorEqual(const UnaryOperator *A, const UnaryOperator *B) {
+  if(A->getOpcode() != B->getOpcode()) return false;
+  else return PrefetchExprEquality::exprEqual(A->getSubExpr(), B->getSubExpr());
+}
+
+static bool DeclRefExprEqual(const DeclRefExpr *A, const DeclRefExpr *B) {
+  if(A->getDecl() == B->getDecl()) return true;
+  else return false;
+}
+
+static bool
+ImplicitCastExprEqual(const ImplicitCastExpr *A, const ImplicitCastExpr *B) {
+  if(A->getCastKind() != B->getCastKind()) return false;
+  else return PrefetchExprEquality::exprEqual(A->getSubExpr(), B->getSubExpr());
+}
+
+static bool
+IntegerLiteralEqual(const IntegerLiteral *A, const IntegerLiteral *B) {
+  return A->getValue() == B->getValue();
+}
+
+bool PrefetchExprEquality::exprEqual(const Expr *A, const Expr *B) {
+  const BinaryOperator *B_A, *B_B;
+  const UnaryOperator *U_A, *U_B;
+  const DeclRefExpr *D_A, *D_B;
+  const ImplicitCastExpr *C_A, *C_B;
+  const IntegerLiteral *I_A, *I_B;
+
+  if(!A || ! B) return false;
+
+  // Check common characteristics.  Note that by checking the statement class,
+  // we know the expressions are of the same type and can use cast<> below.
+  if(A->getStmtClass() != B->getStmtClass() ||
+     A->getType() != B->getType() ||
+     A->getValueKind() != B->getValueKind() ||
+     A->getObjectKind() != B->getObjectKind()) return false;
+
+  // TODO better way to switch on type?
+  if((B_A = dyn_cast<BinaryOperator>(A))) {
+    B_B = cast<BinaryOperator>(B);
+    return BinaryOperatorEqual(B_A, B_B);
+  }
+  else if((U_A = dyn_cast<UnaryOperator>(A))) {
+    U_B = cast<UnaryOperator>(B);
+    return UnaryOperatorEqual(U_A, U_B);
+  }
+  else if((D_A = dyn_cast<DeclRefExpr>(A))) {
+    D_B = cast<DeclRefExpr>(B);
+    return DeclRefExprEqual(D_A, D_B);
+  }
+  else if((C_A = dyn_cast<ImplicitCastExpr>(A))) {
+    C_B = cast<ImplicitCastExpr>(B);
+    return ImplicitCastExprEqual(C_A, C_B);
+  }
+  else if((I_A = dyn_cast<IntegerLiteral>(A))) {
+    I_B = cast<IntegerLiteral>(B);
+    return IntegerLiteralEqual(I_A, I_B);
+  }
+  else return false;
+}
 
 //===----------------------------------------------------------------------===//
 // Modifier class definitions
@@ -65,6 +135,8 @@ void PrefetchExprBuilder::Modifier::ClassifyModifier(const Expr *E,
 // Prefetch expression builder definitions
 //
 
+typedef PrefetchExprBuilder::BuildInfo BuildInfo;
+
 Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
   BinaryOperator *B;
   UnaryOperator *U;
@@ -76,9 +148,9 @@ Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
 
   // TODO better way to switch on type?
   if((B = dyn_cast<BinaryOperator>(E)))
-    return cloneBinaryOperation(B, Info);
+    return cloneBinaryOperator(B, Info);
   else if((U = dyn_cast<UnaryOperator>(E)))
-    return cloneUnaryOperation(U, Info);
+    return cloneUnaryOperator(U, Info);
   else if((D = dyn_cast<DeclRefExpr>(E)))
     return cloneDeclRefExpr(D, Info);
   else if((C = dyn_cast<ImplicitCastExpr>(E)))
@@ -101,8 +173,8 @@ Expr *PrefetchExprBuilder::clone(Expr *E, ASTContext *Ctx) {
   return cloneWithReplacement(E, DummyInfo);
 }
 
-Expr *PrefetchExprBuilder::cloneBinaryOperation(BinaryOperator *B,
-                                                BuildInfo &Info) {
+Expr *PrefetchExprBuilder::cloneBinaryOperator(BinaryOperator *B,
+                                               BuildInfo &Info) {
   Expr *LHS = cloneWithReplacement(B->getLHS(), Info),
        *RHS = cloneWithReplacement(B->getRHS(), Info);
   if(!LHS || !RHS) return nullptr;
@@ -114,8 +186,8 @@ Expr *PrefetchExprBuilder::cloneBinaryOperation(BinaryOperator *B,
                                         B->isFPContractable());
 }
 
-Expr *PrefetchExprBuilder::cloneUnaryOperation(UnaryOperator *U,
-                                               BuildInfo &Info) {
+Expr *PrefetchExprBuilder::cloneUnaryOperator(UnaryOperator *U,
+                                              BuildInfo &Info) {
   Expr *Sub = cloneWithReplacement(U->getSubExpr(), Info);
   if(!Sub) return nullptr;
   return new (*Info.Ctx) UnaryOperator(Sub, U->getOpcode(),
@@ -156,8 +228,6 @@ Expr *PrefetchExprBuilder::cloneImplicitCastExpr(ImplicitCastExpr *C,
                                                  BuildInfo &Info) {
   Expr *Sub = cloneWithReplacement(C->getSubExpr(), Info);
   if(!Sub) return nullptr;
-
-  
 
   // Avoid the situation that when replacing an induction variable with another
   // expression we accidentally chain together 2 implicit casts (which causes

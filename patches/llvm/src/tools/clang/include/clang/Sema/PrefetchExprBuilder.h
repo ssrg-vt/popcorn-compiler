@@ -26,6 +26,15 @@ class ASTContext;
 typedef std::pair<VarDecl *, Expr *> ReplacePair;
 typedef llvm::DenseMap<VarDecl *, Expr *> ReplaceMap;
 
+/// Utilities for compairing expressions by value.
+namespace PrefetchExprEquality {
+
+/// Compare two expressions by value to see if they're equal.
+bool exprEqual(const Expr *A, const Expr *B);
+
+}
+
+/// Utilities for building expressions.
 namespace PrefetchExprBuilder {
 
 /// Information describing how a statement should be modified.
@@ -64,10 +73,10 @@ Expr *cloneWithReplacement(Expr *E, BuildInfo &Info);
 Expr *clone(Expr *E, ASTContext *Ctx);
 
 /// Clone a binary operation.
-Expr *cloneBinaryOperation(BinaryOperator *B, BuildInfo &Info);
+Expr *cloneBinaryOperator(BinaryOperator *B, BuildInfo &Info);
 
 /// Clone a unary operation.
-Expr *cloneUnaryOperation(UnaryOperator *U, BuildInfo &Info);
+Expr *cloneUnaryOperator(UnaryOperator *U, BuildInfo &Info);
 
 /// Clone a declaration reference.  If it's an induction variable, replace
 /// with the bound specified by the Upper flag.

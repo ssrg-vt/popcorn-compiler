@@ -23,8 +23,21 @@
 
 using namespace clang;
 
-/// A set of variable declarations.
-typedef PrefetchDataflow::VarSet VarSet;
+//===----------------------------------------------------------------------===//
+// PrefetchRange API
+//
+
+bool PrefetchRange::equalExceptType(const PrefetchRange &RHS) {
+  if(Array != RHS.Array) return false;
+  else if(!PrefetchExprEquality::exprEqual(Start, RHS.Start)) return false;
+  else if(!PrefetchExprEquality::exprEqual(End, RHS.End)) return false;
+  else return true;
+}
+
+bool PrefetchRange::operator==(const PrefetchRange &RHS) {
+  if(Ty == RHS.Ty && equalExceptType(RHS)) return true;
+  else return false;
+}
 
 //===----------------------------------------------------------------------===//
 // Common utilities
@@ -302,8 +315,25 @@ void PrefetchAnalysis::mergeArrayAccesses() {
   // TODO!
 }
 
-void PrefetchAnalysis::pruneEmptyArrayAccesses() {
-  // TODO!
+void PrefetchAnalysis::pruneArrayAccesses() {
+  // TODO we could prevent a bunch of copying if we used a linked list instead
+  // of a vector for ToPrefetch
+  llvm::SmallVector<PrefetchRange, 8>::iterator Cur, Next;
+  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
+    if(PrefetchExprEquality::exprEqual(Cur->getStart(), Cur->getEnd()))
+      Cur = ToPrefetch.erase(Cur) - 1;
+  }
+
+  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
+    for(Next = Cur + 1; Next != ToPrefetch.end(); Next++) {
+      if(*Cur == *Next) Next = ToPrefetch.erase(Next) - 1;
+      else if(Cur->equalExceptType(*Next)) {
+        Cur->setType(Cur->getType() > Next->getType() ? Cur->getType() :
+                                                        Next->getType());
+        Next = ToPrefetch.erase(Next) - 1;
+      }
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -715,6 +745,9 @@ static void getAllInductionVars(const ForLoopInfoPtr &Scope, IVMap &IVs) {
   } while(TmpScope);
 }
 
+/// A set of variable declarations.
+typedef PrefetchDataflow::VarSet VarSet;
+
 /// Search a for-loop statement for array access patterns based on loop
 /// induction variables that can be prefetched at runtime.
 void PrefetchAnalysis::analyzeForStmt() {
@@ -813,7 +846,6 @@ void PrefetchAnalysis::analyzeForStmt() {
   }
 }
 
-
 //===----------------------------------------------------------------------===//
 // Prefetch analysis API
 //
@@ -825,7 +857,7 @@ void PrefetchAnalysis::analyzeStmt() {
   if(isa<ForStmt>(S)) analyzeForStmt();
 
   mergeArrayAccesses();
-  pruneEmptyArrayAccesses();
+  pruneArrayAccesses();
 }
 
 void PrefetchAnalysis::print(llvm::raw_ostream &O) const {

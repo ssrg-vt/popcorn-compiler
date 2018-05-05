@@ -32,7 +32,7 @@ class ASTContext;
 /// A range of memory to be prefetched.
 class PrefetchRange {
 public:
-  /// Access type for array.
+  /// Access type for array.  Sorted in increasing importance.
   enum Type { Read, Write };
 
   PrefetchRange(enum Type Ty, VarDecl *Array, Expr *Start, Expr *End)
@@ -46,6 +46,14 @@ public:
   void setArray(VarDecl *Array) { this->Array = Array; }
   void setStart(Expr *Start) { this->Start = Start; }
   void setEnd(Expr *Start) { this->End = End; }
+
+  /// Return true if the other prefetch range is equal to this one (ignoring
+  /// prefetch type differences), or false otherwise.
+  bool equalExceptType(const PrefetchRange &RHS);
+
+  /// Return true if the other prefetch range is equal to this one, or false
+  /// otherwise.
+  bool operator==(const PrefetchRange &RHS);
 
   // TODO print & dump
   const char *getTypeName() const {
@@ -114,8 +122,8 @@ private:
   /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
   void mergeArrayAccesses();
 
-  /// Remove trivial array accesses.
-  void pruneEmptyArrayAccesses();
+  /// Remove trivial or redundant array accesses.
+  void pruneArrayAccesses();
 };
 
 } // end namespace clang

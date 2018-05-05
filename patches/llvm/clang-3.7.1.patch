@@ -818,7 +818,7 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 ===================================================================
 --- include/clang/Sema/PrefetchAnalysis.h	(nonexistent)
 +++ include/clang/Sema/PrefetchAnalysis.h	(working copy)
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,132 @@
 +//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -853,7 +853,7 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +/// A range of memory to be prefetched.
 +class PrefetchRange {
 +public:
-+  /// Access type for array.
++  /// Access type for array.  Sorted in increasing importance.
 +  enum Type { Read, Write };
 +
 +  PrefetchRange(enum Type Ty, VarDecl *Array, Expr *Start, Expr *End)
@@ -867,6 +867,14 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  void setArray(VarDecl *Array) { this->Array = Array; }
 +  void setStart(Expr *Start) { this->Start = Start; }
 +  void setEnd(Expr *Start) { this->End = End; }
++
++  /// Return true if the other prefetch range is equal to this one (ignoring
++  /// prefetch type differences), or false otherwise.
++  bool equalExceptType(const PrefetchRange &RHS);
++
++  /// Return true if the other prefetch range is equal to this one, or false
++  /// otherwise.
++  bool operator==(const PrefetchRange &RHS);
 +
 +  // TODO print & dump
 +  const char *getTypeName() const {
@@ -935,8 +943,8 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
 +  void mergeArrayAccesses();
 +
-+  /// Remove trivial array accesses.
-+  void pruneEmptyArrayAccesses();
++  /// Remove trivial or redundant array accesses.
++  void pruneArrayAccesses();
 +};
 +
 +} // end namespace clang
@@ -1036,7 +1044,7 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 ===================================================================
 --- include/clang/Sema/PrefetchExprBuilder.h	(nonexistent)
 +++ include/clang/Sema/PrefetchExprBuilder.h	(working copy)
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,99 @@
 +//===- PrefetchExprBuilder.h - Prefetching expression builder -----*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1065,6 +1073,15 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 +typedef std::pair<VarDecl *, Expr *> ReplacePair;
 +typedef llvm::DenseMap<VarDecl *, Expr *> ReplaceMap;
 +
++/// Utilities for compairing expressions by value.
++namespace PrefetchExprEquality {
++
++/// Compare two expressions by value to see if they're equal.
++bool exprEqual(const Expr *A, const Expr *B);
++
++}
++
++/// Utilities for building expressions.
 +namespace PrefetchExprBuilder {
 +
 +/// Information describing how a statement should be modified.
@@ -1103,10 +1120,10 @@ Index: include/clang/Sema/PrefetchExprBuilder.h
 +Expr *clone(Expr *E, ASTContext *Ctx);
 +
 +/// Clone a binary operation.
-+Expr *cloneBinaryOperation(BinaryOperator *B, BuildInfo &Info);
++Expr *cloneBinaryOperator(BinaryOperator *B, BuildInfo &Info);
 +
 +/// Clone a unary operation.
-+Expr *cloneUnaryOperation(UnaryOperator *U, BuildInfo &Info);
++Expr *cloneUnaryOperator(UnaryOperator *U, BuildInfo &Info);
 +
 +/// Clone a declaration reference.  If it's an induction variable, replace
 +/// with the bound specified by the Upper flag.
@@ -3175,7 +3192,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 ===================================================================
 --- lib/Sema/PrefetchAnalysis.cpp	(nonexistent)
 +++ lib/Sema/PrefetchAnalysis.cpp	(working copy)
-@@ -0,0 +1,841 @@
+@@ -0,0 +1,873 @@
 +//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3201,8 +3218,21 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +
 +using namespace clang;
 +
-+/// A set of variable declarations.
-+typedef PrefetchDataflow::VarSet VarSet;
++//===----------------------------------------------------------------------===//
++// PrefetchRange API
++//
++
++bool PrefetchRange::equalExceptType(const PrefetchRange &RHS) {
++  if(Array != RHS.Array) return false;
++  else if(!PrefetchExprEquality::exprEqual(Start, RHS.Start)) return false;
++  else if(!PrefetchExprEquality::exprEqual(End, RHS.End)) return false;
++  else return true;
++}
++
++bool PrefetchRange::operator==(const PrefetchRange &RHS) {
++  if(Ty == RHS.Ty && equalExceptType(RHS)) return true;
++  else return false;
++}
 +
 +//===----------------------------------------------------------------------===//
 +// Common utilities
@@ -3480,8 +3510,25 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  // TODO!
 +}
 +
-+void PrefetchAnalysis::pruneEmptyArrayAccesses() {
-+  // TODO!
++void PrefetchAnalysis::pruneArrayAccesses() {
++  // TODO we could prevent a bunch of copying if we used a linked list instead
++  // of a vector for ToPrefetch
++  llvm::SmallVector<PrefetchRange, 8>::iterator Cur, Next;
++  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
++    if(PrefetchExprEquality::exprEqual(Cur->getStart(), Cur->getEnd()))
++      Cur = ToPrefetch.erase(Cur) - 1;
++  }
++
++  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
++    for(Next = Cur + 1; Next != ToPrefetch.end(); Next++) {
++      if(*Cur == *Next) Next = ToPrefetch.erase(Next) - 1;
++      else if(Cur->equalExceptType(*Next)) {
++        Cur->setType(Cur->getType() > Next->getType() ? Cur->getType() :
++                                                        Next->getType());
++        Next = ToPrefetch.erase(Next) - 1;
++      }
++    }
++  }
 +}
 +
 +//===----------------------------------------------------------------------===//
@@ -3893,6 +3940,9 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  } while(TmpScope);
 +}
 +
++/// A set of variable declarations.
++typedef PrefetchDataflow::VarSet VarSet;
++
 +/// Search a for-loop statement for array access patterns based on loop
 +/// induction variables that can be prefetched at runtime.
 +void PrefetchAnalysis::analyzeForStmt() {
@@ -3991,7 +4041,6 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  }
 +}
 +
-+
 +//===----------------------------------------------------------------------===//
 +// Prefetch analysis API
 +//
@@ -4003,7 +4052,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  if(isa<ForStmt>(S)) analyzeForStmt();
 +
 +  mergeArrayAccesses();
-+  pruneEmptyArrayAccesses();
++  pruneArrayAccesses();
 +}
 +
 +void PrefetchAnalysis::print(llvm::raw_ostream &O) const {
@@ -4316,7 +4365,7 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 ===================================================================
 --- lib/Sema/PrefetchExprBuilder.cpp	(nonexistent)
 +++ lib/Sema/PrefetchExprBuilder.cpp	(working copy)
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,281 @@
 +//=- PrefetchExprBuilder.cpp - Prefetching expression builder ------------*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4338,7 +4387,77 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +
 +using namespace clang;
 +
-+typedef PrefetchExprBuilder::BuildInfo BuildInfo;
++//===----------------------------------------------------------------------===//
++// Prefetch expression comparisondefinitions
++//
++
++static bool
++BinaryOperatorEqual(const BinaryOperator *A, const BinaryOperator *B) {
++  if(A->getOpcode() != B->getOpcode()) return false;
++  else return PrefetchExprEquality::exprEqual(A->getRHS(), B->getRHS()) &&
++              PrefetchExprEquality::exprEqual(A->getLHS(), B->getLHS());
++}
++
++static bool UnaryOperatorEqual(const UnaryOperator *A, const UnaryOperator *B) {
++  if(A->getOpcode() != B->getOpcode()) return false;
++  else return PrefetchExprEquality::exprEqual(A->getSubExpr(), B->getSubExpr());
++}
++
++static bool DeclRefExprEqual(const DeclRefExpr *A, const DeclRefExpr *B) {
++  if(A->getDecl() == B->getDecl()) return true;
++  else return false;
++}
++
++static bool
++ImplicitCastExprEqual(const ImplicitCastExpr *A, const ImplicitCastExpr *B) {
++  if(A->getCastKind() != B->getCastKind()) return false;
++  else return PrefetchExprEquality::exprEqual(A->getSubExpr(), B->getSubExpr());
++}
++
++static bool
++IntegerLiteralEqual(const IntegerLiteral *A, const IntegerLiteral *B) {
++  return A->getValue() == B->getValue();
++}
++
++bool PrefetchExprEquality::exprEqual(const Expr *A, const Expr *B) {
++  const BinaryOperator *B_A, *B_B;
++  const UnaryOperator *U_A, *U_B;
++  const DeclRefExpr *D_A, *D_B;
++  const ImplicitCastExpr *C_A, *C_B;
++  const IntegerLiteral *I_A, *I_B;
++
++  if(!A || ! B) return false;
++
++  // Check common characteristics.  Note that by checking the statement class,
++  // we know the expressions are of the same type and can use cast<> below.
++  if(A->getStmtClass() != B->getStmtClass() ||
++     A->getType() != B->getType() ||
++     A->getValueKind() != B->getValueKind() ||
++     A->getObjectKind() != B->getObjectKind()) return false;
++
++  // TODO better way to switch on type?
++  if((B_A = dyn_cast<BinaryOperator>(A))) {
++    B_B = cast<BinaryOperator>(B);
++    return BinaryOperatorEqual(B_A, B_B);
++  }
++  else if((U_A = dyn_cast<UnaryOperator>(A))) {
++    U_B = cast<UnaryOperator>(B);
++    return UnaryOperatorEqual(U_A, U_B);
++  }
++  else if((D_A = dyn_cast<DeclRefExpr>(A))) {
++    D_B = cast<DeclRefExpr>(B);
++    return DeclRefExprEqual(D_A, D_B);
++  }
++  else if((C_A = dyn_cast<ImplicitCastExpr>(A))) {
++    C_B = cast<ImplicitCastExpr>(B);
++    return ImplicitCastExprEqual(C_A, C_B);
++  }
++  else if((I_A = dyn_cast<IntegerLiteral>(A))) {
++    I_B = cast<IntegerLiteral>(B);
++    return IntegerLiteralEqual(I_A, I_B);
++  }
++  else return false;
++}
 +
 +//===----------------------------------------------------------------------===//
 +// Modifier class definitions
@@ -4384,6 +4503,8 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +// Prefetch expression builder definitions
 +//
 +
++typedef PrefetchExprBuilder::BuildInfo BuildInfo;
++
 +Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
 +  BinaryOperator *B;
 +  UnaryOperator *U;
@@ -4395,9 +4516,9 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +
 +  // TODO better way to switch on type?
 +  if((B = dyn_cast<BinaryOperator>(E)))
-+    return cloneBinaryOperation(B, Info);
++    return cloneBinaryOperator(B, Info);
 +  else if((U = dyn_cast<UnaryOperator>(E)))
-+    return cloneUnaryOperation(U, Info);
++    return cloneUnaryOperator(U, Info);
 +  else if((D = dyn_cast<DeclRefExpr>(E)))
 +    return cloneDeclRefExpr(D, Info);
 +  else if((C = dyn_cast<ImplicitCastExpr>(E)))
@@ -4420,8 +4541,8 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +  return cloneWithReplacement(E, DummyInfo);
 +}
 +
-+Expr *PrefetchExprBuilder::cloneBinaryOperation(BinaryOperator *B,
-+                                                BuildInfo &Info) {
++Expr *PrefetchExprBuilder::cloneBinaryOperator(BinaryOperator *B,
++                                               BuildInfo &Info) {
 +  Expr *LHS = cloneWithReplacement(B->getLHS(), Info),
 +       *RHS = cloneWithReplacement(B->getRHS(), Info);
 +  if(!LHS || !RHS) return nullptr;
@@ -4433,8 +4554,8 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +                                        B->isFPContractable());
 +}
 +
-+Expr *PrefetchExprBuilder::cloneUnaryOperation(UnaryOperator *U,
-+                                               BuildInfo &Info) {
++Expr *PrefetchExprBuilder::cloneUnaryOperator(UnaryOperator *U,
++                                              BuildInfo &Info) {
 +  Expr *Sub = cloneWithReplacement(U->getSubExpr(), Info);
 +  if(!Sub) return nullptr;
 +  return new (*Info.Ctx) UnaryOperator(Sub, U->getOpcode(),
@@ -4475,8 +4596,6 @@ Index: lib/Sema/PrefetchExprBuilder.cpp
 +                                                 BuildInfo &Info) {
 +  Expr *Sub = cloneWithReplacement(C->getSubExpr(), Info);
 +  if(!Sub) return nullptr;
-+
-+  
 +
 +  // Avoid the situation that when replacing an induction variable with another
 +  // expression we accidentally chain together 2 implicit casts (which causes
