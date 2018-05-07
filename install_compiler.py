@@ -227,7 +227,9 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         print('Downloading LLVM source...')
 
         try:
-            rv = subprocess.check_call(['svn', 'co', llvm_url,
+            rv = subprocess.check_call(['svn', 'co',
+                                        "-r", "320332",
+                                        llvm_url,
                                         llvm_download_path],
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT)
@@ -244,7 +246,9 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         #=====================================================
         print('Downloading Clang source...')
         try:
-            rv = subprocess.check_call(['svn', 'co', clang_url,
+            rv = subprocess.check_call(['svn', 'co',
+                                        "-r", "320332",
+                                        clang_url,
                                         clang_download_path],
                                         #stdout=FNULL,
                                         stderr=subprocess.STDOUT)
