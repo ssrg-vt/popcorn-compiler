@@ -69,7 +69,7 @@ void *__popcorn_stack_base = NULL;
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
 	char **envp = argv+argc+1;
-	__popcorn_stack_base = envp;
+	__popcorn_stack_base = argv;
 
 	__init_libc(envp, argv[0]);
 	__libc_start_init();
