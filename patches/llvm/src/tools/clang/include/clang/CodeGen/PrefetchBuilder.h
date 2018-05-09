@@ -46,7 +46,8 @@ private:
   // Prefetch API declarations
   llvm::Constant *Prefetch, *Execute;
 
-  Expr *buildArrayIndexAddress(VarDecl *Base, Expr *Subscript);
+  Expr *buildAddrOf(Expr *ArrSub);
+  Expr *buildArrayIndex(VarDecl *Base, Expr *Subscript);
 };
 
 } // end namespace clang

@@ -155,6 +155,7 @@ typedef llvm::SmallVector<VarDecl *, 4> VarVec;
 /// which allows traversal from innermost scope outwards.  Nodes are reference
 /// counted, so when array accesses which reference the scope (if any) are
 /// deleted, the scoping chain itself gets deleted.
+// TODO verify the chain gets freed correctly
 struct ScopeInfo {
   Stmt *ScopeStmt;                        // Statement providing scope
   std::shared_ptr<ScopeInfo> ParentScope; // The parent in the scope chain
@@ -168,10 +169,15 @@ class ArrayAccess {
 public:
   ArrayAccess(PrefetchRange::Type Ty, ArraySubscriptExpr *S,
               const ScopeInfoPtr &AccessScope)
-    : Valid(true), Ty(Ty), S(S), Base(nullptr), Idx(S->getIdx()),
+    : Valid(true), Ty(Ty), S(S), Base(nullptr), Idx(S),
       AccessScope(AccessScope) {
+
     DeclRefExpr *DR;
     VarDecl *VD;
+
+    // Drill down into subscripts for multi-dimensional arrays, e.g., a[i][j]
+    while(isa<ArraySubscriptExpr>(S->getBase()->IgnoreImpCasts()))
+      S = cast<ArraySubscriptExpr>(S->getBase()->IgnoreImpCasts());
 
     if(!(DR = dyn_cast<DeclRefExpr>(S->getBase()->IgnoreImpCasts()))) {
       Valid = false;
@@ -225,46 +231,63 @@ public:
   ArrayAccessPattern(llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
     : Ignore(Ignore) {}
 
-  /// Which sub-tree of a binary operator we're traversing.  This determines
-  /// whether we're reading or writing the array.
-  enum TraverseStructure { LHS, RHS };
-
   void InitTraversal() {
-    Side.push_back(RHS);
-    CurAccess = nullptr;
+    AssignSide.push_back(TS_RHS);
+    SubscriptSide.push_back(AS_Index);
+    CurAccess.push_back(nullptr);
   }
 
-  /// Traverse a statement.  There's a couple of special traversal rules:
-  ///
-  ///  - If it's a scoping statement, add an enclosing scope to the scope chain
-  //     before traversing the sub-tree
-  ///  - If it's an assignment operation, record structure of the traversal
-  ///    before visiting each of the left & right sub-trees
-  ///  - If it's an array subscript, record all variables used to calculate
-  ///    the index
+  /// Traverse a binary operator & maintain traversal structure to determine if
+  /// we're reading or writing in the array access.  Left-hand side == writing
+  /// and right-hande side == reading.
+  bool TraverseBinaryOperator(BinaryOperator *B) {
+    if(FilterAssignOp(B->getOpcode())) {
+      AssignSide.push_back(TS_LHS);
+      TraverseStmt(B->getLHS());
+      AssignSide.pop_back();
+      AssignSide.push_back(TS_RHS);
+      TraverseStmt(B->getRHS());
+      AssignSide.pop_back();
+    }
+    else RecursiveASTVisitor::TraverseStmt(B);
+    return true;
+  }
+
+  /// Traverse an array subscript & maintain traversal structure to determine if
+  /// we're exploring the base or index of the access.  Don't record subscript
+  /// expressions if we're currently exploring the base of another subscript, as
+  /// it's part of a multi-dimensional access, e.g., a[i][j].
+  bool TraverseArraySubscriptExpr(ArraySubscriptExpr *AS) {
+    // Record array access if we're not exploring a higher-level access' base
+    if(SubscriptSide.back() != AS_Base) VisitArraySubscriptExpr(AS);
+
+    SubscriptSide.push_back(AS_Base);
+    TraverseStmt(AS->getBase());
+    SubscriptSide.pop_back();
+    SubscriptSide.push_back(AS_Index);
+    TraverseStmt(AS->getIdx());
+    SubscriptSide.pop_back();
+
+    // Don't record any more variables for this access
+    if(SubscriptSide.back() != AS_Base) CurAccess.pop_back();
+
+    return true;
+  }
+
+  /// Traverse a statement.  Record scoping information where applicable.
   bool TraverseStmt(Stmt *S) {
+    bool isScope;
+    BinaryOperator *B;
+
     if(!S) return true;
 
-    bool isScope = isScopingStmt(S);
-    BinaryOperator *BinOp = dyn_cast<BinaryOperator>(S);
-    ArraySubscriptExpr *Subscript = dyn_cast<ArraySubscriptExpr>(S);
-
+    isScope = isScopingStmt(S);
     if(isScope) CurScope = ScopeInfoPtr(new ScopeInfo(S, CurScope));
 
-    if(BinOp && FilterAssignOp(BinOp->getOpcode())) {
-      // For assignment operations, LHS = write and RHS = read
-      Side.push_back(LHS);
-      TraverseStmt(BinOp->getLHS());
-      Side.pop_back();
-      Side.push_back(RHS);
-      TraverseStmt(BinOp->getRHS());
-      Side.pop_back();
-    }
-    else if(Subscript) {
-      // TODO doesn't work for nested accesses, e.g., a[b[i]]
-      RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
-      CurAccess = nullptr; // Don't record any more variables
-    }
+    // For some reason RecursiveASTVisitor doesn't redirect binary operations
+    // to TraverseBinaryOperator but instead to individual operation functions
+    // (e.g., TraverseBinAssign).  Instead, redirect those here.
+    if((B = dyn_cast<BinaryOperator>(S))) TraverseBinaryOperator(B);
     else RecursiveASTVisitor<ArrayAccessPattern>::TraverseStmt(S);
 
     if(isScope) CurScope = CurScope->ParentScope;
@@ -272,43 +295,59 @@ public:
     return true;
   }
 
-  /// Analyze an array access; in particular, the index.
+  /// Analyze an array access.
   bool VisitArraySubscriptExpr(ArraySubscriptExpr *Sub) {
     PrefetchRange::Type Ty =
-      (Side.back() == LHS ? PrefetchRange::Write : PrefetchRange::Read);
-    ArrayAccess Access(Ty, Sub, CurScope);
-    if(!Access.isValid() || Ignore.count(Access.getBase())) return true;
-    ArrayAccesses.emplace_back(std::move(Access));
-    CurAccess = &ArrayAccesses.back();
+      AssignSide.back() == TS_LHS ? PrefetchRange::Write :
+                                    PrefetchRange::Read;
+    ArrayAccesses.emplace_back(Ty, Sub, CurScope);
+    CurAccess.push_back(&ArrayAccesses.back());
+
     return true;
   }
 
-  /// Record any variables seen during traversing
+  /// Record variables seen during traversal used to construct indices.
   bool VisitDeclRefExpr(DeclRefExpr *DR) {
-    if(CurAccess && CurAccess) {
+    ArrayAccess *Back = CurAccess.back();
+    if(Back && Back->isValid()) {
       VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
-      if(VD) CurAccess->addVarInIdx(VD);
-      else {
-        // Can't analyze if decl != variable
-        CurAccess->setInvalid();
-        CurAccess = nullptr;
-        ArrayAccesses.pop_back();
-      }
+      if(VD) Back->addVarInIdx(VD);
+      else Back->setInvalid(); // Can't analyze if decl != variable
     }
     return true;
+  }
+
+  /// Rather than removing invalid accesses during traversal (which complicates
+  /// traversal state handling), prune them in one go at the end.
+  void PruneInvalidOrIgnoredAccesses() {
+    llvm::SmallVector<ArrayAccess, 8> Pruned;
+
+    for(auto &Access : ArrayAccesses) {
+      if(Access.isValid() && !Ignore.count(Access.getBase()))
+        Pruned.push_back(Access);
+    }
+    ArrayAccesses = Pruned;
   }
 
   const llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses() const
   { return ArrayAccesses; }
 
 private:
+  /// Which sub-tree of a binary operator we're traversing.  This determines
+  /// whether we're reading or writing the array.
+  enum TraverseStructure { TS_LHS, TS_RHS };
+
+  /// Which part of an array subscript expression we're traversing.
+  enum ArraySubscriptSide { AS_Base, AS_Index };
+
   llvm::SmallVector<ArrayAccess, 8> ArrayAccesses;
   ScopeInfoPtr CurScope;
   llvm::SmallPtrSet<VarDecl *, 4> &Ignore;
 
   // Traversal state
-  llvm::SmallVector<enum TraverseStructure, 8> Side;
-  ArrayAccess *CurAccess;
+  llvm::SmallVector<enum TraverseStructure, 8> AssignSide;
+  llvm::SmallVector<enum ArraySubscriptSide, 8> SubscriptSide;
+  llvm::SmallVector<ArrayAccess *, 8> CurAccess;
 };
 
 void PrefetchAnalysis::mergeArrayAccesses() {
@@ -319,10 +358,9 @@ void PrefetchAnalysis::pruneArrayAccesses() {
   // TODO we could prevent a bunch of copying if we used a linked list instead
   // of a vector for ToPrefetch
   llvm::SmallVector<PrefetchRange, 8>::iterator Cur, Next;
-  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
+  for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++)
     if(PrefetchExprEquality::exprEqual(Cur->getStart(), Cur->getEnd()))
       Cur = ToPrefetch.erase(Cur) - 1;
-  }
 
   for(Cur = ToPrefetch.begin(); Cur != ToPrefetch.end(); Cur++) {
     for(Next = Cur + 1; Next != ToPrefetch.end(); Next++) {
@@ -771,18 +809,19 @@ void PrefetchAnalysis::analyzeForStmt() {
   // Find array/pointer accesses.
   ArrAccesses.InitTraversal();
   ArrAccesses.TraverseStmt(S);
+  ArrAccesses.PruneInvalidOrIgnoredAccesses();
 
   // TODO the following could probably be optimized to reduce re-computing
   // induction variable sets.
 
   // Run the dataflow analysis.  Collect all non-induction variables used to
   // construct array indices to see if induction variables are used in any
-  // assignmend expressions.
-  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
+  // assignment expressions.
+  for(auto &Access : ArrAccesses.getArrayAccesses()) {
     AllIVs.clear();
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
     getAllInductionVars(Scope, AllIVs);
-    for(auto &Var : Acc.getVarsInIdx()) {
+    for(auto &Var : Access.getVarsInIdx()) {
       if(!AllIVs.count(Var)) VarsToTrack.insert(Var);
     }
   }
@@ -792,7 +831,7 @@ void PrefetchAnalysis::analyzeForStmt() {
   // Reconstruct array subscript expressions with induction variable references
   // replaced by their bounds.  This includes variables defined using
   // expressions containing induction variables.
-  for(auto &Acc : ArrAccesses.getArrayAccesses()) {
+  for(auto &Access : ArrAccesses.getArrayAccesses()) {
     LowerBuild.reset();
     UpperBuild.reset();
     AllIVs.clear();
@@ -811,7 +850,7 @@ void PrefetchAnalysis::analyzeForStmt() {
     // In this example, 'i' is not directly used in addressing but the dataflow
     // analysis determines that 'j' is defined based on 'i', and hence we need
     // to replace 'j' with induction variable bounds expressions.
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Acc);
+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
     getAllInductionVars(Scope, AllIVs);
     for(auto &Pair : AllIVs) {
       const InductionVariablePtr &IV = Pair.second;
@@ -821,10 +860,10 @@ void PrefetchAnalysis::analyzeForStmt() {
 
     // Add other variables used in array calculation that may be defined using
     // induction variable expressions.
-    for(auto &Var : Acc.getVarsInIdx()) {
+    for(auto &Var : Access.getVarsInIdx()) {
       IVIt = AllIVs.find(Var);
       if(IVIt == AllIVs.end()) {
-        Dataflow.getVariableValues(Var, Acc.getStmt(), VarExprs);
+        Dataflow.getVariableValues(Var, Access.getStmt(), VarExprs);
         // TODO currently if a variable used in an index calculation can take
         // on more than one value due to control flow, we just avoid inserting
         // prefetch expressions due to all the possible permutations.
@@ -837,11 +876,11 @@ void PrefetchAnalysis::analyzeForStmt() {
 
     // Create array access bounds expressions
     LowerBound =
-      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), LowerBuild),
+      PrefetchExprBuilder::cloneWithReplacement(Access.getIndex(), LowerBuild),
     UpperBound =
-      PrefetchExprBuilder::cloneWithReplacement(Acc.getIndex(), UpperBuild);
+      PrefetchExprBuilder::cloneWithReplacement(Access.getIndex(), UpperBuild);
     if(LowerBound && UpperBound)
-      ToPrefetch.emplace_back(Acc.getAccessType(), Acc.getBase(),
+      ToPrefetch.emplace_back(Access.getAccessType(), Access.getBase(),
                               LowerBound, UpperBound);
   }
 }

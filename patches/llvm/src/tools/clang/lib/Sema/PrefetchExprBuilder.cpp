@@ -20,19 +20,25 @@
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
-// Prefetch expression comparisondefinitions
+// Prefetch expression comparison definitions
 //
 
 static bool
 BinaryOperatorEqual(const BinaryOperator *A, const BinaryOperator *B) {
   if(A->getOpcode() != B->getOpcode()) return false;
-  else return PrefetchExprEquality::exprEqual(A->getRHS(), B->getRHS()) &&
-              PrefetchExprEquality::exprEqual(A->getLHS(), B->getLHS());
+  else return PrefetchExprEquality::exprEqual(A->getLHS(), B->getLHS()) &&
+              PrefetchExprEquality::exprEqual(A->getRHS(), B->getRHS());
 }
 
 static bool UnaryOperatorEqual(const UnaryOperator *A, const UnaryOperator *B) {
   if(A->getOpcode() != B->getOpcode()) return false;
   else return PrefetchExprEquality::exprEqual(A->getSubExpr(), B->getSubExpr());
+}
+
+static bool ArraySubscriptExprEqual(const ArraySubscriptExpr *A,
+                                    const ArraySubscriptExpr *B) {
+  return PrefetchExprEquality::exprEqual(A->getLHS(), B->getLHS()) &&
+         PrefetchExprEquality::exprEqual(A->getRHS(), B->getRHS());
 }
 
 static bool DeclRefExprEqual(const DeclRefExpr *A, const DeclRefExpr *B) {
@@ -54,6 +60,7 @@ IntegerLiteralEqual(const IntegerLiteral *A, const IntegerLiteral *B) {
 bool PrefetchExprEquality::exprEqual(const Expr *A, const Expr *B) {
   const BinaryOperator *B_A, *B_B;
   const UnaryOperator *U_A, *U_B;
+  const ArraySubscriptExpr *A_A, *A_B;
   const DeclRefExpr *D_A, *D_B;
   const ImplicitCastExpr *C_A, *C_B;
   const IntegerLiteral *I_A, *I_B;
@@ -75,6 +82,10 @@ bool PrefetchExprEquality::exprEqual(const Expr *A, const Expr *B) {
   else if((U_A = dyn_cast<UnaryOperator>(A))) {
     U_B = cast<UnaryOperator>(B);
     return UnaryOperatorEqual(U_A, U_B);
+  }
+  else if((A_A = dyn_cast<ArraySubscriptExpr>(A))) {
+    A_B = cast<ArraySubscriptExpr>(B);
+    return ArraySubscriptExprEqual(A_A, A_B);
   }
   else if((D_A = dyn_cast<DeclRefExpr>(A))) {
     D_B = cast<DeclRefExpr>(B);
@@ -140,6 +151,7 @@ typedef PrefetchExprBuilder::BuildInfo BuildInfo;
 Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
   BinaryOperator *B;
   UnaryOperator *U;
+  ArraySubscriptExpr *A;
   DeclRefExpr *D;
   ImplicitCastExpr *C;
   IntegerLiteral *I;
@@ -151,6 +163,8 @@ Expr *PrefetchExprBuilder::cloneWithReplacement(Expr *E, BuildInfo &Info) {
     return cloneBinaryOperator(B, Info);
   else if((U = dyn_cast<UnaryOperator>(E)))
     return cloneUnaryOperator(U, Info);
+  else if((A = dyn_cast<ArraySubscriptExpr>(E)))
+    return cloneArraySubscriptExpr(A, Info);
   else if((D = dyn_cast<DeclRefExpr>(E)))
     return cloneDeclRefExpr(D, Info);
   else if((C = dyn_cast<ImplicitCastExpr>(E)))
@@ -195,6 +209,17 @@ Expr *PrefetchExprBuilder::cloneUnaryOperator(UnaryOperator *U,
                                        U->getValueKind(),
                                        U->getObjectKind(),
                                        SourceLocation());
+}
+
+Expr *PrefetchExprBuilder::cloneArraySubscriptExpr(ArraySubscriptExpr *A,
+                                                   BuildInfo &Info) {
+  Expr *LHS = cloneWithReplacement(A->getLHS(), Info),
+       *RHS = cloneWithReplacement(A->getRHS(), Info);
+  if(!LHS || !RHS) return nullptr;
+  return new (*Info.Ctx) ArraySubscriptExpr(LHS, RHS, A->getType(),
+                                            A->getValueKind(),
+                                            A->getObjectKind(),
+                                            SourceLocation());
 }
 
 Expr *PrefetchExprBuilder::cloneDeclRefExpr(DeclRefExpr *D,

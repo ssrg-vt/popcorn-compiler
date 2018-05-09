@@ -78,6 +78,9 @@ Expr *cloneBinaryOperator(BinaryOperator *B, BuildInfo &Info);
 /// Clone a unary operation.
 Expr *cloneUnaryOperator(UnaryOperator *U, BuildInfo &Info);
 
+/// Clone an array subscript.
+Expr *cloneArraySubscriptExpr(ArraySubscriptExpr *A, BuildInfo &Info);
+
 /// Clone a declaration reference.  If it's an induction variable, replace
 /// with the bound specified by the Upper flag.
 Expr *cloneDeclRefExpr(DeclRefExpr *D, BuildInfo &Info);

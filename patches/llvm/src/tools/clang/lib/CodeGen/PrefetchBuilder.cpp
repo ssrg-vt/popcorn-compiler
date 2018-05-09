@@ -49,7 +49,7 @@ static llvm::Constant *getPrefetchKind(CodeGen::CodeGenFunction &CGF,
   }
 }
 
-Expr *PrefetchBuilder::buildArrayIndexAddress(VarDecl *Base, Expr *Subscript) {
+Expr *PrefetchBuilder::buildArrayIndex(VarDecl *Base, Expr *Subscript) {
   // Build DeclRefExpr for variable representing base
   QualType Ty = Base->getType(), ElemTy;
   DeclRefExpr *DRE = DeclRefExpr::Create(Ctx, NestedNameSpecifierLoc(),
@@ -61,12 +61,14 @@ Expr *PrefetchBuilder::buildArrayIndexAddress(VarDecl *Base, Expr *Subscript) {
   Ty = Ty.getDesugaredType(Ctx);
   if(isa<ArrayType>(Ty)) ElemTy = cast<ArrayType>(ElemTy)->getElementType();
   else ElemTy = cast<PointerType>(Ty)->getPointeeType();
-  Expr *Subscr = new (Ctx) ArraySubscriptExpr(DRE, Subscript, ElemTy, VK_RValue,
-                                              OK_Ordinary, SourceLocation());
+  return new (Ctx) ArraySubscriptExpr(DRE, Subscript, ElemTy, VK_RValue,
+                                      OK_Ordinary, SourceLocation());
+}
 
+Expr *PrefetchBuilder::buildAddrOf(Expr *ArrSub) {
   // Get the address of the array index, e.g., &arr[idx]
-  QualType RePtrTy = Ctx.getPointerType(ElemTy);
-  UnaryOperator *Addr = new (Ctx) UnaryOperator(Subscr, UO_AddrOf, RePtrTy,
+  QualType RePtrTy = Ctx.getPointerType(ArrSub->getType());
+  UnaryOperator *Addr = new (Ctx) UnaryOperator(ArrSub, UO_AddrOf, RePtrTy,
                                                 VK_LValue, OK_Ordinary,
                                                 SourceLocation());
 
@@ -80,9 +82,20 @@ void PrefetchBuilder::EmitPrefetchCall(const PrefetchRange &P) {
   Expr *StartAddr, *EndAddr;
   CodeGen::RValue LoweredStart, LoweredEnd;
   std::vector<llvm::Value *> Params;
+  VarDecl *Array = P.getArray();
 
-  StartAddr = buildArrayIndexAddress(P.getArray(), P.getStart());
-  EndAddr = buildArrayIndexAddress(P.getArray(), P.getEnd());
+  // TODO this assumes we're only prefetching arrays!
+
+  StartAddr = P.getStart();
+  if(!isa<ArraySubscriptExpr>(StartAddr))
+    StartAddr = buildArrayIndex(Array, StartAddr);
+  StartAddr = buildAddrOf(StartAddr);
+
+  EndAddr = P.getEnd();
+  if(!isa<ArraySubscriptExpr>(EndAddr))
+    EndAddr = buildArrayIndex(Array, EndAddr);
+  EndAddr = buildAddrOf(EndAddr);
+
   LoweredStart = CGF.EmitAnyExpr(StartAddr);
   LoweredEnd = CGF.EmitAnyExpr(EndAddr);
   Params = { getPrefetchKind(CGF, P.getType()),
