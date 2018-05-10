@@ -1,4 +1,4 @@
-/* Default linker script, for normal executables */
+/* Template linker script for popcorn-migration x86  */
 /* Copyright (C) 2015-2017, Stefan Lankes, RWTH Aachen University
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -115,12 +115,14 @@ SECTIONS
   }
   .jcr  : { KEEP (*(.jcr)) }
   .got.plt : { *(.got.plt)  *(.igot.plt) }
+  __data_start = .;
   .data : {
     *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
   }
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
+  __data_end = .;
   .percore : {
     . = ALIGN(64);
     percore_start = .;
