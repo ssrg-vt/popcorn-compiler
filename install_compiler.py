@@ -96,7 +96,7 @@ def setup_argument_parsing():
                         help="Install stack transformation library",
                         action="store_true",
                         dest="stacktransform_install")
-    process_opts.add_argument("--install-migrate",
+    process_opts.add_argument("--install-migration",
                         help="Install migration library",
                         action="store_true",
                         dest="migration_install")
