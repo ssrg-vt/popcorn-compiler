@@ -58,7 +58,7 @@ gomp_debug (int kind, const char *msg, ...)
 void
 gomp_verror (const char *fmt, va_list list)
 {
-  fputs ("\nlibgomp: ", stderr);
+  fputs ("\nlibopenpop: ", stderr);
   vfprintf (stderr, fmt, list);
   fputc ('\n', stderr);
 }

@@ -17,6 +17,7 @@
 // thread execution?
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
@@ -26,9 +27,9 @@
 #include "kmp.h"
 
 /* Enable debugging information */
-//#define _DEBUG 1
+//#define _KMP_DEBUG 1
 
-#ifdef _DEBUG
+#ifdef _KMP_DEBUG
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
 #else
 # define DEBUG( ... )

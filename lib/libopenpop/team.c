@@ -31,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
+#include "migrate.h"
 
 #ifdef LIBGOMP_USE_PTHREADS
 /* This attribute contains PTHREAD_CREATE_DETACHED.  */
@@ -62,7 +64,8 @@ struct gomp_thread_start_data
   struct gomp_team_state ts;
   struct gomp_task *task;
   struct gomp_thread_pool *thread_pool;
-  size_t popcorn_tid;
+  int popcorn_tid;
+  int popcorn_nid;
   unsigned int place;
   bool nested;
 };
@@ -83,8 +86,7 @@ gomp_thread_start (void *xdata)
 #if defined HAVE_TLS || defined USE_EMUTLS
   thr = &gomp_tls_data;
 #else
-  struct gomp_thread *local_thr = malloc(sizeof(struct gomp_thread));
-  thr = local_thr;
+  thr = malloc(sizeof(struct gomp_thread));
   pthread_setspecific (gomp_tls_key, thr);
 #endif
   gomp_sem_init (&thr->release, 0);
@@ -97,14 +99,18 @@ gomp_thread_start (void *xdata)
   thr->task = data->task;
   thr->place = data->place;
   thr->popcorn_tid = data->popcorn_tid;
+  thr->popcorn_nid = data->popcorn_nid;
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
 
   if (popcorn_profiling)
-    fprintf(popcorn_prof_fp, "%d %lu\n", gettid(), thr->popcorn_tid);
+    fprintf(popcorn_prof_fp, "%d %d\n", gettid(), thr->popcorn_tid);
 
   /* Make thread pool local. */
   pool = thr->thread_pool;
+
+  if (thr->popcorn_nid)
+    migrate (thr->popcorn_nid, NULL, NULL);
 
   if (data->nested)
     {
@@ -141,10 +147,20 @@ gomp_thread_start (void *xdata)
       while (local_fn);
     }
 
+  /* Migrate back to origin just in case application migrated us elsewhere */
+  if (current_nid() > 0)
+    migrate (0, NULL, NULL);
+
+  /* If user specified nodes, wait for everybody to get back to origin */
+  if (popcorn_nodes_list)
+    gomp_simple_barrier_wait (&pool->threads_dock);
+
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
   thr->task = NULL;
+#if !defined HAVE_TLS && !defined USE_EMUTLS
   free(thr);
+#endif
   return NULL;
 }
 #endif
@@ -251,6 +267,30 @@ gomp_free_pool_helper (void *thread_pool)
 #endif
 }
 
+
+/*
+ * Because Popcorn doesn't currently support threads waiting on remote nodes
+ * while threads exit on the origin, release all threads waiting at the dock
+ * upon shutdown.
+ */
+static void __attribute__((destructor))
+gomp_release_pool_threads_final ()
+{
+  unsigned i;
+  if (popcorn_nodes_list)
+    {
+      struct gomp_thread *thr = gomp_thread ();
+      struct gomp_thread_pool *pool = thr->thread_pool;
+      /* Signal not to run any more functions */
+      for (i = 0; i < pool->threads_used; i++)
+        pool->threads[i]->fn = NULL;
+      /* Break out of function loop */
+      gomp_simple_barrier_wait (&pool->threads_dock);
+      /* Wait for everybody to migrate back */
+      gomp_simple_barrier_wait (&pool->threads_dock);
+    }
+}
+
 /* Free a thread pool and release its threads. */
 
 void
@@ -308,7 +348,7 @@ gomp_free_thread (void *arg __attribute__((unused)))
 #ifndef HAVE_SYNC_BUILTINS
 gomp_mutex_t popcorn_tid_lock;
 #endif
-static size_t popcorn_tid = 1;
+static int popcorn_tid = 1;
 
 /* Launch a team.  */
 
@@ -330,6 +370,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   unsigned int s = 0, rest = 0, p = 0, k = 0;
   unsigned int affinity_count = 0;
   struct gomp_thread **affinity_thr = NULL;
+  unsigned int node, seen_online, nid;
 
   thr = gomp_thread ();
   nested = thr->ts.level;
@@ -816,6 +857,28 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  gomp_init_thread_affinity (attr, p);
 	}
 
+      /* Determine Popcorn node on which to execute */
+      start_data->popcorn_nid = 0;
+      if (!nested && popcorn_threads_per_node)
+        {
+          assert(popcorn_nodes_list && popcorn_nodes_list_len);
+          node = i / popcorn_threads_per_node;
+          seen_online = 0;
+          for(nid = 0; nid < popcorn_nodes_list_len; nid++)
+            {
+              if (popcorn_nodes_list[nid])
+                {
+                  if (seen_online == node)
+                    {
+                      start_data->popcorn_nid = nid;
+                      break;
+                    }
+                  else
+                    seen_online++;
+                }
+            }
+        }
+
       start_data->fn = fn;
       start_data->fn_data = data;
       start_data->ts.team = team;
@@ -997,9 +1060,10 @@ team_destructor (void)
 }
 
 static void __attribute__((destructor))
-popcorn_profiling_destructor (void)
+popcorn_destructor (void)
 {
   if(popcorn_profiling) fclose(popcorn_prof_fp);
+  if(popcorn_nodes_list) free(popcorn_nodes_list);
 }
 #endif
 

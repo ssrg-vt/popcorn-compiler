@@ -26,6 +26,9 @@
 /* This is a generic stub implementation of a CPU affinity setting.  */
 
 #include "libgomp.h"
+#include <assert.h>
+#include "migrate.h"
+#include "platform.h"
 
 void
 gomp_init_affinity (void)
@@ -140,3 +143,46 @@ gomp_get_place_proc_ids_8 (int place_num, int64_t *ids)
 
 ialias(omp_get_place_num_procs)
 ialias(omp_get_place_proc_ids)
+
+/* Defined libmigrate.a (but not exposed in headers) */
+extern void __init_nodes_info(void);
+
+bool
+popcorn_affinity_init_nodes (unsigned long count, bool quiet)
+{
+  int i;
+  bool nodes_online = false;
+
+  /* Make sure the migration library has populated node information */
+  __init_nodes_info();
+
+  popcorn_threads_per_node = count;
+  popcorn_nodes_list_len = MAX_POPCORN_NODES;
+  popcorn_nodes_list = calloc(sizeof(bool), MAX_POPCORN_NODES);
+  if(!popcorn_nodes_list)
+  {
+    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
+    return false;
+  }
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(node_available(i))
+    {
+      popcorn_nodes_list[i] = true;
+      nodes_online = true;
+    }
+    else popcorn_nodes_list[i] = false;
+  }
+
+  if(!nodes_online)
+  {
+    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
+    free(popcorn_nodes_list);
+    popcorn_nodes_list = NULL;
+    if(!quiet)
+      gomp_error ("No Popcorn nodes available");
+  }
+
+  return nodes_online;
+}
