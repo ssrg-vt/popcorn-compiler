@@ -51,7 +51,6 @@ static node_t *node_create(node_cache_t *cache,
                            const memory_span_t *mem,
                            int nid)
 {
-  int ret;
   node_t *n;
 
   assert(mem && "Invalid memory span pointer");
@@ -73,8 +72,7 @@ static node_t *node_create(node_cache_t *cache,
     }
   }
 #endif
-  // TODO extreme internal fragmentation, use node-aware memory allocator
-  ret = posix_memalign((void **)&n, PAGESZ, sizeof(node_t));
+  n = popcorn_malloc(sizeof(node_t), nid);
   assert(n && "Invalid node pointer");
   n->mem = *mem;
 #ifdef _CHECKS
