@@ -27,21 +27,26 @@ def parseArguments():
     config.add_argument("-i", "--input", type=str, required=True,
             help="Input page access trace file")
     config.add_argument("-b", "--binary", type=str,
-            help="Binary that was run to generate the trace")
-    config.add_argument("-s", "--start", type=float, default=-1.0,
+            help="Binary used to generate the trace")
+    config.add_argument("-v", "--verbose", action="store_true",
+            help="Print status updates & verbose files")
+
+    filt = parser.add_argument_group("Page Fault Filtering Options")
+    filt.add_argument("-s", "--start", type=float, default=-1.0,
             help="Only analyze trace entries with timestamps after this time")
-    config.add_argument("-e", "--end", type=float, default=float_info.max,
+    filt.add_argument("-e", "--end", type=float, default=float_info.max,
             help="Only analyze trace entries with timestamps before this time")
-    config.add_argument("--no-code", action="store_true",
+    filt.add_argument("--no-code", action="store_true",
             help="Ignore code page faults - requires -b/--binary")
-    config.add_argument("--no-data", action="store_true",
+    filt.add_argument("--no-data", action="store_true",
             help="Ignore data page faults - requires -b/--binary")
-    config.add_argument("--regions", type=str, default=None,
+    filt.add_argument("-n", "--nodes", type=str, default=None,
+            help="Only parse faults from nodes in the specified " \
+                 "comma-separated list")
+    filt.add_argument("--regions", type=str, default=None,
             help="Only parse regions in the specified comma-separated list")
     # TODO filter by thread
     # TODO filter by access type
-    config.add_argument("-v", "--verbose", action="store_true",
-            help="Print status updates & verbose files")
 
     placement = parser.add_argument_group("Thread Placement Options")
     placement.add_argument("-p", "--partition", action="store_true",
@@ -50,7 +55,7 @@ def parseArguments():
             help="Partition based on raw TID <-> page mappings or based on " \
                  "a TID interference graph",
             default="interference",)
-    placement.add_argument("--nodes", type=int, default=2,
+    placement.add_argument("--num-nodes", type=int, default=2,
             help="Number of nodes over which to distribute threads")
     placement.add_argument("--metis", type=str, default="/usr/local/metis/bin",
             help="Location of the METIS graph partitioning executables")
@@ -103,8 +108,8 @@ def sanityCheck(args):
         .format(args.start, args.end)
 
     if args.partition:
-        assert args.nodes > 1, \
-            "Number of nodes must be > 1 ({})".format(args.nodes)
+        assert args.num_nodes > 1, \
+            "Number of nodes must be > 1 ({})".format(args.num_nodes)
         args.metis = path.abspath(args.metis)
         assert path.isdir(args.metis), \
             "Invalid METIS executable directory '{}'".format(args.metis)
@@ -135,14 +140,15 @@ if __name__ == "__main__":
         symbolTable = None
         dwarfInfo = None
     config = pat.ParseConfig(args.start, args.end, symbolTable, dwarfInfo,
-                             args.no_code, args.no_data, args.regions)
+                             args.no_code, args.no_data, args.regions,
+                             args.nodes)
 
     if args.partition:
         graphs = pat.parsePATtoGraphs(args.input, args.graph_type,
                                       config, args.verbose)
         if os.path.isfile(args.schedule): os.remove(args.schedule)
         for region in graphs:
-            metisgraph.placeThreads(graphs[region], region, args.nodes,
+            metisgraph.placeThreads(graphs[region], region, args.num_nodes,
                                     args.tid_map, args.metis, args.schedule,
                                     args.save_partition, args.verbose)
 
