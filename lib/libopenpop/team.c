@@ -277,10 +277,10 @@ static void __attribute__((destructor))
 gomp_release_pool_threads_final ()
 {
   unsigned i;
-  if (popcorn_nodes_list)
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_thread_pool *pool = thr->thread_pool;
+  if (pool && popcorn_nodes_list)
     {
-      struct gomp_thread *thr = gomp_thread ();
-      struct gomp_thread_pool *pool = thr->thread_pool;
       /* Signal not to run any more functions */
       for (i = 0; i < pool->threads_used; i++)
         pool->threads[i]->fn = NULL;

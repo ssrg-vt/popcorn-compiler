@@ -117,6 +117,12 @@ void *__expand_heap_node(size_t *pn, int nid)
 	}
 
 	if((node_sizes[nid] + n) <= ARENA_SIZE) {
+		// TODO Popcorn Linux doesn't currently support mremap.  Linux *shouldn't*
+		// allocate physical pages to mmap'd regions until we touch them, so just
+		// map in the entire arena.  Note that we should *never* re-enter here, as
+		// the if-statement that guards this path should hereafter be false.
+		n = ARENA_SIZE;
+
 		if(!node_arenas[nid]) {
 			area = __mmap(ARENA_START(arena_start, nid), n, PROT_READ | PROT_WRITE,
 				      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
