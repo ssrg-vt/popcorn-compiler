@@ -284,7 +284,7 @@ gomp_release_pool_threads_final ()
       /* Signal not to run any more functions */
       for (i = 0; i < pool->threads_used; i++)
         pool->threads[i]->fn = NULL;
-      /* Break out of function loop */
+      /* Break threads out of execution loop */
       gomp_simple_barrier_wait (&pool->threads_dock);
       /* Wait for everybody to migrate back */
       gomp_simple_barrier_wait (&pool->threads_dock);

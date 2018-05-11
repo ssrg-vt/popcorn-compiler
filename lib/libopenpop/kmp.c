@@ -72,7 +72,7 @@ void __kmp_wrapper_fn(void *data)
  */
 void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
 {
-  int32_t i, mtid = 0, ltid = 0;
+  int32_t i, mtid, ltid;
   va_list vl;
   void *shared_data;
   __kmp_data_t *wrapper_data = (__kmp_data_t *)malloc(sizeof(__kmp_data_t));
@@ -96,9 +96,10 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   wrapper_data->data = shared_data;
 
   /* Start workers & run the task */
-  // TODO make sure we're not starting n+1 threads
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
+  mtid = 0; // TODO CodeGen on AArch64 seemed to clobber these values before
+  ltid = 0; // calling microtask -- need to debug
   microtask(&mtid, &ltid, shared_data);
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
