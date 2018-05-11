@@ -19,12 +19,19 @@ __migrate_fixup_x86_64:
    *
    * We use the regset to restore the callee-saved registers and post_syscall
    * as the destination at which we return to normal execution.
-   *
-   * Note: we don't need to save caller-saved registers -- due to the stack
-   * transformation process, all caller-saved registers should have been saved
-   * to the stack in the caller's frame.
    */
   push %rsp /* Align stack pointer */
+
+  /*
+   * In a homogeneous migration, the stack pointer was already at the correct
+   * alignment and we just ruined it. Push a sentinel value to both set us at
+   * the correct alignment and to signal an extra pop is needed at cleanup.
+   */
+  test %spl, %spl
+  jz .Lpost_align
+  push $0
+
+.Lpost_align:
   call pthread_migrate_args
   test %rax, %rax
   jz .Lcrash
@@ -49,8 +56,15 @@ __migrate_fixup_x86_64:
   mov 120(%rcx), %r14
   mov 128(%rcx), %r15
 
+  /* Check if we need an extra pop to clean up correctly */
+  pop %rcx
+  test %rcx, %rcx
+  jnz .Lcleanup
+  pop %rcx
+
+.Lcleanup:
   /* Cleanup & return to C! */
-  pop %rsp
+  mov %rcx, %rsp
   xor %rax, %rax /* Return successful migration */
   mov 24(%rdx), %rdx /* Load post_syscall target PC */
   jmp *%rdx
@@ -67,7 +81,14 @@ __migrate_fixup_x86_64:
   mov %rax, %rdi
   mov %rdx, %rsi
   mov %rcx, %rdx
+  mov 0(%rsp), %rcx
+  test %rcx, %rcx
+  jz .Lhomogeneous_stack
   mov 8(%rsp), %rcx
+  jmp .Lcrash_call
+.Lhomogeneous_stack:
+  mov 16(%rsp), %rcx
+.Lcrash_call:
   call crash_x86_64
 
 .endif

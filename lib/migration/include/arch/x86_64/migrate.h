@@ -41,6 +41,9 @@
       ret; \
     })
 
+/* Registers clobbered during __migrate_fixup_x86_64 */
+#define FIXUP_CLOBBERS "rax", "rdx", "rcx"
+
 #define MIGRATE(err) \
     ({ \
       if(dst_arch != ARCH_X86_64) \
@@ -59,7 +62,7 @@
                       "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
                       : /* Clobbered */ \
-                      "edi", "rsi", "eax"); \
+                      FIXUP_CLOBBERS, "edi", "rsi", "eax"); \
       } \
       else \
       { \
@@ -77,7 +80,7 @@
                       "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
                       : /* Clobbered */ \
-                      "edi", "rsi", "eax"); \
+                      FIXUP_CLOBBERS, "edi", "rsi", "eax"); \
       } \
     })
 

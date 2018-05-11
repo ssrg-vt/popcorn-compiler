@@ -87,15 +87,15 @@ $(BUILD_POWERPC)/%.o: src/%.c $(HDR_POWERPC)
 	@$(CC) $(CFLAGS_POWERPC) -o $@ $@.bc
 
 $(BUILD_POWERPC)/arch/aarch64/%.o: src/arch/aarch64/%.s
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (powerpc64)"
 	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
 
 $(BUILD_POWERPC)/arch/powerpc64/%.o: src/arch/powerpc64/%.s
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (powerpc64)"
 	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
 
 $(BUILD_POWERPC)/arch/x86_64/%.o: src/arch/x86_64/%.s
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (powerpc64)"
 	@$(AS_POWERPC) $(AS_FLAGS_POWERPC) -o $@ $<
 
 $(OBJ_POWERPC): $(BUILD_POWERPC)/.dir $(BUILD_POWERPC)/arch/aarch64/.dir \
@@ -138,15 +138,15 @@ $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
 
 $(BUILD_X86)/arch/aarch64/%.o: src/arch/aarch64/%.s $(BUILD_X86)/arch/aarch64/.dir
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (x86-64)"
 	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(BUILD_X86)/arch/powerpc64/%.o: src/arch/powerpc64/%.s $(BUILD_X86)/arch/powerpc64/.dir
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (x86-64)"
 	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(BUILD_X86)/arch/x86_64/%.o: src/arch/x86_64/%.s $(BUILD_X86)/arch/x86_64/.dir
-	@echo " [AS] $< (aarch64)"
+	@echo " [AS] $< (x86-64)"
 	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(OBJ_X86): $(BUILD_X86)/.dir $(BUILD_X86)/arch/aarch64/.dir \

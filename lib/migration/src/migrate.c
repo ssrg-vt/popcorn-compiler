@@ -1,12 +1,8 @@
-#include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 #include <assert.h>
-#include <sys/syscall.h>
 #include <pthread.h>
 #include <stack_transform.h>
-#include <sys/prctl.h>
 #include "platform.h"
 #include "migrate.h"
 #include "config.h"
@@ -171,12 +167,14 @@ int current_nid(void)
 	return status.current_nid;
 }
 
-static void __attribute__((constructor)) __init_nodes_info(void)
+// Note: not static, so if other libraries depend on querying node information
+// in constructors (e.g., libopenpop) they can *secretly* declare & call this
+// themselves.  We won't expose the function declaration though.
+void __attribute__((constructor)) __init_nodes_info(void)
 {
 	int ret;
 	int origin_nid = -1;
 
-	set_default_node(current_nid());
 	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
 	if (ret)
 	{
@@ -187,7 +185,9 @@ static void __attribute__((constructor)) __init_nodes_info(void)
 			ni[i].arch = ARCH_UNKNOWN;
 			ni[i].distance = -1;
 		}
+		set_default_node(-1);
 	}
+	else set_default_node(origin_nid);
 }
 
 /* Data needed post-migration. */
@@ -218,7 +218,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 {
   int err;
   struct shim_data data;
-  struct shim_data *data_ptr = *pthread_migrate_args();
+  struct shim_data *data_ptr;
 
   if(!node_available(nid))
   {
@@ -226,6 +226,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     return;
   }
 
+  data_ptr = *pthread_migrate_args();
   if(!data_ptr) // Invoke migration
   {
     unsigned long sp = 0, bp = 0;
@@ -297,21 +298,27 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       // Note that when migration fails, we resume after the syscall and
       // err is set to 1.
       MIGRATE(err);
-      if(err) perror("Could not migrate to node");
+      if(err)
+      {
+        perror("Could not migrate to node");
+        *pthread_migrate_args() = NULL;
+        return;
+      }
+      data_ptr = *pthread_migrate_args();
     }
-    // Stack transformation failed, but clear the args just in case we try
-    // another migration
-    else fprintf(stderr, "Could not rewrite stack!\n");
+    else
+    {
+      fprintf(stderr, "Could not rewrite stack!\n");
+      return;
+    }
   }
-  else // Post-migration
-  {
-#if _DEBUG == 1
-    // Hold until we can attach post-migration
-    while(__hold);
-#endif
 
-    if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
-  }
+  // Post-migration
+#if _DEBUG == 1
+  // Hold until we can attach post-migration
+  while(__hold);
+#endif
+  if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
 
   *pthread_migrate_args() = NULL;
 }

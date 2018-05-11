@@ -20,10 +20,6 @@ __migrate_fixup_aarch64:
    *
    * We use the regset to restore the callee-saved registers and post_syscall
    * as the destination at which we return to normal execution.
-   *
-   * Note: we don't need to save caller-saved registers -- due to the stack
-   * transformation process, all caller-saved registers should have been saved
-   * to the stack in the caller's frame.
    */
   str x30, [sp,#-16]! /* Don't clobber the link register */
   bl pthread_migrate_args

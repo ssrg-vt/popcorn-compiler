@@ -41,6 +41,8 @@
       ret; \
     })
 
+#define FIXUP_CLOBBERS "x0", "x1", "x2"
+
 #define MIGRATE(err) \
     ({ \
       if(dst_arch != ARCH_AARCH64) \
@@ -59,7 +61,7 @@
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
                       : /* Clobbered */ \
-                      "w0", "x1", "x8"); \
+                      FIXUP_CLOBBERS, "w0", "x1", "x8"); \
       } \
       else \
       { \
@@ -78,7 +80,7 @@
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
                       "i"(SYSCALL_SCHED_MIGRATE) \
                       : /* Clobbered */ \
-                      "x0", "x1", "x8"); \
+                      FIXUP_CLOBBERS, "x0", "x1", "x8"); \
       } \
     })
 

@@ -20,10 +20,6 @@ __migrate_fixup_powerpc64:
    *
    * We use the regset to restore the callee-saved registers and post_syscall
    * as the destination at which we return to normal execution.
-   *
-   * Note: we don't need to save caller-saved registers -- due to the stack
-   * transformation process, all caller-saved registers should have been saved
-   * to the stack in the caller's frame.
    */
   subi 1, 1, 16
   mflr 0
