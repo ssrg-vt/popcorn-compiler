@@ -32,10 +32,12 @@ binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_git_branch = 'llvm-stable-pierre'
+hermit_x86_64_git_branch = 'llvm-stable-pierre'
+hermit_aarch64_git_branch = 'llvm-stable-aarch64'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
-newlib_git_branch = 'llvm-stable'
+newlib_x86_64_git_branch = 'llvm-stable'
+newlib_aarch64_git_branch = 'llvm-stable-aarch64'
 
 pte_git_url = "https://github.com/ssrg-vt/pthread-embedded.git"
 pte_git_branch = "llvm-stable"
@@ -88,14 +90,22 @@ def setup_argument_parsing():
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
-    process_opts.add_argument("--skip-hermit-install",
-                        help="Skip installation of the HermitCore kernel",
+    process_opts.add_argument("--skip-hermit_x86_64-install",
+                        help="Skip installation of the HermitCore x86_64 kernel",
                         action="store_true",
-                        dest="skip_hermit_install")
-    process_opts.add_argument("--skip-newlib-install",
-                        help="Skip installation of newlib",
+                        dest="skip_hermit_x86_64_install")
+    process_opts.add_argument("--skip-hermit_aarch64-install",
+                        help="Skip installation of the HermitCore aarch64 kernel",
                         action="store_true",
-                        dest="skip_newlib_install")
+                        dest="skip_hermit_aarch64_install")
+    process_opts.add_argument("--skip-newlib_x86_64-install",
+                        help="Skip installation of newlib x86_64",
+                        action="store_true",
+                        dest="skip_newlib_x86_64_install")
+    process_opts.add_argument("--skip-newlib-aarch64-install",
+                        help="Skip installation of newlib aarch64",
+                        action="store_true",
+                        dest="skip_newlib_aarch64_install")
     process_opts.add_argument("--skip-pte-install",
                         help="Skip installation of pthread-embedded",
                         action="store_true",
@@ -333,6 +343,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     os.chdir(os.path.join(base_path, 'lib/libelf_hermit'))
 
     print('Making & installing libelf x86_64-hermit...')
+    print('Install Path ' + install_path)
     try:
         rv = subprocess.check_call(['make',
             'INSTALL_PREFIX=%s' % (install_path),
@@ -349,7 +360,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     os.chdir(cur_dir)
 
     #=====================================================
-    # CONFIGURE & INSTALL LIBELF for the host
+    # CONFIGURE & INSTALL LIBELF for the x86_64-host
     #=====================================================
 
     os.chdir(os.path.join(base_path, 'lib/libelf'))
@@ -484,10 +495,24 @@ def install_tools(base_path, install_path, num_threads):
     for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o', 'libgcc.a']:
         shutil.copyfile(objs_dir + '/' + f, install_path + '/x86_64-hermit/lib/' + f)
 
-    shutil.copyfile(base_path + '/util/hermit/ls.x',
+    shutil.copyfile(base_path + '/util/hermit/x86_64_ls.x',
             install_path + '/x86_64-hermit/lib/ls.x')
 
     os.chdir(cur_dir)
+
+    #====================================================
+    # INSTALL hermit aarch64 object files + linker script
+    #====================================================
+    objs_dir = base_path + '/util/hermit/aarch64-objs'
+    os.chdir(objs_dir)
+    for f in ['crti.o', 'crtn.o', 'crtbegin.o', 'crtend.o', 'libgcc.a']:
+        shutil.copyfile(objs_dir + '/' + f, install_path + '/aarch64-hermit/lib/' + f)
+
+    shutil.copyfile(base_path + '/util/hermit/aarch64_ls.x',
+            install_path + '/aarch64-hermit/lib/ls.x')
+
+    os.chdir(cur_dir)
+
 
 def install_call_info_library(base_path, install_path, num_threads):
     cur_dir = os.getcwd()
@@ -552,6 +577,7 @@ def install_pte(base_path, install_path, threads):
         shutil.rmtree(pte_download_path)
 
     print('Downloading pthread-embedded')
+    print('Install Path' + install_path)
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
@@ -579,7 +605,7 @@ def install_pte(base_path, install_path, threads):
 
     os.chdir(cur_dir)
 
-def install_newlib(base_path, install_path, threads):
+def install_newlib_x86_64(base_path, install_path, threads):
     cur_dir = os.getcwd()
     newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib')
 
@@ -587,16 +613,16 @@ def install_newlib(base_path, install_path, threads):
     if(os.path.isdir(newlib_download_path)):
         shutil.rmtree(newlib_download_path)
 
-    print('Downloading newlib')
+    print('Downloading newlib x86_64')
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
-            newlib_git_branch, newlib_git_url, newlib_download_path])
+            newlib_x86_64_git_branch, newlib_git_url, newlib_download_path])
     except Exception as e:
-        print('Cannot download newlib: {}'.format(e))
+        print('Cannot download newlib for x86_64: {}'.format(e))
         sys.exit(1)
 
-    print('Configuring newlib')
+    print('Configuring newlib for x86_64')
     os.makedirs(newlib_download_path + '/build')
     os.chdir(newlib_download_path + '/build')
 
@@ -616,19 +642,87 @@ def install_newlib(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(newlib_conf)
     except Exception as e:
-        print('Cannot configure newlib: {}'.format(e))
+        print('Cannot configure newlib x86_64: {}'.format(e))
         sys.exit(1)
 
-    print('Building and installing newlib')
+    print('Building and installing newlib x86_64')
     try:
         rv = subprocess.check_call(['make', '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
-        print('Cannot build/install newlib: {}'.format(e))
+        print('Cannot build/install newlib x86_64: {}'.format(e))
 
     os.chdir(cur_dir)
 
-def install_hermit(base_path, install_path, threads):
+def install_newlib_aarch64(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib_aarch64')
+
+    # Cleanup src dir if needed
+    if(os.path.isdir(newlib_download_path)):
+        shutil.rmtree(newlib_download_path)
+
+    print('Downloading newlib aarch64')
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
+            newlib_aarch64_git_branch, newlib_git_url, newlib_download_path])
+    except Exception as e:
+        print('Cannot download newlib aarch64: {}'.format(e))
+        sys.exit(1)
+
+    print('Configuring newlib aarch64')
+    os.makedirs(newlib_download_path + '/build')
+    os.chdir(newlib_download_path + '/build')
+
+    mydir =  os.getcwd()
+    print(mydir)
+    '''
+    try:
+       rv = os.system('export CFLAGS_FOR_TARGET="-m64 -O3 -ftree-vectorize -target aarch64-hermit"')
+       rv = os.system('export CXXFLAGS_FOR_TARGET="-m64 -O3 -ftree-vectorize"')
+       rv = os.system('export AS_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-as' % install_path)
+       rv = os.system('export CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path)
+
+    except Exception as e:
+        print('Cannot export newlib aarch64 Environment: {}'.format(e))
+        sys.exit(1)
+
+    newlib_conf = ['CC=%s/x86_64-host/bin/clang' % install_path,
+            '../configure', '--target=aarch64-hermit',
+            '--prefix=%s' % install_path, '--disable-shared',
+            '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
+            '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
+            'target_alias=aarch64-hermit']
+    '''
+    newlib_conf = ['../configure', '--target=aarch64-hermit',
+            '--prefix=%s' % install_path, '--disable-shared',
+            '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
+            '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
+            'target_alias=aarch64-hermit',
+            'CC=%s/x86_64-host/bin/clang' % install_path,
+            'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
+            'AS_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-as' % install_path,
+            'AR_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ar' % install_path,
+            'RANLIB_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ranlib' % install_path,
+            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -ftree-vectorize -mtune=native']
+
+    try:
+        rv = subprocess.check_call(newlib_conf)
+    except Exception as e:
+       print('Cannot configure newlib aarch64: {}'.format(e))
+       sys.exit(1)
+
+    print('Building and installing newlib aarch64')
+    try:
+        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'install'])
+    except Exception as e:
+       print('Cannot build/install newlib aarch64: {}'.format(e))
+
+    os.chdir(cur_dir)
+
+def install_hermit_x86_64(base_path, install_path, threads):
     cur_dir = os.getcwd()
     hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore')
 
@@ -636,17 +730,17 @@ def install_hermit(base_path, install_path, threads):
     if(os.path.isdir(hermit_download_path)):
         shutil.rmtree(hermit_download_path)
 
-    print('Downloading HermitCore kernel')
+    print('Downloading HermitCore x86_64 kernel')
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50',
-            '--recurse-submodules', '-b', hermit_git_branch, hermit_git_url,
+            '--recurse-submodules', '-b', hermit_x86_64_git_branch, hermit_git_url,
             hermit_download_path])
     except Exception as e:
-        print('Cannot download HermitCore: {}'.format(e))
+        print('Cannot download HermitCore x86_64: {}'.format(e))
         sys.exit(1)
 
-    print('Running Cmake for HermitCore')
+    print('Running Cmake for HermitCore x86_64')
    
     os.makedirs(hermit_download_path + '/build')
     os.chdir(hermit_download_path + '/build')
@@ -657,18 +751,61 @@ def install_hermit(base_path, install_path, threads):
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '..'])
     except Exception as e:
-        print('Error running hermitcore cmake: {}'.format(e))
+        print('Error running hermitcore x86_64 cmake: {}'.format(e))
         sys.exit(1)
 
-    print('Building hermitcore')
+    print('Building hermitcore x86_64')
 
     try:
         rv = subprocess.check_call(['make', '-j', str(threads), 'install'])
     except Exception as e:
-        print('Error building hermitcore: {}'.format(e))
+        print('Error building hermitcore x86_64: {}'.format(e))
         sys.exit(1)
 
     os.chdir(cur_dir)
+
+def install_hermit_aarch64(base_path, install_path, threads):
+    cur_dir = os.getcwd()
+    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore_aarch64')
+
+    # Cleanup src dir if needed
+    if(os.path.isdir(hermit_download_path)):
+        shutil.rmtree(hermit_download_path)
+
+    print('Downloading HermitCore aarch64 kernel')
+
+    try:
+        rv = subprocess.check_call(['git', 'clone', '--depth=50',
+            '--recurse-submodules', '-b', hermit_aarch64_git_branch, hermit_git_url,
+            hermit_download_path])
+    except Exception as e:
+        print('Cannot download HermitCore aarch64: {}'.format(e))
+        sys.exit(1)
+
+    print('Running Cmake for HermitCore aarch64')
+
+    os.makedirs(hermit_download_path + '/build')
+    os.chdir(hermit_download_path + '/build')
+
+    try:
+        rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64', '-DCMAKE_INSTALL_PREFIX=%s' %
+            install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
+            '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
+            '..'])
+    except Exception as e:
+        print('Error running hermitcore aarch64 cmake: {}'.format(e))
+        sys.exit(1)
+
+    print('Building hermitcore aarch64')
+
+    try:
+        rv = subprocess.check_call(['make', '-j', str(threads), 'install'])
+    except Exception as e:
+        print('Error building hermitcore aarch64: {}'.format(e))
+        sys.exit(1)
+
+    os.chdir(cur_dir)
+
 
 def install_binutils(base_path, install_path, threads):
     cur_dir = os.getcwd()
@@ -687,10 +824,10 @@ def install_binutils(base_path, install_path, threads):
         print('Cannot download binutils: {}'.format(e))
         sys.exit(1)
 
-    print('Compiling binutils (hermit)')
+    print('Compiling binutils (hermit x86_64)')
 
-    os.makedirs(binutils_download_path + '/build')
-    os.chdir(binutils_download_path + '/build')
+    os.makedirs(binutils_download_path + '/build_x86_64')
+    os.chdir(binutils_download_path + '/build_x86_64')
 
     binutils_prefix = install_path + '/' + 'x86_64-host'
     try:
@@ -706,7 +843,29 @@ def install_binutils(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
 
     except Exception as e:
-        print('Error building binutils: {}'.format(e))
+        print('Error building binutils x86_64: {}'.format(e))
+        sys.exit(1)
+
+    print('Compiling binutils (hermit aarch64)')
+
+    os.makedirs(binutils_download_path + '/build_aarch64')
+    os.chdir(binutils_download_path + '/build_aarch64')
+
+    #compile and install for x86_64 target
+    try:
+        rv = subprocess.check_call(['../configure', '--target=aarch64-hermit',
+            '--prefix=%s' % binutils_prefix, '--with-sysroot',
+            '--disable-multilib', '--disable-shared', '--disable-nls',
+            '--disable-gdb',
+            '--disable-libdecnumber', '--disable-readline', '--disable-sim',
+            '--disable-libssp', '--enable-tls', '--enable-lto',
+            '--enable-plugin'])
+
+        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
+
+    except Exception as e:
+        print('Error building binutils for aarch64 target: {}'.format(e))
         sys.exit(1)
 
     print('Compiling gold')
@@ -745,12 +904,17 @@ def main(args):
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_newlib_install:
-        install_newlib(args.base_path, args.install_path, args.threads)
+    if not args.skip_newlib_x86_64_install:
+        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_hermit_install:
-        install_hermit(args.base_path, args.install_path, args.threads)
+    if not args.skip_newlib_aarch64_install:
+        install_newlib_aarch64(args.base_path, args.install_path, args.threads)
 
+    if not args.skip_hermit_x86_64_install:
+        install_hermit_x86_64(args.base_path, args.install_path, args.threads)
+
+    if not args.skip_hermit_aarch64_install:
+        install_hermit_aarch64(args.base_path, args.install_path, args.threads)
     if not args.skip_pte_install:
         install_pte(args.base_path, args.install_path, args.threads)
 
