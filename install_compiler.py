@@ -676,20 +676,19 @@ def install_newlib_aarch64(base_path, install_path, threads):
     os.chdir(newlib_download_path + '/build')
 
     mydir =  os.getcwd()
-    print(mydir)
-    '''
+    
     try:
-       rv = os.system('export CFLAGS_FOR_TARGET="-m64 -O3 -ftree-vectorize -target aarch64-hermit"')
-       rv = os.system('export CXXFLAGS_FOR_TARGET="-m64 -O3 -ftree-vectorize"')
-       rv = os.system('export AS_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-as' % install_path)
-       rv = os.system('export CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path)
+       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit"
+       rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
+       rv = os.environ["AS_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-as" % install_path
+       rv = os.environ["CC_FOR_TARGET"] = "%s/x86_64-host/bin/clang" % install_path
+       rv = os.environ["CC"] = "%s/x86_64-host/bin/clang" % install_path
 
     except Exception as e:
         print('Cannot export newlib aarch64 Environment: {}'.format(e))
         sys.exit(1)
 
-    newlib_conf = ['CC=%s/x86_64-host/bin/clang' % install_path,
-            '../configure', '--target=aarch64-hermit',
+    newlib_conf = ['../configure', '--target=aarch64-hermit',
             '--prefix=%s' % install_path, '--disable-shared',
             '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
             '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
@@ -706,7 +705,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
             'AR_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ar' % install_path,
             'RANLIB_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ranlib' % install_path,
             'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -ftree-vectorize -mtune=native']
-
+    '''
     try:
         rv = subprocess.check_call(newlib_conf)
     except Exception as e:
