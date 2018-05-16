@@ -102,7 +102,7 @@ def setup_argument_parsing():
                         help="Skip installation of newlib x86_64",
                         action="store_true",
                         dest="skip_newlib_x86_64_install")
-    process_opts.add_argument("--skip-newlib-aarch64-install",
+    process_opts.add_argument("--skip-newlib_aarch64-install",
                         help="Skip installation of newlib aarch64",
                         action="store_true",
                         dest="skip_newlib_aarch64_install")
@@ -338,14 +338,15 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     #=====================================================
-    # CONFIGURE & INSTALL LIBELF x86_64-hermit (ARM TODO)
+    # CONFIGURE & INSTALL LIBELF x86_64-hermit 
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib/libelf_hermit'))
 
     print('Making & installing libelf x86_64-hermit...')
-    print('Install Path ' + install_path)
+    print('Current Directory' +  os.getcwd())
     try:
         rv = subprocess.check_call(['make',
+	    'ARCH=x86_64',
             'INSTALL_PREFIX=%s' % (install_path),
             'POPCORN_INSTALL=%s' % (install_path),
             '-j', str(num_threads), 'install'])
@@ -354,9 +355,28 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         sys.exit(1)
     else:
         if rv != 0:
-            print('Make install failed.')
+            print('Make install libelf x86_64-hermit failed.')
             sys.exit(1)
-
+ 
+    #=====================================================
+    # CONFIGURE & INSTALL LIBELF aarch64-hermit
+    #=====================================================
+    
+    print('Making & installing libelf aarch64-hermit...')
+    try:
+        rv = subprocess.check_call(['make',
+	    'ARCH=aarch64',
+            'INSTALL_PREFIX=%s' % (install_path),
+            'POPCORN_INSTALL=%s' % (install_path),
+            '-j', str(num_threads), 'install'])
+    except Exception as e:
+        print('Could not run Make install libelf aarch64-hermit ({})!'.format(e))
+        sys.exit(1)
+    else:
+        if rv != 0:
+            print('Make install libelf aarch64-hermit failed.')
+            sys.exit(1)
+ 
     os.chdir(cur_dir)
 
     #=====================================================
@@ -607,7 +627,7 @@ def install_pte(base_path, install_path, threads):
 
 def install_newlib_x86_64(base_path, install_path, threads):
     cur_dir = os.getcwd()
-    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib')
+    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib_x86_64')
 
     # Cleanup src dir if needed
     if(os.path.isdir(newlib_download_path)):
@@ -675,8 +695,6 @@ def install_newlib_aarch64(base_path, install_path, threads):
     os.makedirs(newlib_download_path + '/build')
     os.chdir(newlib_download_path + '/build')
 
-    mydir =  os.getcwd()
-    
     try:
        rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit"
        rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
@@ -716,6 +734,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(['make', '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install'])
+        rv = shutil.copyfile(newlib_download_path + '/build/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
     except Exception as e:
        print('Cannot build/install newlib aarch64: {}'.format(e))
 
@@ -723,7 +742,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
 
 def install_hermit_x86_64(base_path, install_path, threads):
     cur_dir = os.getcwd()
-    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore')
+    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore_x86_64')
 
     # Cleanup src dir if needed
     if(os.path.isdir(hermit_download_path)):
