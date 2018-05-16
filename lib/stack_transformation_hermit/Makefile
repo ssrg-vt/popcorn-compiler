@@ -11,7 +11,7 @@ SRC   := src
 UTILS := utils
 
 CC     := $(POPCORN)/x86_64-host/bin/clang
-CFLAGS := -g -Wall -D_GNU_SOURCE --target=x86_64-hermit -popcorn-alignment \
+CFLAGS := -g -Wall -D_GNU_SOURCE -popcorn-alignment \
 	-nostdlib -nostdinc
 
 AR  := $(POPCORN)/x86_64-host/bin/x86_64-hermit-ar
@@ -30,6 +30,20 @@ CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
 else
 CFLAGS += -O3
 endif
+
+###############################################################################
+# aarch64
+###############################################################################
+
+POPCORN_AARCH64 := $(POPCORN)/aarch64-hermit
+
+BUILD_AARCH64 := $(BUILD)/aarch64
+LIB_AARCH64   := $(BUILD_AARCH64)/libstack-transform.a
+CC_AARCH64    := $(CC) -target aarch64-hermit
+LOC_AARCH64   := $(LOC)
+
+LIB_OBJ_AARCH64      := $(subst $(SRC),$(BUILD_AARCH64),$(LIB_SRC:.c=.o))
+LIB_ARCH_OBJ_AARCH64 := $(subst $(SRC),$(BUILD_AARCH64),$(LIB_ARCH_SRC:.c=.o))
 
 ###############################################################################
 # x86-64
@@ -53,7 +67,7 @@ LIB_ARCH_OBJ_X86_64 := $(subst $(SRC),$(BUILD_X86_64),$(LIB_ARCH_SRC:.c=.o))
 
 # Common
 
-all: $(LIB_X86_64)
+all: $(LIB_AARCH64) $(LIB_X86_64)
 
 clean:
 	@rm -rf $(BUILD) $(LIB_X86_64)
@@ -62,6 +76,46 @@ clean:
 	@echo " [MK] $*"
 	@mkdir -p $*
 	@touch $@
+
+# aarch64
+
+build/aarch64/arch/aarch64/%.o: src/arch/aarch64/%.c $(LIB_HDR)
+	@echo " [CC-aarch64] $<"
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+
+build/aarch64/arch/powerpc64/%.o: src/arch/powerpc64/%.c $(LIB_HDR)
+	@echo " [CC-aarch64] $<"
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+
+build/aarch64/arch/x86_64/%.o: src/arch/x86_64/%.c $(LIB_HDR)
+	@echo " [CC-aarch64] $<"
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+
+build/aarch64/%.o: src/%.c $(LIB_HDR)
+	@echo " [CC-aarch64] $<"
+	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+
+$(LIB_AARCH64): $(BUILD_AARCH64)/arch/aarch64/.dir \
+		$(BUILD_AARCH64)/arch/powerpc64/.dir \
+		$(BUILD_AARCH64)/arch/x86_64/.dir \
+		$(LIB_OBJ_AARCH64) \
+		$(LIB_ARCH_OBJ_AARCH64)
+		@echo " [AR-aarch64] $@"
+	@rm -f $(LIB_AARCH64)
+	@$(AR) -cq $(LIB_AARCH64) $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
+install-aarch64: $(LIB_AARCH64)
+	@echo " [INSTALL] $< to $(POPCORN_AARCH64)/lib"
+	@cp $< $(POPCORN_AARCH64)/lib
+	@echo " [INSTALL] $(INC)/stack_transform.h to $(POPCORN_AARCH64)/include"
+	@cp $(INC)/stack_transform.h $(POPCORN_AARCH64)/include
+	@echo " [INSTALL] $(COMMON)/include/arch.h to $(POPCORN_AARCH64)/include"
+	@cp $(COMMON)/include/arch.h $(POPCORN_AARCH64)/include
+	@mkdir -p $(POPCORN_AARCH64)/include/arch/aarch64
+	@mkdir -p $(POPCORN_AARCH64)/include/arch/powerpc64
+	@mkdir -p $(POPCORN_AARCH64)/include/arch/x86_64
+	@cp $(INC)/arch/aarch64/regs.h $(POPCORN_AARCH64)/include/arch/aarch64
+	@cp $(INC)/arch/powerpc64/regs.h $(POPCORN_AARCH64)/include/arch/powerpc64
+	@cp $(INC)/arch/x86_64/regs.h $(POPCORN_AARCH64)/include/arch/x86_64
 
 # x86-64
 
