@@ -6,12 +6,12 @@ The libstack-transform library is needed by all multi-ISA applications, and
 therefore needs to be compiled for all architectures in the system.  The
 Makefile handles this, however.
 
-Note: libstack-transform is built againts Popcorn's musl-libc, libelf and
-libdwarf.  Please install these libraries for all architectures in
-/usr/local/popcorn/<arch> before continuing -- it is important to compile
-against musl-libc, otherwise gcc will default to compiling against glibc and
-glibc-specific symbols will creep into the library.  This will lead to
-undefined/unresolved symbols when compiling applications.
+Note: libstack-transform is built against Popcorn's musl-libc & libelf.  Please
+install these libraries for all architectures in /usr/local/popcorn/<arch>
+before continuing -- it is important to compile against musl-libc, otherwise
+the compiler will default to compiling against glibc and glibc-specific symbols
+will creep into the library.  This will lead to undefined/unresolved symbols
+when compiling applications.
 
 1. Build & install libstack-transform for aarch64 & x86_64:
 

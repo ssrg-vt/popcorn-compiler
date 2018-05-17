@@ -41,6 +41,12 @@ void *realloc (void *, size_t);
 void free (void *);
 void *aligned_alloc(size_t, size_t);
 
+void *popcorn_malloc (size_t, int);
+void *popcorn_calloc (size_t, size_t, int);
+void *popcorn_realloc (void *, size_t, int);
+void popcorn_free (void *);
+int popcorn_get_arena(void *);
+
 _Noreturn void abort (void);
 int atexit (void (*) (void));
 _Noreturn void exit (int);

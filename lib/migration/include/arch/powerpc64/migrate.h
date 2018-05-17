@@ -8,72 +8,82 @@
 
 #define SYSCALL_SCHED_MIGRATE 379
 #define SYSCALL_PROPOSE_MIGRATION 380
-#define SYSCALL_MIGRATION_PROPOSED 381
+#define SYSCALL_GET_THREAD_STATUS 381
 #define SYSCALL_GET_NODE_INFO 382
 
-#define GET_LOCAL_REGSET \
-    struct regset_powerpc64 regs_src; \
-    READ_REGS_POWERPC64(regs_src); \
-    regs_src.pc = get_call_site()
-
-#define LOCAL_STACK_FRAME \
-    (void *)regs_src.r[1]
-
+#define GET_LOCAL_REGSET(regset) \
+    READ_REGS_POWERPC64(regset.powerpc); \
+    regset.powerpc.pc = get_call_site()
 
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
-#define REWRITE_STACK \
-    ({ \
-      int ret = 1; \
-      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_POWERPC64, &regs_src, \
-                              ARCH_POWERPC64, &regs_dst)) \
-      { \
-        fprintf(stderr, "Could not rewrite stack!\n"); \
-        ret = 0; \
-      } \
-      ret; \
-    })
+#define REWRITE_STACK(regs_src, regs_dst, dst_arch) \
+    !st_userspace_rewrite((void *)regs_src.powerpc.pc, ARCH_POWERPC64, \
+                          &regs_src, ARCH_POWERPC64, &regs_dst)
 
-#define SET_FP_REGS // N/A
-
-#define MIGRATE \
+#define MIGRATE(err) \
     { \
-      SET_REGS_POWERPC64(regs_src); \
+      err = 0; \
+      SET_REGS_POWERPC64(regs_src.powerpc); \
       SET_FRAME_POWERPC64(bp, sp); \
       SET_PC_IMM(__migrate_shim_internal); \
     }
 
 #else /* Heterogeneous migration */
 
-#define REWRITE_STACK \
+#define REWRITE_STACK(regs_src, regs_dst, dst_arch) \
     ({ \
       int ret = 1; \
-      if(st_userspace_rewrite(LOCAL_STACK_FRAME, ARCH_POWERPC64, &regs_src, \
-                              dest_arch, &regs_dst)) \
-      { \
-        fprintf(stderr, "Could not rewrite stack!\n"); \
-        ret = 0; \
-      } \
+      if(dst_arch != ARCH_POWERPC64) \
+        ret = !st_userspace_rewrite((void *)regs_src.powerpc.pc, \
+                                    ARCH_POWERPC64, &regs_src, \
+                                    dst_arch, &regs_dst); \
+      else memcpy(&regs_dst, &regs_src, sizeof(struct regset_powerpc64)); \
       ret; \
     })
 
-#define SET_FP_REGS \
-    SET_FP_REGS_NOCLOBBER_POWERPC64(*(struct regset_powerpc64 *)data_ptr->regset)
+#define FIXUP_CLOBBERS "r3", "r4", "r5"
 
-#define MIGRATE \
-    asm volatile ("mr 3, %0;" \
-                  "mr 4, %1;" \
-                  "mr 1, %2;" \
-                  "mr 31,%3;" \
-                  "li 0, %4;" \
-                  "sc ;" \
-                  : /* Outputs */ \
-                  : /* Inputs */ \
-                  "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                  "i"(SYSCALL_SCHED_MIGRATE) \
-                  : /* Clobbered */ \
-                  "r3", "r4", "r0" \
-    )
+#define MIGRATE(err) \
+    ({ \
+      if(dst_arch != ARCH_POWERPC64) \
+      { \
+        data.post_syscall = __migrate_shim_internal; \
+        asm volatile ("mr 3, %1;" \
+                      "mr 4, %2;" \
+                      "mr 1, %3;" \
+                      "mr 31,%4;" \
+                      "li 0, %5;" \
+                      "sc;" \
+                      "mr %0, 3;" \
+                      : /* Outputs */ \
+                      "=r"(err) \
+                      : /* Inputs */ \
+                      "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      FIXUP_CLOBBERS, "r3", "r4", "r0"); \
+      } \
+      else \
+      { \
+        asm volatile ("li 3, 1f;" \
+                      "std 3, %0;" \
+                      "mr 3, %2;" \
+                      "mr 4, %3;" \
+                      "mr 1, %4;" \
+                      "mr 31,%5;" \
+                      "li 0, %6;" \
+                      "sc;" \
+                      "1: mr %1, 3" \
+                      : /* Outputs */ \
+                      "=m"(data.post_syscall), "=r"(err) \
+                      : /* Inputs */ \
+                      "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
+                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      : /* Clobbered */ \
+                      FIXUP_CLOBBERS, "r3", "r4", "r0"); \
+      } \
+    )}
 
 #endif
 

@@ -13,6 +13,7 @@ all: bin
 .PHONY: tags
 tags:
 	ctags -R
+	cscope -Rb
 
 bin:
 	rm -rf $(BINARY)
@@ -21,24 +22,22 @@ bin:
 	chmod +x $(BINARY)
 
 install: bin
+	mkdir -p $(POPCORN)/bin &> /dev/null
 	cp $(BINARY) $(POPCORN)/bin
 	mkdir -p $(POPCORN)/share/align-script-templates &> /dev/null
 	cp -rf $(TEMPLATES) $(POPCORN)/share/align-script-templates
 
-check_dead_code:
-	vulture .
-
 tests: bin
 	@# 2 archs: x86-arm
 	make -C $(TEST_2_ARCHS) clean
-	make -C $(TEST_2_ARCHS) MODE=arm check
+	make -C $(TEST_2_ARCHS) MODE=arm check ALIGN=$(PWD)/$(BINARY)
 	@# 2 archs: x86-ppc - Enable when ppc is merged for the compiler
 	@# make -C $(TEST_2_ARCHS) clean
-	@# make -C $(TEST_2_ARCHS) MODE=ppc check
+	@# make -C $(TEST_2_ARCHS) MODE=ppc check ALIGN=$(PWD)/$(BINARY)
 	@# 3 archs - Enable when ppc is merged for the compiler
 	@# make -C $(TEST_3_ARCHS) clean
-	@# make -C $(TEST_3_ARCHS) check
+	@# make -C $(TEST_3_ARCHS) check ALIGN=$(PWD)/$(BINARY)
 
 clean:
-	rm -rf *.pyc tags $(TMP_ZIPFILE) $(BINARY)
+	rm -rf *.pyc tags cscope.out $(TMP_ZIPFILE) $(BINARY)
 

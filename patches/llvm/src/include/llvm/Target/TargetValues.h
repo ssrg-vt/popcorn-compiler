@@ -51,6 +51,9 @@ protected:
   { return MO.isGlobal() || MO.isSymbol() || MO.isMCSymbol(); }
   static bool isSymbolValue(const MachineOperand *MO)
   { return isSymbolValue(*MO); }
+  static bool isSymbolValueConstant(const MachineOperand &MO);
+  static bool isSymbolValueConstant(const MachineOperand *MO)
+  { return isSymbolValueConstant(*MO); }
 };
 
 } // End llvm namespace

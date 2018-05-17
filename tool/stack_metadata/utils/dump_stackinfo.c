@@ -176,14 +176,12 @@ bool print_loc_record(live_value *record)
     printf(" (duplicate record)");
 
   if(record->is_ptr)
-  {
-    if(record->is_alloca)
-      printf(", is an alloca of size %u byte(s)\n", record->alloca_size);
-    else
-      printf(", is a pointer\n");
-  }
-  else
-    printf("\n");
+    printf(", is a pointer");
+
+  if(record->is_alloca)
+    printf(", is an alloca of size %u byte(s)", record->alloca_size);
+
+  printf("\n");
 
   return true;
 }

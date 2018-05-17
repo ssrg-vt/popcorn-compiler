@@ -18,8 +18,16 @@
 namespace clang {
 namespace Popcorn {
 
+/// Return whether a given target is supported by the compiler.
+bool SupportedTarget(const llvm::StringRef Target);
+
+/// Populate an array with all targets currently supported by the Popcorn
+/// compiler.
+void GetAllTargets(llvm::SmallVector<std::string, 2> &Targets);
+
 /// Return a TargetOptions with features appropriate for Popcorn Linux
-std::shared_ptr<TargetOptions> GetPopcornTargetOpts(llvm::StringRef TripleStr);
+std::shared_ptr<TargetOptions>
+GetPopcornTargetOpts(const llvm::StringRef TripleStr);
 
 /// Strip target-specific CPUs & features from function attributes in all
 /// functions in the module.  This silences warnings from the compiler about

@@ -17,6 +17,7 @@
 // thread execution?
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
@@ -26,9 +27,9 @@
 #include "kmp.h"
 
 /* Enable debugging information */
-//#define _DEBUG 1
+//#define _KMP_DEBUG 1
 
-#ifdef _DEBUG
+#ifdef _KMP_DEBUG
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
 #else
 # define DEBUG( ... )
@@ -71,10 +72,10 @@ void __kmp_wrapper_fn(void *data)
  */
 void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
 {
-  int32_t i, mtid = 0, ltid = 0;
+  int32_t i, mtid, ltid;
   va_list vl;
   void *shared_data;
-  __kmp_data_t wrapper_data;
+  __kmp_data_t *wrapper_data = (__kmp_data_t *)malloc(sizeof(__kmp_data_t));
 
   DEBUG("__kmp_fork_call: %s calling %p\n", loc->psource, microtask);
 
@@ -82,7 +83,7 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   va_start(vl, microtask);
   if(argc > 1)
   {
-    void **args = malloc(sizeof(void*) * argc);
+    void **args = (void **)malloc(sizeof(void*) * argc);
     for(i = 0; i < argc; i++)
       args[i] = va_arg(vl, void *);
     shared_data = (void *)args;
@@ -90,20 +91,22 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   else shared_data = va_arg(vl, void *);
   va_end(vl);
 
-  wrapper_data.task = microtask;
-  wrapper_data.mtid = &mtid;
-  wrapper_data.data = shared_data;
+  wrapper_data->task = microtask;
+  wrapper_data->mtid = &mtid;
+  wrapper_data->data = shared_data;
 
   /* Start workers & run the task */
-  // TODO make sure we're not starting n+1 threads
-  GOMP_parallel_start(__kmp_wrapper_fn, &wrapper_data, 0);
+  GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
+  mtid = 0; // TODO CodeGen on AArch64 seemed to clobber these values before
+  ltid = 0; // calling microtask -- need to debug
   microtask(&mtid, &ltid, shared_data);
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
 
   if(argc > 1) free(shared_data);
+  free(wrapper_data);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -335,7 +338,7 @@ void __kmpc_flush(ident_t *loc)
 
 /*
  * Barrier with cancellation point to send threads from the barrier to the end
- * of the parallel region.  Needs a special code pattern as document in the
+ * of the parallel region.  Needs a special code pattern as documented in the
  * design document for the cancellation feature.
  * @param loc source location information
  * @param gtid global thread ID
@@ -347,8 +350,7 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
   // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  GOMP_barrier();
-  return 0;
+  return GOMP_barrier_cancel();
 }
 
 /*

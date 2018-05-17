@@ -236,7 +236,7 @@ int st_userspace_rewrite(void* sp,
 
   if(!src_handle)
   {
-    ST_WARN("Could not load rewriting information for source!");
+    ST_WARN("Could not load rewriting information for source!\n");
     return 1;
   }
 
@@ -250,7 +250,7 @@ int st_userspace_rewrite(void* sp,
 
   if(!dest_handle)
   {
-    ST_WARN("Could not rewriting information for destination!");
+    ST_WARN("Could not rewriting information for destination!\n");
     return 1;
   }
 
@@ -380,15 +380,20 @@ static bool get_thread_stack(stack_bounds* bounds)
   int ret;
   bool retval;
 
+  // musl-libc's implementation of pthread_attr_getstack returns the lowest
+  // stack address and the stack size to the highest stack address.  It doesn't
+  // include either the pthread data, TLS (above stack) or guard page (below
+  // stack).
   ret = pthread_getattr_np(pthread_self(), &attr);
   ret |= pthread_attr_getstack(&attr, &bounds->low, &stack_size);
   if(ret == 0)
   {
-    // TODO is there any important data stored above muslc/start's stack frame?
+    // Note: due to rounding the size of the pthread data & TLS, the stack size
+    // may not be exactly 8MB
     bounds->high = bounds->low + stack_size;
     if(stack_size != MAX_STACK_SIZE)
     {
-      ST_WARN("unexpected stack size: expected %lx, got %lx\n",
+      ST_INFO("unexpected stack size: expected %lx, got %lx\n",
               MAX_STACK_SIZE, stack_size);
       bounds->low = bounds->high - MAX_STACK_SIZE;
     }

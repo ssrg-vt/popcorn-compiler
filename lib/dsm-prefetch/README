@@ -1,0 +1,16 @@
+--------
+Overview
+--------
+
+The distributed shared memory (DSM) prefetching library is responsible for
+batching and issuing prefetching requests from applications.  This allows
+optimizing the time it takes to bring memory across nodes for distributed
+execution.  In other words, this library gives applications an API to inform
+the kernel which threads are going to be accessing what memory on which nodes.
+The kernel ingests this information and will make a best-effort attempt to
+place the requested data on separate nodes.
+
+Note that this library does *not* change application semantics, it is simply a
+means to give hints to the DSM layer to optimize memory layout in a cluster
+Popcorn setting.
+

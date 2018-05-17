@@ -158,7 +158,7 @@ void put_val_data(rewrite_context ctx,
     return;
   }
 
-  ST_INFO("Setting data: ");
+  ST_INFO("Setting data in frame %d: ", act);
   dest_addr = get_dest_loc(ctx, val, act);
   if(val->type == SM_REGISTER && PROPS(ctx)->is_callee_saved(val->regnum))
     callee_addr = callee_saved_loc(ctx, val->regnum, act);
@@ -179,7 +179,7 @@ void* points_to_stack(const rewrite_context ctx,
   void* stack_addr = NULL;
 
   /* Is it a pointer (NOT an alloca/stack value)? */
-  if(val->is_ptr && !val->is_alloca)
+  if(val->is_ptr)
   {
     /* Get the pointed-to address */
     switch(val->type)
@@ -191,10 +191,6 @@ void* points_to_stack(const rewrite_context ctx,
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum);
       break;
     case SM_DIRECT:
-      // Note: SM_DIRECT live values are allocated to the stack (allocas) and
-      // thus should have been weeded out in the if-statement above
-      ST_ERR(1, "incorrectly encoded live value\n");
-      break;
     case SM_INDIRECT:
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
@@ -502,11 +498,20 @@ static void apply_arch_operation(rewrite_context ctx,
       ST_RAW_INFO("reference to stack slot @ %p\n", stack_slot);
       break;
     case SM_CONSTANT:
-      memcpy(dest, &val->operand_offset_or_constant, val->operand_size);
-      ST_RAW_INFO("constant %ld / %lu / %lx\n",
-                  val->operand_offset_or_constant,
-                  val->operand_offset_or_constant,
-                  val->operand_offset_or_constant);
+      if(val->inst_type == Load64)
+      {
+        memcpy(dest, (void *)val->operand_offset_or_constant, 8);
+        ST_RAW_INFO("load from address 0x%lx\n",
+                    val->operand_offset_or_constant);
+      }
+      else
+      {
+        memcpy(dest, &val->operand_offset_or_constant, val->operand_size);
+        ST_RAW_INFO("constant %ld / %lu / %lx\n",
+                    val->operand_offset_or_constant,
+                    val->operand_offset_or_constant,
+                    val->operand_offset_or_constant);
+      }
       break;
     default:
       ST_ERR(1, "invalid live value location type (%u)\n", val->operand_type);

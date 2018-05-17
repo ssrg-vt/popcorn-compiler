@@ -1,5 +1,6 @@
 #!/bin/sh
 cc="@CC@"
+target="-target @TARGET@-linux-gnu"
 libc_lib="@LIBDIR@"
 ldso="@LDSO@"
 cleared=
@@ -27,11 +28,11 @@ for x ; do
             userlink=
             ;;
         crtbegin*.o|crtend*.o)
-            set -- "$@" $($cc -print-file-name=$x)
+            set -- "$@" $($cc $target -print-file-name=$x)
             ;;
         -lgcc|-lgcc_eh)
             file=lib${x#-l}.a
-            set -- "$@" $($cc -print-file-name=$file)
+            set -- "$@" $($cc $target -print-file-name=$file)
             ;;
         -l*)
             test "$userlink" && set -- "$@" "$x"
@@ -48,4 +49,4 @@ for x ; do
     esac
 done
 
-exec $($cc -print-prog-name=ld) -nostdlib "$@" -lc -dynamic-linker "$ldso"
+exec $($cc $target -print-prog-name=ld) -nostdlib "$@" -lc -lgcc -lgcc_eh -dynamic-linker "$ldso"

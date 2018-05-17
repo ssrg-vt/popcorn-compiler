@@ -17,7 +17,7 @@ class AbstractArchitecture():
 		self._linkerScript = ls
 
 	def getLsTemplate(self):
-		return (Globals.POPCORN_LOCATION + "/share/align-script-templates/" + 
+		return (Globals.POPCORN_LOCATION + "/share/align-script-templates/" +
 			self._linkerScriptTemplate)
 
 	def getExecutable(self):

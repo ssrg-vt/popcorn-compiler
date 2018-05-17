@@ -36,14 +36,14 @@ IR := $(SRC:.c=.ll)
 
 # Linker
 LD      := $(POPCORN)/bin/ld.gold
-LDFLAGS := -z relro --hash-style=gnu --build-id -static
+LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/crti.o \
            /lib/libc.a \
+           /lib/libopenpop.a \
            /lib/libmigrate.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
-	   /lib/libopenpop.a \
            /lib/libpthread.a \
            /lib/libc.a \
            /lib/libm.a \
@@ -69,7 +69,7 @@ ARM64_BUILD   := build_aarch64
 # Generated files
 ARM64_ALIGNED     := $(BIN)_aarch64
 ARM64_VANILLA     := $(ARM64_BUILD)/$(ARM64_ALIGNED)
-ARM64_OBJ         := $(SRC:.c=.o)
+ARM64_OBJ         := $(SRC:.c=_aarch64.o)
 ARM64_MAP         := $(ARM64_BUILD)/map.txt
 ARM64_LD_SCRIPT   := $(ARM64_BUILD)/aligned_linker_script_arm.x
 ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
@@ -155,13 +155,13 @@ clean:
 	@echo " [IR] $<"
 	@$(CC) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $<
 
-%.o: %.c
-	@echo " [CC] $<"
-	@$(CC) $(HET_CFLAGS) -c $(ARM64_INC) -o $@ $<
-
 ###########
 # AArch64 #
 ###########
+
+%_aarch64.o: %.c
+	@echo " [CC] $<"
+	@$(CC) $(HET_CFLAGS) -c $(ARM64_INC) -o $(<:.c=.o) $<
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
@@ -182,6 +182,8 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 ##########
 # x86-64 #
 ##########
+
+%_x86_64.o: %_aarch64.o
 
 $(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"

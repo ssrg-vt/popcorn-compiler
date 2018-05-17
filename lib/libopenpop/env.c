@@ -88,6 +88,9 @@ int gomp_debug_var;
 unsigned int gomp_num_teams_var;
 char *goacc_device_type;
 int goacc_device_num;
+bool *popcorn_nodes_list;
+unsigned long popcorn_nodes_list_len;
+unsigned long popcorn_threads_per_node;
 
 #ifndef LIBGOMP_OFFLOADED_ONLY
 
@@ -559,6 +562,60 @@ parse_one_place (char **envp, bool *negatep, unsigned long *lenp,
   *lenp = len;
   *stridep = stride;
   return true;
+}
+
+/* Popcorn: "nodes" corresponds to nodes in a cluster participating in the
+   single system image.  This is similar in spirit to to OMP_PLACES. */
+static bool
+parse_popcorn_nodes_var (const char *name)
+{
+  char *env = getenv (name), *end;
+  unsigned long count = 0;
+  if (env == NULL)
+    goto invalid;
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (env == '\0')
+    goto invalid;
+
+  if (strncasecmp (env, "nodes", 5) == 0)
+  {
+    env += 5;
+    while (isspace ((unsigned char) *env))
+      ++env;
+    if (*env == '\0')
+      goto invalid;
+    if (*env++ != '(')
+      goto invalid;
+    while (isspace ((unsigned char) *env))
+      ++env;
+
+    errno = 0;
+    count = strtoul (env, &end, 10);
+    if (errno)
+      goto invalid;
+    env = end;
+    while (isspace ((unsigned char) *env))
+      ++env;
+    if (*env != ')')
+      goto invalid;
+    ++env;
+    while (isspace ((unsigned char) *env))
+      ++env;
+    if (*env != '\0')
+      goto invalid;
+
+    return popcorn_affinity_init_nodes (count, false);
+  }
+  else
+  {
+    // TODO mini-language like OpenMP's OMP_PLACE: {start:len:stride}
+    goto invalid;
+  }
+
+invalid:
+  return false;
 }
 
 static bool
@@ -1271,6 +1328,11 @@ initialize_env (void)
     gomp_throttled_spin_count_var = 100LL;
   if (gomp_throttled_spin_count_var > gomp_spin_count_var)
     gomp_throttled_spin_count_var = gomp_spin_count_var;
+
+  /* Parse thread placement across nodes from environment variables. Don't
+     enable if user specified places, not yet supported. */
+  if (!gomp_global_icv.bind_var)
+    parse_popcorn_nodes_var ("POPCORN_PLACES");
 
   /* Popcorn's page access trace files don't provide a clean mapping of task
      IDs to user-land threads (including OpenMP threads).  If profiling is

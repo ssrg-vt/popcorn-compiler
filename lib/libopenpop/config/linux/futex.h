@@ -35,31 +35,31 @@
 
 #define _GNU_SOURCE 
 #include <unistd.h>
-#include <sys/syscall.h>
+#include_next <futex.h>
 
 #pragma GCC visibility pop
 
 static inline void
 futex_wait (int *addr, int val)
 {
-  int err = syscall (SYS_futex, addr, gomp_futex_wait, val, NULL);
+  int err = futex (addr, gomp_futex_wait, val, NULL);
   if (__builtin_expect (err < 0 && errno == ENOSYS, 0))
     {
       gomp_futex_wait &= ~FUTEX_PRIVATE_FLAG;
       gomp_futex_wake &= ~FUTEX_PRIVATE_FLAG;
-      syscall (SYS_futex, addr, gomp_futex_wait, val, NULL);
+      futex (addr, gomp_futex_wait, val, NULL);
     }
 }
 
 static inline void
 futex_wake (int *addr, int count)
 {
-  int err = syscall (SYS_futex, addr, gomp_futex_wake, count);
+  int err = futex (addr, gomp_futex_wake, count, NULL);
   if (__builtin_expect (err < 0 && errno == ENOSYS, 0))
     {
       gomp_futex_wait &= ~FUTEX_PRIVATE_FLAG;
       gomp_futex_wake &= ~FUTEX_PRIVATE_FLAG;
-      syscall (SYS_futex, addr, gomp_futex_wake, count);
+      futex (addr, gomp_futex_wake, count, NULL);
     }
 }
 

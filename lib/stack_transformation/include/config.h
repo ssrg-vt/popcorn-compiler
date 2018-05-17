@@ -18,7 +18,7 @@
  * debugging be enabled).
  */
 //#define _LOG 1
-#define LOG_FILE "stack-transform.log"
+#define LOG_FILE "/tmp/stack-transform.log"
 
 /* Enable sanity checks, increases transformation overhead. */
 //#define _CHECKS 1

@@ -9,10 +9,12 @@
 extern "C" {
 #endif
 
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE
-#endif
-#include <sched.h>
+/**
+ * Return whether a node is available as a migration target.
+ * @param nid the node ID
+ * @return one if the node is available, or zero otherwise
+ */
+int node_available(int nid);
 
 /**
  * Get the current architecture.

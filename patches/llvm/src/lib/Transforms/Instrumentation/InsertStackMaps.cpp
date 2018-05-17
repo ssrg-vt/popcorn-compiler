@@ -54,6 +54,13 @@ struct ValueComp
  */
 class InsertStackMaps : public ModulePass
 {
+private:
+  /* Some useful typedefs */
+  typedef SmallVector<const Instruction *, 4> InstVec;
+  typedef DenseMap<const Instruction *, InstVec> InstHidingMap;
+  typedef SmallVector<const Argument *, 4> ArgVec;
+  typedef DenseMap<const Instruction *, ArgVec> ArgHidingMap;
+
 public:
   static char ID;
   size_t callSiteID;
@@ -86,8 +93,8 @@ public:
 
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
-    std::set<const Instruction *> hiddenInst;
-    std::set<const Argument *> hiddenArgs;
+    InstHidingMap hiddenInst;
+    ArgHidingMap hiddenArgs;
 
     DEBUG(errs() << "\n********** Begin InsertStackMaps **********\n"
                  << "********** Module: " << M.getName() << " **********\n\n");
@@ -125,11 +132,19 @@ public:
         {
           if(Popcorn::isCallSite(&*i))
           {
-            CallInst *CI = cast<CallInst>(&*i);
-            IRBuilder<> builder(CI->getNextNode());
+            CallSite CS(i);
+            if(CS.isInvoke())
+            {
+              DEBUG(dbgs() << "WARNING: unhandled invoke:"; CS->dump());
+              continue;
+            }
+
+            IRBuilder<> builder(CS->getNextNode());
             std::vector<Value *> args(2);
-            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()), this->callSiteID++);
-            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()), 0);
+            args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()),
+                                             this->callSiteID++);
+            args[1] = ConstantInt::getSigned(Type::getInt32Ty(M.getContext()),
+                                             0);
 
             if(NoLiveVals) {
               builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
@@ -139,22 +154,22 @@ public:
 
             live = liveVals.getLiveValues(&*i);
             for(const Value *val : *live) sortedLive.insert(val);
-            for(const Instruction *val : hiddenInst) {
+            for(const auto &pair : hiddenInst) {
               /*
                * The two criteria for inclusion of a hidden value are:
                *   1. The value's definition dominates the call
                *   2. A use which hides the definition is in the stackmap
                */
-              if(DT.dominates(val, CI) && hasLiveUser(val, *live))
-                sortedLive.insert(val);
+              if(DT.dominates(pair.first, i) && live->count(pair.first))
+                for(auto &inst : pair.second) sortedLive.insert(inst);
             }
-            for(const Argument *val : hiddenArgs) {
+            for(const auto &pair : hiddenArgs) {
               /*
                * Similar criteria apply as above, except we know arguments
                * dominate the entire function.
                */
-              if(hasLiveUser(val, *live))
-                sortedLive.insert(val);
+              if(live->count(pair.first))
+                for(auto &inst : pair.second) sortedLive.insert(inst);
             }
             delete live;
 
@@ -162,16 +177,16 @@ public:
               const Function *calledFunc;
 
               errs() << "  ";
-              if(!CI->getType()->isVoidTy()) {
-                CI->printAsOperand(errs(), false);
+              if(!CS->getType()->isVoidTy()) {
+                CS->printAsOperand(errs(), false);
                 errs() << " ";
               }
               else errs() << "(void) ";
 
-              calledFunc = CI->getCalledFunction();
+              calledFunc = CS.getCalledFunction();
               if(calledFunc && calledFunc->hasName())
               {
-                StringRef name = CI->getCalledFunction()->getName();
+                StringRef name = CS.getCalledFunction()->getName();
                 errs() << name << " ";
               }
               errs() << "ID: " << this->callSiteID;
@@ -282,7 +297,7 @@ private:
    * This function collects the values used in these instructions, which are
    * later added to the appropriate stackmaps.
    *
-   * 1. Instructions which access fields of structs or entries of arrays, like
+   *  - Instructions which access fields of structs or entries of arrays, like
    *    getelementptr, can interfere with the live value analysis to hide the
    *    backing values used in the instruction.  For example, the following IR
    *    obscures %arr from the live value analysis:
@@ -293,51 +308,32 @@ private:
    *  -> Access to %arr might only happen through %arrayidx, and %arr may not
    *     be used any more
    *
-   * 2. Compare instructions, such as icmp & fcmp, can be lowered to complex &
-   *    architecture-specific  machine code by the backend.  To help capture
-   *    all live values, we capture both the value used in the comparison and
-   *    the resulting condition value.
-   *
    */
-  void getHiddenVals(Function &F,
-                     std::set<const Instruction *> &inst,
-                     std::set<const Argument *> &args)
+  void getHiddenVals(Function &F, InstHidingMap &inst, ArgHidingMap &args)
   {
     /* Does the instruction potentially hide values from liveness analysis? */
     auto hidesValues = [](const Instruction *I) {
       if(isa<ExtractElementInst>(I) || isa<InsertElementInst>(I) ||
          isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
-         isa<GetElementPtrInst>(I) || isa<ICmpInst>(I) || isa<FCmpInst>(I))
-        return true ;
+         isa<GetElementPtrInst>(I) || isa<BitCastInst>(I))
+        return true;
       else return false;
     };
 
     /* Search for instructions that obscure live values & record operands */
     for(inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
+      InstVec &InstsHidden = inst[&*i];
+      ArgVec &ArgsHidden = args[&*i];
+
       if(hidesValues(&*i)) {
         for(unsigned op = 0; op < i->getNumOperands(); op++) {
           if(isa<Instruction>(i->getOperand(op)))
-            inst.insert(cast<Instruction>(i->getOperand(op)));
+            InstsHidden.push_back(cast<Instruction>(i->getOperand(op)));
           else if(isa<Argument>(i->getOperand(op)))
-            args.insert(cast<Argument>(i->getOperand(op)));
+            ArgsHidden.push_back(cast<Argument>(i->getOperand(op)));
         }
       }
     }
-  }
-
-  /**
-   * Return whether or not a value's user is in a liveness set.
-   *
-   * @param Val a value whose users are checked against the liveness set
-   * @param Live a set of live values
-   * @return true if a user is in the liveness set, false otherwise
-   */
-  bool hasLiveUser(const Value *Val,
-                   const std::set<const Value *> &Live) const {
-    Value::const_use_iterator use, e;
-    for(use = Val->use_begin(), e = Val->use_end(); use != e; use++)
-      if(Live.count(use->getUser())) return true;
-    return false;
   }
 };
 
