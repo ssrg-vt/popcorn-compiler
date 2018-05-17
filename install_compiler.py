@@ -645,11 +645,10 @@ def main(args):
                           args.libmigration_type,
                           args.enable_libmigration_timing)
 
-    for target in args.install_targets:
-        if args.libopenpop_install:
+    if args.libopenpop_install:
+    	for target in args.install_targets:
             install_libopenpop(args.base_path, args.install_path, target,
                                args.install_targets[0], args.threads)
-
 
     if args.stackdepth_install:
         install_stackdepth(args.base_path, args.install_path, args.threads)
