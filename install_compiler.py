@@ -605,6 +605,11 @@ def install_cxx(install_path, targets):
     extract_dir = os.path.join(install_path, 'src', 'c++')
 
     for target in targets:
+        if os.path.isdir(os.path.join(install_path, target, 'include', 'c++')):
+            print("Found C++ installation ({})".format(target))
+            continue
+        print("Installing C++ headers/libraries ({})".format(target))
+
         try:
             urllib.urlretrieve(alpine_url.replace('!!', target), package)
         except Exception as e:
