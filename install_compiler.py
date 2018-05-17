@@ -646,7 +646,7 @@ def main(args):
                           args.enable_libmigration_timing)
 
     if args.libopenpop_install:
-    	for target in args.install_targets:
+        for target in args.install_targets:
             install_libopenpop(args.base_path, args.install_path, target,
                                args.install_targets[0], args.threads)
 
