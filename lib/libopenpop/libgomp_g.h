@@ -48,6 +48,8 @@ extern void GOMP_atomic_end (void);
 
 /* loop.c */
 
+extern void GOMP_loop_dynamic_init (long, long, long, long);
+
 extern bool GOMP_loop_static_start (long, long, long, long, long *, long *);
 extern bool GOMP_loop_dynamic_start (long, long, long, long, long *, long *);
 extern bool GOMP_loop_guided_start (long, long, long, long, long *, long *);
@@ -118,6 +120,11 @@ extern void GOMP_loop_end_nowait (void);
 extern bool GOMP_loop_end_cancel (void);
 
 /* loop_ull.c */
+
+extern void GOMP_loop_ull_dynamic_init (unsigned long long,
+					 unsigned long long,
+					 unsigned long long,
+					 unsigned long long);
 
 extern bool GOMP_loop_ull_static_start (bool, unsigned long long,
 					unsigned long long,

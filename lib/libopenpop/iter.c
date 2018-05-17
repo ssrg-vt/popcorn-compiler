@@ -30,6 +30,25 @@
 #include <stdlib.h>
 
 
+/* The gomp_iter_is_last* functions return true if the specified iteration is
+   the last for the work share. */
+
+bool
+gomp_iter_is_last (long end)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_work_share *ws = thr->ts.work_share;
+  return end >= ws->end;
+}
+
+bool
+gomp_iter_is_last_ull (unsigned long long end)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_work_share *ws = thr->ts.work_share;
+  return end >= ws->end_ull;
+}
+
 /* This function implements the STATIC scheduling method.  The caller should
    iterate *pstart <= x < *pend.  Return zero if there are more iterations
    to perform; nonzero if not.  Return less than 0 if this thread had

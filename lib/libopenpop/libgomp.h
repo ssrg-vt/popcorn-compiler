@@ -732,6 +732,9 @@ extern bool popcorn_affinity_init_nodes (unsigned long, bool);
 
 /* iter.c */
 
+extern bool gomp_iter_is_last (long);
+extern bool gomp_iter_is_last_ull (unsigned long long);
+
 extern int gomp_iter_static_next (long *, long *);
 extern bool gomp_iter_dynamic_next_locked (long *, long *);
 extern bool gomp_iter_guided_next_locked (long *, long *);

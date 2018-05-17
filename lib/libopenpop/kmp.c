@@ -22,7 +22,7 @@
 #include <string.h>
 #include <assert.h>
 #include "config.h"
-#include "omp.h"
+#include "libgomp.h"
 #include "libgomp_g.h"
 #include "kmp.h"
 
@@ -202,35 +202,107 @@ void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
 }
 
-void __kmpc_dispatch_init_4(ident_t *loc,
-                            int32_t gtid,
-                            enum sched_type schedule,
-                            int32_t lb,
-                            int32_t ub,
-                            int32_t st,
-                            int32_t chunk)
-{
-  //TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
+/*
+ * Initialize a dynamic work-sharing construct using a given lower bound, upper
+ * bound, stride and chunk.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ * @param schedtype scheduling type
+ * @param lb the loop iteration range's lower bound
+ * @param ub the loop iteration range's upper bound
+ * @param st the stride
+ * @param chunk the chunk size
+ */
+#define __kmpc_dispatch_init(NAME, TYPE, INIT_FUNC)                           \
+void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
+                            int32_t gtid,                                     \
+                            enum sched_type schedule,                         \
+                            TYPE lb,                                          \
+                            TYPE ub,                                          \
+                            TYPE st,                                          \
+                            TYPE chunk)                                       \
+{                                                                             \
+  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d %ld %ld %ld %ld\n",           \
+        loc->psource, gtid, schedule, (int64_t)lb, (int64_t)ub,               \
+        (int64_t)st, (int64_t)chunk);                                         \
+                                                                              \
+  assert(schedule == kmp_sch_dynamic_chunked && "Invalid dynamic schedule");  \
+  INIT_FUNC(lb, ub + 1, st, chunk);                                           \
 }
 
-int __kmpc_dispatch_next_4(ident_t *loc,
-                           int32_t gtid,
-                           int32_t *p_last,
-                           int32_t *p_lb,
-                           int32_t *p_ub,
-                           int32_t *p_st)
-{
-  // TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
-  return -1;
+__kmpc_dispatch_init(4, int32_t, GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(4u, uint32_t, GOMP_loop_ull_dynamic_init)
+__kmpc_dispatch_init(8, int64_t, GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(8u, uint64_t, GOMP_loop_ull_dynamic_init)
+
+/*
+ * Mark the end of a dynamically scheduled loop.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ */
+#define __kmpc_dispatch_fini(NAME, END_FUNC) \
+void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
+{                                                                             \
+  DEBUG("__kmpc_dispatch_fini_"#NAME": %s %d\n", loc->psource, gtid);         \
+  END_FUNC();                                                                 \
 }
 
-void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
-{
-  // TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
+__kmpc_dispatch_fini(4, GOMP_loop_end)
+__kmpc_dispatch_fini(4u, GOMP_loop_end)
+__kmpc_dispatch_fini(8, GOMP_loop_end)
+__kmpc_dispatch_fini(8u, GOMP_loop_end)
+
+/*
+ * Grab the next batch of iterations according to the previously initialized
+ * work-sharing construct.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ * @param p_last pointer to a flag set to 1 if this is the last chunk or 0
+ *               otherwise
+ * @param p_lb pointer to the lower bound
+ * @param p_ub pointer to the upper bound
+ * @param p_st (unused)
+ */
+#define __kmpc_dispatch_next(NAME, TYPE, NEXT_FUNC, ISLAST_FUNC, GTYPE)       \
+int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
+                                int32_t gtid,                                 \
+                                int32_t *p_last,                              \
+                                TYPE *p_lb,                                   \
+                                TYPE *p_ub,                                   \
+                                TYPE *p_st)                                   \
+{                                                                             \
+  bool ret;                                                                   \
+  GTYPE istart, iend;                                                         \
+                                                                              \
+  ret = NEXT_FUNC(&istart, &iend);                                            \
+  *p_lb = istart;                                                             \
+  *p_ub = iend - 1;                                                           \
+  *p_last = ISLAST_FUNC(iend);                                                \
+                                                                              \
+  if(!ret)                                                                    \
+  {                                                                           \
+    *p_lb = 0;                                                                \
+    *p_ub = 0;                                                                \
+    *p_st = 0;                                                                \
+    __kmpc_dispatch_fini_##NAME(loc, gtid);                                   \
+  }                                                                           \
+                                                                              \
+  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d %ld %ld %ld\n",            \
+        loc->psource, gtid, ret, *p_last, (int64_t)*p_lb, (int64_t)*p_ub,     \
+        (int64_t)*p_st);                                                      \
+                                                                              \
+  return ret;                                                                 \
 }
+
+__kmpc_dispatch_next(4, int32_t, GOMP_loop_dynamic_next,
+                     gomp_iter_is_last, long)
+__kmpc_dispatch_next(4u, uint32_t, GOMP_loop_ull_dynamic_next,
+                     gomp_iter_is_last_ull, unsigned long long)
+__kmpc_dispatch_next(8, int64_t, GOMP_loop_dynamic_next,
+                     gomp_iter_is_last, long)
+__kmpc_dispatch_next(8u, uint64_t, GOMP_loop_ull_dynamic_next,
+                     gomp_iter_is_last_ull, unsigned long long)
+
 /*
  * Start execution of an ordered construct.
  * @param loc source location information
@@ -238,7 +310,7 @@ void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
  */
 void __kmpc_ordered(ident_t *loc, int32_t gtid)
 {
-  DEBUG("__kmpc_ordered: %s \n", loc->psource, gtid);
+  DEBUG("__kmpc_ordered: %s %d\n", loc->psource, gtid);
 
   GOMP_ordered_start();
 }

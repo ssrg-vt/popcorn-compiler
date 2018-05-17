@@ -17,6 +17,7 @@
 enum sched_type {
   kmp_sch_static_chunked = 33, /* statically chunked algorithm */
   kmp_sch_static = 34, /* static unspecialized */
+  kmp_sch_dynamic_chunked = 35, /* dynamically chunked algorithm */
   kmp_sch_default = kmp_sch_static /* default scheduling algorithm */
 };
 
