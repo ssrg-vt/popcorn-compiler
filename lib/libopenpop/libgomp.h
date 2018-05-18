@@ -632,6 +632,9 @@ struct gomp_thread
 
   /* Node ID on which this thread is executing in Popcorn. */
   int popcorn_nid;
+
+  /* Reduction method for variables currently being reduced. */
+  int reduction_method;
 };
 
 

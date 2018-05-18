@@ -39,15 +39,6 @@
 // Parallel region
 ///////////////////////////////////////////////////////////////////////////////
 
-/* Source location information for OpenMP parallel construct. */
-typedef struct ident {
-  int32_t reserved_1;
-  int32_t flags;
-  int32_t reserved_2;
-  int32_t reserved_3;
-  char const *psource;
-} ident_t;
-
 /*
  * Converts calls to GNU OpenMP runtime outlined regions to Intel OpenMP
  * runtime outlined regions (which includes the global & bound thread ID).
@@ -448,6 +439,39 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 typedef void (*reduce_func)(void *lhs_data, void *rhs_data);
 
 /*
+ * Return the reduction method based on what the compiler generated.
+ * @param loc source location information, including codegen flags
+ * @param data argument data passed to reduce func (if available)
+ * @param func function that implements reduction functionality (if available)
+ * @return type of reduction to employ
+ */
+static inline enum reduction_method get_reduce_method(ident_t *loc,
+                                                      void *data,
+                                                      reduce_func func)
+{
+  enum reduction_method retval = critical_reduce_block;
+  int teamsize_cutoff = 4, teamsize = omp_get_num_threads();
+  bool atomic_available = FAST_REDUCTION_ATOMIC_METHOD_GENERATED(loc),
+       tree_available = FAST_REDUCTION_TREE_METHOD_GENERATED(data, func);
+
+  // Note: this directly correlates with the logic in
+  // __kmp_determine_reduction_method for AArch64/PPC64/x86_64 on Linux
+  if(teamsize == 1) retval = empty_reduce_block;
+  else
+  {
+    if(tree_available) {
+      if(teamsize <= teamsize_cutoff) {
+        if(atomic_available) retval = atomic_reduce_block;
+      }
+      else retval = tree_reduce_block;
+    }
+    else if(atomic_available) retval = atomic_reduce_block;
+  }
+
+  return retval;
+}
+
+/*
  * A blocking reduce that includes an implicit barrier.
  * @param loc source location information
  * @param global_tid global thread number
@@ -468,14 +492,21 @@ int32_t __kmpc_reduce(ident_t *loc,
                       reduce_func func,
                       kmp_critical_name *lck)
 {
+  struct gomp_thread *thr;
+
   DEBUG("__kmpc_reduce: %s %d %d %lu %p %p %p\n", loc->psource,
         global_tid, num_vars, reduce_size, reduce_data, func, lck);
 
-  // Note: Intel's runtime does some smart selection of reduction algorithms,
-  // but we'll do just a basic "every thread reduces their own value" by
-  // entering a critical section.
-  GOMP_critical_start();
-  return 1;
+  thr = gomp_thread();
+  thr->reduction_method = get_reduce_method(loc, reduce_data, func);
+  switch(thr->reduction_method)
+  {
+  case critical_reduce_block: GOMP_critical_start(); return 1;
+  case atomic_reduce_block: return 2;
+  // TODO just do the atomic for now
+  case tree_reduce_block: return 2;
+  default: return 1;
+  }
 }
 
 /*
@@ -488,9 +519,14 @@ void __kmpc_end_reduce(ident_t *loc,
                        int32_t global_tid,
                        kmp_critical_name *lck)
 {
-  DEBUG("__kmpc_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+  struct gomp_thread *thr;
 
-  GOMP_critical_end();
+  DEBUG("__kmpc_end_reduce: %s %d %p\n", loc->psource, global_tid, lck);
+
+  thr = gomp_thread();
+  assert(thr->reduction_method != reduction_method_not_defined);
+  if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
+  thr->reduction_method = reduction_method_not_defined;
   GOMP_barrier();
 }
 
@@ -515,14 +551,21 @@ int32_t __kmpc_reduce_nowait(ident_t *loc,
                              reduce_func func,
                              kmp_critical_name *lck)
 {
+  struct gomp_thread *thr;
+
   DEBUG("__kmpc_reduce_nowait: %s %d %d %lu %p %p %p\n", loc->psource,
         global_tid, num_vars, reduce_size, reduce_data, func, lck);
 
-  // Note: Intel's runtime does some smart selection of reduction algorithms,
-  // but we'll do just a basic "every thread reduces their own value" by
-  // entering a critical section.
-  GOMP_critical_start();
-  return 1;
+  thr = gomp_thread();
+  thr->reduction_method = get_reduce_method(loc, reduce_data, func);
+  switch(thr->reduction_method)
+  {
+  case critical_reduce_block: GOMP_critical_start(); return 1;
+  case atomic_reduce_block: return 2;
+  // TODO just do the atomic for now
+  case tree_reduce_block: return 2;
+  default: return 1;
+  }
 }
 
 /*
@@ -535,9 +578,14 @@ void __kmpc_end_reduce_nowait(ident_t *loc,
                               int32_t global_tid,
                               kmp_critical_name *lck)
 {
-  DEBUG("__kmpc_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+  struct gomp_thread *thr;
 
-  GOMP_critical_end();
+  DEBUG("__kmpc_end_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+
+  thr = gomp_thread();
+  assert(thr->reduction_method != reduction_method_not_defined);
+  if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
+  thr->reduction_method = reduction_method_not_defined;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

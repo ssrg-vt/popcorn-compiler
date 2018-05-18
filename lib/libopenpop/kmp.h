@@ -10,6 +10,18 @@
 
 #include <stdint.h>
 
+/* Source location & generation information for OpenMP constructs. */
+typedef struct ident {
+  int32_t reserved_1;
+  int32_t flags;
+  int32_t reserved_2;
+  int32_t reserved_3;
+  char const *psource;
+} ident_t;
+
+/* Flags for ident_t struct */
+#define KMP_IDENT_ATOMIC_REDUCE 0x10
+
 /* Maximum number of threads supported by Intel OpenMP API shim. */
 #define MAX_THREADS 1024
 
@@ -21,6 +33,13 @@ enum sched_type {
   kmp_sch_default = kmp_sch_static /* default scheduling algorithm */
 };
 
+/* Return whether compiler generated fast reduction method for reduce clause. */
+#define FAST_REDUCTION_ATOMIC_METHOD_GENERATED( loc ) \
+  ((loc->flags & KMP_IDENT_ATOMIC_REDUCE) == KMP_IDENT_ATOMIC_REDUCE)
+
+/* Return whether compiler generated a tree reduction method. */
+#define FAST_REDUCTION_TREE_METHOD_GENERATED( data, func ) ((data) && (func))
+
 /* The reduction method for reduction clauses. */
 enum reduction_method {
   reduction_method_not_defined = 0,
@@ -29,9 +48,6 @@ enum reduction_method {
   tree_reduce_block = (3 << 8),
   empty_reduce_block = (4 << 8)
 };
-
-/* Flags for ident_t struct */
-#define KMP_IDENT_ATOMIC_REDUCE 0x10
 
 /* Lock structure */
 typedef int32_t kmp_critical_name[8];
