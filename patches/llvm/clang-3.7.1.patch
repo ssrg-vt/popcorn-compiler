@@ -1615,15 +1615,14 @@ Index: lib/CodeGen/CGStmt.cpp
    RecordDecl::field_iterator CurField = RD->field_begin();
    for (CapturedStmt::capture_init_iterator I = S.capture_init_begin(),
                                             E = S.capture_init_end();
-@@ -2164,7 +2267,18 @@
+@@ -2164,7 +2267,17 @@
        auto VAT = CurField->getCapturedVLAType();
        EmitStoreThroughLValue(RValue::get(VLASizeMap[VAT->getSizeExpr()]), LV);
      } else {
 -      EmitInitializerForField(*CurField, LV, *I, None);
-+      if(S.offloadShared()) {
++      if(S.offloadShared() && isa<DeclRefExpr>(*I)) {
 +        // If distributed, create global variable, emit initializer & place
 +        // address of new global into capture struct
-+        assert(isa<DeclRefExpr>(*I) && "Invalid capture type");
 +        VarDecl *GLD = CreateOffloadedGlobal(S, *I);
 +        LValue GLV = GetVarDeclLValue(*I, GLD);
 +        EmitAnyExprToMem(*I, GLV.getAddress(), GLV.getQuals(), false);
@@ -2741,7 +2740,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  #include "clang/AST/StmtOpenMP.h"
  #include "clang/Parse/ParseDiagnostic.h"
  #include "clang/Parse/Parser.h"
-@@ -25,6 +26,82 @@
+@@ -25,6 +26,89 @@
  // OpenMP declarative directives.
  //===----------------------------------------------------------------------===//
  
@@ -2750,6 +2749,14 @@ Index: lib/Parse/ParseOpenMP.cpp
 +class VarFinder : public RecursiveASTVisitor<VarFinder> {
 +public:
 +  void reset() { Variables.clear(); }
++
++  bool VisitDeclStmt(DeclStmt *D) {
++    for(auto &Child : D->getDeclGroup()) {
++      if(isa<VarDecl>(Child))
++        Variables.insert(cast<VarDecl>(Child));
++    }
++    return true;
++  }
 +
 +  bool VisitDeclRefExpr(DeclRefExpr *D) {
 +    ValueDecl *VD = D->getDecl();
@@ -2784,13 +2791,12 @@ Index: lib/Parse/ParseOpenMP.cpp
 +    // iteration variable.
 +    CapturedStmt *Captured = cast<CapturedStmt>(D->getAssociatedStmt());
 +    ForStmt *For = cast<ForStmt>(Captured->getCapturedStmt());
-+    BinaryOperator *InitExpr = cast<BinaryOperator>(For->getInit());
 +
 +    // Find captured & loop iteration variables
 +    CapturedVarFinder.TraverseStmt(Captured);
 +    const llvm::SmallPtrSet<const VarDecl *, 2> &CapturedVars =
 +      CapturedVarFinder.getDeclaredOrReferencedVars();
-+    LoopVarFinder.TraverseStmt(InitExpr);
++    LoopVarFinder.TraverseStmt(For->getInit());
 +    const llvm::SmallPtrSet<const VarDecl *, 2> &LoopVars =
 +      LoopVarFinder.getDeclaredOrReferencedVars();
 +
@@ -2824,7 +2830,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
    // Array of foldings: F[i][0] F[i][1] ===> F[i][2].
    // E.g.: OMPD_for OMPD_simd ===> OMPD_for_simd
-@@ -294,6 +371,21 @@
+@@ -294,6 +378,21 @@
            DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
            EndLoc);
  
@@ -2846,7 +2852,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      // Exit scope.
      Actions.EndOpenMPDSABlock(Directive.get());
      OMPDirectiveScope.Exit();
-@@ -385,7 +477,7 @@
+@@ -385,7 +484,7 @@
  ///       lastprivate-clause | reduction-clause | proc_bind-clause |
  ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
  ///       mergeable-clause | flush-clause | read-clause | write-clause |
@@ -2855,7 +2861,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  ///
  OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                       OpenMPClauseKind CKind, bool FirstClause) {
-@@ -479,6 +571,7 @@
+@@ -479,6 +578,7 @@
    case OMPC_copyprivate:
    case OMPC_flush:
    case OMPC_depend:
@@ -2863,7 +2869,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      Clause = ParseOpenMPVarListClause(CKind);
      break;
    case OMPC_unknown:
-@@ -702,17 +795,20 @@
+@@ -702,17 +802,20 @@
  ///       'flush' '(' list ')'
  ///    depend-clause:
  ///       'depend' '(' in | out | inout : list ')'
@@ -2886,7 +2892,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  
    // Parse '('.
    BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
-@@ -755,6 +851,20 @@
+@@ -755,6 +858,20 @@
      } else {
        Diag(Tok, diag::warn_pragma_expected_colon) << "dependency type";
      }
@@ -2907,7 +2913,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    }
  
    SmallVector<Expr *, 5> Vars;
-@@ -761,7 +871,8 @@
+@@ -761,7 +878,8 @@
    bool IsComma = ((Kind != OMPC_reduction) && (Kind != OMPC_depend)) ||
                   ((Kind == OMPC_reduction) && !InvalidReductionId) ||
                   ((Kind == OMPC_depend) && DepKind != OMPC_DEPEND_unknown);
@@ -2917,7 +2923,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    while (IsComma || (Tok.isNot(tok::r_paren) && Tok.isNot(tok::colon) &&
                       Tok.isNot(tok::annot_pragma_openmp_end))) {
      ColonProtectionRAIIObject ColonRAII(*this, MayHaveTail);
-@@ -787,9 +898,9 @@
+@@ -787,9 +905,9 @@
            << (Kind == OMPC_flush);
    }
  
@@ -2929,7 +2935,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    if (MustHaveTail) {
      ColonLoc = Tok.getLocation();
      ConsumeToken();
-@@ -802,6 +913,20 @@
+@@ -802,6 +920,20 @@
                  StopBeforeMatch);
    }
  
@@ -2950,7 +2956,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    // Parse ')'.
    T.consumeClose();
    if ((Kind == OMPC_depend && DepKind != OMPC_DEPEND_unknown && Vars.empty()) ||
-@@ -810,10 +935,10 @@
+@@ -810,10 +942,10 @@
      return nullptr;
  
    return Actions.ActOnOpenMPVarListClause(
