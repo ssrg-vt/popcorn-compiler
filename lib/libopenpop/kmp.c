@@ -202,6 +202,10 @@ void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
 }
 
+// Note: libgomp's APIs expect the end iteration to be non-inclusive while
+// libiomp's APIs expect it to be inclusive.  There are +1/-1 values scattered
+// across these functions to translate between the two.
+
 /*
  * Initialize a dynamic work-sharing construct using a given lower bound, upper
  * bound, stride and chunk.
