@@ -472,7 +472,7 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
     lib_dir = os.path.join(target_install_path, 'lib')
 
     args = ' '.join(['CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-linux-gnu -O2 -g -Wall ' \
+                     'CFLAGS="-target {}-linux-gnu -O2 -g -Wall -fno-common ' \
                              '-nostdinc -isystem {} ' \
                              '-popcorn-metadata ' \
                              '-popcorn-target={}-linux-gnu"' \

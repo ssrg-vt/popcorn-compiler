@@ -28,6 +28,7 @@
 
 #include "libgomp.h"
 #include "pool.h"
+#include "hierarchy.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -152,8 +153,13 @@ gomp_thread_start (void *xdata)
     migrate (0, NULL, NULL);
 
   /* If user specified nodes, wait for everybody to get back to origin */
-  if (popcorn_nodes_list)
-    gomp_simple_barrier_wait (&pool->threads_dock);
+  // TODO this doesn't work if the user is changing the number of threads
+  if (popcorn_global.nodes)
+    {
+      gomp_simple_barrier_wait (&pool->threads_dock);
+      __atomic_add_fetch(&popcorn_node[thr->popcorn_nid].threads,
+                         -1, MEMMODEL_RELEASE);
+    }
 
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
@@ -279,7 +285,7 @@ gomp_release_pool_threads_final ()
   unsigned i;
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_thread_pool *pool = thr->thread_pool;
-  if (pool && popcorn_nodes_list)
+  if (pool && popcorn_global.nodes)
     {
       /* Signal not to run any more functions */
       for (i = 0; i < pool->threads_used; i++)
@@ -413,7 +419,15 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   team->implicit_task[0].icv.bind_var = bind_var;
 
   if (nthreads == 1)
-    return;
+    {
+      if (popcorn_global.nodes)
+        {
+          gomp_barrier_init (&popcorn_global.bar, 1);
+          hierarchy_init_node (thr->popcorn_nid);
+        }
+
+      return;
+    }
 
   i = 1;
 
@@ -859,18 +873,19 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 
       /* Determine Popcorn node on which to execute */
       start_data->popcorn_nid = 0;
-      if (!nested && popcorn_threads_per_node)
+      if (!nested && popcorn_global.nodes)
         {
-          assert(popcorn_nodes_list && popcorn_nodes_list_len);
-          node = i / popcorn_threads_per_node;
+          assert(popcorn_global.threads_per_node && popcorn_global.num_nodes);
+          node = i / popcorn_global.threads_per_node;
           seen_online = 0;
-          for(nid = 0; nid < popcorn_nodes_list_len; nid++)
+          for(nid = 0; nid < popcorn_global.num_nodes; nid++)
             {
-              if (popcorn_nodes_list[nid])
+              if (popcorn_global.nodes[nid])
                 {
                   if (seen_online == node)
                     {
                       start_data->popcorn_nid = nid;
+                      popcorn_node[nid].threads++;
                       break;
                     }
                   else
@@ -914,6 +929,22 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 
   if (__builtin_expect (attr == &thread_attr, 0))
     pthread_attr_destroy (&thread_attr);
+
+  /* We changed the thread count, re-initialize per-node & global barriers
+     before releasing threads */
+  if (popcorn_global.nodes)
+    {
+      seen_online = 0;
+      for (nid = 0; nid < popcorn_global.num_nodes; nid++)
+        {
+          if (popcorn_node[nid].threads)
+            {
+              hierarchy_init_node(nid);
+              seen_online++;
+            }
+        }
+      gomp_barrier_init(&popcorn_global.bar, seen_online);
+    }
 
  do_release:
   if (nested)
@@ -1063,7 +1094,7 @@ static void __attribute__((destructor))
 popcorn_destructor (void)
 {
   if(popcorn_profiling) fclose(popcorn_prof_fp);
-  if(popcorn_nodes_list) free(popcorn_nodes_list);
+  if(popcorn_global.nodes) free(popcorn_global.nodes);
 }
 #endif
 

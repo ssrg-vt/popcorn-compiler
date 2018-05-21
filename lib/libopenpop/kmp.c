@@ -24,6 +24,7 @@
 #include "config.h"
 #include "libgomp.h"
 #include "libgomp_g.h"
+#include "hierarchy.h"
 #include "kmp.h"
 
 /* Enable debugging information */
@@ -86,6 +87,10 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   wrapper_data->mtid = &mtid;
   wrapper_data->data = shared_data;
 
+  // TODO main thread on different node?
+  gomp_thread ()->popcorn_nid = 0;
+  popcorn_node[0].threads++;
+
   /* Start workers & run the task */
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
@@ -95,6 +100,9 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
+
+  // TODO main thread on different node?
+  popcorn_node[0].threads--;
 
   if(argc > 1) free(shared_data);
   free(wrapper_data);
@@ -222,6 +230,10 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
         (int64_t)st, (int64_t)chunk);                                         \
                                                                               \
   assert(schedule == kmp_sch_dynamic_chunked && "Invalid dynamic schedule");  \
+  if(omp_get_num_threads() == 1) {                                            \
+    st = 1;                                                                   \
+    chunk = (ub + 1) - lb;                                                    \
+  }                                                                           \
   INIT_FUNC(lb, ub + 1, st, chunk);                                           \
 }
 
@@ -235,17 +247,17 @@ __kmpc_dispatch_init(8u, uint64_t, GOMP_loop_ull_dynamic_init)
  * @param loc source code location
  * @param gtid global thread ID of this thread
  */
-#define __kmpc_dispatch_fini(NAME, END_FUNC) \
+#define __kmpc_dispatch_fini(NAME) \
 void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
 {                                                                             \
   DEBUG("__kmpc_dispatch_fini_"#NAME": %s %d\n", loc->psource, gtid);         \
-  END_FUNC();                                                                 \
+  GOMP_loop_end();                                                            \
 }
 
-__kmpc_dispatch_fini(4, GOMP_loop_end)
-__kmpc_dispatch_fini(4u, GOMP_loop_end)
-__kmpc_dispatch_fini(8, GOMP_loop_end)
-__kmpc_dispatch_fini(8u, GOMP_loop_end)
+__kmpc_dispatch_fini(4)
+__kmpc_dispatch_fini(4u)
+__kmpc_dispatch_fini(8)
+__kmpc_dispatch_fini(8u)
 
 /*
  * Grab the next batch of iterations according to the previously initialized
@@ -381,22 +393,23 @@ void __kmpc_end_master(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_end_master: %s %d\n", loc->psource, global_tid);
 }
 
-int32_t __kmpc_single(ident_t *loc,
-                         int32_t global_tid)
+int32_t __kmpc_single(ident_t *loc, int32_t global_tid)
 {
-	return (int32_t)GOMP_single_start();
+  DEBUG("__kmpc_single: %s %d\n", loc->psource, global_tid);
 
+  return (int32_t)GOMP_single_start();
 }
 
-void __kmpc_end_single(ident_t *loc,
-                         int32_t global_tid)
+void __kmpc_end_single(ident_t *loc, int32_t global_tid)
 {
-	return;//FIXME:nothing to do?
+  DEBUG("__kmpc_end_single: %s %d\n", loc->psource, global_tid);
 }
 
 void __kmpc_flush(ident_t *loc)
 {
-	__sync_synchronize();
+  DEBUG("__kmpc_flush: %s\n", loc->psource);
+
+  __sync_synchronize();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -414,10 +427,25 @@ void __kmpc_flush(ident_t *loc)
  */
 int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
 {
+  bool ret = false;
+  int nid;
+
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
+  /* Perform a regular cancel barrier if not using Popcorn's hybrid barrier */
+  if(!popcorn_global.hybrid_barrier) return GOMP_barrier_cancel();
+
+  nid = gomp_thread()->popcorn_nid;
+  bool leader = hierarchy_select_leader_synchronous(nid);
+  if(leader)
+  {
+    ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
+    hierarchy_leader_cleanup(nid);
+    // TODO if the global barrier gets cancelled, need to cancel local barrier
+  }
+
   // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  return GOMP_barrier_cancel();
+  return ret || gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
 }
 
 /*
@@ -427,9 +455,26 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
  */
 void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 {
+  int nid;
+
   DEBUG("__kmpc_barrier: %s %d\n", loc->psource, global_tid);
 
-  GOMP_barrier();
+  /* Perform a regular barrier if not using Popcorn's hybrid barrier */
+  if(!popcorn_global.hybrid_barrier)
+  {
+    GOMP_barrier();
+    return;
+  }
+
+  nid = gomp_thread()->popcorn_nid;
+  bool leader = hierarchy_select_leader_synchronous(nid);
+  if(leader)
+  {
+    gomp_team_barrier_wait_nospin(&popcorn_global.bar);
+    hierarchy_leader_cleanup(nid);
+  }
+
+  gomp_team_barrier_wait(&popcorn_node[nid].bar);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

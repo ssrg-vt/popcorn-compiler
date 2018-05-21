@@ -53,6 +53,7 @@
 #endif
 #include <errno.h>
 #include "thread-stacksize.h"
+#include "hierarchy.h"
 
 #ifndef HAVE_STRTOULL
 # define strtoull(ptr, eptr, base) strtoul (ptr, eptr, base)
@@ -88,9 +89,6 @@ int gomp_debug_var;
 unsigned int gomp_num_teams_var;
 char *goacc_device_type;
 int goacc_device_num;
-bool *popcorn_nodes_list;
-unsigned long popcorn_nodes_list_len;
-unsigned long popcorn_threads_per_node;
 
 #ifndef LIBGOMP_OFFLOADED_ONLY
 
@@ -1333,6 +1331,8 @@ initialize_env (void)
      enable if user specified places, not yet supported. */
   if (!gomp_global_icv.bind_var)
     parse_popcorn_nodes_var ("POPCORN_PLACES");
+
+  parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
 
   /* Popcorn's page access trace files don't provide a clean mapping of task
      IDs to user-land threads (including OpenMP threads).  If profiling is

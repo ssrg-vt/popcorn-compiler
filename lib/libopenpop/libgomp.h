@@ -370,11 +370,6 @@ extern int gomp_debug_var;
 extern int goacc_device_num;
 extern char *goacc_device_type;
 
-/* Popcorn thread placement machinery. */
-extern bool *popcorn_nodes_list;
-extern unsigned long popcorn_nodes_list_len;
-extern unsigned long popcorn_threads_per_node;
-
 /* Popcorn profiling machinery. */
 extern bool popcorn_profiling;
 extern const char *popcorn_prof_fn;

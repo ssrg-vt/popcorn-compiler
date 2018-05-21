@@ -26,6 +26,7 @@
 /* This is a generic stub implementation of a CPU affinity setting.  */
 
 #include "libgomp.h"
+#include "hierarchy.h"
 #include <assert.h>
 #include "migrate.h"
 #include "platform.h"
@@ -156,12 +157,12 @@ popcorn_affinity_init_nodes (unsigned long count, bool quiet)
   /* Make sure the migration library has populated node information */
   __init_nodes_info();
 
-  popcorn_threads_per_node = count;
-  popcorn_nodes_list_len = MAX_POPCORN_NODES;
-  popcorn_nodes_list = calloc(sizeof(bool), MAX_POPCORN_NODES);
-  if(!popcorn_nodes_list)
+  popcorn_global.threads_per_node = count;
+  popcorn_global.num_nodes = MAX_POPCORN_NODES;
+  popcorn_global.nodes = calloc(sizeof(bool), MAX_POPCORN_NODES);
+  if(!popcorn_global.nodes)
   {
-    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
+    popcorn_global.threads_per_node = popcorn_global.num_nodes = 0;
     return false;
   }
 
@@ -169,20 +170,21 @@ popcorn_affinity_init_nodes (unsigned long count, bool quiet)
   {
     if(node_available(i))
     {
-      popcorn_nodes_list[i] = true;
+      popcorn_global.nodes[i] = true;
       nodes_online = true;
     }
-    else popcorn_nodes_list[i] = false;
+    else popcorn_global.nodes[i] = false;
   }
 
   if(!nodes_online)
   {
-    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
-    free(popcorn_nodes_list);
-    popcorn_nodes_list = NULL;
+    popcorn_global.threads_per_node = popcorn_global.num_nodes = 0;
+    free(popcorn_global.nodes);
+    popcorn_global.nodes = NULL;
     if(!quiet)
       gomp_error ("No Popcorn nodes available");
   }
 
+  popcorn_global.hybrid_barrier = true;
   return nodes_online;
 }

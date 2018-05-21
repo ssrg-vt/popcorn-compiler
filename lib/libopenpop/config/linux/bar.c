@@ -128,6 +128,57 @@ gomp_team_barrier_wait (gomp_barrier_t *bar)
 }
 
 void
+gomp_team_barrier_wait_end_nospin (gomp_barrier_t *bar, gomp_barrier_state_t state)
+{
+  unsigned int generation, gen;
+
+  if (__builtin_expect (state & BAR_WAS_LAST, 0))
+    {
+      /* Next time we'll be awaiting TOTAL threads again.  */
+      struct gomp_thread *thr = gomp_thread ();
+      struct gomp_team *team = thr->ts.team;
+
+      bar->awaited = bar->total;
+      team->work_share_cancelled = 0;
+      if (__builtin_expect (team->task_count, 0))
+	{
+	  gomp_barrier_handle_tasks (state);
+	  state &= ~BAR_WAS_LAST;
+	}
+      else
+	{
+	  state &= ~BAR_CANCELLED;
+	  state += BAR_INCR - BAR_WAS_LAST;
+	  __atomic_store_n (&bar->generation, state, MEMMODEL_RELEASE);
+	  futex_wake ((int *) &bar->generation, INT_MAX);
+	  return;
+	}
+    }
+
+  generation = state;
+  state &= ~BAR_CANCELLED;
+  do
+    {
+      /* Jump straight into the futex wait without spinning */
+      futex_wait ((int *) &bar->generation, generation);
+      gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
+      if (__builtin_expect (gen & BAR_TASK_PENDING, 0))
+	{
+	  gomp_barrier_handle_tasks (state);
+	  gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
+	}
+      generation |= gen & BAR_WAITING_FOR_TASK;
+    }
+  while (gen != state + BAR_INCR);
+}
+
+void
+gomp_team_barrier_wait_nospin (gomp_barrier_t *bar)
+{
+  gomp_team_barrier_wait_end_nospin (bar, gomp_barrier_wait_start (bar));
+}
+
+void
 gomp_team_barrier_wait_final (gomp_barrier_t *bar)
 {
   gomp_barrier_state_t state = gomp_barrier_wait_final_start (bar);
@@ -194,6 +245,68 @@ bool
 gomp_team_barrier_wait_cancel (gomp_barrier_t *bar)
 {
   return gomp_team_barrier_wait_cancel_end (bar, gomp_barrier_wait_start (bar));
+}
+
+bool
+gomp_team_barrier_wait_cancel_end_nospin (gomp_barrier_t *bar,
+				          gomp_barrier_state_t state)
+{
+  unsigned int generation, gen;
+
+  if (__builtin_expect (state & BAR_WAS_LAST, 0))
+    {
+      /* Next time we'll be awaiting TOTAL threads again.  */
+      /* BAR_CANCELLED should never be set in state here, because
+	 cancellation means that at least one of the threads has been
+	 cancelled, thus on a cancellable barrier we should never see
+	 all threads to arrive.  */
+      struct gomp_thread *thr = gomp_thread ();
+      struct gomp_team *team = thr->ts.team;
+
+      bar->awaited = bar->total;
+      team->work_share_cancelled = 0;
+      if (__builtin_expect (team->task_count, 0))
+	{
+	  gomp_barrier_handle_tasks (state);
+	  state &= ~BAR_WAS_LAST;
+	}
+      else
+	{
+	  state += BAR_INCR - BAR_WAS_LAST;
+	  __atomic_store_n (&bar->generation, state, MEMMODEL_RELEASE);
+	  futex_wake ((int *) &bar->generation, INT_MAX);
+	  return false;
+	}
+    }
+
+  if (__builtin_expect (state & BAR_CANCELLED, 0))
+    return true;
+
+  generation = state;
+  do
+    {
+      /* Jump straight into the futex wait without spinning */
+      futex_wait ((int *) &bar->generation, generation);
+      gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
+      if (__builtin_expect (gen & BAR_CANCELLED, 0))
+	return true;
+      if (__builtin_expect (gen & BAR_TASK_PENDING, 0))
+	{
+	  gomp_barrier_handle_tasks (state);
+	  gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
+	}
+      generation |= gen & BAR_WAITING_FOR_TASK;
+    }
+  while (gen != state + BAR_INCR);
+
+  return false;
+}
+
+bool
+gomp_team_barrier_wait_cancel_nospin (gomp_barrier_t *bar)
+{
+  gomp_barrier_state_t state = gomp_barrier_wait_start (bar);
+  return gomp_team_barrier_wait_cancel_end_nospin (bar, state);
 }
 
 void
