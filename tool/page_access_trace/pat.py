@@ -32,17 +32,19 @@ class ParseConfig:
         memory.
     '''
     def __init__(self, start, end, symbolTable, dwarfInfo,
-                 noCode, noData, regions, nodes):
+                 noCode, noData, nodes, pages, regions):
         self.start = start
         self.end = end
         self.symbolTable = symbolTable
         self.dwarfInfo = dwarfInfo
         self.noCode = noCode
         self.noData = noData
-        if regions: self.regions = set(regions.split(','))
-        else: self.regions = None
         if nodes: self.nodes = set(nodes.split(','))
         else: self.nodes = None
+        if pages: self.pages = set(pages.split(','))
+        else: self.pages = None
+        if regions: self.regions = set(regions.split(','))
+        else: self.regions = None
 
 def parsePAT(pat, config, callback, callbackData, verbose):
     ''' Generic parser.  For each line in the PAT file, determine if it fits
@@ -72,6 +74,9 @@ def parsePAT(pat, config, callback, callbackData, verbose):
 
             # Filter based on node
             if config.nodes and fields[1] not in config.nodes: continue
+
+            # Filter based on page
+            if config.pages and fields[5] not in config.pages: continue
 
             # Filter based on region
             if config.regions and fields[6] not in config.regions: continue

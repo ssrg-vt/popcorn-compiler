@@ -43,6 +43,9 @@ def parseArguments():
     filt.add_argument("-n", "--nodes", type=str, default=None,
             help="Only parse faults from nodes in the specified " \
                  "comma-separated list")
+    filt.add_argument("--pages", action="store_true",
+            help="Only parse faults from pages in the specified " \
+                "comma-separated list")
     filt.add_argument("--regions", type=str, default=None,
             help="Only parse regions in the specified comma-separated list")
     # TODO filter by thread
@@ -140,8 +143,8 @@ if __name__ == "__main__":
         symbolTable = None
         dwarfInfo = None
     config = pat.ParseConfig(args.start, args.end, symbolTable, dwarfInfo,
-                             args.no_code, args.no_data, args.regions,
-                             args.nodes)
+                             args.no_code, args.no_data, args.nodes,
+                             args.pages, args.regions)
 
     if args.partition:
         graphs = pat.parsePATtoGraphs(args.input, args.graph_type,
