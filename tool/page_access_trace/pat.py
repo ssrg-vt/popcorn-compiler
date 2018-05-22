@@ -41,7 +41,7 @@ class ParseConfig:
         self.noData = noData
         if nodes: self.nodes = set(nodes.split(','))
         else: self.nodes = None
-        if pages: self.pages = set(pages.split(','))
+        if pages: self.pages = set([int(x) for x in pages.split(',')])
         else: self.pages = None
         if regions: self.regions = set(regions.split(','))
         else: self.regions = None
@@ -75,14 +75,15 @@ def parsePAT(pat, config, callback, callbackData, verbose):
             # Filter based on node
             if config.nodes and fields[1] not in config.nodes: continue
 
-            # Filter based on page
-            if config.pages and fields[5] not in config.pages: continue
-
             # Filter based on region
             if config.regions and fields[6] not in config.regions: continue
 
-            # Filter based on type of memory object accessed
             addr = int(fields[5], base=16)
+
+            # Filter based on page being accessed
+            if config.pages and addr not in config.pages: continue
+
+            # Filter based on type of memory object accessed
             if config.symbolTable:
                 symbol = config.symbolTable.getSymbol(addr)
                 if symbol:
@@ -402,4 +403,25 @@ def parsePATforFalseSharing(pat, config, verbose):
     return sorted(pagesAccessed.values(),
                   reverse=True,
                   key=lambda p: p.falseFaults)
+
+def parsePATforPageFaultAtLoc(pat, config, loc, verbose):
+    def pagesAtLocCallback(fields, timestamp, addr, symbol, pageData):
+        dwarfInfo = pageData[0]
+        filename, linenum = dwarfInfo.getFileAndLine(int(fields[4], base=16))
+        if filename == pageData[2] and linenum == pageData[3]:
+            if addr not in pageData[1]: pageData[1][addr] = 1
+            else: pageData[1][addr] += 1
+            pageData[4] += 1
+
+    assert config.dwarfInfo, "No DWARF information for binary!"
+    locSplit = loc.strip().split(":")
+    assert len(locSplit) == 2, \
+        "Invalid location '{}', must be 'file:line'".format(loc)
+    pages = {}
+    callbackData = [config.dwarfInfo, pages, locSplit[0], int(locSplit[1]), 0]
+    parsePAT(pat, config, pagesAtLocCallback, callbackData, verbose)
+
+    return sorted(pages.items(),
+                  reverse=True,
+                  key=lambda p: p[1]), callbackData[4]
 
