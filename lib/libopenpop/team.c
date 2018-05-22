@@ -136,7 +136,11 @@ gomp_thread_start (void *xdata)
 	  struct gomp_task *task = thr->task;
 
 	  local_fn (local_data);
-	  gomp_team_barrier_wait_final (&team->barrier);
+
+	  if (popcorn_global.hybrid_barrier)
+	    hierarchy_hybrid_barrier_final (thr->popcorn_nid);
+	  else
+	    gomp_team_barrier_wait_final (&team->barrier);
 	  gomp_finish_task (task);
 
 	  gomp_simple_barrier_wait (&pool->threads_dock);
@@ -158,7 +162,7 @@ gomp_thread_start (void *xdata)
     {
       gomp_simple_barrier_wait (&pool->threads_dock);
       __atomic_add_fetch(&popcorn_node[thr->popcorn_nid].threads,
-                         -1, MEMMODEL_RELEASE);
+			 -1, MEMMODEL_RELEASE);
     }
 
   gomp_sem_destroy (&thr->release);
@@ -289,7 +293,7 @@ gomp_release_pool_threads_final ()
     {
       /* Signal not to run any more functions */
       for (i = 0; i < pool->threads_used; i++)
-        pool->threads[i]->fn = NULL;
+	pool->threads[i]->fn = NULL;
       /* Break threads out of execution loop */
       gomp_simple_barrier_wait (&pool->threads_dock);
       /* Wait for everybody to migrate back */
@@ -421,10 +425,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (nthreads == 1)
     {
       if (popcorn_global.nodes)
-        {
-          gomp_barrier_init (&popcorn_global.bar, 1);
-          hierarchy_init_node (thr->popcorn_nid);
-        }
+	{
+	  gomp_barrier_init (&popcorn_global.bar, 1);
+	  hierarchy_init_node (thr->popcorn_nid);
+	}
 
       return;
     }
@@ -617,7 +621,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		    {
 		      unsigned int j;
 
-                     /* Popcorn: remove allocas */
+		     /* Popcorn: remove allocas */
 		      /*if (team->prev_ts.place_partition_len > 64)*/
 			affinity_thr
 			  = gomp_malloc (team->prev_ts.place_partition_len
@@ -713,7 +717,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	      ? (affinity_count == old_threads_used - nthreads)
 	      : (i == old_threads_used))
 	    {
-             /* Popcorn: removed alloca, always needs to be freed */
+	     /* Popcorn: removed alloca, always needs to be freed */
 	      /*if (team->prev_ts.place_partition_len > 64)*/
 		free (affinity_thr);
 	      affinity_thr = NULL;
@@ -874,25 +878,25 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       /* Determine Popcorn node on which to execute */
       start_data->popcorn_nid = 0;
       if (!nested && popcorn_global.nodes)
-        {
-          assert(popcorn_global.threads_per_node && popcorn_global.num_nodes);
-          node = i / popcorn_global.threads_per_node;
-          seen_online = 0;
-          for(nid = 0; nid < popcorn_global.num_nodes; nid++)
-            {
-              if (popcorn_global.nodes[nid])
-                {
-                  if (seen_online == node)
-                    {
-                      start_data->popcorn_nid = nid;
-                      popcorn_node[nid].threads++;
-                      break;
-                    }
-                  else
-                    seen_online++;
-                }
-            }
-        }
+	{
+	  assert(popcorn_global.threads_per_node && popcorn_global.num_nodes);
+	  node = i / popcorn_global.threads_per_node;
+	  seen_online = 0;
+	  for(nid = 0; nid < popcorn_global.num_nodes; nid++)
+	    {
+	      if (popcorn_global.nodes[nid])
+		{
+		  if (seen_online == node)
+		    {
+		      start_data->popcorn_nid = nid;
+		      popcorn_node[nid].threads++;
+		      break;
+		    }
+		  else
+		    seen_online++;
+		}
+	    }
+	}
 
       start_data->fn = fn;
       start_data->fn_data = data;
@@ -907,9 +911,9 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->popcorn_tid = __sync_fetch_and_add(&popcorn_tid, 1);
 #else
       if(nested) {
-        gomp_mutex_lock(&popcorn_tid_lock);
-        start_data->popcorn_tid = popcorn_tid++;
-        gomp_mutex_unlock(&popcorn_tid_lock);
+	gomp_mutex_lock(&popcorn_tid_lock);
+	start_data->popcorn_tid = popcorn_tid++;
+	gomp_mutex_unlock(&popcorn_tid_lock);
       }
       else start_data->popcorn_tid = popcorn_tid++;
 #endif
@@ -936,13 +940,13 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
     {
       seen_online = 0;
       for (nid = 0; nid < popcorn_global.num_nodes; nid++)
-        {
-          if (popcorn_node[nid].threads)
-            {
-              hierarchy_init_node(nid);
-              seen_online++;
-            }
-        }
+	{
+	  if (popcorn_node[nid].threads)
+	    {
+	      hierarchy_init_node(nid);
+	      seen_online++;
+	    }
+	}
       gomp_barrier_init(&popcorn_global.bar, seen_online);
     }
 
@@ -1002,7 +1006,10 @@ gomp_team_end (void)
      As #pragma omp cancel parallel might get awaited count in
      team->barrier in a inconsistent state, we need to use a different
      counter here.  */
-  gomp_team_barrier_wait_final (&team->barrier);
+  if(popcorn_global.hybrid_barrier)
+    hierarchy_hybrid_barrier_final (thr->popcorn_nid);
+  else
+    gomp_team_barrier_wait_final (&team->barrier);
   if (__builtin_expect (team->team_cancelled, 0))
     {
       struct gomp_work_share *ws = team->work_shares_to_free;

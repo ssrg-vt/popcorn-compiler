@@ -52,3 +52,37 @@ void hierarchy_leader_cleanup(int nid)
                    MEMMODEL_RELEASE);;
 }
 
+void hierarchy_hybrid_barrier(int nid)
+{
+  bool leader = hierarchy_select_leader_synchronous(nid);
+  if(leader)
+  {
+    gomp_team_barrier_wait_nospin(&popcorn_global.bar);
+    hierarchy_leader_cleanup(nid);
+  }
+  gomp_team_barrier_wait(&popcorn_node[nid].bar);
+}
+
+bool hierarchy_hybrid_cancel_barrier(int nid)
+{
+  bool ret = false, leader = hierarchy_select_leader_synchronous(nid);
+  if(leader)
+  {
+    ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
+    hierarchy_leader_cleanup(nid);
+    // TODO if the global barrier gets cancelled, need to cancel local barrier
+  }
+  return ret || gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
+}
+
+void hierarchy_hybrid_barrier_final(int nid)
+{
+  bool leader = hierarchy_select_leader_synchronous(nid);
+  if(leader)
+  {
+    gomp_team_barrier_wait_final_nospin(&popcorn_global.bar);
+    hierarchy_leader_cleanup(nid);
+  }
+  gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
+}
+

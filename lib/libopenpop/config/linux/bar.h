@@ -72,11 +72,13 @@ static inline void gomp_barrier_destroy (gomp_barrier_t *bar)
 }
 
 extern void gomp_barrier_wait (gomp_barrier_t *);
+extern void gomp_barrier_wait_nospin (gomp_barrier_t *);
 extern void gomp_barrier_wait_last (gomp_barrier_t *);
 extern void gomp_barrier_wait_end (gomp_barrier_t *, gomp_barrier_state_t);
 extern void gomp_team_barrier_wait (gomp_barrier_t *);
 extern void gomp_team_barrier_wait_nospin (gomp_barrier_t *);
 extern void gomp_team_barrier_wait_final (gomp_barrier_t *);
+extern void gomp_team_barrier_wait_final_nospin (gomp_barrier_t *);
 extern void gomp_team_barrier_wait_end (gomp_barrier_t *,
 					gomp_barrier_state_t);
 extern bool gomp_team_barrier_wait_cancel (gomp_barrier_t *);

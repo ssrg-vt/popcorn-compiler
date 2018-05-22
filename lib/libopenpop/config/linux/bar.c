@@ -56,6 +56,32 @@ gomp_barrier_wait (gomp_barrier_t *bar)
   gomp_barrier_wait_end (bar, gomp_barrier_wait_start (bar));
 }
 
+void
+gomp_barrier_wait_end_nospin (gomp_barrier_t *bar, gomp_barrier_state_t state)
+{
+  if (__builtin_expect (state & BAR_WAS_LAST, 0))
+    {
+      /* Next time we'll be awaiting TOTAL threads again.  */
+      bar->awaited = bar->total;
+      __atomic_store_n (&bar->generation, bar->generation + BAR_INCR,
+			MEMMODEL_RELEASE);
+      futex_wake ((int *) &bar->generation, INT_MAX);
+    }
+  else
+    {
+      do
+        /* Jump straight into the futex wait without spinning */
+	futex_wait ((int *) &bar->generation, state);
+      while (__atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE) == state);
+    }
+}
+
+void
+gomp_barrier_wait_nospin (gomp_barrier_t *bar)
+{
+  gomp_barrier_wait_end_nospin (bar, gomp_barrier_wait_start (bar));
+}
+
 /* Like gomp_barrier_wait, except that if the encountering thread
    is not the last one to hit the barrier, it returns immediately.
    The intended usage is that a thread which intends to gomp_barrier_destroy
@@ -185,6 +211,15 @@ gomp_team_barrier_wait_final (gomp_barrier_t *bar)
   if (__builtin_expect (state & BAR_WAS_LAST, 0))
     bar->awaited_final = bar->total;
   gomp_team_barrier_wait_end (bar, state);
+}
+
+void
+gomp_team_barrier_wait_final_nospin (gomp_barrier_t *bar)
+{
+  gomp_barrier_state_t state = gomp_barrier_wait_final_start (bar);
+  if (__builtin_expect (state & BAR_WAS_LAST, 0))
+    bar->awaited_final = bar->total;
+  gomp_team_barrier_wait_end_nospin (bar, state);
 }
 
 bool

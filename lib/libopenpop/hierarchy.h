@@ -82,5 +82,24 @@ bool hierarchy_select_leader_synchronous(int nid);
  */
 void hierarchy_leader_cleanup(int nid);
 
+/*
+ * Execute a hybrid barrier.
+ * @param nid the node in which to participate.
+ */
+void hierarchy_hybrid_barrier(int nid);
+
+/*
+ * Execute a cancellable hybrid barrier.
+ * @param nid the node in which to participate.
+ * @return true if cancelled or false otherwise
+ */
+bool hierarchy_hybrid_cancel_barrier(int nid);
+
+/*
+ * Execute the end-of-parallel-region hybrid barrier.
+ * @param nid the node in which to participate.
+ */
+void hierarchy_hybrid_barrier_final(int nid);
+
 #endif /* _HIERARCHY_H */
 

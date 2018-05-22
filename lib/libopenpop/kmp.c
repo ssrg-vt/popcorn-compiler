@@ -427,25 +427,11 @@ void __kmpc_flush(ident_t *loc)
  */
 int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
 {
-  bool ret = false;
-  int nid;
-
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
-  /* Perform a regular cancel barrier if not using Popcorn's hybrid barrier */
-  if(!popcorn_global.hybrid_barrier) return GOMP_barrier_cancel();
-
-  nid = gomp_thread()->popcorn_nid;
-  bool leader = hierarchy_select_leader_synchronous(nid);
-  if(leader)
-  {
-    ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
-    hierarchy_leader_cleanup(nid);
-    // TODO if the global barrier gets cancelled, need to cancel local barrier
-  }
-
-  // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  return ret || gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
+  if(popcorn_global.hybrid_barrier)
+    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid);
+  else return GOMP_barrier_cancel();
 }
 
 /*
@@ -455,26 +441,11 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
  */
 void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 {
-  int nid;
-
   DEBUG("__kmpc_barrier: %s %d\n", loc->psource, global_tid);
 
-  /* Perform a regular barrier if not using Popcorn's hybrid barrier */
-  if(!popcorn_global.hybrid_barrier)
-  {
-    GOMP_barrier();
-    return;
-  }
-
-  nid = gomp_thread()->popcorn_nid;
-  bool leader = hierarchy_select_leader_synchronous(nid);
-  if(leader)
-  {
-    gomp_team_barrier_wait_nospin(&popcorn_global.bar);
-    hierarchy_leader_cleanup(nid);
-  }
-
-  gomp_team_barrier_wait(&popcorn_node[nid].bar);
+  if(popcorn_global.hybrid_barrier)
+    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid);
+  else GOMP_barrier();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
