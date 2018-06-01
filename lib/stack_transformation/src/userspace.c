@@ -210,7 +210,7 @@ stack_bounds get_stack_bounds()
 #endif
   if(cur_stack >= cur_bounds.low + B_STACK_OFFSET)
     cur_bounds.low += B_STACK_OFFSET;
-  else cur_bounds.high = cur_bounds.low += B_STACK_OFFSET;
+  else cur_bounds.high = cur_bounds.low + B_STACK_OFFSET;
 
   return cur_bounds;
 }
