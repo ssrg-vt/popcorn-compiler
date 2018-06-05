@@ -696,7 +696,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
     os.chdir(newlib_download_path + '/build')
 
     try:
-       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit"
+       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
        rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
        rv = os.environ["AS_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-as" % install_path
        rv = os.environ["CC_FOR_TARGET"] = "%s/x86_64-host/bin/clang" % install_path
