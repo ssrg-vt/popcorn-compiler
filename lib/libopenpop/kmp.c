@@ -62,42 +62,50 @@ void __kmp_wrapper_fn(void *data)
  * @param microtask the outlined OpenMP code
  * @param ... pointers to shared variables
  */
-void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
+// TODO Technically this is supposed to be a variable argument function, but it
+// seems like we're not using va_lists properly on aarch64 (this function,
+// OpenMP code generation or LLVM's va_list codegen) -- we're getting weird
+// offsets and wrong context values.  However in clang/LLVM OpenMP 3.7.1,
+// parallel sections are implemented as captures, meaning argc should always be
+// 1 and we should only ever be passing in a context struct pointer.
+void
+__kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
 {
-  int32_t i, mtid, ltid;
-  va_list vl;
-  void *shared_data;
+  int32_t mtid = 0, ltid = 0;
   __kmp_data_t *wrapper_data = (__kmp_data_t *)malloc(sizeof(__kmp_data_t));
 
   DEBUG("__kmp_fork_call: %s calling %p\n", loc->psource, microtask);
 
-  /* Marshal data for spawned microtask */
-  va_start(vl, microtask);
-  if(argc > 1)
-  {
-    void **args = (void **)malloc(sizeof(void*) * argc);
-    for(i = 0; i < argc; i++)
-      args[i] = va_arg(vl, void *);
-    shared_data = (void *)args;
-  }
-  else shared_data = va_arg(vl, void *);
-  va_end(vl);
+  // TODO this should be uncommented when moving to va_list implementation
+  //void *shared_data;
+  //int32_t i;
+  //va_list ap;
+  ///* Marshal data for spawned microtask */
+  //va_start(ap, microtask);
+  //if(argc > 1)
+  //{
+  //  void **args = (void **)malloc(sizeof(void*) * argc);
+  //  for(i = 0; i < argc; i++)
+  //    args[i] = va_arg(ap, void *);
+  //  shared_data = (void *)args;
+  //}
+  //else shared_data = va_arg(ap, void *);
+  //va_end(ap);
+  assert(argc == 1 && ctx && "Unsupported __kmpc_fork_call");
 
   wrapper_data->task = microtask;
   wrapper_data->mtid = &mtid;
-  wrapper_data->data = shared_data;
+  wrapper_data->data = ctx;
 
   /* Start workers & run the task */
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
-  mtid = 0; // TODO CodeGen on AArch64 seemed to clobber these values before
-  ltid = 0; // calling microtask -- need to debug
-  microtask(&mtid, &ltid, shared_data);
+  microtask(&mtid, &ltid, ctx);
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
 
-  if(argc > 1) free(shared_data);
+  if(argc > 1) free(ctx);
   free(wrapper_data);
 }
 

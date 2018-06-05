@@ -110,7 +110,7 @@ gomp_thread_start (void *xdata)
   /* Make thread pool local. */
   pool = thr->thread_pool;
 
-  if (thr->popcorn_nid)
+  if (popcorn_global.distributed && thr->popcorn_nid)
     migrate (thr->popcorn_nid, NULL, NULL);
 
   if (data->nested)
@@ -153,7 +153,7 @@ gomp_thread_start (void *xdata)
     }
 
   /* Migrate back to origin just in case application migrated us elsewhere */
-  if (current_nid() > 0)
+  if (popcorn_global.distributed && current_nid() > 0)
     migrate (0, NULL, NULL);
 
   /* If distributed, wait for everybody to get back to origin before exiting */
@@ -285,20 +285,25 @@ gomp_release_pool_threads_final ()
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_thread_pool *pool = thr->thread_pool;
 
-  /* Migrate back to origin just in case application migrated us elsewhere */
-  if (current_nid() > 0)
-    migrate (0, NULL, NULL);
-
-  if (pool && pool->threads_dock.bar.total && popcorn_global.distributed)
+  if (popcorn_global.distributed)
     {
-      /* Signal not to run any more functions & end-of-application cleanup */
-      for (i = 0; i < pool->threads_used; i++)
-	pool->threads[i]->fn = NULL;
-      popcorn_global.finished = true;
-      /* Break threads out of execution loop */
-      gomp_simple_barrier_wait (&pool->threads_dock);
-      /* Wait for everybody to migrate back */
-      gomp_simple_barrier_wait (&pool->threads_dock);
+      /* Migrate back to origin just in case application migrated us
+	 elsewhere */
+      if (current_nid() > 0)
+	migrate (0, NULL, NULL);
+
+      if (pool && pool->threads_dock.bar.total)
+	{
+	  /* Signal not to run any more functions & end-of-application
+	     cleanup */
+	  for (i = 0; i < pool->threads_used; i++)
+	    pool->threads[i]->fn = NULL;
+	  popcorn_global.finished = true;
+	  /* Break threads out of execution loop */
+	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  /* Wait for everybody to migrate back */
+	  gomp_simple_barrier_wait (&pool->threads_dock);
+	}
     }
 }
 
