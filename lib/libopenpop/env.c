@@ -1332,7 +1332,12 @@ initialize_env (void)
   if (!gomp_global_icv.bind_var)
     parse_popcorn_nodes_var ("POPCORN_PLACES");
 
-  parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
+  /* Users can selectively disable Popcorn optimizations. */
+  if (popcorn_global.distributed)
+    {
+      parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
+      parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
+    }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task
      IDs to user-land threads (including OpenMP threads).  If profiling is

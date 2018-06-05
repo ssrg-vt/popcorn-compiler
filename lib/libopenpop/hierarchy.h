@@ -15,72 +15,96 @@
 #define ALIGN_PAGE __attribute__((aligned(PAGESZ)))
 #define ALIGN_CACHE __attribute__((aligned(64)))
 
-typedef struct {
-  /* Popcorn thread placement */
-  bool ALIGN_PAGE *nodes;
-  unsigned long num_nodes;
-  unsigned long threads_per_node;
+/* Hierarchical reduction configuration & syntactic sugar */
+#define REDUCTION_ENTRIES 48
+typedef union {
+  void *p;
+  char padding[64];
+} ALIGN_CACHE aligned_void_ptr;
 
-  /* Enable/disable Popcorn-specific optimizations */
+/* Leader selection information */
+typedef struct {
+  /* Number of participants in the leader selection process */
+  size_t ALIGN_CACHE num;
+
+  /* Number of participants that have not entered the leader selection
+     process. */
+  size_t ALIGN_CACHE remaining;
+} leader_select_t;
+
+/* Global Popcorn execution information.  The read-only/read-mostly data (flags
+   & thread placement locations) are placed on the first page, whereas data
+   that is meant to be shared across nodes is on subsequent pages. */
+typedef struct {
+  /* Execution flags */
+  bool distributed; /* Are we running distributed? */
+  bool finished; /* Are we doing end-of-application cleanup? */
+
+  /* Enable/disable optimizations */
   bool hybrid_barrier;
+  bool hybrid_reduce;
+
+  /* Popcorn nodes available & thread placement across nodes */
+  unsigned long nodes;
+  unsigned long threads_per_node[MAX_POPCORN_NODES];
+
+  /* Global node leader selection */
+  leader_select_t ALIGN_PAGE ninfo;
 
   /* Global barrier for use in hierarchical barrier */
-  gomp_barrier_t ALIGN_CACHE bar;
-} ALIGN_PAGE global_info_t;
+  gomp_barrier_t ALIGN_PAGE bar;
 
-/* Per-node hierarchy information */
+  /* Global reduction space */
+  aligned_void_ptr ALIGN_PAGE reductions[MAX_POPCORN_NODES];
+} global_info_t;
+
+/* Per-node hierarchy information.  This should all be accessed locally
+   per-node, meaning nothing needs to be separated onto multiple pages. */
 typedef struct {
-  /* Number of threads executing on the node */
-  size_t ALIGN_CACHE threads;
+  /* Per-node thread information */
+  leader_select_t ALIGN_CACHE tinfo;
 
-  /* Number of threads that have not entered the leader selection process for 
-     synchronous leader selection, i.e., number of threads remaining before a
-     leader can be selected */
-  size_t ALIGN_CACHE remaining;
-
-  /* Whether or not a leader has been selected */
-  bool ALIGN_CACHE has_leader;
-
-  /* Local barrier for use in hierarchical barrier */
+  /* Per-node barrier for use in hierarchical barrier */
   gomp_barrier_t ALIGN_CACHE bar;
-} ALIGN_PAGE node_info_t;
+
+  /* Per-node reduction space */
+  aligned_void_ptr reductions[REDUCTION_ENTRIES];
+
+  char padding[PAGESZ - sizeof(leader_select_t) - sizeof(gomp_barrier_t)
+                      - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)];
+} node_info_t;
 
 extern global_info_t popcorn_global;
 extern node_info_t popcorn_node[MAX_POPCORN_NODES];
 
+///////////////////////////////////////////////////////////////////////////////
+// Initialization
+///////////////////////////////////////////////////////////////////////////////
+
 /*
- * Initialize all per-node data structures.
+ * Initialize global synchronization data structures.
+ * @param nodes the number of nodes participating
+ */
+void hierarchy_init_global(int nodes);
+
+/*
+ * Initialize per-node synchronization data structures.
  * @param nid the node ID
  */
 void hierarchy_init_node(int nid);
 
 /*
- * Enter the leader selection process for node NID.  Return whether the thread
- * was selected as leader. The optimistic implementation selects the first
- * thread to enter the selection process as the leader.
+ * Return the node on which a thread should execute given the user's places
+ * specification.  Updates internal counters to reflect the placement.
  *
- * @param nid the node on which to select a leader
- * @return true if selected as leader for node nid or false otherwise
+ * @param tid the number of the thread being released as part of a team
+ * @return the node on which the thread should execute
  */
-bool hierarchy_select_leader_optimistic(int nid);
+int hierarchy_assign_node(unsigned tnum);
 
-/*
- * Enter the leader selection process for node NID.  Return whether the thread
- * was selected as leader. The synchronous implementation selects the last
- * thread to enter the selection process as the leader.
- *
- * @param nid the node on which to select a leader
- * @return true if selected as leader for node nid or false otherwise
- */
-bool hierarchy_select_leader_synchronous(int nid);
-
-/*
- * After leader has finished its work, clean up per-node data for next leader
- * selection process.
- *
- * @param nid the node on which to clean up leader selection data
- */
-void hierarchy_leader_cleanup(int nid);
+///////////////////////////////////////////////////////////////////////////////
+// Barriers
+///////////////////////////////////////////////////////////////////////////////
 
 /*
  * Execute a hybrid barrier.
@@ -100,6 +124,22 @@ bool hierarchy_hybrid_cancel_barrier(int nid);
  * @param nid the node in which to participate.
  */
 void hierarchy_hybrid_barrier_final(int nid);
+
+///////////////////////////////////////////////////////////////////////////////
+// Reductions
+///////////////////////////////////////////////////////////////////////////////
+
+/*
+ * Execute a tree reduction; use an optimistic leader selection process, reduce
+ * locally then globally.
+ *
+ * @param nid the node in which to execute reductions
+ * @param reduce_data the leader's payload
+ * @param reduce_func function which executes the reduction
+ */
+void hierarchy_reduce(int nid,
+                      void *reduce_data,
+                      void (*reduce_func)(void *lhs, void *rhs));
 
 #endif /* _HIERARCHY_H */
 

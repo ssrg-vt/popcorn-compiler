@@ -65,7 +65,7 @@ struct gomp_thread_start_data
   struct gomp_team_state ts;
   struct gomp_task *task;
   struct gomp_thread_pool *thread_pool;
-  int popcorn_tid;
+  int popcorn_created_tid;
   int popcorn_nid;
   unsigned int place;
   bool nested;
@@ -99,13 +99,13 @@ gomp_thread_start (void *xdata)
   thr->ts = data->ts;
   thr->task = data->task;
   thr->place = data->place;
-  thr->popcorn_tid = data->popcorn_tid;
+  thr->popcorn_created_tid = data->popcorn_created_tid;
   thr->popcorn_nid = data->popcorn_nid;
 
   thr->ts.team->ordered_release[thr->ts.team_id] = &thr->release;
 
   if (popcorn_profiling)
-    fprintf(popcorn_prof_fp, "%d %d\n", gettid(), thr->popcorn_tid);
+    fprintf(popcorn_prof_fp, "%d %d\n", gettid(), thr->popcorn_created_tid);
 
   /* Make thread pool local. */
   pool = thr->thread_pool;
@@ -156,14 +156,9 @@ gomp_thread_start (void *xdata)
   if (current_nid() > 0)
     migrate (0, NULL, NULL);
 
-  /* If user specified nodes, wait for everybody to get back to origin */
-  // TODO this doesn't work if the user is changing the number of threads
-  if (popcorn_global.nodes)
-    {
-      gomp_simple_barrier_wait (&pool->threads_dock);
-      __atomic_add_fetch(&popcorn_node[thr->popcorn_nid].threads,
-			 -1, MEMMODEL_RELEASE);
-    }
+  /* If distributed, wait for everybody to get back to origin before exiting */
+  if (popcorn_global.finished)
+    gomp_simple_barrier_wait (&pool->threads_dock);
 
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
@@ -289,11 +284,17 @@ gomp_release_pool_threads_final ()
   unsigned i;
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_thread_pool *pool = thr->thread_pool;
-  if (pool && popcorn_global.nodes)
+
+  /* Migrate back to origin just in case application migrated us elsewhere */
+  if (current_nid() > 0)
+    migrate (0, NULL, NULL);
+
+  if (pool && pool->threads_dock.bar.total && popcorn_global.distributed)
     {
-      /* Signal not to run any more functions */
+      /* Signal not to run any more functions & end-of-application cleanup */
       for (i = 0; i < pool->threads_used; i++)
 	pool->threads[i]->fn = NULL;
+      popcorn_global.finished = true;
       /* Break threads out of execution loop */
       gomp_simple_barrier_wait (&pool->threads_dock);
       /* Wait for everybody to migrate back */
@@ -358,7 +359,7 @@ gomp_free_thread (void *arg __attribute__((unused)))
 #ifndef HAVE_SYNC_BUILTINS
 gomp_mutex_t popcorn_tid_lock;
 #endif
-static int popcorn_tid = 1;
+static int popcorn_created_tid = 1;
 
 /* Launch a team.  */
 
@@ -380,7 +381,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   unsigned int s = 0, rest = 0, p = 0, k = 0;
   unsigned int affinity_count = 0;
   struct gomp_thread **affinity_thr = NULL;
-  unsigned int node, seen_online, nid;
+  unsigned int nodes, nid;
+  bool popcorn_place;
 
   thr = gomp_thread ();
   nested = thr->ts.level;
@@ -389,6 +391,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   icv = task ? &task->icv : &gomp_global_icv;
   if (__builtin_expect (gomp_places_list != NULL, 0) && thr->place == 0)
     gomp_init_affinity ();
+  popcorn_place = popcorn_global.distributed && !nested;
 
   /* Always save the previous state, even if this isn't a nested team.
      In particular, we should save any work share state from an outer
@@ -422,11 +425,20 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   team->implicit_task[0].icv.nthreads_var = nthreads_var;
   team->implicit_task[0].icv.bind_var = bind_var;
 
+  /* Re-initialize hierarchical data structures for Popcorn every time to avoid
+     racing child threads for updated per-node thread counts. */
+  if (popcorn_place)
+    {
+      for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
+	popcorn_node[nid].tinfo.num = 0;
+      thr->popcorn_nid = hierarchy_assign_node(0);
+    }
+
   if (nthreads == 1)
     {
-      if (popcorn_global.nodes)
+      if (popcorn_place)
 	{
-	  gomp_barrier_init (&popcorn_global.bar, 1);
+	  hierarchy_init_global (1);
 	  hierarchy_init_node (thr->popcorn_nid);
 	}
 
@@ -698,6 +710,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  nthr->ts.static_trip = 0;
 	  nthr->task = &team->implicit_task[i];
 	  nthr->place = place;
+	  if (popcorn_place)
+	    nthr->popcorn_nid = hierarchy_assign_node(i);
 	  gomp_init_task (nthr->task, task, icv);
 	  team->implicit_task[i].icv.nthreads_var = nthreads_var;
 	  team->implicit_task[i].icv.bind_var = bind_var;
@@ -874,30 +888,6 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	    continue;
 	  gomp_init_thread_affinity (attr, p);
 	}
-
-      /* Determine Popcorn node on which to execute */
-      start_data->popcorn_nid = 0;
-      if (!nested && popcorn_global.nodes)
-	{
-	  assert(popcorn_global.threads_per_node && popcorn_global.num_nodes);
-	  node = i / popcorn_global.threads_per_node;
-	  seen_online = 0;
-	  for(nid = 0; nid < popcorn_global.num_nodes; nid++)
-	    {
-	      if (popcorn_global.nodes[nid])
-		{
-		  if (seen_online == node)
-		    {
-		      start_data->popcorn_nid = nid;
-		      popcorn_node[nid].threads++;
-		      break;
-		    }
-		  else
-		    seen_online++;
-		}
-	    }
-	}
-
       start_data->fn = fn;
       start_data->fn_data = data;
       start_data->ts.team = team;
@@ -908,17 +898,20 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       start_data->ts.active_level = thr->ts.active_level;
 #ifdef HAVE_SYNC_BUILTINS
       start_data->ts.single_count = 0;
-      start_data->popcorn_tid = __sync_fetch_and_add(&popcorn_tid, 1);
+      start_data->popcorn_created_tid =
+	__sync_fetch_and_add(&popcorn_created_tid, 1);
 #else
       if(nested) {
 	gomp_mutex_lock(&popcorn_tid_lock);
-	start_data->popcorn_tid = popcorn_tid++;
+	start_data->popcorn_created_tid = popcorn_created_tid++;
 	gomp_mutex_unlock(&popcorn_tid_lock);
       }
-      else start_data->popcorn_tid = popcorn_tid++;
+      else start_data->popcorn_created_tid = popcorn_created_tid++;
 #endif
       start_data->ts.static_trip = 0;
       start_data->task = &team->implicit_task[i];
+      if (popcorn_place)
+	start_data->popcorn_nid = hierarchy_assign_node(i);
       gomp_init_task (start_data->task, task, icv);
       team->implicit_task[i].icv.nthreads_var = nthreads_var;
       team->implicit_task[i].icv.bind_var = bind_var;
@@ -934,23 +927,22 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (__builtin_expect (attr == &thread_attr, 0))
     pthread_attr_destroy (&thread_attr);
 
-  /* We changed the thread count, re-initialize per-node & global barriers
-     before releasing threads */
-  if (popcorn_global.nodes)
+ do_release:
+  /* Re-initialize per-node & global data structures before releasing threads */
+  if (popcorn_place)
     {
-      seen_online = 0;
-      for (nid = 0; nid < popcorn_global.num_nodes; nid++)
+      nodes = 0;
+      for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
 	{
-	  if (popcorn_node[nid].threads)
+	  if (popcorn_node[nid].tinfo.num)
 	    {
 	      hierarchy_init_node(nid);
-	      seen_online++;
+	      nodes++;
 	    }
 	}
-      gomp_barrier_init(&popcorn_global.bar, seen_online);
+      hierarchy_init_global(nodes);
     }
 
- do_release:
   if (nested)
     gomp_barrier_wait (&team->barrier);
   else
@@ -1101,7 +1093,6 @@ static void __attribute__((destructor))
 popcorn_destructor (void)
 {
   if(popcorn_profiling) fclose(popcorn_prof_fp);
-  if(popcorn_global.nodes) free(popcorn_global.nodes);
 }
 #endif
 

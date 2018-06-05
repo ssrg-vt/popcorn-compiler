@@ -67,6 +67,13 @@ static inline void gomp_barrier_reinit (gomp_barrier_t *bar, unsigned count)
   bar->total = count;
 }
 
+static inline void gomp_barrier_reinit_all (gomp_barrier_t *bar, unsigned count)
+{
+  bar->total = count;
+  bar->awaited = count;
+  bar->awaited_final = count;
+}
+
 static inline void gomp_barrier_destroy (gomp_barrier_t *bar)
 {
 }

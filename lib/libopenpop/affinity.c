@@ -152,39 +152,29 @@ bool
 popcorn_affinity_init_nodes (unsigned long count, bool quiet)
 {
   int i;
-  bool nodes_online = false;
 
   /* Make sure the migration library has populated node information */
   __init_nodes_info();
-
-  popcorn_global.threads_per_node = count;
-  popcorn_global.num_nodes = MAX_POPCORN_NODES;
-  popcorn_global.nodes = calloc(sizeof(bool), MAX_POPCORN_NODES);
-  if(!popcorn_global.nodes)
-  {
-    popcorn_global.threads_per_node = popcorn_global.num_nodes = 0;
-    return false;
-  }
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
     if(node_available(i))
     {
-      popcorn_global.nodes[i] = true;
-      nodes_online = true;
+      popcorn_global.nodes++;
+      popcorn_global.threads_per_node[i] = count;
+      gomp_barrier_init(&popcorn_node[i].bar, count);
     }
-    else popcorn_global.nodes[i] = false;
   }
 
-  if(!nodes_online)
+  if(popcorn_global.nodes)
   {
-    popcorn_global.threads_per_node = popcorn_global.num_nodes = 0;
-    free(popcorn_global.nodes);
-    popcorn_global.nodes = NULL;
-    if(!quiet)
-      gomp_error ("No Popcorn nodes available");
+    popcorn_global.distributed = true;
+    popcorn_global.hybrid_barrier = true;
+    popcorn_global.hybrid_reduce = true;
+    gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
   }
+  else if(!quiet)
+    gomp_error("No Popcorn nodes available");
 
-  popcorn_global.hybrid_barrier = true;
-  return nodes_online;
+  return popcorn_global.nodes;
 }

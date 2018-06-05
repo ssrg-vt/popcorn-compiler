@@ -87,10 +87,6 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   wrapper_data->mtid = &mtid;
   wrapper_data->data = shared_data;
 
-  // TODO main thread on different node?
-  gomp_thread ()->popcorn_nid = 0;
-  popcorn_node[0].threads++;
-
   /* Start workers & run the task */
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
@@ -100,9 +96,6 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
-
-  // TODO main thread on different node?
-  popcorn_node[0].threads--;
 
   if(argc > 1) free(shared_data);
   free(wrapper_data);
@@ -468,10 +461,11 @@ static inline enum reduction_method get_reduce_method(ident_t *loc,
   enum reduction_method retval = critical_reduce_block;
   int teamsize_cutoff = 4, teamsize = omp_get_num_threads();
   bool atomic_available = FAST_REDUCTION_ATOMIC_METHOD_GENERATED(loc),
-       tree_available = FAST_REDUCTION_TREE_METHOD_GENERATED(data, func);
+       tree_available = FAST_REDUCTION_TREE_METHOD_GENERATED(data, func) &&
+                        popcorn_global.hybrid_reduce;
 
-  // Note: this directly correlates with the logic in
-  // __kmp_determine_reduction_method for AArch64/PPC64/x86_64 on Linux
+  // Note: adapted from the logic in __kmp_determine_reduction_method for
+  // AArch64/PPC64/x86_64 on Linux
   if(teamsize == 1) retval = empty_reduce_block;
   else
   {
@@ -519,8 +513,9 @@ int32_t __kmpc_reduce(ident_t *loc,
   {
   case critical_reduce_block: GOMP_critical_start(); return 1;
   case atomic_reduce_block: return 2;
-  // TODO just do the atomic for now
-  case tree_reduce_block: return 2;
+  case tree_reduce_block:
+    hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+    return 0;
   default: return 1;
   }
 }
@@ -578,8 +573,9 @@ int32_t __kmpc_reduce_nowait(ident_t *loc,
   {
   case critical_reduce_block: GOMP_critical_start(); return 1;
   case atomic_reduce_block: return 2;
-  // TODO just do the atomic for now
-  case tree_reduce_block: return 2;
+  case tree_reduce_block:
+    hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+    return 0;
   default: return 1;
   }
 }

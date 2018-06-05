@@ -623,7 +623,7 @@ struct gomp_thread
 
   /* Popcorn's TID, basically this thread's number out of the total number of
      threads created by the runtime over the lifetime of the application. */
-  int popcorn_tid;
+  int popcorn_created_tid;
 
   /* Node ID on which this thread is executing in Popcorn. */
   int popcorn_nid;
