@@ -16,7 +16,7 @@
 #define ALIGN_CACHE __attribute__((aligned(64)))
 
 /* Hierarchical reduction configuration & syntactic sugar */
-#define REDUCTION_ENTRIES 48
+#define REDUCTION_ENTRIES 48UL
 typedef union {
   void *p;
   char padding[64];
@@ -49,7 +49,8 @@ typedef struct {
   unsigned long threads_per_node[MAX_POPCORN_NODES];
 
   /* Global node leader selection */
-  leader_select_t ALIGN_PAGE ninfo;
+  leader_select_t ALIGN_PAGE sync;
+  leader_select_t ALIGN_CACHE opt;
 
   /* Global barrier for use in hierarchical barrier */
   gomp_barrier_t ALIGN_PAGE bar;
@@ -62,7 +63,7 @@ typedef struct {
    per-node, meaning nothing needs to be separated onto multiple pages. */
 typedef struct {
   /* Per-node thread information */
-  leader_select_t ALIGN_CACHE tinfo;
+  leader_select_t ALIGN_CACHE sync, opt;
 
   /* Per-node barrier for use in hierarchical barrier */
   gomp_barrier_t ALIGN_CACHE bar;
@@ -136,8 +137,9 @@ void hierarchy_hybrid_barrier_final(int nid);
  * @param nid the node in which to execute reductions
  * @param reduce_data the leader's payload
  * @param reduce_func function which executes the reduction
+ * @return true if one final reduction is needed or false otherwise
  */
-void hierarchy_reduce(int nid,
+bool hierarchy_reduce(int nid,
                       void *reduce_data,
                       void (*reduce_func)(void *lhs, void *rhs));
 

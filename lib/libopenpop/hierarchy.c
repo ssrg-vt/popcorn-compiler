@@ -4,6 +4,7 @@
  * Copyright Rob Lyerly, SSRG, VT, 2018
  */
 
+#include <assert.h>
 #include "libgomp.h"
 #include "hierarchy.h"
 
@@ -16,8 +17,8 @@ node_info_t ALIGN_PAGE popcorn_node[MAX_POPCORN_NODES];
 
 void hierarchy_init_global(int nodes)
 {
-  popcorn_global.ninfo.num = nodes;
-  popcorn_global.ninfo.remaining = nodes;
+  popcorn_global.sync.remaining = popcorn_global.sync.num = nodes;
+  popcorn_global.opt.remaining = popcorn_global.opt.num = nodes;
   /* Note: *must* use reinit_all, otherwise there's a race condition between
      leaders who have been released are reading generation in the barrier's
      do-while loop and the main thread resetting barrier's generation */
@@ -26,9 +27,13 @@ void hierarchy_init_global(int nodes)
 
 void hierarchy_init_node(int nid)
 {
-  popcorn_node[nid].tinfo.remaining = popcorn_node[nid].tinfo.num;
+  size_t num;
+  assert(popcorn_node[nid].sync.num == popcorn_node[nid].opt.num &&
+         "Corrupt node configuration");
+  num = popcorn_node[nid].sync.num;
+  popcorn_node[nid].sync.remaining = popcorn_node[nid].opt.remaining = num;
   /* See note in hierarchy_init_global() above */
-  gomp_barrier_reinit_all(&popcorn_node[nid].bar, popcorn_node[nid].tinfo.num);
+  gomp_barrier_reinit_all(&popcorn_node[nid].bar, num);
 }
 
 int hierarchy_assign_node(unsigned tnum)
@@ -39,13 +44,15 @@ int hierarchy_assign_node(unsigned tnum)
     thr_total += popcorn_global.threads_per_node[cur];
     if(tnum < thr_total)
     {
-      popcorn_node[cur].tinfo.num++;
+      popcorn_node[cur].sync.num++;
+      popcorn_node[cur].opt.num++;
       return cur;
     }
   }
 
   /* If we've exhausted the specification default to origin */
-  popcorn_node[0].tinfo.num++;
+  popcorn_node[0].sync.num++;
+  popcorn_node[0].opt.num++;
   return 0;
 }
 
@@ -54,10 +61,9 @@ int hierarchy_assign_node(unsigned tnum)
 static bool hierarchy_select_leader_optimistic(leader_select_t *l,
                                                size_t *ticket)
 {
-  size_t rem = __atomic_add_fetch(&l->remaining, -1, MEMMODEL_ACQ_REL);
+  size_t rem = __atomic_fetch_add(&l->remaining, -1, MEMMODEL_ACQ_REL);
   if(ticket) *ticket = rem;
-  if((rem + 1) == l->num) return true;
-  else return false;
+  return rem == l->num;
 }
 
 static bool hierarchy_select_leader_synchronous(leader_select_t *l,
@@ -65,8 +71,7 @@ static bool hierarchy_select_leader_synchronous(leader_select_t *l,
 {
   size_t rem = __atomic_add_fetch(&l->remaining, -1, MEMMODEL_ACQ_REL);
   if(ticket) *ticket = rem;
-  if(rem) return false;
-  else return true;
+  return !rem;
 }
 
 static void hierarchy_leader_cleanup(leader_select_t *l)
@@ -80,12 +85,12 @@ static void hierarchy_leader_cleanup(leader_select_t *l)
 
 void hierarchy_hybrid_barrier(int nid)
 {
-  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].tinfo,
+  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync,
                                                     NULL);
   if(leader)
   {
     gomp_team_barrier_wait_nospin(&popcorn_global.bar);
-    hierarchy_leader_cleanup(&popcorn_node[nid].tinfo);
+    hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
 }
@@ -93,24 +98,25 @@ void hierarchy_hybrid_barrier(int nid)
 bool hierarchy_hybrid_cancel_barrier(int nid)
 {
   bool ret = false;
-  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].tinfo,
+  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync,
                                                     NULL);
   if(leader)
   {
     ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
-    hierarchy_leader_cleanup(&popcorn_node[nid].tinfo);
+    // TODO if cancelled at global level need to cancel local barrier
+    hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   return ret || gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
 }
 
 void hierarchy_hybrid_barrier_final(int nid)
 {
-  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].tinfo,
+  bool leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync,
                                                     NULL);
   if(leader)
   {
     gomp_team_barrier_wait_final_nospin(&popcorn_global.bar);
-    hierarchy_leader_cleanup(&popcorn_node[nid].tinfo);
+    hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
 }
@@ -119,13 +125,13 @@ void hierarchy_hybrid_barrier_final(int nid)
 // Reductions
 ///////////////////////////////////////////////////////////////////////////////
 
-static inline void
+static inline bool
 hierarchy_reduce_leader(int nid,
                         void *reduce_data,
                         void (*reduce_func)(void *lhs, void *rhs))
 {
   bool global_leader;
-  size_t i, reduced = 1, nthreads = popcorn_node[nid].tinfo.num, max_entry;
+  size_t i, reduced = 1, nthreads = popcorn_node[nid].opt.num, max_entry;
   void *thr_data;
 
   /* First, reduce from all threads locally.  The basic strategy is to loop
@@ -149,16 +155,17 @@ hierarchy_reduce_leader(int nid,
     }
   }
 
-  /* Now, select a global leader & do the same thing on the global queue. */
-  global_leader = hierarchy_select_leader_optimistic(&popcorn_global.ninfo,
+  /* Now, select a global leader & do the same thing on the global data. */
+  global_leader = hierarchy_select_leader_optimistic(&popcorn_global.opt,
                                                      NULL);
   if(global_leader)
   {
     reduced = 1;
-    while(reduced < popcorn_global.ninfo.num)
+    while(reduced < popcorn_global.opt.num)
     {
       for(i = 0; i < MAX_POPCORN_NODES; i++)
       {
+        if(!popcorn_global.threads_per_node[i]) continue;
         thr_data = __atomic_load_n(&popcorn_global.reductions[i].p,
                                    MEMMODEL_ACQUIRE);
         if(!thr_data) continue;
@@ -170,11 +177,12 @@ hierarchy_reduce_leader(int nid,
         thr_data = NULL;
       }
     }
-    hierarchy_leader_cleanup(&popcorn_global.ninfo);
+    hierarchy_leader_cleanup(&popcorn_global.opt);
   }
   else /* Each node should get its own reduction entry, no need to loop */
     __atomic_store_n(&popcorn_global.reductions[nid].p, reduce_data,
                      MEMMODEL_RELEASE);
+  return global_leader;
 }
 
 static inline void
@@ -209,20 +217,21 @@ hierarchy_reduce_local(int nid, size_t ticket, void *reduce_data)
   }
 }
 
-void hierarchy_reduce(int nid,
+bool hierarchy_reduce(int nid,
                       void *reduce_data,
                       void (*reduce_func)(void *lhs, void *rhs))
 {
   bool leader;
   size_t ticket;
 
-  leader = hierarchy_select_leader_optimistic(&popcorn_node[nid].tinfo,
+  leader = hierarchy_select_leader_optimistic(&popcorn_node[nid].opt,
                                               &ticket);
   if(leader)
   {
-    hierarchy_reduce_leader(nid, reduce_data, reduce_func);
-    hierarchy_leader_cleanup(&popcorn_node[nid].tinfo);
+    leader = hierarchy_reduce_leader(nid, reduce_data, reduce_func);
+    hierarchy_leader_cleanup(&popcorn_node[nid].opt);
   }
   else hierarchy_reduce_local(nid, ticket, reduce_data);
+  return leader;
 }
 

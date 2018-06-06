@@ -582,8 +582,7 @@ int32_t __kmpc_reduce_nowait(ident_t *loc,
   case critical_reduce_block: GOMP_critical_start(); return 1;
   case atomic_reduce_block: return 2;
   case tree_reduce_block:
-    hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
-    return 0;
+    return hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
   default: return 1;
   }
 }
@@ -656,7 +655,7 @@ void *__kmpc_threadprivate_cached(ident_t *loc,
   /* Allocate (if necessary) & initialize this thread's data. */
   if((ret = (*cache)[global_tid]) == 0)
   {
-    ret = malloc(size);
+    ret = popcorn_malloc(size, gomp_thread()->popcorn_nid);
     memcpy(ret, data, size);
     (*cache)[global_tid] = ret;
   }

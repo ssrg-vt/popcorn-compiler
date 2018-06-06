@@ -435,7 +435,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (popcorn_place)
     {
       for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
-	popcorn_node[nid].tinfo.num = 0;
+	{
+	  popcorn_node[nid].sync.num = 0;
+	  popcorn_node[nid].opt.num = 0;
+	}
       thr->popcorn_nid = hierarchy_assign_node(0);
     }
 
@@ -939,7 +942,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       nodes = 0;
       for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
 	{
-	  if (popcorn_node[nid].tinfo.num)
+	  if (popcorn_node[nid].sync.num)
 	    {
 	      hierarchy_init_node(nid);
 	      nodes++;
