@@ -726,7 +726,9 @@ extern bool gomp_affinity_finalize_place_list (bool);
 extern bool gomp_affinity_init_level (int, unsigned long, bool);
 extern void gomp_affinity_print_place (void *);
 extern void gomp_get_place_proc_ids_8 (int, int64_t *);
-extern bool popcorn_affinity_init_nodes (unsigned long, bool);
+
+extern bool popcorn_affinity_init_nodes (unsigned long *, unsigned long, bool);
+extern bool popcorn_affinity_init_nodes_uniform (unsigned long, bool);
 
 /* iter.c */
 

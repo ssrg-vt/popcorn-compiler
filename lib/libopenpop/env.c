@@ -567,8 +567,8 @@ parse_one_place (char **envp, bool *negatep, unsigned long *lenp,
 static bool
 parse_popcorn_nodes_var (const char *name)
 {
-  char *env = getenv (name), *end;
-  unsigned long count = 0;
+  char *env = getenv (name), *end, *num_end;
+  unsigned long count[MAX_POPCORN_NODES], cur, value;
   if (env == NULL)
     goto invalid;
 
@@ -590,7 +590,7 @@ parse_popcorn_nodes_var (const char *name)
       ++env;
 
     errno = 0;
-    count = strtoul (env, &end, 10);
+    value = strtoul (env, &end, 10);
     if (errno)
       goto invalid;
     env = end;
@@ -604,13 +604,48 @@ parse_popcorn_nodes_var (const char *name)
     if (*env != '\0')
       goto invalid;
 
-    return popcorn_affinity_init_nodes (count, false);
+    return popcorn_affinity_init_nodes_uniform (value, false);
   }
-  else
-  {
-    // TODO mini-language like OpenMP's OMP_PLACE: {start:len:stride}
-    goto invalid;
-  }
+
+  /* For now, only accept comma-separated list of the following:
+       {num}: number of threads on a node */
+  cur = 0;
+  memset(count, 0, sizeof(count));
+  end = env;
+  do
+    {
+      if (*end != '{')
+        goto invalid;
+      ++end;
+      while (isspace ((unsigned char) *end))
+        ++end;
+
+      errno = 0;
+      value = strtoul (end, &num_end, 10);
+      if (errno || (long) value < 0 || end == num_end)
+        goto invalid;
+      count[cur++] = value;
+      end = num_end;
+
+      while (isspace ((unsigned char) *end))
+        ++end;
+      if (*end != '}')
+        goto invalid;
+      ++end;
+
+      while (isspace ((unsigned char) *end))
+        ++end;
+      if (*end == '\0')
+        break;
+      else if (*end != ',')
+        goto invalid;
+      ++end;
+      while (isspace ((unsigned char) *end))
+        ++end;
+    }
+  while (cur < MAX_POPCORN_NODES);
+
+  return popcorn_affinity_init_nodes(count, cur, false);
 
 invalid:
   return false;
@@ -1206,6 +1241,22 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
       fputs (i + 1 == gomp_places_list_len ? "}" : "},", stderr);
     }
   fputs ("'\n", stderr);
+
+  if (popcorn_global.distributed)
+    {
+      fputs ("  POPCORN_PLACES ({node, threads}) =", stderr);
+      for (i = 0; i < MAX_POPCORN_NODES; i++)
+        {
+          if (popcorn_global.threads_per_node[i])
+            fprintf (stderr, " {%u, %lu}", i,
+                     popcorn_global.threads_per_node[i]);
+        }
+      fputs ("\n", stderr);
+      fprintf (stderr, "  POPCORN_HYBRID_BARRIER = %s\n",
+               popcorn_global.hybrid_barrier ? "TRUE" : "FALSE");
+      fprintf (stderr, "  POPCORN_HYBRID_REDUCE = %s\n",
+               popcorn_global.hybrid_reduce ? "TRUE" : "FALSE");
+    }
 
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
 

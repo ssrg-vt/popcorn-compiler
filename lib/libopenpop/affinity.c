@@ -148,8 +148,41 @@ ialias(omp_get_place_proc_ids)
 /* Defined libmigrate.a (but not exposed in headers) */
 extern void __init_nodes_info(void);
 
+bool popcorn_affinity_init_nodes (unsigned long *counts,
+                                  unsigned long n,
+                                  bool quiet)
+{
+  int i;
+  unsigned long cur = 0;
+
+  /* Make sure the migration library has populated node information */
+  __init_nodes_info();
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(node_available(i) && cur < n)
+    {
+      popcorn_global.nodes++;
+      popcorn_global.threads_per_node[i] = counts[cur];
+      gomp_barrier_init(&popcorn_node[i].bar, counts[cur++]);
+    }
+  }
+
+  if(popcorn_global.nodes)
+  {
+    popcorn_global.distributed = true;
+    popcorn_global.hybrid_barrier = true;
+    popcorn_global.hybrid_reduce = true;
+    gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
+  }
+  else if(!quiet)
+    gomp_error("No Popcorn nodes available");
+
+  return popcorn_global.nodes;
+}
+
 bool
-popcorn_affinity_init_nodes (unsigned long count, bool quiet)
+popcorn_affinity_init_nodes_uniform (unsigned long count, bool quiet)
 {
   int i;
 
