@@ -12,6 +12,10 @@
 #include "bar.h"
 #include "platform.h"
 
+///////////////////////////////////////////////////////////////////////////////
+// Type definitions & declarations
+///////////////////////////////////////////////////////////////////////////////
+
 #define ALIGN_PAGE __attribute__((aligned(PAGESZ)))
 #define ALIGN_CACHE __attribute__((aligned(64)))
 
@@ -71,7 +75,7 @@ typedef struct {
   /* Per-node reduction space */
   aligned_void_ptr reductions[REDUCTION_ENTRIES];
 
-  char padding[PAGESZ - sizeof(leader_select_t) - sizeof(gomp_barrier_t)
+  char padding[PAGESZ - (2 * sizeof(leader_select_t)) - sizeof(gomp_barrier_t)
                       - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)];
 } node_info_t;
 
@@ -110,21 +114,24 @@ int hierarchy_assign_node(unsigned tnum);
 /*
  * Execute a hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  */
-void hierarchy_hybrid_barrier(int nid);
+void hierarchy_hybrid_barrier(int nid, const char *desc);
 
 /*
  * Execute a cancellable hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  * @return true if cancelled or false otherwise
  */
-bool hierarchy_hybrid_cancel_barrier(int nid);
+bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc);
 
 /*
  * Execute the end-of-parallel-region hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  */
-void hierarchy_hybrid_barrier_final(int nid);
+void hierarchy_hybrid_barrier_final(int nid, const char *desc);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Reductions

@@ -431,7 +431,8 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
   if(popcorn_global.hybrid_barrier)
-    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid);
+    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid,
+                                           loc->psource);
   else return GOMP_barrier_cancel();
 }
 
@@ -445,7 +446,7 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_barrier: %s %d\n", loc->psource, global_tid);
 
   if(popcorn_global.hybrid_barrier)
-    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid);
+    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid, loc->psource);
   else GOMP_barrier();
 }
 
@@ -652,10 +653,17 @@ void *__kmpc_threadprivate_cached(ident_t *loc,
     GOMP_critical_end();
   }
 
+  // TODO if we migrated the thread to a new node, move TLS heap data to new
+  // node's heap
+
   /* Allocate (if necessary) & initialize this thread's data. */
   if((ret = (*cache)[global_tid]) == 0)
   {
-    ret = popcorn_malloc(size, gomp_thread()->popcorn_nid);
+    if(popcorn_global.distributed)
+      ret = popcorn_malloc(size, gomp_thread()->popcorn_nid);
+    else ret = malloc(size);
+
+    assert(ret && "Could not allocate thread private data");
     memcpy(ret, data, size);
     (*cache)[global_tid] = ret;
   }

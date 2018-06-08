@@ -138,7 +138,7 @@ gomp_thread_start (void *xdata)
 	  local_fn (local_data);
 
 	  if (popcorn_global.hybrid_barrier)
-	    hierarchy_hybrid_barrier_final (thr->popcorn_nid);
+	    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
 	  else
 	    gomp_team_barrier_wait_final (&team->barrier);
 	  gomp_finish_task (task);
@@ -1007,7 +1007,7 @@ gomp_team_end (void)
      team->barrier in a inconsistent state, we need to use a different
      counter here.  */
   if(popcorn_global.hybrid_barrier)
-    hierarchy_hybrid_barrier_final (thr->popcorn_nid);
+    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
   else
     gomp_team_barrier_wait_final (&team->barrier);
   if (__builtin_expect (team->team_cancelled, 0))
