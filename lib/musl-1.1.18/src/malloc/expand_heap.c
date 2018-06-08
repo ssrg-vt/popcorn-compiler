@@ -77,7 +77,7 @@ void *__expand_heap(size_t *pn)
  * large chunk of the virtual address space to each node and mmap/mremap to
  * expand the heap. */
 
-#define ARENA_SIZE (4ULL << 30ULL)
+#define ARENA_SIZE (1ULL << 30ULL)
 #define ARENA_START(base, nid) ((void *)((base) + ((nid) * ARENA_SIZE)))
 #define ARENA_CONTAINS(base, nid, ptr) \
   (ARENA_START(base, nid) <= (ptr) && (ptr) < (ARENA_START(base, nid + 1)))
