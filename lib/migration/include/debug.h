@@ -51,3 +51,15 @@ void dump_regs_x86_64(const struct regset_x86_64 *regset, const char *log);
  */
 void dump_regs(const void *regset, const char *log);
 
+/*
+ * Initialize remote node debug handling.
+ * @param nid node on which to initialize data
+ */
+void remote_debug_init(int nid);
+
+/*
+ * Clean up remote node debug handling.
+ * @param nid node on which to clean up data
+ */
+void remote_debug_cleanup(int nid);
+

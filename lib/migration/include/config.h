@@ -67,5 +67,13 @@
 #define _DEBUG 0
 #endif
 
+/*
+ * Avoid dying on remote nodes by handling segfaults and migrating those
+ * threads back before crashes.
+ */
+#ifndef _CLEAN_CRASH
+#define _CLEAN_CRASH 1
+#endif
+
 #endif /* _CONFIG_H */
 
