@@ -71,8 +71,9 @@
  * Avoid dying on remote nodes by handling segfaults and migrating those
  * threads back before crashes.
  */
+// TODO enable by default after more testing
 #ifndef _CLEAN_CRASH
-#define _CLEAN_CRASH 1
+#define _CLEAN_CRASH 0
 #endif
 
 #endif /* _CONFIG_H */
