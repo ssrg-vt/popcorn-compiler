@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <assert.h>
 #include <pthread.h>
@@ -144,6 +145,7 @@ static struct node_info {
   int arch;
   int distance;
 } ni[MAX_POPCORN_NODES];
+static int origin_nid = -1;
 
 int node_available(int nid)
 {
@@ -173,7 +175,6 @@ int current_nid(void)
 void __attribute__((constructor)) __init_nodes_info(void)
 {
 	int ret;
-	int origin_nid = -1;
 
 	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
 	if (ret)
@@ -219,6 +220,9 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
   int err;
   struct shim_data data;
   struct shim_data *data_ptr;
+#if _CLEAN_CRASH == 1
+  int cur_nid = current_nid();
+#endif
 
   if(!node_available(nid))
   {
@@ -286,6 +290,10 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       default: assert(0 && "Unsupported architecture!");
       }
 
+#if _CLEAN_CRASH == 1
+      if(cur_nid != origin_nid) remote_debug_cleanup(cur_nid);
+#endif
+
       // This code has different behavior depending on the type of migration:
       //
       // - Heterogeneous: we transformed the stack assuming we're re-entering
@@ -317,6 +325,9 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #if _DEBUG == 1
   // Hold until we can attach post-migration
   while(__hold);
+#endif
+#if _CLEAN_CRASH == 1
+  if(cur_nid != origin_nid) remote_debug_init(cur_nid);
 #endif
   if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
 
