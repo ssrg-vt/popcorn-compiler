@@ -3,6 +3,7 @@ BIN		:= gen-stackinfo
 DUMP_SM	:= dump-llvm-stackmap
 DUMP_ST	:= dump-stackinfo
 CHECK		:= check-stackmaps
+COMPRESS	:= compress
 
 POPCORN        := /usr/local/popcorn
 POPCORN_X86_64 := $(POPCORN)/x86_64
@@ -40,7 +41,7 @@ $(BIN): $(OBJ)
 	@echo " [CC] $@"
 	@$(CC) $(CFLAGS) -o $(@) $(OBJ) $(LDFLAGS) $(LIB)
 
-util: $(DUMP_SM) $(DUMP_ST)
+util: $(DUMP_SM) $(DUMP_ST) $(COMPRESS)
 
 $(DUMP_SM): utils/dump_llvm_stackmap.c $(CHECK_OBJ)
 	@echo " [CC] $@"
@@ -50,13 +51,17 @@ $(DUMP_ST): utils/dump_stackinfo.c $(UTIL_OBJ)
 	@echo " [CC] $@"
 	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
+$(COMPRESS): utils/compress.c $(UTIL_OBJ)
+	@echo " [CC] $@"
+	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
+
 check: $(CHECK)
 
 $(CHECK): utils/check_stackmaps.c $(CHECK_OBJ)
 	@echo " [CC] $@"
 	@$(CC) $(CFLAGS) -o $(@) $^ $(LDFLAGS) $(LIB)
 
-install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
+install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK) $(COMPRESS)
 	@echo " [INSTALL] $^ to $(POPCORN)/bin"
 	@cp $^ $(POPCORN)/bin
 
