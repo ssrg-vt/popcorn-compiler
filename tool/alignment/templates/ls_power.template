@@ -85,7 +85,6 @@ __DATA__		/* marker for the DATA section insertion */
   .eh_frame_hdr : { *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) *(.eh_frame.*) }
 
- .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
 __bss_start = .;
   
 __BSS__			/* Marker for the BSS section insertion */  
@@ -183,6 +182,7 @@ __TBSS__		/* Maker for the TBSS section insertion */
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
   }
+  .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
 
   . = ALIGN(64 / 8);
   . = SEGMENT_START("ldata-segment", .);
