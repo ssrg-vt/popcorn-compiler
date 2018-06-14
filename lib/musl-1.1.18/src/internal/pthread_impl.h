@@ -134,7 +134,8 @@ int __timedwait_cp(volatile int *, int, clockid_t, const struct timespec *, int)
 void __wait(volatile int *, volatile int *, int, int);
 static inline void __wake(volatile void *addr, int cnt, int priv)
 {
-	if (priv) priv = FUTEX_PRIVATE;
+	// TODO Popcorn: we don't currently support process-shared futexes
+	/*if (priv)*/ priv = FUTEX_PRIVATE;
 	if (cnt<0) cnt = INT_MAX;
 	__syscall(SYS_futex, addr, FUTEX_WAKE|priv, cnt) != -ENOSYS ||
 	__syscall(SYS_futex, addr, FUTEX_WAKE, cnt);

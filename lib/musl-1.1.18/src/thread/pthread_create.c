@@ -113,6 +113,12 @@ _Noreturn void __pthread_exit(void *result)
 		__unmapself(self->map_base, self->map_size);
 	}
 
+	// TODO Popcorn: we can't rely on the kernel's process-shared futex operation
+	// to wake threads waiting for us via pthread_join(). Explicitly clear & futex
+	// wake any waiters.
+	self->tid = 0;
+	futex(&self->tid, FUTEX_WAKE | FUTEX_PRIVATE, 1, NULL);
+
 	for (;;) __syscall(SYS_exit, 0);
 }
 
