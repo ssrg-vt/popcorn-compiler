@@ -19,12 +19,9 @@ binaries and to help migration between architectures:
 
 - We modified musl's TLS implementation to handle the changes made to gold to
   lay TLS out in an identical format between all architectures
-  
-- We removed futex system calls from the pthread implementation (used as the
-  synchronization primitive for many pthread constructs, e.g., condition
-  variables) as futex is not yet well-supported by the OS.  Note that calls to
-  futex are replaced by a spinlock, which may provide bad performance for some
-  applications.
+
+- We added the FUTEX_PRIVATE flag to all futex invocations as the kernel
+  doesn't currently support process-shared futexes
 
 - We added several pthread APIs to save/restore information needed by threads
   post-migration

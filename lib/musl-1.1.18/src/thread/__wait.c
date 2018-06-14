@@ -3,7 +3,8 @@
 void __wait(volatile int *addr, volatile int *waiters, int val, int priv)
 {
 	int spins=100;
-	if (priv) priv = FUTEX_PRIVATE;
+	// TODO Popcorn: we don't currently support process-shared futexes
+	/*if (priv)*/ priv = FUTEX_PRIVATE;
 	while (spins-- && (!waiters || !*waiters)) {
 		if (*addr==val) a_spin();
 		else return;
