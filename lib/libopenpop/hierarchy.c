@@ -8,29 +8,6 @@
 #include "libgomp.h"
 #include "hierarchy.h"
 
-/* Debug hierarchy operations */
-#define _DEBUG 1
-
-#ifdef _DEBUG
-# include <unistd.h>
-# include <stdio.h>
-# define LOG_OPEN() \
-  char fn[128]; \
-  snprintf(fn, 128, "/tmp/%d.log", gettid()); \
-  FILE *fp = fopen(fn, "a");
-# define LOG( msg, ... ) \
-  do { \
-    if(fp) { \
-      fprintf(fp, msg, __VA_ARGS__); \
-    } \
-  } while (0);
-# define LOG_CLOSE() if(fp) fclose(fp);
-#else
-# define LOG_OPEN()
-# define LOG( msg, ... )
-# define LOG_CLOSE()
-#endif
-
 /* Time barriers to detect load imbalance among nodes */
 //#define _TIME_BARRIER 1
 
@@ -49,10 +26,6 @@ node_info_t ALIGN_PAGE popcorn_node[MAX_POPCORN_NODES];
 
 void hierarchy_init_global(int nodes)
 {
-  LOG_OPEN();
-  LOG("Initializing global to %d nodes\n", nodes);
-  LOG_CLOSE();
-
   popcorn_global.sync.remaining = popcorn_global.sync.num = nodes;
   popcorn_global.opt.remaining = popcorn_global.opt.num = nodes;
   /* Note: *must* use reinit_all, otherwise there's a race condition between
@@ -67,10 +40,6 @@ void hierarchy_init_node(int nid)
 
   assert(popcorn_node[nid].sync.num == popcorn_node[nid].opt.num &&
          "Corrupt node configuration");
-  LOG_OPEN();
-  LOG("Initializing node %d to %lu threads\n", nid,
-       popcorn_node[nid].sync.num);
-  LOG_CLOSE();
 
   num = popcorn_node[nid].sync.num;
   popcorn_node[nid].sync.remaining = popcorn_node[nid].opt.remaining = num;
@@ -132,7 +101,6 @@ void hierarchy_hybrid_barrier(int nid, const char *desc)
 #ifdef _TIME_BARRIER
   struct timespec start, end;
 #endif
-  LOG_OPEN();
 
   leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync, NULL);
   if(leader)
@@ -140,10 +108,7 @@ void hierarchy_hybrid_barrier(int nid, const char *desc)
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
-    LOG("%d/%d (leader): %s global wait %p\n",
-        omp_get_thread_num(), nid, desc, &popcorn_global.bar);
     gomp_team_barrier_wait_nospin(&popcorn_global.bar);
-    LOG("%d/%d (leader): end global wait\n", omp_get_thread_num(), nid);
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &end);
     printf("%s barrier wait: %lld ns\n",
@@ -152,11 +117,7 @@ void hierarchy_hybrid_barrier(int nid, const char *desc)
 #endif
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
-  LOG("%d/%d: %s local wait %p\n",
-      omp_get_thread_num(), nid, desc, &popcorn_node[nid].bar);
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
-  LOG("%d/%d: end local wait\n", omp_get_thread_num(), nid);
-  LOG_CLOSE();
 }
 
 bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
@@ -165,7 +126,6 @@ bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 #ifdef _TIME_BARRIER
   struct timespec start, end;
 #endif
-  LOG_OPEN();
 
   leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync, NULL);
   if(leader)
@@ -173,10 +133,7 @@ bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
-    LOG("%d/%d (leader): %s global cancel wait %p\n",
-        omp_get_thread_num(), nid, desc, &popcorn_global.bar);
     ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
-    LOG("%d/%d (leader): end global cancel wait\n", omp_get_thread_num(), nid);
     // TODO if cancelled at global level need to cancel local barrier
 #ifdef _TIME_BARRIER
     if(!ret)
@@ -189,11 +146,7 @@ bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 #endif
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
-  LOG("%d/%d: %s local wait %p\n",
-      omp_get_thread_num(), nid, desc, &popcorn_node[nid].bar);
   ret |= gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
-  LOG("%d/%d: end local cancel wait\n", omp_get_thread_num(), nid);
-  LOG_CLOSE();
   return ret;
 }
 
@@ -203,7 +156,6 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 #ifdef _TIME_BARRIER
   struct timespec start, end;
 #endif
-  LOG_OPEN();
 
   leader = hierarchy_select_leader_synchronous(&popcorn_node[nid].sync, NULL);
   if(leader)
@@ -211,10 +163,7 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
-    LOG("%d/%d (leader): %s global final wait %p\n",
-        omp_get_thread_num(), nid, desc, &popcorn_global.bar);
     gomp_team_barrier_wait_final_nospin(&popcorn_global.bar);
-    LOG("%d/%d (leader): end global final wait\n", omp_get_thread_num(), nid);
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &end);
     printf("%s final team barrier wait: %lld ns\n",
@@ -223,11 +172,7 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 #endif
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
-  LOG("%d/%d: %s local final wait %p\n",
-      omp_get_thread_num(), nid, desc, &popcorn_node[nid].bar);
   gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
-  LOG("%d/%d: end local final wait\n", omp_get_thread_num(), nid);
-  LOG_CLOSE();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

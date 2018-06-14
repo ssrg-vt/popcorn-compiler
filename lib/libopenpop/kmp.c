@@ -27,6 +27,15 @@
 #include "hierarchy.h"
 #include "kmp.h"
 
+/* Enable timing parallel sections */
+#define _TIME_PARALLEL 1
+
+#ifdef _TIME_PARALLEL
+# include <time.h>
+# include <debug/log.h>
+# define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
+#endif
+
 /* Enable debugging information */
 //#define _KMP_DEBUG 1
 
@@ -72,6 +81,9 @@ void
 __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
 {
   int32_t mtid = 0, ltid = 0;
+#ifdef _TIME_PARALLEL
+  struct timespec start, end;
+#endif
   __kmp_data_t *wrapper_data = (__kmp_data_t *)malloc(sizeof(__kmp_data_t));
 
   DEBUG("__kmp_fork_call: %s calling %p\n", loc->psource, microtask);
@@ -98,12 +110,20 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   wrapper_data->data = ctx;
 
   /* Start workers & run the task */
+#ifdef _TIME_PARALLEL
+  clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
   microtask(&mtid, &ltid, ctx);
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
+#ifdef _TIME_PARALLEL
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  popcorn_log_single("%s\t%p\t%lu\n", loc->psource, microtask,
+                     NS(end) - NS(start));
+#endif
 
   if(argc > 1) free(ctx);
   free(wrapper_data);
