@@ -149,6 +149,11 @@ void __block_all_sigs(void *);
 void __block_app_sigs(void *);
 void __restore_sigs(void *);
 
+// TODO Popcorn: clear child's TID, wake any waiters with futex wake & exit
+// child with the given status.  Should be removed if/when the kernel supports
+// process-shared futexes.
+void __cleartid_exit_nostack(int *tid, int status);
+
 #define DEFAULT_STACK_SIZE 8388608 // 8MB, changed from 81920
 #define DEFAULT_GUARD_SIZE 4096
 

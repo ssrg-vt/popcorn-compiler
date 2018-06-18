@@ -113,12 +113,14 @@ _Noreturn void __pthread_exit(void *result)
 		__unmapself(self->map_base, self->map_size);
 	}
 
-	// TODO Popcorn: we can't rely on the kernel's process-shared futex operation
-	// to wake threads waiting for us via pthread_join(). Explicitly clear & futex
-	// wake any waiters.
-	self->tid = 0;
-	futex(&self->tid, FUTEX_WAKE | FUTEX_PRIVATE, 1, NULL);
-
+#if defined __aarch64__ || defined __x86_64__
+	/* TODO Popcorn: we can't rely on the kernel's process-shared futex operation
+	   to wake threads waiting for us via pthread_join(). Explicitly clear tid, futex
+	   wake any waiters and call exit. */
+	// Note this needs to happen without touching the stack because as soon as we
+	// clear tid the main thread will wake and unmap this thread's stack
+	__cleartid_exit_nostack(&self->tid, 0);
+#endif
 	for (;;) __syscall(SYS_exit, 0);
 }
 
