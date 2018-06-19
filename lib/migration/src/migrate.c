@@ -20,14 +20,6 @@
 #include "timer.h"
 #endif
 
-/* Thread migration status information. */
-struct popcorn_thread_status {
-	int current_nid;
-	int proposed_nid;
-	int peer_nid;
-	int peer_pid;
-} status;
-
 #if _ENV_SELECT_MIGRATE == 1
 
 /*
@@ -130,65 +122,47 @@ static inline int do_migrate(void *addr)
 
 #else /* _ENV_SELECT_MIGRATE */
 
+// TODO remove this in future versions
 static inline int do_migrate(void __attribute__((unused)) *fn)
 {
 	struct popcorn_thread_status status;
-	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
-
+	int ret = popcorn_getthreadinfo(&status);
+	if (ret) return -1;
 	return status.proposed_nid;
 }
 
 #endif /* _ENV_SELECT_MIGRATE */
 
-static struct node_info {
-  unsigned int status;
-  int arch;
-  int distance;
-} ni[MAX_POPCORN_NODES];
+static struct popcorn_node_status ni[MAX_POPCORN_NODES];
 static int origin_nid = -1;
 
 int node_available(int nid)
 {
   if(nid < 0 || nid >= MAX_POPCORN_NODES) return 0;
-  else return ni[nid].status;
+  return ni[nid].status;
 }
 
 enum arch current_arch(void)
 {
-	int nid = current_nid();
+	int nid = popcorn_getnid();
 	if (nid < 0 || nid >= MAX_POPCORN_NODES) return ARCH_UNKNOWN;
-
 	return ni[nid].arch;
 }
 
+// TODO remove this in future versions
 int current_nid(void)
 {
-	struct popcorn_thread_status status;
-	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
-
-	return status.current_nid;
+  return popcorn_getnid();
 }
 
+// TODO remove this in future versions
 // Note: not static, so if other libraries depend on querying node information
 // in constructors (e.g., libopenpop) they can *secretly* declare & call this
 // themselves.  We won't expose the function declaration though.
 void __attribute__((constructor)) __init_nodes_info(void)
 {
-	int ret;
-
-	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
-	if (ret)
-	{
-		perror("Cannot retrieve Popcorn node information");
-		for (int i = 0; i < MAX_POPCORN_NODES; i++)
-		{
-			ni[i].status = 0;
-			ni[i].arch = ARCH_UNKNOWN;
-			ni[i].distance = -1;
-		}
-		set_default_node(-1);
-	}
-	else set_default_node(origin_nid);
+  popcorn_getnodeinfo(&origin_nid, ni);
+  set_default_node(origin_nid);
 }
 
 /* Data needed post-migration. */
@@ -221,7 +195,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
   struct shim_data data;
   struct shim_data *data_ptr;
 #if _CLEAN_CRASH == 1
-  int cur_nid = current_nid();
+  int cur_nid = popcorn_getnid();
 #endif
 
   if(!node_available(nid))
@@ -338,14 +312,14 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
-  if (nid >= 0 && nid != current_nid())
+  if (nid >= 0 && nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
 /* Invoke migration to a particular node if we're not already there. */
 void migrate(int nid, void (*callback)(void *), void *callback_data)
 {
-  if (nid != current_nid())
+  if (nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
 
@@ -356,6 +330,6 @@ void migrate_schedule(size_t region,
                       void *callback_data)
 {
   int nid = get_node_mapping(region, popcorn_tid);
-  if (nid != current_nid())
+  if (nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 }

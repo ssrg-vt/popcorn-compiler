@@ -206,7 +206,7 @@ static void segfault_handler(int sig, siginfo_t *info, void *ctx)
   } while(0);
 
   // Note: *must* use trylock to ensure we don't block in signal handler
-  int nid = current_nid();
+  int nid = popcorn_getnid();
   if(!pthread_mutex_trylock(debug_info[nid].lock) && debug_info[nid].fd)
   {
     LOG_WRITE("%d: segfault @ %p\n", info.si_pid, info.si_addr);
