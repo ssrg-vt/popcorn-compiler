@@ -97,7 +97,7 @@ static regset_t regset_default_powerpc64()
 
 static regset_t regset_init_powerpc64(const void* regs)
 {
-  regset_obj_powerpc64* new = malloc(sizeof(regset_obj_powerpc64));
+  regset_obj_powerpc64* new = MALLOC(sizeof(regset_obj_powerpc64));
   ASSERT(new, "could not allocate regset (powerpc64)\n");
   new->common.initialized = true;
   new->regs = *(struct regset_powerpc64*)regs;

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+DO_LLVM=1
+DO_CLANG=1
 LLVM_SRC="n/a"
 CLANG_SRC="n/a"
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -12,6 +14,8 @@ function print_help {
   echo "Options"
   echo "  -h | --help : print help & exit"
   echo "  -s source   : LLVM source directory (required)"
+  echo "  --no-llvm   : don't generate patch for LLVM"
+  echo "  --no-clang  : don't generate patch for clang"
   echo
   echo "Note: we assume the clang source is at <LLVM src>/tools/clang"
   echo "Note: to track new source files, you must add them to the svn index" \
@@ -95,6 +99,8 @@ while [ "$1" != "" ]; do
       LLVM_SRC=$(readlink -f $2)
       CLANG_SRC=$(readlink -f $2)/tools/clang
       shift ;;
+    --no-llvm) DO_LLVM=0 ;;
+    --no-clang) DO_CLANG=0 ;;
     -h | --help)
       print_help
       exit 0 ;;
@@ -111,8 +117,12 @@ CLANG=clang-$LLVM_VER
 echo "Generating patches for clang/LLVM v$LLVM_VER"
 
 # Generate LLVM patch
-gen_compare_patch $LLVM_PATCH $LLVM $LLVM_PATCH/src $LLVM_SRC
+if [[ $DO_LLVM -eq 1 ]]; then
+  gen_compare_patch $LLVM_PATCH $LLVM $LLVM_PATCH/src $LLVM_SRC
+fi
 
 # Generate clang patch
-gen_compare_patch $LLVM_PATCH $CLANG $LLVM_PATCH/src/tools/clang $CLANG_SRC
+if [[ $DO_CLANG -eq 1 ]]; then
+  gen_compare_patch $LLVM_PATCH $CLANG $LLVM_PATCH/src/tools/clang $CLANG_SRC
+fi
 

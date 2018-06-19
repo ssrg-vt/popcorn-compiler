@@ -97,7 +97,7 @@ static regset_t regset_default_aarch64()
 
 static regset_t regset_init_aarch64(const void* regs)
 {
-  regset_obj_aarch64* new = malloc(sizeof(regset_obj_aarch64));
+  regset_obj_aarch64* new = MALLOC(sizeof(regset_obj_aarch64));
   ASSERT(new, "could not allocate regset (aarch64)\n");
   new->common.initialized = true;
   new->regs = *(struct regset_aarch64*)regs;

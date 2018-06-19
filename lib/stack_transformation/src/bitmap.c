@@ -19,7 +19,7 @@ bitmap bitmap_init(size_t size)
   bitmap new;
   ASSERT(size < MAX_BITMAP_SIZE, "requested bitmap size too large");
   new.size = size;
-  new.bits = malloc(bitmap_size(size));
+  new.bits = MALLOC(bitmap_size(size));
   memset(new.bits, 0, bitmap_size(size));
   return new;
 }
