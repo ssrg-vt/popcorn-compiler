@@ -72,7 +72,7 @@ st_handle st_init(const char* fn)
   TIMER_START(st_init);
   ST_INFO("Initializing handle for '%s'\n", fn);
 
-  if(!(handle = (st_handle)malloc(sizeof(struct _st_handle)))) goto return_null;
+  if(!(handle = (st_handle)MALLOC(sizeof(struct _st_handle)))) goto return_null;
   handle->fn = fn;
 
   /* Initialize libelf data */

@@ -403,6 +403,11 @@ void *__popcorn_malloc0(size_t n, int nid)
 	return p;
 }
 
+void *popcorn_malloc_cur(size_t n)
+{
+  return popcorn_malloc(n, popcorn_getnid());
+}
+
 int popcorn_get_arena(void *);
 
 void *popcorn_realloc(void *p, size_t n, int nid)
@@ -492,6 +497,11 @@ copy_realloc:
 	memcpy(new, p, n0-OVERHEAD);
 	popcorn_free(CHUNK_TO_MEM(self));
 	return new;
+}
+
+void *popcorn_realloc_cur(void *p, size_t n)
+{
+  return popcorn_realloc(p, n, popcorn_getnid());
 }
 
 void popcorn_free(void *p)
