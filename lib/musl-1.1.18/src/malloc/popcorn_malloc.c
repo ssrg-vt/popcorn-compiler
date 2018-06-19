@@ -44,8 +44,8 @@ static struct {
 #define DONTCARE 16
 #define RECLAIM 163840
 
-#define CHUNK_SIZE(c) ((c)->csize & -2)
-#define CHUNK_PSIZE(c) ((c)->psize & -2)
+#define CHUNK_SIZE(c) ((c)->csize & -4)
+#define CHUNK_PSIZE(c) ((c)->psize & -4)
 #define PREV_CHUNK(c) ((struct chunk *)((char *)(c) - CHUNK_PSIZE(c)))
 #define NEXT_CHUNK(c) ((struct chunk *)((char *)(c) + CHUNK_SIZE(c)))
 #define MEM_TO_CHUNK(p) (struct chunk *)((char *)(p) - OVERHEAD)
@@ -53,8 +53,11 @@ static struct {
 #define BIN_TO_CHUNK(i, n) (MEM_TO_CHUNK(&mal[n].bins[i].head))
 
 #define C_INUSE  ((size_t)1)
+#define C_POPCORN ((size_t)2)
 
 #define IS_MMAPPED(c) !((c)->csize & (C_INUSE))
+#define IS_POPCORN_ARENA(c) \
+	(((c)->csize & (C_POPCORN)) && (popcorn_get_arena(c) != -1))
 
 
 /* Synchronization tools */
@@ -149,7 +152,7 @@ void __dump_heap_node(int x, int n)
 			NEXT_CHUNK(c)->psize & 15);
 	for (i=0; i<64; i++) {
 		if (mal[n].bins[i].head != BIN_TO_CHUNK(i, n) && mal[n].bins[i].head) {
-			fprintf(stderr, "bin %d: %p\n", i, mal[n].bins[i].head);
+			fprintf(stderr, "Node %d: bin %d: %p\n", i, mal[n].bins[i].head);
 			if (!(mal[n].binmap & 1ULL<<i))
 				fprintf(stderr, "missing from binmap!\n");
 		} else if (mal[n].binmap & 1ULL<<i)
@@ -160,7 +163,7 @@ void __dump_heap_node(int x, int n)
 void __dump_heap(int x)
 {
 	int i;
-	for(i = 0; i < MAX_POPCORN_NODES; i++) __dump_heap_node(x, n);
+	for(i = 0; i < MAX_POPCORN_NODES; i++) __dump_heap_node(x, i);
 }
 #endif
 
@@ -198,19 +201,19 @@ static struct chunk *expand_heap(size_t n, int nid)
 		n -= SIZE_ALIGN;
 		p = (char *)p + SIZE_ALIGN;
 		w = MEM_TO_CHUNK(p);
-		w->psize = 0 | C_INUSE;
+		w->psize = 0 | C_INUSE | C_POPCORN;
 	}
 
 	/* Record new heap end and fill in footer. */
 	end[nid] = (char *)p + n;
 	w = MEM_TO_CHUNK(end[nid]);
-	w->psize = n | C_INUSE;
-	w->csize = 0 | C_INUSE;
+	w->psize = n | C_INUSE | C_POPCORN;
+	w->csize = 0 | C_INUSE | C_POPCORN;
 
 	/* Fill in header, which may be new or may be replacing a
 	 * zero-size sentinel header at the old end-of-heap. */
 	w = MEM_TO_CHUNK(p);
-	w->csize = n | C_INUSE;
+	w->csize = n | C_INUSE | C_POPCORN;
 
 	unlock(heap_lock[nid]);
 
@@ -239,8 +242,8 @@ static void unbin(struct chunk *c, int i, int n)
 		a_and_64(&mal[n].binmap, ~(1ULL<<i));
 	c->prev->next = c->next;
 	c->next->prev = c->prev;
-	c->csize |= C_INUSE;
-	NEXT_CHUNK(c)->psize |= C_INUSE;
+	c->csize |= C_INUSE | C_POPCORN;
+	NEXT_CHUNK(c)->psize |= C_INUSE | C_POPCORN;
 }
 
 static int alloc_fwd(struct chunk *c, int n)
@@ -304,10 +307,10 @@ static int pretrim(struct chunk *self, size_t n, int i, int j)
 	split->next = self->next;
 	split->prev->next = split;
 	split->next->prev = split;
-	split->psize = n | C_INUSE;
+	split->psize = n | C_INUSE | C_POPCORN;
 	split->csize = n1-n;
 	next->psize = n1-n;
-	self->csize = n | C_INUSE;
+	self->csize = n | C_INUSE | C_POPCORN;
 	return 1;
 }
 
@@ -321,10 +324,10 @@ static void trim(struct chunk *self, size_t n)
 	next = NEXT_CHUNK(self);
 	split = (void *)((char *)self + n);
 
-	split->psize = n | C_INUSE;
-	split->csize = n1-n | C_INUSE;
-	next->psize = n1-n | C_INUSE;
-	self->csize = n | C_INUSE;
+	split->psize = n | C_INUSE | C_POPCORN;
+	split->csize = n1-n | C_INUSE | C_POPCORN;
+	next->psize = n1-n | C_INUSE | C_POPCORN;
+	self->csize = n | C_INUSE | C_POPCORN;
 
 	popcorn_free(CHUNK_TO_MEM(split));
 }
@@ -359,7 +362,12 @@ void *popcorn_malloc(size_t n, int nid)
 		uint64_t mask = mal[nid].binmap & -(1ULL<<i);
 		if (!mask) {
 			c = expand_heap(n, nid);
-			if (!c) return 0;
+			if (!c) {
+				/* We may have run out of per-node arena space or concurrent
+				 * allocations may have interfered to give the illusion of a full
+				 * arena.  Regardless, forward to normal malloc. */
+				return malloc(n);
+			}
 			if (alloc_rev(c, nid)) {
 				struct chunk *x = c;
 				c = PREV_CHUNK(c);
@@ -406,22 +414,15 @@ void *popcorn_realloc(void *p, size_t n, int nid)
 
 	if (!p) return popcorn_malloc(n, nid);
 
-	self = MEM_TO_CHUNK(p);
-	n1 = n0 = CHUNK_SIZE(self);
-
-	/* If the current allocation's nid doesn't equal the current node, then free
-	 * it and allocate from the appropriate arena. */
-	cur_nid = popcorn_get_arena(p);
-	if(cur_nid != nid) {
-		new = popcorn_malloc(n, nid);
-		if(!new) return 0;
-		n0 -= OVERHEAD;
-		memcpy(new, p, n < n0 ? n : n0);
-		popcorn_free(p);
-		return new;
-	}
+	/* We can either bail & set errno or silently redirect calls with invalid
+	 * node IDs to the regular realloc.  Do the latter as many applications don't
+	 * error check realloc. */
+	if(nid < 0 || nid >= MAX_POPCORN_NODES) return realloc(p, n);
 
 	if (adjust_size(&n) < 0) return 0;
+
+	self = MEM_TO_CHUNK(p);
+	n1 = n0 = CHUNK_SIZE(self);
 
 	if (IS_MMAPPED(self)) {
 		size_t extra = self->psize;
@@ -445,6 +446,18 @@ void *popcorn_realloc(void *p, size_t n, int nid)
 		return CHUNK_TO_MEM(self);
 	}
 
+	/* If the current allocation's nid doesn't equal the current node, then free
+	 * it and allocate from the appropriate arena. */
+	cur_nid = popcorn_get_arena(p);
+	if(cur_nid != nid) {
+		new = popcorn_malloc(n, nid);
+		if(!new) return 0;
+		n0 -= OVERHEAD;
+		memcpy(new, p, n < n0 ? n : n0);
+		popcorn_free(p);
+		return new;
+	}
+
 	next = NEXT_CHUNK(self);
 
 	/* Crash on corrupted footer (likely from buffer overflow) */
@@ -462,8 +475,8 @@ void *popcorn_realloc(void *p, size_t n, int nid)
 		self = PREV_CHUNK(self);
 		n1 += CHUNK_SIZE(self);
 	}
-	self->csize = n1 | C_INUSE;
-	next->psize = n1 | C_INUSE;
+	self->csize = n1 | C_INUSE | C_POPCORN;
+	next->psize = n1 | C_INUSE | C_POPCORN;
 
 	/* If we got enough space, split off the excess and return */
 	if (n <= n1) {
@@ -504,8 +517,8 @@ void popcorn_free(void *p)
 
 	/* If we can't determine the arena, we've allocated from the global heap.
 	 * Forward call to the normal free. */
-	n = popcorn_get_arena(p);
-	if(n < 0) {
+	n = popcorn_get_arena(self);
+	if(!IS_POPCORN_ARENA(self)) {
 		free(p);
 		return;
 	}
@@ -518,8 +531,8 @@ void popcorn_free(void *p)
 
 	for (;;) {
 		if (self->psize & next->csize & C_INUSE) {
-			self->csize = final_size | C_INUSE;
-			next->psize = final_size | C_INUSE;
+			self->csize = final_size | C_INUSE | C_POPCORN;
+			next->psize = final_size | C_INUSE | C_POPCORN;
 			i = bin_index(final_size);
 			lock_bin(i, n);
 			lock(mal[n].free_lock);

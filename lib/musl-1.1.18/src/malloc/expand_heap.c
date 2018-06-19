@@ -5,6 +5,8 @@
 #include <platform.h>
 #include "libc.h"
 #include "syscall.h"
+#include "atomic.h"
+#include "pthread_impl.h"
 
 /* This function returns true if the interval [old,new]
  * intersects the 'len'-sized interval below &libc.auxv
@@ -80,9 +82,30 @@ void *__expand_heap(size_t *pn)
 #define ARENA_SIZE (1ULL << 30ULL)
 #define ARENA_START(base, nid) ((void *)((base) + ((nid) * ARENA_SIZE)))
 #define ARENA_CONTAINS(base, nid, ptr) \
-  (ARENA_START(base, nid) <= (ptr) && (ptr) < (ARENA_START(base, nid + 1)))
+	(ARENA_START(base, nid) <= (ptr) && (ptr) < (ARENA_START(base, nid + 1)))
 
 static uintptr_t arena_start;
+
+/* Set the start of the per-thread arenas. Gives the regular heap space
+ * in case the user is mixing regular & Popcorn allocations. */
+static inline void set_arena_start()
+{
+	static int lock[2];
+
+	if (libc.threads_minus_1)
+		while(a_swap(lock, 1)) __wait(lock, lock+1, 1, 1);
+
+	if (!arena_start) {
+		arena_start = __syscall(SYS_brk, 0);
+		arena_start += -arena_start & PAGE_SIZE-1;
+		arena_start += 4 * ARENA_SIZE;
+	}
+
+	if (lock[0]) {
+		a_store(lock, 0);
+		if (lock[1]) __wake(lock, 1, 1);
+	}
+}
 
 void *__mremap(void *, size_t, size_t, int, ...);
 
@@ -94,7 +117,6 @@ void *__expand_heap_node(size_t *pn, int nid)
 	// The node_sizes array contains the current heap size for a node.
 	static uintptr_t node_arenas[MAX_POPCORN_NODES];
 	static size_t node_sizes[MAX_POPCORN_NODES];
-	static unsigned mmap_step;
 	size_t n = *pn;
 	void *area;
 
@@ -109,12 +131,7 @@ void *__expand_heap_node(size_t *pn, int nid)
 	}
 	n += -n & PAGE_SIZE-1;
 
-	if (!arena_start) {
-		arena_start = __syscall(SYS_brk, 0);
-		arena_start += -arena_start & PAGE_SIZE-1;
-		arena_start += ARENA_SIZE; // Give the regular heap space in case the user
-					   // decides to mix regular & Popcorn allocations
-	}
+	if(!arena_start) set_arena_start();
 
 	if((node_sizes[nid] + n) <= ARENA_SIZE) {
 		// TODO Popcorn Linux doesn't currently support mremap.  Linux *shouldn't*
@@ -140,20 +157,17 @@ void *__expand_heap_node(size_t *pn, int nid)
 		return (void *)(node_arenas[nid] - n);
 	}
 
-	size_t min = (size_t)PAGE_SIZE << mmap_step/2;
-	if (n < min) n = min;
-	area = __mmap(0, n, PROT_READ|PROT_WRITE,
-		      MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-	if (area == MAP_FAILED) return 0;
-	*pn = n;
-	mmap_step++;
-	return area;
+	// TODO without extra metadata we can't detect which arena malloc'd space
+	// belongs with anonymous mmaps, so for now just bail.
+	*pn = 0;
+	return NULL;
 }
 
 int popcorn_get_arena(void *ptr)
 {
-	int i;
-	for(i = 0; i < MAX_POPCORN_NODES; i++)
-		if(ARENA_CONTAINS(arena_start, i, ptr)) return i;
-	return -1;
+	int arena;
+	if (!arena_start) set_arena_start();
+	arena = (int)(((uintptr_t)ptr - arena_start) / ARENA_SIZE);
+	if(arena >= MAX_POPCORN_NODES) arena = -1;
+	return arena;
 }
