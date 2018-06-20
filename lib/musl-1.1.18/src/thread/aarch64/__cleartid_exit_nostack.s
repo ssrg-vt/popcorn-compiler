@@ -1,5 +1,5 @@
 // __cleartid_exit_nostack(tidptr, status)
-//                         x0      x1
+//                         x0      w1
 
 // syscall(SYS_futex, int *uaddr, int futex_op, int val, ...)
 // syscall(SYS_exit, int status)
@@ -8,7 +8,7 @@
 .global __cleartid_exit_nostack
 __cleartid_exit_nostack:
   // Save the status for after the futex wake call
-  mov x19, x1
+  mov w19, w1
 
   // Clear tid & call futex wake for joining threads.  We are *not* allowed to
   // touch the stack after this point.
