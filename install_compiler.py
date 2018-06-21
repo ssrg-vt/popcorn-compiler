@@ -671,6 +671,7 @@ def install_newlib_x86_64(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
         print('Cannot build/install newlib x86_64: {}'.format(e))
+        sys.exit(1)
 
     os.chdir(cur_dir)
 
@@ -737,6 +738,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
         rv = shutil.copyfile(newlib_download_path + '/build/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
     except Exception as e:
        print('Cannot build/install newlib aarch64: {}'.format(e))
+       sys.exit(1)
 
     os.chdir(cur_dir)
 
