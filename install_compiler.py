@@ -90,19 +90,19 @@ def setup_argument_parsing():
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
-    process_opts.add_argument("--skip-hermit_x86_64-install",
+    process_opts.add_argument("--skip-hermit-x86-64-install",
                         help="Skip installation of the HermitCore x86_64 kernel",
                         action="store_true",
                         dest="skip_hermit_x86_64_install")
-    process_opts.add_argument("--skip-hermit_aarch64-install",
+    process_opts.add_argument("--skip-hermit-aarch64-install",
                         help="Skip installation of the HermitCore aarch64 kernel",
                         action="store_true",
                         dest="skip_hermit_aarch64_install")
-    process_opts.add_argument("--skip-newlib_x86_64-install",
+    process_opts.add_argument("--skip-newlib-x86-64-install",
                         help="Skip installation of newlib x86_64",
                         action="store_true",
                         dest="skip_newlib_x86_64_install")
-    process_opts.add_argument("--skip-newlib_aarch64-install",
+    process_opts.add_argument("--skip-newlib-aarch64-install",
                         help="Skip installation of newlib aarch64",
                         action="store_true",
                         dest="skip_newlib_aarch64_install")
