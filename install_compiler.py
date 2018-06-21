@@ -338,7 +338,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     #=====================================================
-    # CONFIGURE & INSTALL LIBELF x86_64-hermit 
+    # CONFIGURE & INSTALL LIBELF x86_64-hermit
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib/libelf_hermit'))
 
@@ -357,11 +357,11 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         if rv != 0:
             print('Make install libelf x86_64-hermit failed.')
             sys.exit(1)
- 
+
     #=====================================================
     # CONFIGURE & INSTALL LIBELF aarch64-hermit
     #=====================================================
-    
+
     print('Making & installing libelf aarch64-hermit...')
     try:
         rv = subprocess.check_call(['make',
@@ -376,7 +376,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         if rv != 0:
             print('Make install libelf aarch64-hermit failed.')
             sys.exit(1)
- 
+
     os.chdir(cur_dir)
 
     #=====================================================
@@ -761,7 +761,7 @@ def install_hermit_x86_64(base_path, install_path, threads):
         sys.exit(1)
 
     print('Running Cmake for HermitCore x86_64')
-   
+
     os.makedirs(hermit_download_path + '/build')
     os.chdir(hermit_download_path + '/build')
 
