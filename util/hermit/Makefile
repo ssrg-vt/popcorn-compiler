@@ -7,39 +7,59 @@ POPHERMIT_PREFIX=$(POPHERMIT)
 
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
+PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
-CFLAGS+=-target x86_64-hermit -O3 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment
+CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
+CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit -fno-builtin #TODO fnobuiltin needed?
 
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
-	-isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include \
-	-isystem $(PH_PREFIX_X86)/include -nostdinc
+	-isystem $(PH_PREFIX_HOST)/lib/clang/3.7.1/include
+
+INC_X86=$(INC) -isystem $(PH_PREFIX_X86)/include -nostdinc
+INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
 
 SRCS=$(shell ls *.c)
-OBJS=$(SRCS:.c=.o)
+OBJS_X86=$(SRCS:.c=.x86.o)
+OBJS_ARM=$(SRCS:.c=.arm.o)
 
-PROG=prog_x86-64
-TMP_FOLDER=build_x86-64/
-LINKER_SCRIPT=$(PH_PREFIX_X86)/lib/ls.x
-ADD_OBJS=$(PH_PREFIX_X86)/lib/crt0.o \
+PROG_X86=prog_x86-64
+PROG_ARM=prog_aarch64
+TMP_FOLDER_X86=build_x86-64/
+TMP_FOLDER_ARM=build_aarch64/
+LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
+LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
+
+ADD_OBJS_X86=$(PH_PREFIX_X86)/lib/crt0.o \
 		 $(PH_PREFIX_X86)/lib/crti.o \
 		 $(PH_PREFIX_X86)/lib/crtbegin.o \
 		 $(PH_PREFIX_X86)/lib/crtend.o \
 		 $(PH_PREFIX_X86)/lib/crtn.o
 
-LIBS=-lpthread -lhermit -lstack-transform -lelf -lm -lc
-KERNEL=$(PH_PREFIX_X86)/lib/libhermit.a
-LDFLAGS=-L$(PH_PREFIX_X86)/lib
+ADD_OBJS_ARM=$(PH_PREFIX_ARM)/lib/crt0.o \
+		 $(PH_PREFIX_ARM)/lib/crti.o \
+		 $(PH_PREFIX_ARM)/lib/crtbegin.o \
+		 $(PH_PREFIX_ARM)/lib/crtend.o \
+		 $(PH_PREFIX_ARM)/lib/crtn.o
+
+#LIBS=-lpthread -lhermit -lstack-transform -lelf -lm -lc
+LIBS=-lhermit -lstack-transform -lelf -lm -lc -lgcc
+KERNEL_X86=$(PH_PREFIX_X86)/lib/libhermit.a
+KERNEL_ARM=$(PH_PREFIX_ARM)/lib/libhermit.a
+
+LDFLAGS=-static
+LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86)
+LDFLAGS_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ARM)
 
 # ----------------------
 # Hermit runtime options
 # ----------------------
 PROXY=$(PH_PREFIX_HOST)/bin/proxy
-ISLE=uhyve
 MEM?=2G
 VERBOSE?=0
 CPUS?=1
@@ -48,33 +68,53 @@ MIGTEST?=0
 RESUME?=0
 DEBUG?=0
 
-all: $(PROG)
+all: $(PROG_X86) $(PROG_ARM)
 
-%.o: %.c
+%.x86.o: %.c
 	@#0. Create tmp folder if needed
-	mkdir -p $(TMP_FOLDER) && touch $(TMP_FOLDER)/.dir
+	mkdir -p $(TMP_FOLDER_X86) && touch $(TMP_FOLDER_X86)/.dir
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS) $(INC) -c $< -emit-llvm -o $(TMP_FOLDER)/$<.bc
+	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $(TMP_FOLDER_X86)/$<.bc
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
-		-o $(TMP_FOLDER)/$<.bc $(TMP_FOLDER)/$<.bc
+		-o $(TMP_FOLDER_X86)/$<.bc $(TMP_FOLDER_X86)/$<.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS) -target x86_64-hermit -static \
-		-c $(TMP_FOLDER)/$<.bc -o $@
+	$(CC) $(CFLAGS_X86)	-c $(TMP_FOLDER_X86)/$<.bc -o $@
 
-$(PROG): $(OBJS) $(KERNEL)
+%.arm.o: %.c
+	@#0. Create tmp folder if needed
+	mkdir -p $(TMP_FOLDER_ARM) && touch $(TMP_FOLDER_ARM)/.dir
+	@# 1. emit bitcode
+	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $(TMP_FOLDER_ARM)/$<.bc
+	@# 2. Optimize
+	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
+		-o $(TMP_FOLDER_ARM)/$<.bc $(TMP_FOLDER_ARM)/$<.bc
+	@# 3. Compile into object file
+	$(CC) $(CFLAGS_ARM)	-c $(TMP_FOLDER_ARM)/$<.bc -o $@
+
+$(PROG_X86): $(OBJS_X86) $(KERNEL_X86)
 	@# 4. Link
-	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(OBJS) $(ADD_OBJS) $(LIBS) $(LDFLAGS)
+	$(LD) -o $(PROG_X86) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_X86)
 	@# 5. Post-process
-	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG)
+	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86)
 	@# 6. Change OSABI
-	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore $(PROG)
+	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+		$(PROG_X86)
 
-test: all
-	HERMIT_ISLE=$(ISLE) HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+$(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM)
+	@# 4. Link
+	$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
+	@# 5. Post-process
+	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM)
+	@# 6. Change OSABI
+	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+		$(PROG_ARM)
+
+test-x86: $(PROG_X86)
+	HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
-		$(PROXY) $(PROG) $(ARGS)
+		$(PROXY) $(PROG_X86) $(ARGS)
 
 objdump:
 	objdump --source $(PROG) > /tmp/objdump.txt && vim /tmp/objdump.txt
@@ -86,5 +126,6 @@ dump-llvm-stackmaps:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG)
 
 clean:
-	rm -rf $(TMP_FOLDER) *.o $(PROG) stack-transform.log bss.bin data.bin \
-		fds.bin heap.bin mdata.bin stack.bin.* tls.bin.*
+	rm -rf $(TMP_FOLDER_X86) $(TMP_FOLDER_ARM) *.o $(PROG_X86) $(PROG_ARM) \
+		stack-transform.log	bss.bin data.bin fds.bin heap.bin mdata.bin \
+		stack.bin.* tls.bin.*
