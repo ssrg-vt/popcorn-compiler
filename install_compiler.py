@@ -32,7 +32,7 @@ binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_x86_64_git_branch = 'llvm-stable-pierre'
+hermit_x86_64_git_branch = 'llvm-stable-x86'
 hermit_aarch64_git_branch = 'llvm-stable-aarch64'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
