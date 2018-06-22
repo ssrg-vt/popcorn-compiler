@@ -44,13 +44,22 @@ typedef struct {
   bool distributed; /* Are we running distributed? */
   bool finished; /* Are we doing end-of-application cleanup? */
 
-  /* Enable/disable optimizations */
+  /* Enable/disable functionality */
   bool hybrid_barrier;
   bool hybrid_reduce;
+  bool het_workshare;
 
   /* Popcorn nodes available & thread placement across nodes */
   unsigned long nodes;
   unsigned long threads_per_node[MAX_POPCORN_NODES];
+
+  /* The compute power "rating" of cores on each node.  For example, an
+     individual core on a node with a rating of 2 is considered to be twice as
+     fast as a core a node with a rating of 1.  Work-sharing directives adjust
+     how work is distributed according to the node's rating. */
+  // TODO currently only applies to statically-scheduled for-loops
+  unsigned long core_speed_rating[MAX_POPCORN_NODES];
+  unsigned long scaled_thread_range;
 
   /* Global node leader selection */
   leader_select_t ALIGN_PAGE sync;

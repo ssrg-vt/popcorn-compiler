@@ -652,6 +652,63 @@ invalid:
 }
 
 static bool
+parse_het_workshare_var (const char *name)
+{
+  char *env = getenv (name), *num_end;
+  unsigned long cur;
+  unsigned long count[MAX_POPCORN_NODES], value;
+  if (env == NULL)
+    goto invalid;
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (env == '\0')
+    goto invalid;
+
+  /* For now, only accept comma-separated list of the following:
+       {rating}: speed rating for a core on the current node */
+  cur = 0;
+  memset(count, 0, sizeof(count));
+  do
+    {
+      if (*env != '{')
+        goto invalid;
+      ++env;
+      while (isspace ((unsigned char) *env))
+        ++env;
+
+      errno = 0;
+      value = strtoul (env, &num_end, 10);
+      if (errno || (long) value < 0 || env == num_end)
+        goto invalid;
+      count[cur++] = value;
+      env = num_end;
+
+      while (isspace ((unsigned char) *env))
+        ++env;
+      if (*env != '}')
+        goto invalid;
+      ++env;
+
+      while (isspace ((unsigned char) *env))
+        ++env;
+      if (*env == '\0')
+        break;
+      else if (*env != ',')
+        goto invalid;
+      ++env;
+      while (isspace ((unsigned char) *env))
+        ++env;
+    }
+  while (cur < MAX_POPCORN_NODES);
+
+  return popcorn_affinity_init_node_ratings(count, cur, false);
+
+invalid:
+  return false;
+}
+
+static bool
 parse_places_var (const char *name, bool ignore)
 {
   char *env = getenv (name), *end;
@@ -1252,6 +1309,14 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
                      popcorn_global.threads_per_node[i]);
         }
       fputs ("\n", stderr);
+      fputs ("  POPCORN_HET_WORKSHARE({node, rating}) =", stderr);
+      for (i = 0; i < MAX_POPCORN_NODES; i++)
+        {
+          if (popcorn_global.core_speed_rating[i] > 0.0)
+            fprintf (stderr, " {%u, %lu}", i,
+                     popcorn_global.core_speed_rating[i]);
+        }
+      fputs ("\n", stderr);
       fprintf (stderr, "  POPCORN_HYBRID_BARRIER = %s\n",
                popcorn_global.hybrid_barrier ? "TRUE" : "FALSE");
       fprintf (stderr, "  POPCORN_HYBRID_REDUCE = %s\n",
@@ -1388,6 +1453,8 @@ initialize_env (void)
     {
       parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
       parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
+      popcorn_global.het_workshare =
+        parse_het_workshare_var("POPCORN_HET_WORKSHARE");
     }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task

@@ -211,3 +211,36 @@ popcorn_affinity_init_nodes_uniform (unsigned long count, bool quiet)
 
   return popcorn_global.nodes;
 }
+
+/* This *must* be called after initializing node/thread placement data */
+bool popcorn_affinity_init_node_ratings (unsigned long *ratings,
+                                         unsigned long n,
+                                         bool quiet)
+{
+  int i;
+  unsigned long cur = 0;
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(popcorn_global.threads_per_node[i])
+    {
+      if(cur < n)
+      {
+        popcorn_global.scaled_thread_range +=
+          popcorn_global.threads_per_node[i] * ratings[cur];
+        popcorn_global.core_speed_rating[i] = ratings[cur++];
+      }
+      else
+      {
+        popcorn_global.scaled_thread_range +=
+          popcorn_global.threads_per_node[i];
+        popcorn_global.core_speed_rating[i] = 1;
+      }
+    }
+  }
+
+  if(!cur && !quiet)
+    gomp_error("No Popcorn nodes available");
+
+  return cur > 0;
+}

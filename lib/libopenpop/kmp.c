@@ -13,9 +13,6 @@
 // TODO for function which take a kmp_critical_name: lock using the name
 // instead of falling back on GOMP_critical_start/end (may cause false waiting)
 
-// TODO GOMP_ordered_start/end are empty...shouldn't these be setting ordering
-// thread execution?
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -121,8 +118,7 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
 #ifdef _TIME_PARALLEL
   clock_gettime(CLOCK_MONOTONIC, &end);
-  popcorn_log_single("%s\t%p\t%lu\n", loc->psource, microtask,
-                     NS(end) - NS(start));
+  popcorn_log("%s\t%p\t%lu\n", loc->psource, microtask, NS(end) - NS(start));
 #endif
 
   if(argc > 1) free(ctx);
@@ -132,6 +128,114 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
 ///////////////////////////////////////////////////////////////////////////////
 // Work-sharing
 ///////////////////////////////////////////////////////////////////////////////
+
+/*
+ * Get the logical starting point & its range skewed based on the core rating
+ * supplied by the user.
+ * @param gtid global thread ID of this thread
+ * @param start start of logical range for assigning loop iterations
+ * @param range size of logical range for assigning loop iterations
+ */
+static void
+get_scaled_range(int32_t gtid, unsigned long *start, unsigned long *range)
+{
+  int i, tcount = 0, diff;
+  unsigned long cur_range = 0;
+  *start = UINT64_MAX;
+  *range = UINT64_MAX;
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(gtid < (int)(tcount + popcorn_global.threads_per_node[i]))
+    {
+      diff = gtid - tcount;
+      *start = cur_range + diff * popcorn_global.core_speed_rating[i];
+      *range = popcorn_global.core_speed_rating[i];
+      break;
+    }
+    else
+    {
+      tcount += popcorn_global.threads_per_node[i];
+      cur_range += popcorn_global.threads_per_node[i] *
+                   popcorn_global.core_speed_rating[i];
+    }
+  }
+}
+
+/*
+ * Compute the upper and lower bounds and stride to be used for the set of
+ * iterations to be executed by the current thread from the statically
+ * scheduled loop that is described by the initial values of the bounds,
+ * stride, increment and chunk size.  Skew the iterations assigned according to
+ * user-supplied per-node values.
+ * @param nthreads number of threads in the team
+ * @param gtid global thread ID of this thread
+ * @param schedtype scheduling type
+ * @param plastiter pointer to the "last iteration" flag
+ * @param plower pointer to the lower bound
+ * @param pupper pointer to the upper bound
+ * @param pstride pointer to the stride
+ * @param incr loop increment
+ * @param chunk the chunk size
+ * @param total_trips total number of loop iterations to be scheduled
+ */
+#define MIN( a, b ) ((a) < (b) ? (a) : (b))
+#define for_static_skewed_init(NAME, TYPE)                                    \
+static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
+                                          int32_t gtid,                       \
+                                          int32_t schedtype,                  \
+                                          int32_t *plastiter,                 \
+                                          TYPE *plower,                       \
+                                          TYPE *pupper,                       \
+                                          TYPE *pstride,                      \
+                                          TYPE incr,                          \
+                                          TYPE chunk,                         \
+                                          TYPE total_trips)                   \
+{                                                                             \
+  unsigned long start, range, scaled_thr = popcorn_global.scaled_thread_range;\
+                                                                              \
+  get_scaled_range(gtid, &start, &range);                                     \
+  assert(start != UINT64_MAX && "Invalid core speed rating");                 \
+  switch(schedtype)                                                           \
+  {                                                                           \
+  case kmp_sch_static: {                                                      \
+    if(total_trips < scaled_thr)                                              \
+    {                                                                         \
+      if(start < total_trips)                                                 \
+      {                                                                       \
+        *plower += incr * start;                                              \
+        *pupper = *plower + incr * MIN(range - 1, total_trips - 1 - start);   \
+      }                                                                       \
+      else *plower = *pupper + incr;                                          \
+      if(plastiter != NULL) *plastiter = (start + range >= total_trips - 1);  \
+    }                                                                         \
+    else                                                                      \
+    {                                                                         \
+      TYPE chunk = total_trips / scaled_thr;                                  \
+      TYPE extras = total_trips % scaled_thr;                                 \
+      TYPE my_extras = 0;                                                     \
+      if(extras && start < extras) my_extras = MIN(range, extras - start);    \
+      *plower += incr * (start * chunk + (start < extras ? start : extras));  \
+      *pupper = *plower + incr * (chunk * range + my_extras - 1);             \
+      if(plastiter != NULL) *plastiter = (gtid == nthreads - 1);              \
+    }                                                                         \
+    break;                                                                    \
+  }                                                                           \
+  case kmp_sch_static_chunked: {                                              \
+    assert(false && "TODO!");                                                 \
+    *plower = *pupper + incr;                                                 \
+    break;                                                                    \
+  }                                                                           \
+  default:                                                                    \
+    assert(false && "Unknown scheduling algorithm");                          \
+  }                                                                           \
+}                                                                             \
+
+/* Generate the above function for int32_t, uint32_t, int64_t, && uint64_t. */
+for_static_skewed_init(4, int32_t)
+for_static_skewed_init(4u, uint32_t)
+for_static_skewed_init(8, int64_t)
+for_static_skewed_init(8u, uint64_t)
 
 /*
  * Compute the upper and lower bounds and stride to be used for the set of
@@ -148,7 +252,7 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
  * @param incr loop increment
  * @param chunk the chunk size
  */
-#define __kmpc_for_static_init(NAME, TYPE)                                    \
+#define __kmpc_for_static_init(NAME, TYPE, SPEC)                              \
 void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
                                    int32_t gtid,                              \
                                    int32_t schedtype,                         \
@@ -162,7 +266,8 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   int nthreads = omp_get_num_threads();                                       \
   TYPE total_trips;                                                           \
                                                                               \
-  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d %ld %ld %ld %ld %ld\n",  \
+  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d "                        \
+        SPEC SPEC SPEC SPEC SPEC "\n",                                        \
         loc->psource, gtid, schedtype, *plastiter, (int64_t)*plower,          \
         (int64_t)*pupper, (int64_t)*pstride, (int64_t)incr, (int64_t)chunk);  \
                                                                               \
@@ -170,6 +275,14 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   else if(incr == -1) total_trips = (*plower - *pupper) + 1;                  \
   else if(incr > 1) total_trips = ((*pupper - *plower) / incr) + 1;           \
   else total_trips = ((*plower - *pupper) / (-incr)) + 1;                     \
+                                                                              \
+  if(popcorn_global.het_workshare)                                            \
+  {                                                                           \
+    for_static_skewed_init_##NAME(nthreads, gtid, schedtype, plastiter,       \
+                                  plower, pupper, pstride, incr, chunk,       \
+                                  total_trips);                               \
+    return;                                                                   \
+  }                                                                           \
                                                                               \
   switch(schedtype)                                                           \
   {                                                                           \
@@ -203,14 +316,16 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   }                                                                           \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
+    *plower = *pupper + incr;                                                 \
+    break;                                                                    \
   }                                                                           \
 }
 
 /* Generate the above function for int32_t, uint32_t, int64_t, && uint64_t. */
-__kmpc_for_static_init(4, int32_t)
-__kmpc_for_static_init(4u, uint32_t)
-__kmpc_for_static_init(8, int64_t)
-__kmpc_for_static_init(8u, uint64_t)
+__kmpc_for_static_init(4, int32_t, "%d")
+__kmpc_for_static_init(4u, uint32_t, "%u")
+__kmpc_for_static_init(8, int64_t, "%ld")
+__kmpc_for_static_init(8u, uint64_t, "%lu")
 
 /*
  * Mark the end of a statically scheduled loop.
@@ -237,7 +352,7 @@ void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
  * @param st the stride
  * @param chunk the chunk size
  */
-#define __kmpc_dispatch_init(NAME, TYPE, INIT_FUNC)                           \
+#define __kmpc_dispatch_init(NAME, TYPE, SPEC, INIT_FUNC)                     \
 void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
                             int32_t gtid,                                     \
                             enum sched_type schedule,                         \
@@ -246,7 +361,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
                             TYPE st,                                          \
                             TYPE chunk)                                       \
 {                                                                             \
-  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d %ld %ld %ld %ld\n",           \
+  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d "SPEC SPEC SPEC SPEC"\n",     \
         loc->psource, gtid, schedule, (int64_t)lb, (int64_t)ub,               \
         (int64_t)st, (int64_t)chunk);                                         \
                                                                               \
@@ -258,10 +373,10 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   INIT_FUNC(lb, ub + 1, st, chunk);                                           \
 }
 
-__kmpc_dispatch_init(4, int32_t, GOMP_loop_dynamic_init)
-__kmpc_dispatch_init(4u, uint32_t, GOMP_loop_ull_dynamic_init)
-__kmpc_dispatch_init(8, int64_t, GOMP_loop_dynamic_init)
-__kmpc_dispatch_init(8u, uint64_t, GOMP_loop_ull_dynamic_init)
+__kmpc_dispatch_init(4, int32_t, "%d", GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_init)
+__kmpc_dispatch_init(8, int64_t, "%ld", GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_init)
 
 /*
  * Mark the end of a dynamically scheduled loop.
@@ -291,7 +406,7 @@ __kmpc_dispatch_fini(8u)
  * @param p_ub pointer to the upper bound
  * @param p_st (unused)
  */
-#define __kmpc_dispatch_next(NAME, TYPE, NEXT_FUNC, ISLAST_FUNC, GTYPE)       \
+#define __kmpc_dispatch_next(NAME, TYPE, SPEC, NEXT_FUNC, ISLAST_FUNC, GTYPE) \
 int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
                                 int32_t gtid,                                 \
                                 int32_t *p_last,                              \
@@ -315,20 +430,19 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
     __kmpc_dispatch_fini_##NAME(loc, gtid);                                   \
   }                                                                           \
                                                                               \
-  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d %ld %ld %ld\n",            \
-        loc->psource, gtid, ret, *p_last, (int64_t)*p_lb, (int64_t)*p_ub,     \
-        (int64_t)*p_st);                                                      \
+  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d "SPEC SPEC SPEC"\n",       \
+        loc->psource, gtid, ret, *p_last, *p_lb, *p_ub, *p_st);               \
                                                                               \
   return ret;                                                                 \
 }
 
-__kmpc_dispatch_next(4, int32_t, GOMP_loop_dynamic_next,
+__kmpc_dispatch_next(4, int32_t, "%d", GOMP_loop_dynamic_next,
                      gomp_iter_is_last, long)
-__kmpc_dispatch_next(4u, uint32_t, GOMP_loop_ull_dynamic_next,
+__kmpc_dispatch_next(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_next,
                      gomp_iter_is_last_ull, unsigned long long)
-__kmpc_dispatch_next(8, int64_t, GOMP_loop_dynamic_next,
+__kmpc_dispatch_next(8, int64_t, "%ld", GOMP_loop_dynamic_next,
                      gomp_iter_is_last, long)
-__kmpc_dispatch_next(8u, uint64_t, GOMP_loop_ull_dynamic_next,
+__kmpc_dispatch_next(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_next,
                      gomp_iter_is_last_ull, unsigned long long)
 
 /*

@@ -729,6 +729,8 @@ extern void gomp_get_place_proc_ids_8 (int, int64_t *);
 
 extern bool popcorn_affinity_init_nodes (unsigned long *, unsigned long, bool);
 extern bool popcorn_affinity_init_nodes_uniform (unsigned long, bool);
+extern bool popcorn_affinity_init_node_ratings (unsigned long *, unsigned long,
+                                                bool);
 
 /* iter.c */
 
