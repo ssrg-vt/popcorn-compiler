@@ -1,4 +1,5 @@
-build_x86-64
 prog_x86-64
+prog_aarch64
+*.bc
 *.o
 npbparams.h
