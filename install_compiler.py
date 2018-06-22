@@ -707,7 +707,7 @@ def install_hermit_x86_64(base_path, install_path, threads):
         rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
-            '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options at some point
+            '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options or make it optional at some point
             '..'])
     except Exception as e:
         sys.exit('Error running hermitcore x86_64 cmake: {}'.format(e))

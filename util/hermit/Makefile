@@ -8,7 +8,7 @@ POPHERMIT_PREFIX=$(POPHERMIT)
 PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 
-CFLAGS+=-target x86_64-hermit -O0 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-target x86_64-hermit -O3 -Wall -Wno-unused-variable -g -nostdlib \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment
 
@@ -32,7 +32,7 @@ ADD_OBJS=$(PH_PREFIX_X86)/lib/crt0.o \
 		 $(PH_PREFIX_X86)/lib/crtn.o
 
 LIBS=-lpthread -lhermit -lstack-transform -lelf -lm -lc
-
+KERNEL=$(PH_PREFIX_X86)/lib/libhermit.a
 LDFLAGS=-L$(PH_PREFIX_X86)/lib
 
 # ----------------------
@@ -40,9 +40,13 @@ LDFLAGS=-L$(PH_PREFIX_X86)/lib
 # ----------------------
 PROXY=$(PH_PREFIX_HOST)/bin/proxy
 ISLE=uhyve
-MEM?=4G
+MEM?=2G
 VERBOSE?=0
 CPUS?=1
+ARGS?=
+MIGTEST?=0
+RESUME?=0
+DEBUG?=0
 
 all: $(PROG)
 
@@ -52,13 +56,13 @@ all: $(PROG)
 	@# 1. emit bitcode
 	$(CC) $(CFLAGS) $(INC) -c $< -emit-llvm -o $(TMP_FOLDER)/$<.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt -O3 -insert-stackmaps \
+	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
 		-o $(TMP_FOLDER)/$<.bc $(TMP_FOLDER)/$<.bc
 	@# 3. Compile into object file
-	$(CC) -target x86_64-hermit -static -mllvm -optimize-regalloc \
+	$(CC) $(CFLAGS) -target x86_64-hermit -static \
 		-c $(TMP_FOLDER)/$<.bc -o $@
 
-$(PROG): $(OBJS)
+$(PROG): $(OBJS) $(KERNEL)
 	@# 4. Link
 	$(LD) -T $(LINKER_SCRIPT) -o $(PROG) $(OBJS) $(ADD_OBJS) $(LIBS) $(LDFLAGS)
 	@# 5. Post-process
@@ -68,7 +72,9 @@ $(PROG): $(OBJS)
 
 test: all
 	HERMIT_ISLE=$(ISLE) HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
-		HERMIT_VERBOSE=$(VERBOSE) $(PROXY) $(PROG)
+		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
+		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
+		$(PROXY) $(PROG) $(ARGS)
 
 objdump:
 	objdump --source $(PROG) > /tmp/objdump.txt && vim /tmp/objdump.txt
@@ -80,4 +86,5 @@ dump-llvm-stackmaps:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG)
 
 clean:
-	rm -rf $(TMP_FOLDER) *.o $(PROG) stack-transform.log
+	rm -rf $(TMP_FOLDER) *.o $(PROG) stack-transform.log bss.bin data.bin \
+		fds.bin heap.bin mdata.bin stack.bin.* tls.bin.*

@@ -76,7 +76,6 @@ ret_t update_function_addr(bin *b, const char *sec)
 
   if(!(scn = get_section_by_name(b->e, sec))) return FIND_SECTION_FAILED;
   if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
-printf("size = %lu entsize = %lu\n", shdr->sh_size, shdr->sh_entsize);
   if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
   if(!(ua = get_section_data(scn))) return READ_ELF_FAILED;
 
