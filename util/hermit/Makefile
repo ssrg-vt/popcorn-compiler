@@ -30,8 +30,6 @@ OBJS_ARM=$(SRCS:.c=.arm.o)
 
 PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
-TMP_FOLDER_X86=build_x86-64/
-TMP_FOLDER_ARM=build_aarch64/
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
 LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
 
@@ -71,26 +69,22 @@ DEBUG?=0
 all: $(PROG_X86) $(PROG_ARM)
 
 %.x86.o: %.c
-	@#0. Create tmp folder if needed
-	mkdir -p $(TMP_FOLDER_X86) && touch $(TMP_FOLDER_X86)/.dir
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $(TMP_FOLDER_X86)/$<.bc
+	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $<.x86.bc
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
-		-o $(TMP_FOLDER_X86)/$<.bc $(TMP_FOLDER_X86)/$<.bc
+		-o $<.x86.bc $<.x86.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS_X86)	-c $(TMP_FOLDER_X86)/$<.bc -o $@
+	$(CC) $(CFLAGS_X86)	-c $<.x86.bc -o $@
 
 %.arm.o: %.c
-	@#0. Create tmp folder if needed
-	mkdir -p $(TMP_FOLDER_ARM) && touch $(TMP_FOLDER_ARM)/.dir
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $(TMP_FOLDER_ARM)/$<.bc
+	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $<.arm.bc
 	@# 2. Optimize
 	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
-		-o $(TMP_FOLDER_ARM)/$<.bc $(TMP_FOLDER_ARM)/$<.bc
+		-o $<.arm.bc $<.arm.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS_ARM)	-c $(TMP_FOLDER_ARM)/$<.bc -o $@
+	$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
 
 $(PROG_X86): $(OBJS_X86) $(KERNEL_X86)
 	@# 4. Link
@@ -126,6 +120,5 @@ dump-llvm-stackmaps:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG)
 
 clean:
-	rm -rf $(TMP_FOLDER_X86) $(TMP_FOLDER_ARM) *.o $(PROG_X86) $(PROG_ARM) \
-		stack-transform.log	bss.bin data.bin fds.bin heap.bin mdata.bin \
-		stack.bin.* tls.bin.*
+	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM) stack-transform.log bss.bin \
+	data.bin fds.bin heap.bin mdata.bin stack.bin.* tls.bin.*
