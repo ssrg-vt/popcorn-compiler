@@ -24,23 +24,23 @@ llvm_targets = {
 
 # TODO have some stable branches for all git software
 llvm_git_url = 'https://github.com/ssrg-vt/llvm.git'
-llvm_git_branch = 'pierre-hermit-popcorn'
+llvm_git_branch = 'hermit-popcorn-master'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
-clang_git_branch = 'pierre-hermit-popcorn'
+clang_git_branch = 'hermit-popcorn-master'
 
 binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
-binutils_git_branch = 'hermit'
+binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_x86_64_git_branch = 'llvm-stable-x86'
-hermit_aarch64_git_branch = 'llvm-stable-aarch64'
+hermit_x86_64_git_branch = 'hermit-popcorn-x86-master'
+hermit_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
-newlib_x86_64_git_branch = 'llvm-stable'
-newlib_aarch64_git_branch = 'llvm-stable-aarch64'
+newlib_x86_64_git_branch = 'hermit-popcorn-x86-master'
+newlib_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
 
 pte_git_url = "https://github.com/ssrg-vt/pthread-embedded.git"
-pte_git_branch = "llvm-stable"
+pte_git_branch = "hermit-popcorn-master"
 
 #================================================
 # LOG CLASS

@@ -67,16 +67,16 @@ repositories have 2 stable branches: one for x86-64 and one for aarch64. The
 list of stable branches is as follows:
 
 - **popcorn-compiler**: `hermit-master`
-- **llvm**: `pierre-hermit-popcorn` TODO change it
-- **clang**: `pierre-hermit-popcorn` TODO change it
+- **llvm**: `hermit-popcorn-master`
+- **clang**: `hermit-popcorn-master`
 - **HermitCore**:
-  - `llvm-stable-x86` (x86-64) TODO change
-  - `llvm-stable-aarch64` (aarch64) TODO change
+  - `hermit-popcorn-x86-master` (x86-64)
+  - `hermit-popcorn-aarch64-master` (aarch64)
 - **newlib**:
-  - `llvm-stable` (x86-64) TODO change
-  - `llvm-stable-aarch64` (aarch64) TODO change
-- **binutils**: `hermit` TODO change?
-- **pte**: `llvm-stable` TODO change
+  - `hermit-popcorn-x86-master` (x86-64)
+  - `hermit-popcorn-aarch64-master` (aarch64)
+- **binutils**: `hermit-popcorn-master`
+- **pte**: `hermit-popcorn-master`
 
 ### Installation folder organization
 - After installation, here is how the installation folder looks like:
