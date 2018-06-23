@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <assert.h>
+//#include <assert.h>
 
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
@@ -61,7 +61,7 @@ long recurse(int depth, int rand1, int rand2, int rand3, int rand4)
   case 5: return in;
   case 6: return use;
   case 7: return now;
-  default: assert(0 && "Did not correctly restore stack frame"); return 0;
+ // default: assert(0 && "Did not correctly restore stack frame"); return 0;
   }
 }
 

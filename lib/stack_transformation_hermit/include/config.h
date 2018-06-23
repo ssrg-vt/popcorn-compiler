@@ -86,7 +86,7 @@
  * consistent with the HermitCore DEFAULT_STACK_SIZE macro, set by cmake (see
  * <hermitcore sources>/cmake/HermitCore-Configuration.cmake)
  */
-#define MAX_STACK_SIZE 524288
+#define MAX_STACK_SIZE 1048576 
 #define B_STACK_OFFSET (MAX_STACK_SIZE / 2)
 
 #endif /* _CONFIG_H */

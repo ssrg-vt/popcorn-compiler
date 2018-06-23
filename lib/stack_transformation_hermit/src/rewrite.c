@@ -95,8 +95,9 @@ int st_rewrite_stack(st_handle handle_src,
                      void* regset_dest,
                      void* sp_base_dest)
 {
-  rewrite_context src, dest;
+  rewrite_context /*src,*/ dest;
   uint64_t* saved_fbp;
+  void *src_act_cfa;
 
   if(!handle_src || !regset_src || !sp_base_src ||
      !handle_dest || !regset_dest || !sp_base_dest)
@@ -110,9 +111,15 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("--> Initializing rewrite (%s -> %s) <--\n",
           arch_name(handle_src->arch), arch_name(handle_dest->arch));
 
+  ST_INFO("SP Base Dest = %p\n", sp_base_dest);
   /* Initialize rewriting contexts. */
   src = init_src_context(handle_src, regset_src, sp_base_src);
+  ST_INFO("1. Source ACT = %p\n", ACT(src).cfa);
+  src_act_cfa = ACT(src).cfa;
+
   dest = init_dest_context(handle_dest, regset_dest, sp_base_dest);
+  ST_INFO("2. Source ACT = %p\n", ACT(src).cfa);
+  //ACT(src).cfa = src_act_cfa;
 
   if(!src || !dest)
   {
@@ -123,6 +130,17 @@ int st_rewrite_stack(st_handle handle_src,
 
   ST_INFO("--> Unwinding source stack to find live activations <--\n");
 
+  struct regset_aarch64 *reg_aarch64 = regset_src;
+/*
+  ST_INFO("Stack Pointer = %p\n", reg_aarch64->sp);
+  ST_INFO("Program Counter = %p\n", reg_aarch64->pc);
+
+  for(int i=0; i<31; i++)
+  	ST_INFO("x[%d] = %x\n", i, reg_aarch64->x[i]);
+
+  for(int j=0; j<32; j++)
+	ST_INFO("v[%d] = %x\n", j, reg_aarch64->v[j]); 
+*/
   /* Unwind source stack to determine destination stack size. */
   unwind_and_size(src, dest);
 
@@ -240,7 +258,7 @@ static rewrite_context init_src_context(st_handle handle,
     ST_ERR(1, "could not get source call site information for outermost frame "
            "(address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   ACT(ctx).cfa = calculate_cfa(ctx, 0);
-
+  ST_INFO("ACT(ctx).cfa = %p\n", ACT(ctx).cfa);
   TIMER_STOP(init_src_context);
   return ctx;
 }
@@ -258,24 +276,35 @@ static rewrite_context init_dest_context(st_handle handle,
 
   TIMER_START(init_dest_context);
 
+  ST_INFO("3. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &dest_ctx;
+  ST_INFO("Compiler TLS\n");
 #else
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
+  ST_INFO("4. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->handle = handle;
+  ST_INFO("4.1 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->num_acts = 1;
+  ST_INFO("4.2 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->act = 0;
+  ST_INFO("4.3 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->regs = regset;
+  ST_INFO("4.4 Source ACT = %p, stack_base = %p\n", ACT(src).cfa, sp_base);//src->acts[src->act].cfa);
   ctx->stack_base = sp_base;
 
+  ST_INFO("5. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   init_data_pools(ctx);
+  ST_INFO("6. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   list_init(fixup, &ctx->stack_pointers);
+  ST_INFO("7. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
 
   // Note: cannot setup frame information because CFA will be invalid, need to
   // set up SP & find call site information
 
   TIMER_STOP(init_dest_context);
+  ST_INFO("8. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   return ctx;
 }
 
