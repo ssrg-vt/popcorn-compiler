@@ -90,19 +90,19 @@ def setup_argument_parsing():
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
-    process_opts.add_argument("--skip-hermit_x86_64-install",
+    process_opts.add_argument("--skip-hermit-x86-64-install",
                         help="Skip installation of the HermitCore x86_64 kernel",
                         action="store_true",
                         dest="skip_hermit_x86_64_install")
-    process_opts.add_argument("--skip-hermit_aarch64-install",
+    process_opts.add_argument("--skip-hermit-aarch64-install",
                         help="Skip installation of the HermitCore aarch64 kernel",
                         action="store_true",
                         dest="skip_hermit_aarch64_install")
-    process_opts.add_argument("--skip-newlib_x86_64-install",
+    process_opts.add_argument("--skip-newlib-x86-64-install",
                         help="Skip installation of newlib x86_64",
                         action="store_true",
                         dest="skip_newlib_x86_64_install")
-    process_opts.add_argument("--skip-newlib_aarch64-install",
+    process_opts.add_argument("--skip-newlib-aarch64-install",
                         help="Skip installation of newlib aarch64",
                         action="store_true",
                         dest="skip_newlib_aarch64_install")
@@ -338,7 +338,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     cur_dir = os.getcwd()
 
     #=====================================================
-    # CONFIGURE & INSTALL LIBELF x86_64-hermit 
+    # CONFIGURE & INSTALL LIBELF x86_64-hermit
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib/libelf_hermit'))
 
@@ -357,11 +357,11 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         if rv != 0:
             print('Make install libelf x86_64-hermit failed.')
             sys.exit(1)
- 
+
     #=====================================================
     # CONFIGURE & INSTALL LIBELF aarch64-hermit
     #=====================================================
-    
+
     print('Making & installing libelf aarch64-hermit...')
     try:
         rv = subprocess.check_call(['make',
@@ -376,7 +376,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         if rv != 0:
             print('Make install libelf aarch64-hermit failed.')
             sys.exit(1)
- 
+
     os.chdir(cur_dir)
 
     #=====================================================
@@ -671,6 +671,7 @@ def install_newlib_x86_64(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
         print('Cannot build/install newlib x86_64: {}'.format(e))
+        sys.exit(1)
 
     os.chdir(cur_dir)
 
@@ -699,6 +700,8 @@ def install_newlib_aarch64(base_path, install_path, threads):
        rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
        rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
        rv = os.environ["AS_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-as" % install_path
+       rv = os.environ["AR_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-ar" % install_path
+       rv = os.environ["RANLIB_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-ranlib" % install_path
        rv = os.environ["CC_FOR_TARGET"] = "%s/x86_64-host/bin/clang" % install_path
        rv = os.environ["CC"] = "%s/x86_64-host/bin/clang" % install_path
 
@@ -737,6 +740,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
         rv = shutil.copyfile(newlib_download_path + '/build/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
     except Exception as e:
        print('Cannot build/install newlib aarch64: {}'.format(e))
+       sys.exit(1)
 
     os.chdir(cur_dir)
 
@@ -759,7 +763,7 @@ def install_hermit_x86_64(base_path, install_path, threads):
         sys.exit(1)
 
     print('Running Cmake for HermitCore x86_64')
-   
+
     os.makedirs(hermit_download_path + '/build')
     os.chdir(hermit_download_path + '/build')
 
