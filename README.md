@@ -39,7 +39,46 @@ sudo ln -s /usr/include/asm-generic /usr/include/asm
 user, you probably need to run `sudo make test`.
 
 ## Modifying toolchain components
-- Here is how the installation folder looks like:
+
+### Repositories and branches
+The toolchain relies on multiple repositories that are cloned during the
+installation:
+
+- **popcorn-compiler** contains the installation script and the source of a few
+  tools such as the stack transformation library and the alignment tool. For a
+  regular user (i.e. non developper), this should be the only repository to
+  interract with. The url is: https://github.com/ssrg-vt/popcorn-compiler.
+- **llvm** and **clang** contain the compiler sources, the urls are:
+  https://github.com/ssrg-vt/llvm and https://github.com/ssrg-vt/clang
+- **HermitCore** contains the kernel sources. The url is:
+  https://github.com/ssrg-vt/hermitcore
+- **newlib** contains the C library. The url is:
+  https://github.com/ssrg-vt/newlib
+- **binutils** contains the binutils sources (we use ld.gold, elfedit, readelf,
+  etc.). The url is: https://github.com/ssrg-vt/binutils
+- **pte** contains the sources for the pthread embedded library (note that
+  multi-threading is not supported by aarch64). The url is:
+  https://github.com/ssrg-vt/pthread-embedded
+
+Concerning branches, there is a stable branch for each repository. Because of
+various reasons there are generally not named `master`. In addition, some
+repositories have 2 stable branches: one for x86-64 and one for aarch64. The
+list of stable branches is as follows:
+
+- **popcorn-compiler**: `hermit-master`
+- **llvm**: `pierre-hermit-popcorn` TODO change it
+- **clang**: `pierre-hermit-popcorn` TODO change it
+- **HermitCore**:
+  - `llvm-stable-x86` (x86-64) TODO change
+  - `llvm-stable-aarch64` (aarch64) TODO change
+- **newlib**:
+  - `llvm-stable` (x86-64) TODO change
+  - `llvm-stable-aarch64` (aarch64) TODO change
+- **binutils**: `hermit` TODO change?
+- **pte**: `llvm-stable` TODO change
+
+### Installation folder organization
+- After installation, here is how the installation folder looks like:
 
 ```
 installation_dir/
