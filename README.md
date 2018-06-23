@@ -33,10 +33,11 @@ sudo ln -s /usr/include/asm-generic /usr/include/asm
 - You can use the `--install-path` option to specify a custom installation path
 - You can the `--help` option to list all the possible options
 
-## Compiling application
+## Compiling applications
 - Use `util/hermit/Makefile` in your source directory. Type `make` to compile,
-`make test` to run. If your system is not configured to run kvm as a non-root
-user, you probably need to run `sudo make test`.
+`make test-x86` to run locally on the host.
+
+TODO heterogeneous stuff.
 
 ## Modifying toolchain components
 

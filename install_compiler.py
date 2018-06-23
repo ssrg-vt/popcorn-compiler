@@ -533,11 +533,6 @@ def install_call_info_library(base_path, install_path, num_threads):
 
 def install_utils(base_path, install_path, num_threads):
     #=====================================================
-    # MODIFY MAKEFILE TEMPLATE
-    #=====================================================
-    # Pierre TODO provide a Makefile template
-
-    #=====================================================
     # COPY SCRIPTS
     #=====================================================
     print("Copying util/scripts to {}/x86_64-host/bin...".format(install_path))
