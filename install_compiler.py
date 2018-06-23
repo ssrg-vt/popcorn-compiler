@@ -24,23 +24,23 @@ llvm_targets = {
 
 # TODO have some stable branches for all git software
 llvm_git_url = 'https://github.com/ssrg-vt/llvm.git'
-llvm_git_branch = 'pierre-hermit-popcorn'
+llvm_git_branch = 'hermit-popcorn-master'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
-clang_git_branch = 'pierre-hermit-popcorn'
+clang_git_branch = 'hermit-popcorn-master'
 
 binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
-binutils_git_branch = 'hermit'
+binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_x86_64_git_branch = 'llvm-stable-pierre'
-hermit_aarch64_git_branch = 'llvm-stable-aarch64'
+hermit_x86_64_git_branch = 'hermit-popcorn-x86-master'
+hermit_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
-newlib_x86_64_git_branch = 'llvm-stable'
-newlib_aarch64_git_branch = 'llvm-stable-aarch64'
+newlib_x86_64_git_branch = 'hermit-popcorn-x86-master'
+newlib_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
 
 pte_git_url = "https://github.com/ssrg-vt/pthread-embedded.git"
-pte_git_branch = "llvm-stable"
+pte_git_branch = "hermit-popcorn-master"
 
 #================================================
 # LOG CLASS
@@ -167,8 +167,7 @@ def postprocess_args(args):
             break
         else:
             if target not in supported_targets:
-                print("Unsupported target '{}'!".format(target))
-                sys.exit(1)
+                sys.exit("Unsupported target '{}'!".format(target))
             args.install_targets.append(target)
 
     args.llvm_targets = ""
@@ -277,12 +276,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
             rv = subprocess.check_call(['git', 'clone', '--depth=50',
                 '-b', llvm_git_branch, llvm_git_url, llvm_download_path])
         except Exception as e:
-            print('Could not download LLVM source ({})!'.format(e))
-            sys.exit(1)
+            sys.exit('Could not download LLVM source ({})!'.format(e))
         else:
             if rv != 0:
-                print('LLVM source download failed.')
-                sys.exit(1)
+                sys.exit('LLVM source download failed.')
 
         #=====================================================
         # DOWNLOAD CLANG
@@ -292,12 +289,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
             rv = subprocess.check_call(['git', 'clone', '--depth=50',
                 '-b', clang_git_branch, clang_git_url, clang_download_path])
         except Exception as e:
-            print('Could not download Clang source ({})!'.format(e))
-            sys.exit(1)
+            sys.exit('Could not download Clang source ({})!'.format(e))
         else:
             if rv != 0:
-                print('Clang source download failed.')
-                sys.exit(1)
+                sys.exit('Clang source download failed.')
 
         # BUILD AND INSTALL LLVM
         cur_dir = os.getcwd()
@@ -310,12 +305,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
                                        ##stdout=FNULL,
                                        stderr=subprocess.STDOUT)
         except Exception as e:
-            print('Could not run CMake ({})!'.format(e))
-            sys.exit(1)
+            sys.exit('Could not run CMake ({})!'.format(e))
         else:
             if rv != 0:
-                print('CMake failed.')
-                sys.exit(1)
+                sys.exit('CMake failed.')
 
         try:
             print('Running Make...')
@@ -324,12 +317,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
             rv = subprocess.check_call(['make', 'install',
                                         '-j', str(num_threads)])
         except Exception as e:
-            print('Could not run Make ({})!'.format(e))
-            sys.exit(1)
+            sys.exit('Could not run Make ({})!'.format(e))
         else:
             if rv != 0:
-                print('Make failed.')
-                sys.exit(1)
+                sys.exit('Make failed.')
 
         os.chdir(cur_dir)
 
@@ -343,7 +334,6 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     os.chdir(os.path.join(base_path, 'lib/libelf_hermit'))
 
     print('Making & installing libelf x86_64-hermit...')
-    print('Current Directory' +  os.getcwd())
     try:
         rv = subprocess.check_call(['make',
 	    'ARCH=x86_64',
@@ -351,12 +341,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
             'POPCORN_INSTALL=%s' % (install_path),
             '-j', str(num_threads), 'install'])
     except Exception as e:
-        print('Could not run Make install libelf x86_64-hermit ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make install libelf x86_64-hermit ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make install libelf x86_64-hermit failed.')
-            sys.exit(1)
+            sys.exit('Make install libelf x86_64-hermit failed.')
 
     #=====================================================
     # CONFIGURE & INSTALL LIBELF aarch64-hermit
@@ -364,18 +352,16 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
     print('Making & installing libelf aarch64-hermit...')
     try:
-        rv = subprocess.check_call(['make',
+        rv = subprocess.check_call(['make', '-B',
 	    'ARCH=aarch64',
             'INSTALL_PREFIX=%s' % (install_path),
             'POPCORN_INSTALL=%s' % (install_path),
             '-j', str(num_threads), 'install'])
     except Exception as e:
-        print('Could not run Make install libelf aarch64-hermit ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make install libelf aarch64-hermit ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make install libelf aarch64-hermit failed.')
-            sys.exit(1)
+            sys.exit('Make install libelf aarch64-hermit failed.')
 
     os.chdir(cur_dir)
 
@@ -389,12 +375,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         try:
             rv = subprocess.check_call(['make', 'distclean'])
         except Exception as e:
-            print('Error running distclean!')
-            sys.exit(1)
+            sys.exit('Error running distclean!')
         else:
             if rv != 0:
-                print('Make distclean failed.')
-                sys.exit(1)
+                sys.exit('Make distclean failed.')
 
     print('Configuring libelf x86_64-host')
     try:
@@ -410,12 +394,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
                                     stderr=subprocess.STDOUT,
                                     shell=True)
     except Exception as e:
-        print('Could not configure libelf x86_64-host ({})'.format(e))
-        sys.exit(1)
+        sys.exit('Could not configure libelf x86_64-host ({})'.format(e))
     else:
         if rv != 0:
-            print('libelf x86_64-host configure failed')
-            sys.exit(1)
+            sys.exit('libelf x86_64-host configure failed')
 
     print('Making libelf...')
     try:
@@ -423,12 +405,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         rv = subprocess.check_call(['make', '-j', str(num_threads)])
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
-        print('Could not run Make ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make failed.')
-            sys.exit(1)
+            sys.exit('Make failed.')
 
     os.chdir(cur_dir)
 
@@ -455,12 +435,10 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
         rv = subprocess.check_call(['make', 'install',
                                     'POPCORN={}'.format(install_path)])
     except Exception as e:
-        print('Could not run Make ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make failed.')
-            sys.exit(1)
+            sys.exit('Make failed.')
 
     os.chdir(cur_dir)
 
@@ -478,12 +456,10 @@ def install_tools(base_path, install_path, num_threads):
         rv = subprocess.check_call(['make', '-j', str(num_threads),
            'POPCORN={}'.format(install_path), 'install'])
     except Exception as e:
-         print('Could not run Make ({})!'.format(e))
-         sys.exit(1)
+         sys.exit('Could not run Make ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make failed')
-            sys.exit(1)
+            sys.exit('Make failed')
 
     os.chdir(cur_dir)
 
@@ -500,12 +476,10 @@ def install_tools(base_path, install_path, num_threads):
         rv = subprocess.check_call(['make', 'install',
                                     'POPCORN={}'.format(install_path)])
     except Exception as e:
-        print('Could not run Make ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make failed.')
-            sys.exit(1)
+            sys.exit('Make failed.')
 
     #====================================================
     # INSTALL hermit x86 object files + linker script
@@ -550,34 +524,14 @@ def install_call_info_library(base_path, install_path, num_threads):
         rv = subprocess.check_call(['make', 'install',
                                     'POPCORN={}'.format(install_path)])
     except Exception as e:
-        print('Could not run Make ({})!'.format(e))
-        sys.exit(1)
+        sys.exit('Could not run Make ({})!'.format(e))
     else:
         if rv != 0:
-            print('Make failed.')
-            sys.exit(1)
+            sys.exit('Make failed.')
 
     os.chdir(cur_dir)
 
 def install_utils(base_path, install_path, num_threads):
-    #=====================================================
-    # MODIFY MAKEFILE TEMPLATE
-    #=====================================================
-    # Pierre TODO provide a Makefile template
-
-#    print("Updating util/Makefile.pyalign.template to reflect install path...")
-#
-#    try:
-#        tmp = install_path.replace('/', '\/')
-#        sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' " \
-#                  "./util/Makefile.pyalign.template".format(tmp)
-#        rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-#    except Exception as e:
-#        print('Could not modify Makefile.template ({})'.format(e))
-#    else:
-#        if rv != 0:
-#            print('sed failed.')
-
     #=====================================================
     # COPY SCRIPTS
     #=====================================================
@@ -597,14 +551,12 @@ def install_pte(base_path, install_path, threads):
         shutil.rmtree(pte_download_path)
 
     print('Downloading pthread-embedded')
-    print('Install Path' + install_path)
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
             pte_git_branch, pte_git_url, pte_download_path])
     except Exception as e:
-        print('Cannot download pthread-embedded: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download pthread-embedded: {}'.format(e))
 
     print('Configuring and building pthread-embedded')
     os.chdir(pte_download_path)
@@ -620,8 +572,7 @@ def install_pte(base_path, install_path, threads):
 
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
-        print('Cannot build/install pthread-embedded: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot build/install pthread-embedded: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -639,8 +590,7 @@ def install_newlib_x86_64(base_path, install_path, threads):
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
             newlib_x86_64_git_branch, newlib_git_url, newlib_download_path])
     except Exception as e:
-        print('Cannot download newlib for x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download newlib for x86_64: {}'.format(e))
 
     print('Configuring newlib for x86_64')
     os.makedirs(newlib_download_path + '/build')
@@ -662,16 +612,14 @@ def install_newlib_x86_64(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(newlib_conf)
     except Exception as e:
-        print('Cannot configure newlib x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot configure newlib x86_64: {}'.format(e))
 
     print('Building and installing newlib x86_64')
     try:
         rv = subprocess.check_call(['make', '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
-        print('Cannot build/install newlib x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot build/install newlib x86_64: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -689,15 +637,14 @@ def install_newlib_aarch64(base_path, install_path, threads):
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
             newlib_aarch64_git_branch, newlib_git_url, newlib_download_path])
     except Exception as e:
-        print('Cannot download newlib aarch64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download newlib aarch64: {}'.format(e))
 
     print('Configuring newlib aarch64')
     os.makedirs(newlib_download_path + '/build')
     os.chdir(newlib_download_path + '/build')
 
     try:
-       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
+       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -DHAVE_INITFINI_ARRAY -O2 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
        rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
        rv = os.environ["AS_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-as" % install_path
        rv = os.environ["AR_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-ar" % install_path
@@ -706,32 +653,18 @@ def install_newlib_aarch64(base_path, install_path, threads):
        rv = os.environ["CC"] = "%s/x86_64-host/bin/clang" % install_path
 
     except Exception as e:
-        print('Cannot export newlib aarch64 Environment: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot export newlib aarch64 Environment: {}'.format(e))
 
     newlib_conf = ['../configure', '--target=aarch64-hermit',
             '--prefix=%s' % install_path, '--disable-shared',
             '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
             '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
             'target_alias=aarch64-hermit']
-    '''
-    newlib_conf = ['../configure', '--target=aarch64-hermit',
-            '--prefix=%s' % install_path, '--disable-shared',
-            '--disable-multilib', '--enable-lto', '--enable-newlib-hw-fp',
-            '--enable-newlib-io-c99-formats', '--enable-newlib-multithread',
-            'target_alias=aarch64-hermit',
-            'CC=%s/x86_64-host/bin/clang' % install_path,
-            'CC_FOR_TARGET=%s/x86_64-host/bin/clang' % install_path,
-            'AS_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-as' % install_path,
-            'AR_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ar' % install_path,
-            'RANLIB_FOR_TARGET=%s/x86_64-host/bin/aarch64-hermit-ranlib' % install_path,
-            'CFLAGS_FOR_TARGET=-O3 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -ftree-vectorize -mtune=native']
-    '''
+
     try:
         rv = subprocess.check_call(newlib_conf)
     except Exception as e:
-       print('Cannot configure newlib aarch64: {}'.format(e))
-       sys.exit(1)
+       sys.exit('Cannot configure newlib aarch64: {}'.format(e))
 
     print('Building and installing newlib aarch64')
     try:
@@ -739,8 +672,7 @@ def install_newlib_aarch64(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install'])
         rv = shutil.copyfile(newlib_download_path + '/build/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
     except Exception as e:
-       print('Cannot build/install newlib aarch64: {}'.format(e))
-       sys.exit(1)
+       sys.exit('Cannot build/install newlib aarch64: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -759,8 +691,7 @@ def install_hermit_x86_64(base_path, install_path, threads):
             '--recurse-submodules', '-b', hermit_x86_64_git_branch, hermit_git_url,
             hermit_download_path])
     except Exception as e:
-        print('Cannot download HermitCore x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download HermitCore x86_64: {}'.format(e))
 
     print('Running Cmake for HermitCore x86_64')
 
@@ -771,18 +702,17 @@ def install_hermit_x86_64(base_path, install_path, threads):
         rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
+            '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options or make it optional at some point
             '..'])
     except Exception as e:
-        print('Error running hermitcore x86_64 cmake: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error running hermitcore x86_64 cmake: {}'.format(e))
 
     print('Building hermitcore x86_64')
 
     try:
         rv = subprocess.check_call(['make', '-j', str(threads), 'install'])
     except Exception as e:
-        print('Error building hermitcore x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error building hermitcore x86_64: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -801,8 +731,7 @@ def install_hermit_aarch64(base_path, install_path, threads):
             '--recurse-submodules', '-b', hermit_aarch64_git_branch, hermit_git_url,
             hermit_download_path])
     except Exception as e:
-        print('Cannot download HermitCore aarch64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download HermitCore aarch64: {}'.format(e))
 
     print('Running Cmake for HermitCore aarch64')
 
@@ -815,16 +744,14 @@ def install_hermit_aarch64(base_path, install_path, threads):
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '..'])
     except Exception as e:
-        print('Error running hermitcore aarch64 cmake: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error running hermitcore aarch64 cmake: {}'.format(e))
 
     print('Building hermitcore aarch64')
 
     try:
         rv = subprocess.check_call(['make', '-j', str(threads), 'install'])
     except Exception as e:
-        print('Error building hermitcore aarch64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error building hermitcore aarch64: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -843,8 +770,7 @@ def install_binutils(base_path, install_path, threads):
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
             binutils_git_branch, binutils_git_url, binutils_download_path])
     except Exception as e:
-        print('Cannot download binutils: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Cannot download binutils: {}'.format(e))
 
     print('Compiling binutils (hermit x86_64)')
 
@@ -865,8 +791,7 @@ def install_binutils(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
 
     except Exception as e:
-        print('Error building binutils x86_64: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error building binutils x86_64: {}'.format(e))
 
     print('Compiling binutils (hermit aarch64)')
 
@@ -887,8 +812,7 @@ def install_binutils(base_path, install_path, threads):
         rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
 
     except Exception as e:
-        print('Error building binutils for aarch64 target: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error building binutils for aarch64 target: {}'.format(e))
 
     print('Compiling gold')
 
@@ -901,8 +825,7 @@ def install_binutils(base_path, install_path, threads):
             rv = subprocess.check_call(['./configure'])
             rv = subprocess.check_call(['make', '-j', str(threads)])
         except Exception as e:
-            print('Error building %s: {}'.format(e) % tool)
-            sys.exit(1)
+            sys.exit('Error building %s: {}'.format(e) % tool)
 
     # gold
     os.chdir(binutils_download_path + '/' + 'gold')
@@ -912,8 +835,7 @@ def install_binutils(base_path, install_path, threads):
         rv = subprocess.check_call(['make', '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install'])
     except Exception as e:
-        print('Error building gold: {}'.format(e))
-        sys.exit(1)
+        sys.exit('Error building gold: {}'.format(e))
 
     os.chdir(cur_dir)
 
@@ -966,7 +888,6 @@ if __name__ == '__main__':
     if not args.skip_prereq_check:
         success = check_for_prerequisites(args)
         if success != True:
-            print('All prerequisites were not satisfied!')
-            sys.exit(1)
+            sys.exit('All prerequisites were not satisfied!')
 
     main(args)

@@ -1,0 +1,11 @@
+build_aarch64/
+build_x86-64/
+heap.bin
+stack.bin.*
+stack.bin
+tls.bin.*
+tls.bin
+bss.bin
+data.bin
+mdata.bin
+fds.bin

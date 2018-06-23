@@ -10,7 +10,7 @@ For now all of this only works with x86, ARM integration is TODO.
  1. Debian packages
 ```
 apt update
-apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils svn
+apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils subversion
 ```
 
  2. Cmake
@@ -33,13 +33,53 @@ sudo ln -s /usr/include/asm-generic /usr/include/asm
 - You can use the `--install-path` option to specify a custom installation path
 - You can the `--help` option to list all the possible options
 
-## Compiling application
+## Compiling applications
 - Use `util/hermit/Makefile` in your source directory. Type `make` to compile,
-`make test` to run. If your system is not configured to run kvm as a non-root
-user, you probably need to run `sudo make test`.
+`make test-x86` to run locally on the host.
+
+TODO heterogeneous stuff.
 
 ## Modifying toolchain components
-- Here is how the installation folder looks like:
+
+### Repositories and branches
+The toolchain relies on multiple repositories that are cloned during the
+installation:
+
+- **popcorn-compiler** contains the installation script and the source of a few
+  tools such as the stack transformation library and the alignment tool. For a
+  regular user (i.e. non developper), this should be the only repository to
+  interract with. The url is: https://github.com/ssrg-vt/popcorn-compiler.
+- **llvm** and **clang** contain the compiler sources, the urls are:
+  https://github.com/ssrg-vt/llvm and https://github.com/ssrg-vt/clang
+- **HermitCore** contains the kernel sources. The url is:
+  https://github.com/ssrg-vt/hermitcore
+- **newlib** contains the C library. The url is:
+  https://github.com/ssrg-vt/newlib
+- **binutils** contains the binutils sources (we use ld.gold, elfedit, readelf,
+  etc.). The url is: https://github.com/ssrg-vt/binutils
+- **pte** contains the sources for the pthread embedded library (note that
+  multi-threading is not supported by aarch64). The url is:
+  https://github.com/ssrg-vt/pthread-embedded
+
+Concerning branches, there is a stable branch for each repository. Because of
+various reasons there are generally not named `master`. In addition, some
+repositories have 2 stable branches: one for x86-64 and one for aarch64. The
+list of stable branches is as follows:
+
+- **popcorn-compiler**: `hermit-master`
+- **llvm**: `hermit-popcorn-master`
+- **clang**: `hermit-popcorn-master`
+- **HermitCore**:
+  - `hermit-popcorn-x86-master` (x86-64)
+  - `hermit-popcorn-aarch64-master` (aarch64)
+- **newlib**:
+  - `hermit-popcorn-x86-master` (x86-64)
+  - `hermit-popcorn-aarch64-master` (aarch64)
+- **binutils**: `hermit-popcorn-master`
+- **pte**: `hermit-popcorn-master`
+
+### Installation folder organization
+- After installation, here is how the installation folder looks like:
 
 ```
 installation_dir/
