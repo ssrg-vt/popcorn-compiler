@@ -22,7 +22,6 @@ llvm_targets = {
     'x86_64' : 'X86'
 }
 
-# TODO have some stable branches for all git software
 llvm_git_url = 'https://github.com/ssrg-vt/llvm.git'
 llvm_git_branch = 'hermit-popcorn-master'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
