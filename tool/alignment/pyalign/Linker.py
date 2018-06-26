@@ -40,8 +40,8 @@ class Linker:
 					# FIXME: We rely on this super coarse-grain alignment
 					# to have the sections start at the same offset on each
 					# architecture -> there is probably a more intelligent way
-					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
-					output_buffer.append("{\n")
+					#output_buffer.append(section + "\t: ALIGN(0x100000)\n")
+					#output_buffer.append("{\n")
 
 					# FIXME: sometimes the linker fills the start of some
 					# sections (at least .data) with something named **common,
@@ -91,7 +91,7 @@ class Linker:
 							output_buffer.append("\t*(" + symbolName + ");\n")
 
 					# Section "closing" part
-					output_buffer.append("}\n")
+					#output_buffer.append("}\n")
 
 			if not foundMarker:
 				output_buffer.append(line)

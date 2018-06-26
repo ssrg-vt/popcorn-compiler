@@ -5,7 +5,7 @@ Global variables and utility functions
 import sys, traceback
 
 # Popcorn toolchain install dir:
-POPCORN_LOCATION="/usr/local/popcorn"
+POPCORN_LOCATION="/usr/local/popcorn/"
 
 ###############################################################################
 # Error printing stuff
