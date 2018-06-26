@@ -132,7 +132,7 @@ objdump-x86:
 		vim /tmp/objdump-x86.txt
 
 objdump-arm:
-	objdump --source $(PROG_ARM) > /tmp/objdump-arm.txt && \
+	aarch64-linux-gnu-objdump --source $(PROG_ARM) > /tmp/objdump-arm.txt && \
 		vim /tmp/objdump-arm.txt
 
 dump-stackinfo-x86:
