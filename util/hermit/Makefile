@@ -122,14 +122,17 @@ test-x86: $(PROG_X86)
 test-arm: $(PROG_ARM)
 	scp $(PROXY_ARM) potato:/tmp/proxy
 	scp $(PROG_ARM) potato:/tmp
-	ssh potato HERMIT_ISLE=uhyve /tmp/proxy /tmp/$(PROG_ARM)
+	ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
+		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
+		/tmp/proxy /tmp/$(PROG_ARM) $(ARGS)
 
 objdump-x86:
 	objdump --source $(PROG_X86) > /tmp/objdump-x86.txt && \
 		vim /tmp/objdump-x86.txt
 
 objdump-arm:
-	objdump --source $(PROG_ARM) > /tmp/objdump-arm.txt && \
+	aarch64-linux-gnu-objdump --source $(PROG_ARM) > /tmp/objdump-arm.txt && \
 		vim /tmp/objdump-arm.txt
 
 dump-stackinfo-x86:
