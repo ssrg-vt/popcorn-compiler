@@ -46,11 +46,9 @@ struct pthread {
 	char *dlerror_buf;
 	int dlerror_flag;
 	void *stdio_locks;
+	void* popcorn_migrate_args;
 	uintptr_t canary_at_end;
 	void **dtv_copy;
-
-	/* Migration functionality */
-	void* __args;
 };
 
 struct __timer {

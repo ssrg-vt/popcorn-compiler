@@ -5,6 +5,8 @@ static inline struct pthread *__pthread_self()
 	return self;
 }
 
+// Popcorn: conform to uniform TLS layout (TLS above thread descriptor)
+#define TLS_ABOVE_TP
 #define TP_ADJ(p) (p)
 
 #define MC_PC gregs[REG_RIP]

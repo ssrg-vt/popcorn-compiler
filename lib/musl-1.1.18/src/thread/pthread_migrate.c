@@ -7,6 +7,6 @@
 void** pthread_migrate_args()
 {
 	struct pthread *self = __pthread_self();
-	return &(self->__args);
+	return &(self->popcorn_migrate_args);
 }
 
