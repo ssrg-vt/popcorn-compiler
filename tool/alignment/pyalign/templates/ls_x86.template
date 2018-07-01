@@ -151,7 +151,7 @@ tls_end = .;
     *(.kbss)
   } :load_segment
 
-.bss : ALIGN(0x500000) {
+.bss : ALIGN(0x202000000) {
 __BSS__                 /* marker for BSS section insertion */
 }
 

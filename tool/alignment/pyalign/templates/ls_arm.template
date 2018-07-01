@@ -55,7 +55,7 @@ __TEXT__                /* marker for the TEXT section insertion */
   PROVIDE (etext = .);
   
 .rodata : ALIGN(0x100000) {
- __RODATA__              /* marker for the RODATA section insertion */
+__RODATA__              /* marker for the RODATA section insertion */
 }
   .rodata1 : { *(.rodata1) }
   .eh_frame_hdr   : { *(.eh_frame_hdr) }
@@ -133,19 +133,19 @@ __DATA__                /* marker for the DATA section insertion */
 .tdata : ALIGN(0x100000) {
 tls_start = .;
 __TDATA__               /* marker for the TDATA section insertion */
-}
+} :load_segment :tls_segment
 
 .tbss : ALIGN(0x100000) {
 hbss_start = .;
 __TBSS__                /* maker for the TBSS section insertion */
 tls_end = .;
-}
+} :load_segment :tls_segment
 
   .kbss : {
     *(.kbss .kbss.*)
   } :load_segment
 
-.bss : ALIGN(0x100000) {
+.bss : ALIGN(0x2000000) {
 __BSS__         /* marker for the BSS section insertion */
 }
 

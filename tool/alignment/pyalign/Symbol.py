@@ -42,7 +42,7 @@ class Symbol:
 			Arch.POWER : "NULL" }
 
 		if not symbolObjectFileSanityCheck(objectFile):
-			er("Failed sanity check on object file during symbol instance " +
+			er("Failed sanity check on object file " + objectFile + " during symbol instance " +
 				"creation\n")
 			sys.exit(-1);
 
