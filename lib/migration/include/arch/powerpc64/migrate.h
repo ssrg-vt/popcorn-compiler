@@ -12,6 +12,14 @@
     READ_REGS_POWERPC64(regset.powerpc); \
     regset.powerpc.pc = get_call_site()
 
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("mr %0, 13" : "=r"(self)); \
+    self - 0x7000; \
+  })
+
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
 #define REWRITE_STACK(regs_src, regs_dst, dst_arch) \

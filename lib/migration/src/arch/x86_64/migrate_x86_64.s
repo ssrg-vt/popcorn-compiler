@@ -1,5 +1,4 @@
-.extern pthread_migrate_args
-.extern __migrate_shim_internal
+.extern pthread_get_migrate_args
 .extern crash_x86_64
 
 .section .text.__migrate_fixup_x86_64, "ax"
@@ -32,14 +31,11 @@ __migrate_fixup_x86_64:
   push $0
 
 .Lpost_align:
-  call pthread_migrate_args
+  call pthread_get_migrate_args
   test %rax, %rax
   jz .Lcrash
-  mov (%rax), %rdx /* Get struct shim_data pointer */
+  mov 16(%rax), %rdx /* Get regset pointer */
   test %rdx, %rdx
-  jz .Lcrash
-  mov 16(%rdx), %rcx /* Get regset pointer */
-  test %rcx, %rcx
   jz .Lcrash
 
   /*
@@ -49,45 +45,43 @@ __migrate_fixup_x86_64:
    * for the register set layout.
    *
    */
-  mov 32(%rcx), %rbx
-  mov 56(%rcx), %rbp
-  mov 104(%rcx), %r12
-  mov 112(%rcx), %r13
-  mov 120(%rcx), %r14
-  mov 128(%rcx), %r15
+  mov 32(%rdx), %rbx
+  mov 56(%rdx), %rbp
+  mov 104(%rdx), %r12
+  mov 112(%rdx), %r13
+  mov 120(%rdx), %r14
+  mov 128(%rdx), %r15
 
   /* Check if we need an extra pop to clean up correctly */
-  pop %rcx
-  test %rcx, %rcx
+  pop %rdx
+  test %rdx, %rdx
   jnz .Lcleanup
-  pop %rcx
+  pop %rdx
 
 .Lcleanup:
   /* Cleanup & return to C! */
-  mov %rcx, %rsp
+  mov %rdx, %rsp
+  mov 24(%rax), %rdx /* Load post_syscall target PC */
   xor %rax, %rax /* Return successful migration */
-  mov 24(%rdx), %rdx /* Load post_syscall target PC */
   jmp *%rdx
 
 .Lcrash:
   /*
    * We got garbage data post-migration, crash with the following information:
    *
-   *  arg 1 (rdi): return value from pthread_migrate_args
-   *  arg 2 (rsi): struct shim_data pointer
-   *  arg 3 (rdx): regset_pointer
-   *  arg 4 (rcx): return address
+   *  arg 1 (rdi): struct shim_data pointer
+   *  arg 2 (rsi): regset_pointer
+   *  arg 3 (rdx): return address
    */
   mov %rax, %rdi
   mov %rdx, %rsi
-  mov %rcx, %rdx
-  mov 0(%rsp), %rcx
-  test %rcx, %rcx
+  mov 0(%rsp), %rdx
+  test %rdx, %rdx
   jz .Lhomogeneous_stack
-  mov 8(%rsp), %rcx
+  mov 8(%rsp), %rdx
   jmp .Lcrash_call
 .Lhomogeneous_stack:
-  mov 16(%rsp), %rcx
+  mov 16(%rsp), %rdx
 .Lcrash_call:
   call crash_x86_64
 

@@ -12,6 +12,14 @@
     READ_REGS_X86_64(regset.x86); \
     regset.x86.rip = get_call_site()
 
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("movq %%fs:0x0, %0" : "=r"(self)); \
+    self + MUSL_PTHREAD_DESCRIPTOR_SIZE; \
+  })
+
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
 #define REWRITE_STACK(regs_src, regs_dst, dst_arch) \

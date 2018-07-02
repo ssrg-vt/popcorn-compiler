@@ -484,8 +484,7 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
                      '--target={}-linux-gnu'.format(target),
                      '--host={}-linux-gnu'.format(target),
                      '--enable-static',
-                     '--disable-shared',
-                     '--disable-tls'])
+                     '--disable-shared'])
     run_cmd('configure libopenpop ({})'.format(target), args, use_shell=True)
 
     print('Making libopenpop ({})...'.format(target))

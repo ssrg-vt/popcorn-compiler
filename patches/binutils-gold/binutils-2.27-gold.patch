@@ -1,6 +1,6 @@
 diff -Naur -x build ./gold/mapfile.cc ../binutils-2.27/gold/mapfile.cc
 --- ./gold/mapfile.cc	2016-08-03 03:36:53.000000000 -0400
-+++ ../binutils-2.27/gold/mapfile.cc	2018-06-28 08:39:37.224192445 -0400
++++ ../binutils-2.27/gold/mapfile.cc	2018-06-29 15:17:46.470918293 -0400
 @@ -264,9 +264,10 @@
    snprintf(sizebuf, sizeof sizebuf, "0x%llx",
  	   static_cast<unsigned long long>(size));
@@ -15,20 +15,23 @@ diff -Naur -x build ./gold/mapfile.cc ../binutils-2.27/gold/mapfile.cc
    if (os != NULL)
 diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 --- ./gold/x86_64.cc	2016-08-03 03:36:53.000000000 -0400
-+++ ../binutils-2.27/gold/x86_64.cc	2018-06-29 10:21:49.360464578 -0400
-@@ -441,6 +441,11 @@
++++ ../binutils-2.27/gold/x86_64.cc	2018-07-02 14:40:35.309227064 -0400
+@@ -441,6 +441,14 @@
  class Target_x86_64 : public Sized_target<size, false>
  {
   public:
 +  // Popcorn: TLS starts at the end of the thread descriptor.  musl-libc's
-+  // thread descriptor size is 288 bytes.
-+  const static int MUSL_TCB_SIZE = 288;
-+  unsigned int tcb_size() const { return Target_x86_64<size>::MUSL_TCB_SIZE; }
++  // pthread descriptor size is 288 bytes.
++  const static int TCB_SIZE = size / 8 * 2; // Match aarch64
++  const static int MUSL_PTHREAD_SIZE = 288;
++  unsigned int tcb_size() const { return Target_x86_64<size>::TCB_SIZE; }
++  unsigned int pthread_size() const
++  { return Target_x86_64<size>::MUSL_PTHREAD_SIZE; }
 +
    // In the x86_64 ABI (p 68), it says "The AMD64 ABI architectures
    // uses only Elf64_Rela relocation entries with explicit addends."
    typedef Output_data_reloc<elfcpp::SHT_RELA, true, size, false> Reloc_section;
-@@ -4066,7 +4071,12 @@
+@@ -4066,7 +4074,14 @@
  			  || issue_undefined_symbol_error(gsym));
  	      return;
  	    }
@@ -38,11 +41,13 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +	  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
 +	      align_address(target->tcb_size(),
 +			    tls_segment->maximum_alignment());
-+	  value += aligned_tcb_size;
++	  value += aligned_tcb_size +
++		   target->pthread_size() -
++		   target->tcb_size();
  	}
        Relocate_functions<size, false>::rela32(view, value, addend);
        break;
-@@ -4081,7 +4091,12 @@
+@@ -4081,7 +4096,14 @@
  			  || issue_undefined_symbol_error(gsym));
  	      return;
  	    }
@@ -52,11 +57,13 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +	  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
 +	      align_address(target->tcb_size(),
 +			    tls_segment->maximum_alignment());
-+	  value += aligned_tcb_size;
++	  value += aligned_tcb_size +
++		   target->pthread_size() -
++		   target->tcb_size();
  	}
        Relocate_functions<size, false>::rela64(view, value, addend);
        break;
-@@ -4147,7 +4162,11 @@
+@@ -4147,7 +4169,11 @@
  		      || issue_undefined_symbol_error(gsym));
  	  return;
  	}
@@ -65,11 +72,11 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +      // thread pointer (rather than below like normal x86-64).
 +      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
 +          align_address(target->tcb_size(), tls_segment->maximum_alignment());
-+      value += aligned_tcb_size;
++      value += aligned_tcb_size + target->pthread_size() - target->tcb_size();
        Relocate_functions<size, false>::rela32(view, value, addend);
        break;
      }
-@@ -4271,7 +4290,14 @@
+@@ -4271,7 +4297,16 @@
  	     15);
      }
  
@@ -79,13 +86,15 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +  // TODO if we support different thread descriptor sizes then the target
 +  // (which defines which libc we're supporting) must be passed in here
 +  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
-+      align_address(Target_x86_64<size>::MUSL_TCB_SIZE,
++      align_address(Target_x86_64<size>::TCB_SIZE,
 +		    tls_segment->maximum_alignment());
-+  value += aligned_tcb_size;
++  value += aligned_tcb_size +
++	   Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	   Target_x86_64<size>::TCB_SIZE;
    Relocate_functions<size, false>::rela32(view + 8, value, 0);
  
    // The next reloc should be a PLT32 reloc against __tls_get_addr.
-@@ -4342,7 +4368,14 @@
+@@ -4342,7 +4377,16 @@
  		     view[-3] == 0x48 && view[-2] == 0x8d && view[-1] == 0x05);
        view[-2] = 0xc7;
        view[-1] = 0xc0;
@@ -95,13 +104,15 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +      // TODO if we support different thread descriptor sizes then the target
 +      // (which defines which libc we're supporting) must be passed in here
 +      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
-+	  align_address(Target_x86_64<size>::MUSL_TCB_SIZE,
++	  align_address(Target_x86_64<size>::TCB_SIZE,
 +			tls_segment->maximum_alignment());
-+      value += aligned_tcb_size;
++      value += aligned_tcb_size +
++	       Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	       Target_x86_64<size>::TCB_SIZE;
        Relocate_functions<size, false>::rela32(view, value, 0);
      }
    else
-@@ -4477,7 +4510,16 @@
+@@ -4477,7 +4521,18 @@
      }
  
    if (tls_segment != NULL)
@@ -112,9 +123,11 @@ diff -Naur -x build ./gold/x86_64.cc ../binutils-2.27/gold/x86_64.cc
 +      // TODO if we support different thread descriptor sizes then the target
 +      // (which defines which libc we're supporting) must be passed in here
 +      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
-+          align_address(Target_x86_64<size>::MUSL_TCB_SIZE,
++	  align_address(Target_x86_64<size>::TCB_SIZE,
 +			tls_segment->maximum_alignment());
-+      value += aligned_tcb_size;
++      value += aligned_tcb_size +
++	       Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	       Target_x86_64<size>::TCB_SIZE;
 +    }
    Relocate_functions<size, false>::rela32(view, value, 0);
  }

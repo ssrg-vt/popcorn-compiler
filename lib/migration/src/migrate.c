@@ -181,6 +181,28 @@ struct shim_data {
 static volatile int __hold = 1;
 #endif
 
+#define MUSL_PTHREAD_DESCRIPTOR_SIZE 288
+
+/* musl-libc's architecture-specific function for setting the TLS pointer */
+int __set_thread_area(void *);
+
+/*
+ * Convert a pointer to the start of the TLS region to the
+ * architecture-specific thread pointer.  Derived from musl-libc's
+ * per-architecture thread-pointer locations -- see each architecture's
+ * "pthread_arch.h" file.
+ */
+static inline void *get_thread_pointer(void *raw_tls, enum arch dest)
+{
+  switch(dest)
+  {
+  case ARCH_AARCH64: return raw_tls - 16;
+  case ARCH_POWERPC64: return raw_tls + 0x7000; // <- TODO verify
+  case ARCH_X86_64: return raw_tls - MUSL_PTHREAD_DESCRIPTOR_SIZE;
+  default: assert(0 && "Unsupported architecture!"); return NULL;
+  }
+}
+
 /* Generate a call site to get rewriting metadata for outermost frame. */
 static void* __attribute__((noinline))
 get_call_site() { return __builtin_return_address(0); };
@@ -204,7 +226,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     return;
   }
 
-  data_ptr = *pthread_migrate_args();
+  data_ptr = pthread_get_migrate_args();
   if(!data_ptr) // Invoke migration
   {
     unsigned long sp = 0, bp = 0;
@@ -231,7 +253,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       data.callback = callback;
       data.callback_data = callback_data;
       data.regset = &regs_dst;
-      *pthread_migrate_args() = &data;
+      pthread_set_migrate_args(&data);
 #if _SIG_MIGRATION == 1
       clear_migrate_flag();
 #endif
@@ -268,6 +290,10 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       if(cur_nid != origin_nid) remote_debug_cleanup(cur_nid);
 #endif
 
+      // Translate between architecture-specific thread descriptors
+      // Note: TLS is now invalid until after migration!
+      __set_thread_area(get_thread_pointer(GET_TLS_POINTER, dst_arch));
+
       // This code has different behavior depending on the type of migration:
       //
       // - Heterogeneous: we transformed the stack assuming we're re-entering
@@ -283,10 +309,10 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       if(err)
       {
         perror("Could not migrate to node");
-        *pthread_migrate_args() = NULL;
+        pthread_set_migrate_args(NULL);
         return;
       }
-      data_ptr = *pthread_migrate_args();
+      data_ptr = pthread_get_migrate_args();
     }
     else
     {
@@ -305,7 +331,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #endif
   if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
 
-  *pthread_migrate_args() = NULL;
+  pthread_set_migrate_args(NULL);
 }
 
 /* Check if we should migrate, and invoke migration. */

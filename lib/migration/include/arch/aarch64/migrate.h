@@ -12,6 +12,14 @@
     READ_REGS_AARCH64(regset.aarch); \
     regset.aarch.pc = get_call_site()
 
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("mrs %0, tpidr_el0" : "=r"(self)); \
+    self + 16; \
+  })
+
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
 #define REWRITE_STACK(regs_src, regs_dst, dst_arch) \
