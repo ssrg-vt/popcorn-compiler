@@ -16,7 +16,7 @@ PHDRS {
 SECTIONS
 {
   kernel_start =  phys;
-  
+
  .mboot phys : AT(ADDR(.mboot)) {
     *(.mboot)
     . = ALIGN((1 << 12));
@@ -158,7 +158,7 @@ SECTIONS
 
 
   /* Stabs debugging sections.  */
-  .stab          0 : { *(.stab) } :my_segment 
+  .stab          0 : { *(.stab) } :my_segment
   .stabstr       0 : { *(.stabstr) }
   .stab.excl     0 : { *(.stab.excl) }
   .stab.exclstr  0 : { *(.stab.exclstr) }
