@@ -114,12 +114,14 @@ SECTIONS
   }
   .jcr  : { KEEP (*(.jcr)) }
   .got.plt : { *(.got.plt)  *(.igot.plt) }
+  __data_start = .;
   .data : {
     *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
   }
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
+  __data_end = .;
   .percore : {
     . = ALIGN(64);
     percore_start = .;
