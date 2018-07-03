@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -8,13 +7,13 @@
 #include <string.h>
 #include <errno.h>
 
+#ifdef __aarch64__
+#define BINARY "/tmp/prog_aarch64"
+#else
 #define BINARY "./prog_x86-64"
-
-__thread int x = 24;
-__thread int y;
+#endif
 
 int main(int argc, char **argv) {
-	
 	int fd2;
 
 	char *buf4 = malloc(250*1024*1204);
@@ -30,12 +29,11 @@ int main(int argc, char **argv) {
 		printf("error open\n");
 		return -1;
 	}
-	
 
 	char *buf = malloc(4096*4);
 	if(!buf) {
 		fprintf(stderr, "error malloc!\n");
-		assert(0);
+		return -1;
 	}
 	memset(buf, 0x0, 4096*4);
 	printf("malloc returned %p\n", buf);
