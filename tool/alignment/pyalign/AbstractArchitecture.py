@@ -87,7 +87,7 @@ class AbstractArchitecture():
 						objectFile = matchResult3.group(5)
 						s = Symbol.Symbol(name, address, size, alignment,
 							objectFile, self.getArch())
-						'''
+						
 						i = 1;
 						while True:
 							matchResult4 = re.match(extension, lines[index+i])
@@ -96,12 +96,12 @@ class AbstractArchitecture():
 								address = int(matchResult4.group(1), 0)
 								objectFile = matchResult4.group(2)
 								s = Symbol.Symbol(name, address, size, alignment, objectFile, self.getArch())
-								print(str(address) + "      " + objectFile)
-								print(lines[index+i])
+								#print(str(address) + "      " + objectFile)
+								#print(lines[index+i])
 								i = i+1
 							else:
 								break
-						'''
+						
 				if s:
 					res.append(s)
 

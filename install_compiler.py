@@ -686,7 +686,7 @@ def install_hermit_x86_64(base_path, install_path, threads):
     print('Downloading HermitCore x86_64 kernel')
 
     try:
-        rv = subprocess.check_call(['git', 'clone', 
+        rv = subprocess.check_call(['git', 'clone',
             '--recurse-submodules', '-b', hermit_x86_64_git_branch, hermit_git_url,
             hermit_download_path])
     except Exception as e:

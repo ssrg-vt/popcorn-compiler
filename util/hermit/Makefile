@@ -77,7 +77,7 @@ PROG_ARM_ALIGNED=$(PROG_ARM)_aligned
 
 # alignment
 ALIGN=$(PH_PREFIX_HOST)/bin/pyalign
-
+ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align-edited.py # TODO update with check-align-hermit.py
 # LDFLAGS (common / x86 only / arm only)
 LDFLAGS=-static
 LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86) -Map $(MAP_X86)
@@ -100,6 +100,9 @@ DEBUG?=0
 
 
 all: align $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
+
+check: all
+	$(ALIGN_CHECK) $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 %.x86.o: %.c
 	@# 1. emit bitcode
@@ -152,7 +155,6 @@ $(PROG_ARM_ALIGNED):
 	@# 8. Change OSABI
 	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
 		$(PROG_ARM_ALIGNED)
-
 
 test-x86: $(PROG_X86)
 	HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
