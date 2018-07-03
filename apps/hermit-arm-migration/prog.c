@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
+#include <hermit/migration.h>
+
 #define ITERATIONS	10
 
 extern uint32_t should_migrate;
@@ -18,8 +20,8 @@ int main(void) {
 	printf("hi\n");
 
 	for(i=0; i<ITERATIONS; i++) {
+		HERMIT_MIGPOINT();
 		printf("iteration %d\n", i);
-		printf("should %d\n", should_migrate);
 		sleep(1);
 	}
 
