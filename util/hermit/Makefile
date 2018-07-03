@@ -25,8 +25,8 @@ INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 
 # Compiler and linker
 CC=$(PH_PREFIX_HOST)/bin/clang
-#LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
-LD=/usr/local/popcorn/bin/ld.gold
+LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
+#LD=/usr/local/popcorn/bin/ld.gold
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
@@ -36,6 +36,7 @@ PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
 LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
+#LINKER_SCRIPT_ARM=/home/mehrab/linker.x
 
 # Additional object files to link with any application (x86)
 ADD_OBJS_X86=$(PH_PREFIX_X86)/lib/crt0.o \
