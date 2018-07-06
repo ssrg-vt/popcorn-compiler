@@ -25,8 +25,8 @@ INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 
 # Compiler and linker
 CC=$(PH_PREFIX_HOST)/bin/clang
-LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
-#LD=/usr/local/popcorn/bin/ld.gold
+#LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
+LD=/usr/local/popcorn/bin/ld.gold
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
@@ -35,8 +35,8 @@ OBJS_ARM=$(SRCS:.c=.arm.o)
 PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
-LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
-#LINKER_SCRIPT_ARM=/home/mehrab/linker.x
+#LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
+LINKER_SCRIPT_ARM=/home/mehrab/linker.x
 
 # Additional object files to link with any application (x86)
 ADD_OBJS_X86=$(PH_PREFIX_X86)/lib/crt0.o \
@@ -100,8 +100,7 @@ RESUME?=0
 DEBUG?=0
 
 
-#all: align $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
-all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
+all: align $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 check: all
 	$(ALIGN_CHECK) $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
@@ -142,7 +141,7 @@ align: $(PROG_X86) $(PROG_ARM)
 
 $(PROG_X86_ALIGNED):
 	@# 6. Link with aligned script
-#	$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
+	$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
 	@# 7. Post-process
 	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86_ALIGNED)
 	@# 8. Change OSABI
@@ -151,7 +150,7 @@ $(PROG_X86_ALIGNED):
 
 $(PROG_ARM_ALIGNED):
 	@# 6. Link with aligned script
-#	$(LD) -o $(PROG_ARM_ALIGNED) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ALIGN_ARM)
+	$(LD) -o $(PROG_ARM_ALIGNED) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ALIGN_ARM)
 	@# 7. Post-process
 	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM_ALIGNED)
 	@# 8. Change OSABI

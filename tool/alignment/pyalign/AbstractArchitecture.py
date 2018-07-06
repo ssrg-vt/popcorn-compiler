@@ -72,6 +72,21 @@ class AbstractArchitecture():
 						objectFile = matchResult2.group(4)
 						s = Symbol.Symbol(name, address, size, alignment,
 						objectFile, self.getArch())
+
+						i = 1;
+						while True:
+							matchResult4 = re.match(extension, lines[index+i])
+							if matchResult4:
+								res.append(s)
+								address = int(matchResult4.group(1), 0)
+								objectFile = matchResult4.group(2)
+								s = Symbol.Symbol(name, address, size, alignment, objectFile, self.getArch())
+								#print(str(address) + "      " + objectFile)
+								#print(lines[index+i])
+								i = i+1
+							else:
+								break
+
 					else:
 						er("missed a two lines symbol while parsing	mapfile:\n")
 						er("line1: " + line + "\n")
