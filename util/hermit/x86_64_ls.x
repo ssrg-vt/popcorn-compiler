@@ -16,7 +16,7 @@ PHDRS {
 SECTIONS
 {
   kernel_start =  phys;
-  
+
  .mboot phys : AT(ADDR(.mboot)) {
     *(.mboot)
     . = ALIGN((1 << 12));
