@@ -168,6 +168,7 @@ static int start_c11(void *p)
 }
 
 #define ROUND(x) (((x)+PAGE_SIZE-1)&-PAGE_SIZE)
+#define TLS_ROUND(x) (((x)+libc.tls_align-1)&-libc.tls_align)
 
 /* pthread_key_create.c overrides this */
 static volatile size_t dummy = 0;
@@ -230,7 +231,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	if (__block_new_threads) __wait(&__block_new_threads, 0, 1, 1);
 
 	if (attr._a_stackaddr) {
-		size_t need = libc.tls_size + __pthread_tsd_size;
+		size_t need = TLS_ROUND(libc.tls_size) + __pthread_tsd_size;
 		size = attr._a_stacksize;
 		stack = (void *)(attr._a_stackaddr & -16);
 		stack_limit = (void *)(attr._a_stackaddr - size);
@@ -239,7 +240,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 		 * application's stack space. */
 		if (need < size/8 && need < 2048) {
 			tsd = stack - __pthread_tsd_size;
-			stack = tsd - libc.tls_size;
+			stack = tsd - TLS_ROUND(libc.tls_size);
 			memset(stack, 0, need);
 		} else {
 			size = ROUND(need);
@@ -248,7 +249,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	} else {
 		guard = ROUND(attr._a_guardsize);
 		size = guard + ROUND(attr._a_stacksize
-			+ libc.tls_size +  __pthread_tsd_size);
+			+ TLS_ROUND(libc.tls_size) +  __pthread_tsd_size);
 	}
 
 	if (!tsd) {
@@ -266,12 +267,12 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 		}
 		tsd = map + size - __pthread_tsd_size;
 		if (!stack) {
-			stack = tsd - libc.tls_size;
+			stack = tsd - TLS_ROUND(libc.tls_size);
 			stack_limit = map + guard;
 		}
 	}
 
-	new = __copy_tls(tsd - libc.tls_size);
+	new = __copy_tls(tsd - TLS_ROUND(libc.tls_size));
 	new->map_base = map;
 	new->map_size = size;
 	new->stack = stack;
