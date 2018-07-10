@@ -73,7 +73,7 @@ static bool hierarchy_select_leader_optimistic(leader_select_t *l,
                                                size_t *ticket)
 {
   size_t rem = __atomic_fetch_add(&l->remaining, -1, MEMMODEL_ACQ_REL);
-  if(ticket) *ticket = rem;
+  if(ticket) *ticket = rem - 1;
   return rem == l->num;
 }
 
@@ -265,7 +265,7 @@ hierarchy_reduce_local(int nid, size_t ticket, void *reduce_data)
     for(i = 0; i < gomp_spin_count_var; i++)
     {
       if(__atomic_load_n(&popcorn_node[nid].reductions[ticket].p,
-                         MEMMODEL_RELAXED) != NULL) break;
+                         MEMMODEL_RELAXED) == NULL) break;
       else __asm volatile("" : : : "memory");
     }
   }
