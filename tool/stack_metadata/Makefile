@@ -66,7 +66,7 @@ install: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK) $(COMPRESS)
 	@cp $^ $(POPCORN)/bin
 
 clean:
-	@echo " [RM] $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK)"
-	@rm -rf $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK)
+	@echo " [RM] $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK) $(COMPRESS)"
+	@rm -rf $(BIN) $(BUILD) $(DUMP_SM) $(DUMP_ST) $(CHECK) $(COMPRESS)
 
 .PHONY: all util clean

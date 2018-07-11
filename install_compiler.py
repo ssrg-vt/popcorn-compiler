@@ -502,6 +502,7 @@ def install_stack_transformation(base_path, install_path, num_threads, st_debug)
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'stack_transformation'))
+    run_cmd('clean libstack-transform', ['make', 'clean'])
 
     print('Making stack_transformation...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -520,6 +521,7 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
     # CONFIGURE & INSTALL MIGRATION LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'migration'))
+    run_cmd('clean libmigration', ['make', 'clean'])
 
     print('Making libmigration...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -545,6 +547,7 @@ def install_stackdepth(base_path, install_path, num_threads):
     # INSTALL STACK DEPTH LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'stack_depth'))
+    run_cmd('clean libstack-depth', ['make', 'clean'])
 
     print('Making stack depth library...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -561,6 +564,7 @@ def install_tools(base_path, install_path, num_threads):
     # INSTALL ALIGNMENT TOOL
     #=====================================================
     os.chdir(os.path.join(base_path, 'tool', 'alignment'))
+    run_cmd('clean pyalign', ['make', 'clean'])
 
     print('Making pyalign...')
     args = ['make', '-j', str(num_threads), 'install',
@@ -573,6 +577,7 @@ def install_tools(base_path, install_path, num_threads):
     # INSTALL STACK METADATA TOOL
     #=====================================================
     os.chdir(os.path.join(base_path, 'tool', 'stack_metadata'))
+    run_cmd('clean stack metadata tool', ['make', 'clean'])
 
     print('Making stack metadata tool...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
