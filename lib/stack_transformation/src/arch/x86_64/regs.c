@@ -13,38 +13,26 @@
 // File-local APIs & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
-#define X86_64_NUM_REGS 67
+static void* regset_default_x86_64(void);
+static void* regset_init_x86_64(const void* regs);
+static void regset_free_x86_64(void* regset);
+static void regset_clone_x86_64(const void* src, void* dest);
+static void regset_copyin_x86_64(void* regset, const void* regs);
+static void regset_copyout_x86_64(const void* regset, void* regs);
 
-static regset_t regset_default_x86_64(void);
-static regset_t regset_init_x86_64(const void* regs);
-static void regset_free_x86_64(regset_t regset);
-static void regset_clone_x86_64(const_regset_t src, regset_t dest);
-static void regset_copyin_x86_64(regset_t regset, const void* regs);
-static void regset_copyout_x86_64(const_regset_t regset, void* regs);
+static void* pc_x86_64(const void* regset);
+static void* sp_x86_64(const void* regset);
+static void* fbp_x86_64(const void* regset);
+static void* ra_reg_x86_64(const void* regset);
 
-static void* pc_x86_64(const_regset_t regset);
-static void* sp_x86_64(const_regset_t regset);
-static void* fbp_x86_64(const_regset_t regset);
-static void* ra_reg_x86_64(const_regset_t regset);
-
-static void set_pc_x86_64(regset_t regset, void* pc);
-static void set_sp_x86_64(regset_t regset, void* sp);
-static void set_fbp_x86_64(regset_t regset, void* fbp);
-static void set_ra_reg_x86_64(regset_t regset, void* ra);
-static void setup_fbp_x86_64(regset_t regset, void* cfa);
+static void set_pc_x86_64(void* regset, void* pc);
+static void set_sp_x86_64(void* regset, void* sp);
+static void set_fbp_x86_64(void* regset, void* fbp);
+static void set_ra_reg_x86_64(void* regset, void* ra);
+static void setup_fbp_x86_64(void* regset, void* cfa);
 
 static uint16_t reg_size_x86_64(uint16_t reg);
-static void* reg_x86_64(regset_t regset, uint16_t reg);
-
-/*
- * Internal definition of x86-64 object, contains x86-64 registers in addition
- * to common fields & functions.
- */
-typedef struct regset_obj_x86_64
-{
-  struct regset_t common;
-  struct regset_x86_64 regs;
-} regset_obj_x86_64;
+static void* reg_x86_64(void* regset, uint16_t reg);
 
 /*
  * x86-64 register operations (externally visible), used to construct new
@@ -53,7 +41,7 @@ typedef struct regset_obj_x86_64
 const struct regops_t regs_x86_64 = {
   .num_regs = X86_64_NUM_REGS,
   .has_ra_reg = false,
-  .regset_size = sizeof(regset_obj_x86_64),
+  .regset_size = sizeof(struct regset_x86_64),
   .fbp_regnum = RBP,
 
   .regset_default = regset_default_x86_64,
@@ -82,102 +70,100 @@ const struct regops_t regs_x86_64 = {
 // x86-64 APIs
 ///////////////////////////////////////////////////////////////////////////////
 
-static regset_t regset_default_x86_64()
+static void* regset_default_x86_64()
 {
-  regset_obj_x86_64* new = calloc(1, sizeof(regset_obj_x86_64));
+  struct regset_x86_64* new = calloc(1, sizeof(struct regset_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
-  new->common.initialized = true;
-  return (regset_t)new;
+  return new;
 }
 
-static regset_t regset_init_x86_64(const void* regs)
+static void* regset_init_x86_64(const void* regs)
 {
-  regset_obj_x86_64* new = MALLOC(sizeof(regset_obj_x86_64));
+  struct regset_x86_64* new = MALLOC(sizeof(struct regset_x86_64));
   ASSERT(new, "could not allocate regset (x86-64)\n");
-  new->common.initialized = true;
-  new->regs = *(struct regset_x86_64*)regs;
-  return (regset_t)new;
+  *new = *(struct regset_x86_64*)regs;
+  return new;
 }
 
-static void regset_free_x86_64(regset_t regset)
+static void regset_free_x86_64(void* regset)
 {
   free(regset);
 }
 
-static void regset_clone_x86_64(const_regset_t src, regset_t dest)
+static void regset_clone_x86_64(const void* src, void* dest)
 {
-  const regset_obj_x86_64* srcregs = (const regset_obj_x86_64*)src;
-  regset_obj_x86_64* destregs = (regset_obj_x86_64*)dest;
+  const struct regset_x86_64* srcregs = (const struct regset_x86_64*)src;
+  struct regset_x86_64* destregs = (struct regset_x86_64*)dest;
   *destregs = *srcregs;
 }
 
-static void regset_copyin_x86_64(regset_t regset, const void* regs)
+static void regset_copyin_x86_64(void* in, const void* out)
 {
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
-  cur->common.initialized = true;
-  cur->regs = *(struct regset_x86_64*)regs;
+  struct regset_x86_64* cur = (struct regset_x86_64*)in;
+  *cur = *(struct regset_x86_64*)out;
 }
 
-static void regset_copyout_x86_64(const_regset_t regset, void* regs)
+static void regset_copyout_x86_64(const void* in, void* out)
 {
-  const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  *(struct regset_x86_64*)regs = cur->regs;
+  const struct regset_x86_64* cur = (const struct regset_x86_64*)in;
+  *(struct regset_x86_64*)out = *cur;
 }
 
-static void* pc_x86_64(const_regset_t regset)
+static void* pc_x86_64(const void* regset)
 {
-  const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  return cur->regs.rip;
+  const struct regset_x86_64* cur = (const struct regset_x86_64*)regset;
+  return cur->rip;
 }
 
-static void* sp_x86_64(const_regset_t regset)
+static void* sp_x86_64(const void* regset)
 {
-  const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  return (void*)cur->regs.rsp;
+  const struct regset_x86_64* cur = (const struct regset_x86_64*)regset;
+  return (void*)cur->rsp;
 }
 
-static void* fbp_x86_64(const_regset_t regset)
+static void* fbp_x86_64(const void* regset)
 {
-  const regset_obj_x86_64* cur = (const regset_obj_x86_64*)regset;
-  return (void*)cur->regs.rbp;
+  const struct regset_x86_64* cur = (const struct regset_x86_64*)regset;
+  return (void*)cur->rbp;
 }
 
-static void* ra_reg_x86_64(const_regset_t regset)
+static void* ra_reg_x86_64(const void* __attribute__((unused)) regset)
 {
   // N/a for x86-64, return address is always stored on the stack
   ST_ERR(1, "no return-address register for x86-64\n");
   return NULL;
 }
 
-static void set_pc_x86_64(regset_t regset, void* pc)
+static void set_pc_x86_64(void* regset, void* pc)
 {
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
-  cur->regs.rip = pc;
+  struct regset_x86_64* cur = (struct regset_x86_64*)regset;
+  cur->rip = pc;
 }
 
-static void set_sp_x86_64(regset_t regset, void* sp)
+static void set_sp_x86_64(void* regset, void* sp)
 {
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
-  cur->regs.rsp = (uint64_t)sp;
+  struct regset_x86_64* cur = (struct regset_x86_64*)regset;
+  cur->rsp = (uint64_t)sp;
 }
 
-static void set_fbp_x86_64(regset_t regset, void* fbp)
+static void set_fbp_x86_64(void* regset, void* fbp)
 {
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
-  cur->regs.rbp = (uint64_t)fbp;
+  struct regset_x86_64* cur = (struct regset_x86_64*)regset;
+  cur->rbp = (uint64_t)fbp;
 }
 
-static void set_ra_reg_x86_64(regset_t regset, void* val)
+static void set_ra_reg_x86_64(void*  __attribute__((unused)) regset,
+                              void* __attribute__((unused)) val)
 {
   // N/a for x86-64, return address is always stored on the stack
   ST_ERR(1, "no return-address register for x86-64\n");
 }
 
-static void setup_fbp_x86_64(regset_t regset, void* cfa)
+static void setup_fbp_x86_64(void* regset, void* cfa)
 {
   ASSERT(cfa, "Null canonical frame address\n");
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
-  cur->regs.rbp = (uint64_t)cfa - 0x10;
+  struct regset_x86_64* cur = (struct regset_x86_64*)regset;
+  cur->rbp = (uint64_t)cfa - 0x10;
 }
 
 static uint16_t reg_size_x86_64(uint16_t reg)
@@ -203,45 +189,45 @@ static uint16_t reg_size_x86_64(uint16_t reg)
   return 0;
 }
 
-static void* reg_x86_64(regset_t regset, uint16_t reg)
+static void* reg_x86_64(void* regset, uint16_t reg)
 {
-  regset_obj_x86_64* cur = (regset_obj_x86_64*)regset;
+  struct regset_x86_64* cur = (struct regset_x86_64*)regset;
 
   switch(reg)
   {
-  case RAX: return &cur->regs.rax;
-  case RDX: return &cur->regs.rdx;
-  case RCX: return &cur->regs.rcx;
-  case RBX: return &cur->regs.rbx;
-  case RSI: return &cur->regs.rsi;
-  case RDI: return &cur->regs.rdi;
-  case RBP: return &cur->regs.rbp;
-  case RSP: return &cur->regs.rsp;
-  case R8: return &cur->regs.r8;
-  case R9: return &cur->regs.r9;
-  case R10: return &cur->regs.r10;
-  case R11: return &cur->regs.r11;
-  case R12: return &cur->regs.r12;
-  case R13: return &cur->regs.r13;
-  case R14: return &cur->regs.r14;
-  case R15: return &cur->regs.r15;
-  case RIP: return &cur->regs.rip;
-  case XMM0: return &cur->regs.xmm[0];
-  case XMM1: return &cur->regs.xmm[1];
-  case XMM2: return &cur->regs.xmm[2];
-  case XMM3: return &cur->regs.xmm[3];
-  case XMM4: return &cur->regs.xmm[4];
-  case XMM5: return &cur->regs.xmm[5];
-  case XMM6: return &cur->regs.xmm[6];
-  case XMM7: return &cur->regs.xmm[7];
-  case XMM8: return &cur->regs.xmm[8];
-  case XMM9: return &cur->regs.xmm[9];
-  case XMM10: return &cur->regs.xmm[10];
-  case XMM11: return &cur->regs.xmm[11];
-  case XMM12: return &cur->regs.xmm[12];
-  case XMM13: return &cur->regs.xmm[13];
-  case XMM14: return &cur->regs.xmm[14];
-  case XMM15: return &cur->regs.xmm[15];
+  case RAX: return &cur->rax;
+  case RDX: return &cur->rdx;
+  case RCX: return &cur->rcx;
+  case RBX: return &cur->rbx;
+  case RSI: return &cur->rsi;
+  case RDI: return &cur->rdi;
+  case RBP: return &cur->rbp;
+  case RSP: return &cur->rsp;
+  case R8: return &cur->r8;
+  case R9: return &cur->r9;
+  case R10: return &cur->r10;
+  case R11: return &cur->r11;
+  case R12: return &cur->r12;
+  case R13: return &cur->r13;
+  case R14: return &cur->r14;
+  case R15: return &cur->r15;
+  case RIP: return &cur->rip;
+  case XMM0: return &cur->xmm[0];
+  case XMM1: return &cur->xmm[1];
+  case XMM2: return &cur->xmm[2];
+  case XMM3: return &cur->xmm[3];
+  case XMM4: return &cur->xmm[4];
+  case XMM5: return &cur->xmm[5];
+  case XMM6: return &cur->xmm[6];
+  case XMM7: return &cur->xmm[7];
+  case XMM8: return &cur->xmm[8];
+  case XMM9: return &cur->xmm[9];
+  case XMM10: return &cur->xmm[10];
+  case XMM11: return &cur->xmm[11];
+  case XMM12: return &cur->xmm[12];
+  case XMM13: return &cur->xmm[13];
+  case XMM14: return &cur->xmm[14];
+  case XMM15: return &cur->xmm[15];
   /*
    * TODO:
    *   33-40: st[0] - st[7]

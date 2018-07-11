@@ -16,8 +16,6 @@
 #include "stack_transform.h"
 #include "definitions.h"
 #include "util.h"
-#include "arch/x86_64/regs.h"
-#include "arch/aarch64/regs.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
@@ -175,7 +173,6 @@ void __st_userspace_dtor(void)
  */
 stack_bounds get_stack_bounds()
 {
-  int retval;
   void* cur_stack;
   stack_bounds cur_bounds = {NULL, NULL};
 
@@ -190,7 +187,7 @@ stack_bounds get_stack_bounds()
   {
     bounds_ptr = (stack_bounds*)MALLOC(sizeof(stack_bounds));
     ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-    retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
+    int retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
     if(retval) {
       ASSERT(!retval, "could not set TLS data for thread\n");
       return cur_bounds;

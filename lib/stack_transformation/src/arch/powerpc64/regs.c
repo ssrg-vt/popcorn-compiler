@@ -16,40 +16,29 @@
 // File-local APIs & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
-#define POWERPC64_NUM_REGS 116
 #define POWERPC64_SP_REG R1
 #define POWERPC64_FBP_REG R31
 
-static regset_t regset_default_powerpc64(void);
-static regset_t regset_init_powerpc64(const void* regs);
-static void regset_free_powerpc64(regset_t regset);
-static void regset_clone_powerpc64(const_regset_t src, regset_t dest);
-static void regset_copyin_powerpc64(regset_t regset, const void* regs);
-static void regset_copyout_powerpc64(const_regset_t regset, void* regs);
+static void* regset_default_powerpc64(void);
+static void* regset_init_powerpc64(const void* regs);
+static void regset_free_powerpc64(void* regset);
+static void regset_clone_powerpc64(const void* src, void* dest);
+static void regset_copyin_powerpc64(void* regset, const void* regs);
+static void regset_copyout_powerpc64(const void* regset, void* regs);
 
-static void* pc_powerpc64(const_regset_t regset);
-static void* sp_powerpc64(const_regset_t regset);
-static void* fbp_powerpc64(const_regset_t regset);
-static void* ra_reg_powerpc64(const_regset_t regset);
+static void* pc_powerpc64(const void* regset);
+static void* sp_powerpc64(const void* regset);
+static void* fbp_powerpc64(const void* regset);
+static void* ra_reg_powerpc64(const void* regset);
 
-static void set_pc_powerpc64(regset_t regset, void* pc);
-static void set_sp_powerpc64(regset_t regset, void* sp);
-static void set_fbp_powerpc64(regset_t regset, void* fp);
-static void set_ra_reg_powerpc64(regset_t regset, void* ra);
-static void setup_fbp_powerpc64(regset_t regset, void* cfa);
+static void set_pc_powerpc64(void* regset, void* pc);
+static void set_sp_powerpc64(void* regset, void* sp);
+static void set_fbp_powerpc64(void* regset, void* fp);
+static void set_ra_reg_powerpc64(void* regset, void* ra);
+static void setup_fbp_powerpc64(void* regset, void* cfa);
 
 static uint16_t reg_size_powerpc64(uint16_t reg);
-static void* reg_powerpc64(regset_t regset, uint16_t reg);
-
-/*
- * Internal definition of powerpc64 object, contains powerpc64 registers in
- * addition to common fields & functions.
- */
-typedef struct regset_obj_powerpc64
-{
-  struct regset_t common;
-  struct regset_powerpc64 regs;
-} regset_obj_powerpc64;
+static void* reg_powerpc64(void* regset, uint16_t reg);
 
 /*
  * powerpc64 register operations (externally visible), used to construct new
@@ -58,7 +47,7 @@ typedef struct regset_obj_powerpc64
 const struct regops_t regs_powerpc64 = {
   .num_regs = POWERPC64_NUM_REGS,
   .has_ra_reg = true,
-  .regset_size = sizeof(regset_obj_powerpc64),
+  .regset_size = sizeof(struct regset_powerpc64),
   .fbp_regnum = POWERPC64_FBP_REG,
 
   .regset_default = regset_default_powerpc64,
@@ -87,101 +76,99 @@ const struct regops_t regs_powerpc64 = {
 // powerpc64 APIs
 ///////////////////////////////////////////////////////////////////////////////
 
-static regset_t regset_default_powerpc64()
+static void* regset_default_powerpc64()
 {
-  regset_obj_powerpc64* new = calloc(1, sizeof(regset_obj_powerpc64));
+  struct regset_powerpc64* new = calloc(1, sizeof(struct regset_powerpc64));
   ASSERT(new, "could not allocate regset (powerpc64)\n");
-  new->common.initialized = true;
-  return (regset_t)new;
+  return new;
 }
 
-static regset_t regset_init_powerpc64(const void* regs)
+static void* regset_init_powerpc64(const void* regs)
 {
-  regset_obj_powerpc64* new = MALLOC(sizeof(regset_obj_powerpc64));
+  struct regset_powerpc64* new = MALLOC(sizeof(struct regset_powerpc64));
   ASSERT(new, "could not allocate regset (powerpc64)\n");
-  new->common.initialized = true;
-  new->regs = *(struct regset_powerpc64*)regs;
-  return (regset_t)new;
+  *new = *(struct regset_powerpc64*)regs;
+  return new;
 }
 
-static void regset_free_powerpc64(regset_t regset)
+static void regset_free_powerpc64(void* regset)
 {
   free(regset);
 }
 
-static void regset_clone_powerpc64(const_regset_t src, regset_t dest)
+static void regset_clone_powerpc64(const void* src, void* dest)
 {
-  const regset_obj_powerpc64* srcregs = (const regset_obj_powerpc64*)src;
-  regset_obj_powerpc64* destregs = (regset_obj_powerpc64*)dest;
+  const struct regset_powerpc64* srcregs = (const struct regset_powerpc64*)src;
+  struct regset_powerpc64* destregs = (struct regset_powerpc64*)dest;
   *destregs = *srcregs;
 }
 
-static void regset_copyin_powerpc64(regset_t regset, const void* regs)
+static void regset_copyin_powerpc64(void* in, const void* out)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->common.initialized = true;
-  cur->regs = *(struct regset_powerpc64*)regs;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)in;
+  *cur = *(struct regset_powerpc64*)out;
 }
 
-static void regset_copyout_powerpc64(const_regset_t regset, void* regs)
+static void regset_copyout_powerpc64(const void* in, void* out)
 {
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  *(struct regset_powerpc64*)regs = cur->regs;
+  const struct regset_powerpc64* cur = (const struct regset_powerpc64*)in;
+  *(struct regset_powerpc64*)out = *cur;
 }
 
-static void* pc_powerpc64(const_regset_t regset)
+static void* pc_powerpc64(const void* regset)
 {
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return cur->regs.pc;
+  const struct regset_powerpc64* cur = (const struct regset_powerpc64*)regset;
+  return cur->pc;
 }
 
-static void* sp_powerpc64(const_regset_t regset)
+static void* sp_powerpc64(const void* regset)
 {
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return (void*)cur->regs.r[POWERPC64_SP_REG];
+  const struct regset_powerpc64* cur = (const struct regset_powerpc64*)regset;
+  return (void*)cur->r[POWERPC64_SP_REG];
 }
 
-static void* fbp_powerpc64(const_regset_t regset)
+static void* fbp_powerpc64(const void* regset)
 {
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return (void*)cur->regs.r[POWERPC64_FBP_REG];
+  const struct regset_powerpc64* cur = (const struct regset_powerpc64*)regset;
+  return (void*)cur->r[POWERPC64_FBP_REG];
 }
 
-static void* ra_reg_powerpc64(const_regset_t regset)
+static void* ra_reg_powerpc64(const void* regset)
 {
-  const regset_obj_powerpc64* cur = (const regset_obj_powerpc64*)regset;
-  return (void*)cur->regs.lr;
+  const struct regset_powerpc64* cur = (const struct regset_powerpc64*)regset;
+  return (void*)cur->lr;
 }
 
-static void set_pc_powerpc64(regset_t regset, void* pc)
+static void set_pc_powerpc64(void* regset, void* pc)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.pc = pc;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
+  cur->pc = pc;
 }
 
-static void set_sp_powerpc64(regset_t regset, void* sp)
+static void set_sp_powerpc64(void* regset, void* sp)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.r[POWERPC64_SP_REG] = (uint64_t)sp;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
+  cur->r[POWERPC64_SP_REG] = (uint64_t)sp;
 }
 
-static void set_fbp_powerpc64(regset_t regset, void* fp)
+static void set_fbp_powerpc64(void* regset, void* fp)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)fp;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
+  cur->r[POWERPC64_FBP_REG] = (uint64_t)fp;
 }
 
-static void set_ra_reg_powerpc64(regset_t regset, void* ra)
+static void set_ra_reg_powerpc64(void* regset, void* ra)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  cur->regs.lr = ra;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
+  cur->lr = ra;
 }
 
-static void setup_fbp_powerpc64(regset_t regset, void* cfa)
+static void setup_fbp_powerpc64(void* regset,
+                                void* __attribute__((unused)) cfa)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
-  ASSERT(cur->regs.r[POWERPC64_SP_REG], "Null stack pointer\n");
-  cur->regs.r[POWERPC64_FBP_REG] = (uint64_t)cur->regs.r[POWERPC64_SP_REG];
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
+  ASSERT(cur->r[POWERPC64_SP_REG], "Null stack pointer\n");
+  cur->r[POWERPC64_FBP_REG] = (uint64_t)cur->r[POWERPC64_SP_REG];
 }
 
 static uint16_t reg_size_powerpc64(uint16_t reg)
@@ -211,78 +198,78 @@ static uint16_t reg_size_powerpc64(uint16_t reg)
   return 0;
 }
 
-static void* reg_powerpc64(regset_t regset, uint16_t reg)
+static void* reg_powerpc64(void* regset, uint16_t reg)
 {
-  regset_obj_powerpc64* cur = (regset_obj_powerpc64*)regset;
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)regset;
 
   switch(reg)
   {
-  case R0: return &cur->regs.r[0];
-  case R1: return &cur->regs.r[1];
-  case R2: return &cur->regs.r[2];
-  case R3: return &cur->regs.r[3];
-  case R4: return &cur->regs.r[4];
-  case R5: return &cur->regs.r[5];
-  case R6: return &cur->regs.r[6];
-  case R7: return &cur->regs.r[7];
-  case R8: return &cur->regs.r[8];
-  case R9: return &cur->regs.r[9];
-  case R10: return &cur->regs.r[10];
-  case R11: return &cur->regs.r[11];
-  case R12: return &cur->regs.r[12];
-  case R13: return &cur->regs.r[13];
-  case R14: return &cur->regs.r[14];
-  case R15: return &cur->regs.r[15];
-  case R16: return &cur->regs.r[16];
-  case R17: return &cur->regs.r[17];
-  case R18: return &cur->regs.r[18];
-  case R19: return &cur->regs.r[19];
-  case R20: return &cur->regs.r[20];
-  case R21: return &cur->regs.r[21];
-  case R22: return &cur->regs.r[22];
-  case R23: return &cur->regs.r[23];
-  case R24: return &cur->regs.r[24];
-  case R25: return &cur->regs.r[25];
-  case R26: return &cur->regs.r[26];
-  case R27: return &cur->regs.r[27];
-  case R28: return &cur->regs.r[28];
-  case R29: return &cur->regs.r[29];
-  case R30: return &cur->regs.r[30];
-  case R31: return &cur->regs.r[31];
-  case CTR: return &cur->regs.ctr;
-  case LR: return &cur->regs.lr;
-  case F0: return &cur->regs.f[0];
-  case F1: return &cur->regs.f[1];
-  case F2: return &cur->regs.f[2];
-  case F3: return &cur->regs.f[3];
-  case F4: return &cur->regs.f[4];
-  case F5: return &cur->regs.f[5];
-  case F6: return &cur->regs.f[6];
-  case F7: return &cur->regs.f[7];
-  case F8: return &cur->regs.f[8];
-  case F9: return &cur->regs.f[9];
-  case F10: return &cur->regs.f[10];
-  case F11: return &cur->regs.f[11];
-  case F12: return &cur->regs.f[12];
-  case F13: return &cur->regs.f[13];
-  case F14: return &cur->regs.f[14];
-  case F15: return &cur->regs.f[15];
-  case F16: return &cur->regs.f[16];
-  case F17: return &cur->regs.f[17];
-  case F18: return &cur->regs.f[18];
-  case F19: return &cur->regs.f[19];
-  case F20: return &cur->regs.f[20];
-  case F21: return &cur->regs.f[21];
-  case F22: return &cur->regs.f[22];
-  case F23: return &cur->regs.f[23];
-  case F24: return &cur->regs.f[24];
-  case F25: return &cur->regs.f[25];
-  case F26: return &cur->regs.f[26];
-  case F27: return &cur->regs.f[27];
-  case F28: return &cur->regs.f[28];
-  case F29: return &cur->regs.f[29];
-  case F30: return &cur->regs.f[30];
-  case F31: return &cur->regs.f[31];
+  case R0: return &cur->r[0];
+  case R1: return &cur->r[1];
+  case R2: return &cur->r[2];
+  case R3: return &cur->r[3];
+  case R4: return &cur->r[4];
+  case R5: return &cur->r[5];
+  case R6: return &cur->r[6];
+  case R7: return &cur->r[7];
+  case R8: return &cur->r[8];
+  case R9: return &cur->r[9];
+  case R10: return &cur->r[10];
+  case R11: return &cur->r[11];
+  case R12: return &cur->r[12];
+  case R13: return &cur->r[13];
+  case R14: return &cur->r[14];
+  case R15: return &cur->r[15];
+  case R16: return &cur->r[16];
+  case R17: return &cur->r[17];
+  case R18: return &cur->r[18];
+  case R19: return &cur->r[19];
+  case R20: return &cur->r[20];
+  case R21: return &cur->r[21];
+  case R22: return &cur->r[22];
+  case R23: return &cur->r[23];
+  case R24: return &cur->r[24];
+  case R25: return &cur->r[25];
+  case R26: return &cur->r[26];
+  case R27: return &cur->r[27];
+  case R28: return &cur->r[28];
+  case R29: return &cur->r[29];
+  case R30: return &cur->r[30];
+  case R31: return &cur->r[31];
+  case CTR: return &cur->ctr;
+  case LR: return &cur->lr;
+  case F0: return &cur->f[0];
+  case F1: return &cur->f[1];
+  case F2: return &cur->f[2];
+  case F3: return &cur->f[3];
+  case F4: return &cur->f[4];
+  case F5: return &cur->f[5];
+  case F6: return &cur->f[6];
+  case F7: return &cur->f[7];
+  case F8: return &cur->f[8];
+  case F9: return &cur->f[9];
+  case F10: return &cur->f[10];
+  case F11: return &cur->f[11];
+  case F12: return &cur->f[12];
+  case F13: return &cur->f[13];
+  case F14: return &cur->f[14];
+  case F15: return &cur->f[15];
+  case F16: return &cur->f[16];
+  case F17: return &cur->f[17];
+  case F18: return &cur->f[18];
+  case F19: return &cur->f[19];
+  case F20: return &cur->f[20];
+  case F21: return &cur->f[21];
+  case F22: return &cur->f[22];
+  case F23: return &cur->f[23];
+  case F24: return &cur->f[24];
+  case F25: return &cur->f[25];
+  case F26: return &cur->f[26];
+  case F27: return &cur->f[27];
+  case F28: return &cur->f[28];
+  case F29: return &cur->f[29];
+  case F30: return &cur->f[30];
+  case F31: return &cur->f[31];
 
   default: break;
   }

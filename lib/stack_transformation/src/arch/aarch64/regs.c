@@ -16,40 +16,29 @@
 // File-local APIs & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
-#define AARCH64_NUM_REGS 128
 #define AARCH64_FBP_REG X29
 #define AARCH64_LINK_REG X30
 
-static regset_t regset_default_aarch64(void);
-static regset_t regset_init_aarch64(const void* regs);
-static void regset_free_aarch64(regset_t regset);
-static void regset_clone_aarch64(const_regset_t src, regset_t dest);
-static void regset_copyin_aarch64(regset_t regset, const void* regs);
-static void regset_copyout_aarch64(const_regset_t regset, void* regs);
+static void* regset_default_aarch64(void);
+static void* regset_init_aarch64(const void* regs);
+static void regset_free_aarch64(void* regset);
+static void regset_clone_aarch64(const void* src, void* dest);
+static void regset_copyin_aarch64(void* regset, const void* regs);
+static void regset_copyout_aarch64(const void* regset, void* regs);
 
-static void* pc_aarch64(const_regset_t regset);
-static void* sp_aarch64(const_regset_t regset);
-static void* fbp_aarch64(const_regset_t regset);
-static void* ra_reg_aarch64(const_regset_t regset);
+static void* pc_aarch64(const void* regset);
+static void* sp_aarch64(const void* regset);
+static void* fbp_aarch64(const void* regset);
+static void* ra_reg_aarch64(const void* regset);
 
-static void set_pc_aarch64(regset_t regset, void* pc);
-static void set_sp_aarch64(regset_t regset, void* sp);
-static void set_fbp_aarch64(regset_t regset, void* fp);
-static void set_ra_reg_aarch64(regset_t regset, void* ra);
-static void setup_fbp_aarch64(regset_t regset, void* cfa);
+static void set_pc_aarch64(void* regset, void* pc);
+static void set_sp_aarch64(void* regset, void* sp);
+static void set_fbp_aarch64(void* regset, void* fp);
+static void set_ra_reg_aarch64(void* regset, void* ra);
+static void setup_fbp_aarch64(void* regset, void* cfa);
 
 static uint16_t reg_size_aarch64(uint16_t reg);
-static void* reg_aarch64(regset_t regset, uint16_t reg);
-
-/*
- * Internal definition of aarch64 object, contains aarch64 registers in
- * addition to common fields & functions.
- */
-typedef struct regset_obj_aarch64
-{
-  struct regset_t common;
-  struct regset_aarch64 regs;
-} regset_obj_aarch64;
+static void* reg_aarch64(void* regset, uint16_t reg);
 
 /*
  * aarch64 register operations (externally visible), used to construct new
@@ -58,7 +47,7 @@ typedef struct regset_obj_aarch64
 const struct regops_t regs_aarch64 = {
   .num_regs = AARCH64_NUM_REGS,
   .has_ra_reg = true,
-  .regset_size = sizeof(regset_obj_aarch64),
+  .regset_size = sizeof(struct regset_aarch64),
   .fbp_regnum = AARCH64_FBP_REG,
 
   .regset_default = regset_default_aarch64,
@@ -87,101 +76,98 @@ const struct regops_t regs_aarch64 = {
 // aarch64 APIs
 ///////////////////////////////////////////////////////////////////////////////
 
-static regset_t regset_default_aarch64()
+static void* regset_default_aarch64()
 {
-  regset_obj_aarch64* new = calloc(1, sizeof(regset_obj_aarch64));
+  struct regset_aarch64* new = calloc(1, sizeof(struct regset_aarch64));
   ASSERT(new, "could not allocate regset (aarch64)\n");
-  new->common.initialized = true;
-  return (regset_t)new;
+  return new;
 }
 
-static regset_t regset_init_aarch64(const void* regs)
+static void* regset_init_aarch64(const void* regs)
 {
-  regset_obj_aarch64* new = MALLOC(sizeof(regset_obj_aarch64));
+  struct regset_aarch64* new = MALLOC(sizeof(struct regset_aarch64));
   ASSERT(new, "could not allocate regset (aarch64)\n");
-  new->common.initialized = true;
-  new->regs = *(struct regset_aarch64*)regs;
-  return (regset_t)new;
+  *new = *(struct regset_aarch64*)regs;
+  return new;
 }
 
-static void regset_free_aarch64(regset_t regset)
+static void regset_free_aarch64(void* regset)
 {
   free(regset);
 }
 
-static void regset_clone_aarch64(const_regset_t src, regset_t dest)
+static void regset_clone_aarch64(const void* src, void* dest)
 {
-  const regset_obj_aarch64* srcregs = (const regset_obj_aarch64*)src;
-  regset_obj_aarch64* destregs = (regset_obj_aarch64*)dest;
+  const struct regset_aarch64* srcregs = (const struct regset_aarch64*)src;
+  struct regset_aarch64* destregs = (struct regset_aarch64*)dest;
   *destregs = *srcregs;
 }
 
-static void regset_copyin_aarch64(regset_t regset, const void* regs)
+static void regset_copyin_aarch64(void* in, const void* out)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->common.initialized = true;
-  cur->regs = *(struct regset_aarch64*)regs;
+  struct regset_aarch64* cur = (struct regset_aarch64*)in;
+  *cur = *(struct regset_aarch64*)out;
 }
 
-static void regset_copyout_aarch64(const_regset_t regset, void* regs)
+static void regset_copyout_aarch64(const void* in, void* out)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  *(struct regset_aarch64*)regs = cur->regs;
+  const struct regset_aarch64* cur = (const struct regset_aarch64*)in;
+  *(struct regset_aarch64*)out = *cur;
 }
 
-static void* pc_aarch64(const_regset_t regset)
+static void* pc_aarch64(const void* regset)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  return cur->regs.pc;
+  const struct regset_aarch64* cur = (const struct regset_aarch64*)regset;
+  return cur->pc;
 }
 
-static void* sp_aarch64(const_regset_t regset)
+static void* sp_aarch64(const void* regset)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  return cur->regs.sp;
+  const struct regset_aarch64* cur = (const struct regset_aarch64*)regset;
+  return cur->sp;
 }
 
-static void* fbp_aarch64(const_regset_t regset)
+static void* fbp_aarch64(const void* regset)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  return (void*)cur->regs.x[AARCH64_FBP_REG];
+  const struct regset_aarch64* cur = (const struct regset_aarch64*)regset;
+  return (void*)cur->x[AARCH64_FBP_REG];
 }
 
-static void* ra_reg_aarch64(const_regset_t regset)
+static void* ra_reg_aarch64(const void* regset)
 {
-  const regset_obj_aarch64* cur = (const regset_obj_aarch64*)regset;
-  return (void*)cur->regs.x[AARCH64_LINK_REG];
+  const struct regset_aarch64* cur = (const struct regset_aarch64*)regset;
+  return (void*)cur->x[AARCH64_LINK_REG];
 }
 
-static void set_pc_aarch64(regset_t regset, void* pc)
+static void set_pc_aarch64(void* regset, void* pc)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.pc = pc;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
+  cur->pc = pc;
 }
 
-static void set_sp_aarch64(regset_t regset, void* sp)
+static void set_sp_aarch64(void* regset, void* sp)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.sp = sp;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
+  cur->sp = sp;
 }
 
-static void set_fbp_aarch64(regset_t regset, void* fp)
+static void set_fbp_aarch64(void* regset, void* fp)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.x[AARCH64_FBP_REG] = (uint64_t)fp;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
+  cur->x[AARCH64_FBP_REG] = (uint64_t)fp;
 }
 
-static void set_ra_reg_aarch64(regset_t regset, void* ra)
+static void set_ra_reg_aarch64(void* regset, void* ra)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.x[AARCH64_LINK_REG] = (uint64_t)ra;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
+  cur->x[AARCH64_LINK_REG] = (uint64_t)ra;
 }
 
-static void setup_fbp_aarch64(regset_t regset, void* cfa)
+static void setup_fbp_aarch64(void* regset, void* cfa)
 {
   ASSERT(cfa, "Null canonical frame address\n");
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
-  cur->regs.x[AARCH64_FBP_REG] = (uint64_t)cfa - 0x10;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
+  cur->x[AARCH64_FBP_REG] = (uint64_t)cfa - 0x10;
 }
 
 static uint16_t reg_size_aarch64(uint16_t reg)
@@ -211,76 +197,76 @@ static uint16_t reg_size_aarch64(uint16_t reg)
   return 0;
 }
 
-static void* reg_aarch64(regset_t regset, uint16_t reg)
+static void* reg_aarch64(void* regset, uint16_t reg)
 {
-  regset_obj_aarch64* cur = (regset_obj_aarch64*)regset;
+  struct regset_aarch64* cur = (struct regset_aarch64*)regset;
 
   switch(reg)
   {
-  case X0: return &cur->regs.x[0];
-  case X1: return &cur->regs.x[1];
-  case X2: return &cur->regs.x[2];
-  case X3: return &cur->regs.x[3];
-  case X4: return &cur->regs.x[4];
-  case X5: return &cur->regs.x[5];
-  case X6: return &cur->regs.x[6];
-  case X7: return &cur->regs.x[7];
-  case X8: return &cur->regs.x[8];
-  case X9: return &cur->regs.x[9];
-  case X10: return &cur->regs.x[10];
-  case X11: return &cur->regs.x[11];
-  case X12: return &cur->regs.x[12];
-  case X13: return &cur->regs.x[13];
-  case X14: return &cur->regs.x[14];
-  case X15: return &cur->regs.x[15];
-  case X16: return &cur->regs.x[16];
-  case X17: return &cur->regs.x[17];
-  case X18: return &cur->regs.x[18];
-  case X19: return &cur->regs.x[19];
-  case X20: return &cur->regs.x[20];
-  case X21: return &cur->regs.x[21];
-  case X22: return &cur->regs.x[22];
-  case X23: return &cur->regs.x[23];
-  case X24: return &cur->regs.x[24];
-  case X25: return &cur->regs.x[25];
-  case X26: return &cur->regs.x[26];
-  case X27: return &cur->regs.x[27];
-  case X28: return &cur->regs.x[28];
-  case X29: return &cur->regs.x[29];
-  case X30: return &cur->regs.x[30];
-  case SP: return &cur->regs.sp;
-  case V0: return &cur->regs.v[0];
-  case V1: return &cur->regs.v[1];
-  case V2: return &cur->regs.v[2];
-  case V3: return &cur->regs.v[3];
-  case V4: return &cur->regs.v[4];
-  case V5: return &cur->regs.v[5];
-  case V6: return &cur->regs.v[6];
-  case V7: return &cur->regs.v[7];
-  case V8: return &cur->regs.v[8];
-  case V9: return &cur->regs.v[9];
-  case V10: return &cur->regs.v[10];
-  case V11: return &cur->regs.v[11];
-  case V12: return &cur->regs.v[12];
-  case V13: return &cur->regs.v[13];
-  case V14: return &cur->regs.v[14];
-  case V15: return &cur->regs.v[15];
-  case V16: return &cur->regs.v[16];
-  case V17: return &cur->regs.v[17];
-  case V18: return &cur->regs.v[18];
-  case V19: return &cur->regs.v[19];
-  case V20: return &cur->regs.v[20];
-  case V21: return &cur->regs.v[21];
-  case V22: return &cur->regs.v[22];
-  case V23: return &cur->regs.v[23];
-  case V24: return &cur->regs.v[24];
-  case V25: return &cur->regs.v[25];
-  case V26: return &cur->regs.v[26];
-  case V27: return &cur->regs.v[27];
-  case V28: return &cur->regs.v[28];
-  case V29: return &cur->regs.v[29];
-  case V30: return &cur->regs.v[30];
-  case V31: return &cur->regs.v[31];
+  case X0: return &cur->x[0];
+  case X1: return &cur->x[1];
+  case X2: return &cur->x[2];
+  case X3: return &cur->x[3];
+  case X4: return &cur->x[4];
+  case X5: return &cur->x[5];
+  case X6: return &cur->x[6];
+  case X7: return &cur->x[7];
+  case X8: return &cur->x[8];
+  case X9: return &cur->x[9];
+  case X10: return &cur->x[10];
+  case X11: return &cur->x[11];
+  case X12: return &cur->x[12];
+  case X13: return &cur->x[13];
+  case X14: return &cur->x[14];
+  case X15: return &cur->x[15];
+  case X16: return &cur->x[16];
+  case X17: return &cur->x[17];
+  case X18: return &cur->x[18];
+  case X19: return &cur->x[19];
+  case X20: return &cur->x[20];
+  case X21: return &cur->x[21];
+  case X22: return &cur->x[22];
+  case X23: return &cur->x[23];
+  case X24: return &cur->x[24];
+  case X25: return &cur->x[25];
+  case X26: return &cur->x[26];
+  case X27: return &cur->x[27];
+  case X28: return &cur->x[28];
+  case X29: return &cur->x[29];
+  case X30: return &cur->x[30];
+  case SP: return &cur->sp;
+  case V0: return &cur->v[0];
+  case V1: return &cur->v[1];
+  case V2: return &cur->v[2];
+  case V3: return &cur->v[3];
+  case V4: return &cur->v[4];
+  case V5: return &cur->v[5];
+  case V6: return &cur->v[6];
+  case V7: return &cur->v[7];
+  case V8: return &cur->v[8];
+  case V9: return &cur->v[9];
+  case V10: return &cur->v[10];
+  case V11: return &cur->v[11];
+  case V12: return &cur->v[12];
+  case V13: return &cur->v[13];
+  case V14: return &cur->v[14];
+  case V15: return &cur->v[15];
+  case V16: return &cur->v[16];
+  case V17: return &cur->v[17];
+  case V18: return &cur->v[18];
+  case V19: return &cur->v[19];
+  case V20: return &cur->v[20];
+  case V21: return &cur->v[21];
+  case V22: return &cur->v[22];
+  case V23: return &cur->v[23];
+  case V24: return &cur->v[24];
+  case V25: return &cur->v[25];
+  case V26: return &cur->v[26];
+  case V27: return &cur->v[27];
+  case V28: return &cur->v[28];
+  case V29: return &cur->v[29];
+  case V30: return &cur->v[30];
+  case V31: return &cur->v[31];
   /*
    * TODO:
    *   33: ELR_mode

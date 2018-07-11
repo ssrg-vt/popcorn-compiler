@@ -50,7 +50,7 @@ int main(int argc, char** argv)
 
   if(argc > 1) max_depth = atoi(argv[1]);
   if(argc > 2) num_threads = atoi(argv[2]);
-  children = (pthread_t*)MALLOC(sizeof(pthread_t) * num_threads);
+  children = (pthread_t*)malloc(sizeof(pthread_t) * num_threads);
 
   for(i = 1; i < num_threads; i++) {
     if(pthread_create(&children[i], NULL, thread_main, NULL)) {
