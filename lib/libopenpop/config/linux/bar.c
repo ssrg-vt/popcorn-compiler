@@ -222,6 +222,31 @@ gomp_team_barrier_wait_final_nospin (gomp_barrier_t *bar)
   gomp_team_barrier_wait_end_nospin (bar, state);
 }
 
+void
+gomp_team_barrier_wait_final_last (gomp_barrier_t *bar)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_team *team = thr->ts.team;
+  unsigned int state = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
+  state &= -BAR_INCR | BAR_CANCELLED;
+  state |= BAR_WAS_LAST;
+
+  team->work_share_cancelled = 0;
+  if (__builtin_expect (team->task_count, 0))
+    {
+      gomp_barrier_handle_tasks (state);
+      state &= ~BAR_WAS_LAST;
+    }
+  else
+    {
+      state &= ~BAR_CANCELLED;
+      state += BAR_INCR - BAR_WAS_LAST;
+      __atomic_store_n (&bar->generation, state, MEMMODEL_RELEASE);
+      futex_wake ((int *) &bar->generation, INT_MAX);
+      return;
+    }
+}
+
 bool
 gomp_team_barrier_wait_cancel_end (gomp_barrier_t *bar,
 				   gomp_barrier_state_t state)

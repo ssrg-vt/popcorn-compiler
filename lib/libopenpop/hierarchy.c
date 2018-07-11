@@ -150,9 +150,18 @@ bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
   return ret;
 }
 
+/* End-of-parallel section barriers are a little tricky because upon starting
+   the next section the main thread will reset the per-node synchronization
+   data.  We need to ensure that all non-leader threads reach the per-node
+   barrier *before* performing global synchronization.  Once this is
+   accomplished the leader can unconditionally release the threads waiting at
+   the per-node barrier.  Note that this function *requires* the main thread
+   to call hierarchy_init_node() upon starting the next section, as we leave
+   the per-node barrier in an inconsistent state to avoid race conditions. */
 void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 {
   bool leader;
+  unsigned awaited_final;
 #ifdef _TIME_BARRIER
   struct timespec start, end;
 #endif
@@ -163,6 +172,10 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
+    // Wait for non-leader threads to enter per-node barrier
+    do awaited_final = __atomic_load_n(&popcorn_node[nid].bar.awaited_final,
+                                       MEMMODEL_ACQUIRE);
+    while(awaited_final != 1);
     gomp_team_barrier_wait_final_nospin(&popcorn_global.bar);
 #ifdef _TIME_BARRIER
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -170,9 +183,9 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc)
            (desc ? desc : "Anonymous"),
            ELAPSED(start, end));
 #endif
-    hierarchy_leader_cleanup(&popcorn_node[nid].sync);
+    gomp_team_barrier_wait_final_last(&popcorn_node[nid].bar);
   }
-  gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
+  else gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
