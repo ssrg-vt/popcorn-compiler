@@ -11,7 +11,7 @@ PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
 # CFLAGS (common / x86 only / arm only)
-CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-O1 -Wall -Wno-unused-variable -g -nostdlib \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
@@ -81,7 +81,7 @@ all: $(PROG_X86) $(PROG_ARM)
 	@# 1. emit bitcode
 	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $<.x86.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
+	$(PH_PREFIX_HOST)/bin/opt -O1 -optimize-regalloc -insert-stackmaps \
 		-o $<.x86.bc $<.x86.bc
 	@# 3. Compile into object file
 	$(CC) $(CFLAGS_X86)	-c $<.x86.bc -o $@
@@ -90,7 +90,7 @@ all: $(PROG_X86) $(PROG_ARM)
 	@# 1. emit bitcode
 	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $<.arm.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt -O3 -optimize-regalloc -insert-stackmaps \
+	$(PH_PREFIX_HOST)/bin/opt -O1 -optimize-regalloc -insert-stackmaps \
 		-o $<.arm.bc $<.arm.bc
 	@# 3. Compile into object file
 	$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
@@ -120,6 +120,7 @@ test-x86: $(PROG_X86)
 		$(PROXY_X86) $(PROG_X86) $(ARGS)
 
 test-arm: $(PROG_ARM)
+	@ssh potato "rm -rf /tmp/proxy && killall -q -9 proxy; true"
 	scp $(PROXY_ARM) potato:/tmp/proxy
 	scp $(PROG_ARM) potato:/tmp
 	ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
