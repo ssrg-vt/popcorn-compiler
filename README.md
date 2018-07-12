@@ -1,7 +1,5 @@
 # Heterogeneous HermitCore toolchain
 
-For now all of this only works with x86, ARM integration is TODO.
-
 ## Dependencies
 
 - Recommneded distribution: debian 9
