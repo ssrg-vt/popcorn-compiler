@@ -82,9 +82,9 @@ Elf_Scn* get_section(Elf* e, const char* sec)
   if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
   while((scn = elf_nextscn(e, scn)))
   {
-    if(gelf_getshdr(scn, &shdr) != &shdr) return NULL;
+    if(gelf_getshdr(scn, &shdr) != &shdr)  return NULL;
     if((cur_sec = elf_strptr(e, shdrstrndx, shdr.sh_name)))
-      if(!strcmp(sec, cur_sec)) break;
+	if(!strcmp(sec, cur_sec)) break;
   }
   return scn; // NULL if not found
 }
@@ -110,7 +110,11 @@ const void* get_section_data(Elf* e, const char* sec)
   Elf_Scn* scn;
   Elf_Data* data = NULL;
 
-  if(!(scn = get_section(e, sec))) return NULL;
+  if(!(scn = get_section(e, sec)))
+  {	
+	ST_INFO("get_section returned NULL\n");
+	return NULL;
+  }
   if(!(data = elf_getdata(scn, data))) return NULL;
   return data->d_buf;
 }

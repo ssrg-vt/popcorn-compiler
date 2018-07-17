@@ -148,6 +148,7 @@ tls_end = .;
 .bss : ALIGN(0x2000000) {
 __BSS__         /* marker for the BSS section insertion */
 }
+kernel_end = .;
 
   /* Stabs debugging sections.  */
   .stab          0 : { *(.stab) } :load_segment

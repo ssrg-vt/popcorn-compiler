@@ -11,7 +11,7 @@ PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
 # CFLAGS (common / x86 only / arm only)
-CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-O0 -Wall -Wno-unused-variable -g -nostdlib \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
@@ -34,8 +34,8 @@ OBJS_ARM=$(SRCS:.c=.arm.o)
 PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
-LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
-#LINKER_SCRIPT_ARM=/home/mehrab/linker.x
+#LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
+LINKER_SCRIPT_ARM=/home/mehrab/linker.x
 
 # Additional object files to link with any application (x86)
 ADD_OBJS_X86=$(PH_PREFIX_X86)/lib/crt0.o \
@@ -67,8 +67,8 @@ LDFLAGS_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ARM)
 # Hermit runtime options
 # ----------------------
 PROXY_X86=$(PH_PREFIX_HOST)/bin/proxy
-PROXY_ARM=$(POPHERMIT)/bin/proxy
-#PROXY_ARM=$(PH_PREFIX_ARM)/bin/proxy
+#PROXY_ARM=$(POPHERMIT)/bin/proxy
+PROXY_ARM=$(PH_PREFIX_ARM)/bin/proxy
 MEM?=2G
 VERBOSE?=0
 CPUS?=1
@@ -124,6 +124,7 @@ test-x86: $(PROG_X86)
 test-arm: $(PROG_ARM)
 	scp $(PROXY_ARM) potato:/tmp/proxy
 	scp $(PROG_ARM) potato:/tmp
+	scp $(PROG_ARM) potato:/home/stefan/
 	ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
