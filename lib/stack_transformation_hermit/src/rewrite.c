@@ -20,7 +20,8 @@
  * Per-thread rewriting context.  We can declare these at compile-time,
  * because we know each thread will only ever use a pair of these at a time.
  */
-static __thread struct rewrite_context src_ctx, dest_ctx;
+//FIXME Make it work as Thread Local Variable
+static struct rewrite_context src_ctx, dest_ctx;
 
 #endif
 
