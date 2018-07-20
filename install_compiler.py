@@ -738,7 +738,8 @@ def install_hermit_aarch64(base_path, install_path, threads):
     os.chdir(hermit_download_path + '/build')
 
     try:
-        rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64', '-DCMAKE_INSTALL_PREFIX=%s' %
+        rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64',
+            '-DTARGET_ARCH=aarch64-hermit', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '..'])
