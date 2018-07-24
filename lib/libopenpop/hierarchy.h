@@ -9,7 +9,9 @@
 
 #include <stddef.h>
 #include <stdbool.h>
-#include "bar.h"
+#include <stdint.h>
+#include <time.h>
+#include "libgomp.h"
 #include "platform.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -19,7 +21,7 @@
 #define ALIGN_PAGE __attribute__((aligned(PAGESZ)))
 #define ALIGN_CACHE __attribute__((aligned(64)))
 
-/* Hierarchical reduction configuration & syntactic sugar */
+/* Hierarchical reduction configuration */
 #define REDUCTION_ENTRIES 48UL
 typedef union {
   void *p;
@@ -57,9 +59,19 @@ typedef struct {
      individual core on a node with a rating of 2 is considered to be twice as
      fast as a core a node with a rating of 1.  Work-sharing directives adjust
      how work is distributed according to the node's rating. */
-  // TODO currently only applies to statically-scheduled for-loops
-  unsigned long core_speed_rating[MAX_POPCORN_NODES];
-  unsigned long scaled_thread_range;
+  // TODO the static het workshare uses unsigned longs but the hetprobe
+  // workshare uses floats...unify!
+  union {
+    struct {
+      unsigned long core_speed_rating[MAX_POPCORN_NODES];
+      unsigned long scaled_thread_range;
+    };
+
+    struct {
+      float core_speed_rating_float[MAX_POPCORN_NODES];
+      float scaled_thread_range_float;
+    };
+  };
 
   /* Global node leader selection */
   leader_select_t ALIGN_PAGE sync;
@@ -70,6 +82,21 @@ typedef struct {
 
   /* Global reduction space */
   aligned_void_ptr ALIGN_PAGE reductions[MAX_POPCORN_NODES];
+
+  /* Global work share */
+  union ALIGN_PAGE {
+    gomp_ptrlock_t ws_lock;
+    struct gomp_work_share *ws;
+  };
+
+  /* Global timing information for the heterogeneous probing scheduler */
+  unsigned long long workshare_time[MAX_POPCORN_NODES];
+
+  /* Global remaining work after probing period */
+  union {
+    long remaining;
+    unsigned long long remaining_ull;
+  };
 } global_info_t;
 
 /* Per-node hierarchy information.  This should all be accessed locally
@@ -84,8 +111,21 @@ typedef struct {
   /* Per-node reduction space */
   aligned_void_ptr reductions[REDUCTION_ENTRIES];
 
+  /* Per-node work shares.  Maintains a local view of the work-sharing region
+     which will be replenished dynamically from the global work distribution
+     queue. */
+  union {
+    gomp_ptrlock_t ws_lock;
+    struct gomp_work_share *ws;
+  };
+
+  /* Timing information for the heterogeneous probing scheduler */
+  struct timespec workshare_start, workshare_end;
+
   char padding[PAGESZ - (2 * sizeof(leader_select_t)) - sizeof(gomp_barrier_t)
-                      - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)];
+                      - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)
+                      - sizeof(gomp_ptrlock_t)
+                      - (2 * sizeof(struct timespec))];
 } node_info_t;
 
 extern global_info_t popcorn_global;
@@ -158,6 +198,112 @@ void hierarchy_hybrid_barrier_final(int nid, const char *desc);
 bool hierarchy_reduce(int nid,
                       void *reduce_data,
                       void (*reduce_func)(void *lhs, void *rhs));
+
+///////////////////////////////////////////////////////////////////////////////
+// Work sharing
+///////////////////////////////////////////////////////////////////////////////
+
+/*
+ * Initialize work-sharing construct using the hierarchical dynamic scheduler
+ * for the node.
+ *
+ * @param nid the node for which to initialize a work-sharing construct
+ * @param lb the lower bound
+ * @param ub the upper bound
+ * @param incr the increment
+ * @param chunk the chunk size
+ */
+void hierarchy_init_workshare_dynamic(int nid,
+                                      long long lb,
+                                      long long ub,
+                                      long long incr,
+                                      long long chunk);
+
+/* Same as above but with unsigned long long types */
+void hierarchy_init_workshare_dynamic_ull(int nid,
+                                          unsigned long long lb,
+                                          unsigned long long ub,
+                                          unsigned long long incr,
+                                          unsigned long long chunk);
+
+/*
+ * Initialize work-sharing construct using the heterogeneous probing scheduler
+ * for the node.
+ *
+ * @param nid the node for which to initialize a work-sharing construct
+ * @param lb the loop iteration range's lower bound
+ * @param ub the loop iteration range's upper bound
+ * @param st the stride
+ * @param chunk the chunk size
+ */
+void hierarchy_init_workshare_hetprobe(int nid,
+                                       long long lb,
+                                       long long ub,
+                                       long long incr,
+                                       long long chunk);
+
+/* Same as above but with unsigned long long types */
+void hierarchy_init_workshare_hetprobe_ull(int nid,
+                                           unsigned long long lb,
+                                           unsigned long long ub,
+                                           unsigned long long incr,
+                                           unsigned long long chunk);
+
+/*
+ * Grab the next batch of iterations from the local work share.  Replenish from
+ * the global work share if necessary.
+ *
+ * Note: should be called for the first iteration by the GFS_HETPROBE scheduler
+ * algorithm, after which hierarchy_next_hetprobe() should be called
+ *
+ * @param nid the node for which to grab more work
+ * @param start pointer to variable to be set to the start of range
+ * @param end pointer to variable to be set to the end of range
+ * @return true if there's work remaining to be performed
+ */
+bool hierarchy_next_dynamic(int nid, long *start, long *end);
+
+/* Same as above but with unsigned long long types */
+bool hierarchy_next_dynamic_ull(int nid,
+                                unsigned long long *start,
+                                unsigned long long *end);
+
+/*
+ * Called *after* the probing period for the heterogeneous probing scheduler.
+ * Divides remaining global iterations between nodes according to timing
+ * information, then equally divides per-node iterations among all threads on
+ * the node.
+ *
+ * @param nid the node for which to grab more work
+ * @param start pointer to variable to be set to the start of range
+ * @param end pointer to variable to be set to the end of range
+ * @return true if there's work remaining to be performed
+ */
+bool hierarchy_next_hetprobe(int nid, long *start, long *end);
+
+/* Same as above but with unsigned long long types */
+bool hierarchy_next_hetprobe_ull(int nid,
+                                 unsigned long long *start,
+                                 unsigned long long *end);
+
+/*
+ * Return whether the specified iteration is the last iteration for the work
+ * share.
+ *
+ * @param the iteration to check
+ * @return true if it's the last iteration, false otherwise
+ */
+bool hierarchy_last(long end);
+
+/* Same as above but with unsigned long long types */
+bool hierarchy_last_ull(unsigned long long end);
+
+/*
+ * Clean up after a work-sharing region, freeing all resources.
+ *
+ * @param nid the node for which to (potentially) clean up resources
+ */
+void hierarchy_loop_end(int nid);
 
 #endif /* _HIERARCHY_H */
 

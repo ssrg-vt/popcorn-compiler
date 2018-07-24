@@ -128,7 +128,6 @@ struct htab;
 #include "simple-bar.h"
 #include "ptrlock.h"
 
-
 /* This structure contains the data to control one work-sharing construct,
    either a LOOP (FOR/DO) or a SECTIONS.  */
 
@@ -138,7 +137,9 @@ enum gomp_schedule_type
   GFS_STATIC,
   GFS_DYNAMIC,
   GFS_GUIDED,
-  GFS_AUTO
+  GFS_AUTO,
+  GFS_HETPROBE,
+  GFS_HIERARCHY_DYNAMIC,
 };
 
 struct gomp_doacross_work_share
@@ -327,6 +328,9 @@ struct gomp_team_state
      is 1, etc.  This is unused when the compiler knows in advance that
      the loop is statically scheduled.  */
   unsigned long static_trip;
+
+  /* Whether we're probing the compute capabilities of different machines */
+  bool probing;
 };
 
 struct target_mem_desc;
@@ -739,10 +743,20 @@ extern bool gomp_iter_is_last_ull (unsigned long long);
 
 extern int gomp_iter_static_next (long *, long *);
 extern bool gomp_iter_dynamic_next_locked (long *, long *);
+extern bool gomp_iter_dynamic_next_locked_ws (long *, long *,
+					      struct gomp_work_share *);
+extern bool gomp_iter_dynamic_next_locked_raw (long *, long *,
+					       struct gomp_work_share *,
+					       long);
 extern bool gomp_iter_guided_next_locked (long *, long *);
 
 #ifdef HAVE_SYNC_BUILTINS
 extern bool gomp_iter_dynamic_next (long *, long *);
+extern bool gomp_iter_dynamic_next_ws (long *, long *,
+				       struct gomp_work_share *);
+extern bool gomp_iter_dynamic_next_raw (long *, long *,
+					struct gomp_work_share *,
+					long);
 extern bool gomp_iter_guided_next (long *, long *);
 #endif
 
@@ -752,12 +766,26 @@ extern int gomp_iter_ull_static_next (unsigned long long *,
 				      unsigned long long *);
 extern bool gomp_iter_ull_dynamic_next_locked (unsigned long long *,
 					       unsigned long long *);
+extern bool gomp_iter_ull_dynamic_next_locked_ws (unsigned long long *,
+						  unsigned long long *,
+						  struct gomp_work_share *);
+extern bool gomp_iter_ull_dynamic_next_locked_raw (unsigned long long *,
+						   unsigned long long *,
+						   struct gomp_work_share *,
+						   unsigned long long);
 extern bool gomp_iter_ull_guided_next_locked (unsigned long long *,
 					      unsigned long long *);
 
 #if defined HAVE_SYNC_BUILTINS && defined __LP64__
 extern bool gomp_iter_ull_dynamic_next (unsigned long long *,
 					unsigned long long *);
+extern bool gomp_iter_ull_dynamic_next_ws (unsigned long long *,
+					   unsigned long long *,
+					   struct gomp_work_share *);
+extern bool gomp_iter_ull_dynamic_next_raw (unsigned long long *,
+					    unsigned long long *,
+					    struct gomp_work_share *,
+					    unsigned long long);
 extern bool gomp_iter_ull_guided_next (unsigned long long *,
 				       unsigned long long *);
 #endif
@@ -1155,4 +1183,53 @@ task_to_priority_node (enum priority_queue_type type,
   return (struct priority_node *) ((char *) task
 				   + priority_queue_offset (type));
 }
+
+#define NS( ts ) ((ts.tv_sec * 1000000000ULL) + ts.tv_nsec)
+#define ELAPSED( start, end ) (NS(end) - NS(start))
+
+/* Time parallel sections & related statistics */
+#define _TIME_PARALLEL 1
+
+/* Print time waiting at barriers to detect load imbalance among nodes */
+//#define _TIME_BARRIER 1
+
+#if defined _TIME_PARALLEL || defined _TIME_BARRIER
+# include <time.h>
+#endif
+
+/* hierarchy.c */
+extern bool popcorn_distributed ();
+extern bool popcorn_finished ();
+extern bool popcorn_hybrid_barrier ();
+extern bool popcorn_hybrid_reduce ();
+extern bool popcorn_het_workshare ();
+
+extern void popcorn_set_distributed (bool);
+extern void popcorn_set_finished (bool);
+extern void popcorn_set_hybrid_barrier (bool);
+extern void popcorn_set_hybrid_reduce (bool);
+extern void popcorn_set_het_workshare (bool);
+
+extern void hierarchy_hybrid_barrier_final (int, const char *);
+
+/* Shorthand to select between hierarchical & normal barriers */
+static inline void gomp_team_barrier_wait_final_select (gomp_barrier_t *bar)
+{
+  struct gomp_thread *thr;
+  if (popcorn_hybrid_barrier())
+    {
+      thr = gomp_thread ();
+      hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
+    }
+  else
+    gomp_team_barrier_wait_final (bar);
+}
+
+static inline void gomp_simple_barrier_wait_select (gomp_simple_barrier_t *bar)
+{
+  // TODO make hierarchical nospin
+  if (popcorn_hybrid_barrier()) gomp_simple_barrier_wait_nospin (bar);
+  else gomp_simple_barrier_wait (bar);
+}
+
 #endif /* LIBGOMP_H */

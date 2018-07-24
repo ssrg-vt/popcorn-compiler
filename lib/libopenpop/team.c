@@ -110,7 +110,7 @@ gomp_thread_start (void *xdata)
   /* Make thread pool local. */
   pool = thr->thread_pool;
 
-  if (popcorn_global.distributed && thr->popcorn_nid)
+  if (popcorn_distributed () && thr->popcorn_nid)
     migrate (thr->popcorn_nid, NULL, NULL);
 
   if (data->nested)
@@ -129,7 +129,7 @@ gomp_thread_start (void *xdata)
     {
       pool->threads[thr->ts.team_id] = thr;
 
-      gomp_simple_barrier_wait (&pool->threads_dock);
+      gomp_simple_barrier_wait_select (&pool->threads_dock);
       do
 	{
 	  struct gomp_team *team = thr->ts.team;
@@ -137,13 +137,10 @@ gomp_thread_start (void *xdata)
 
 	  local_fn (local_data);
 
-	  if (popcorn_global.hybrid_barrier)
-	    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
-	  else
-	    gomp_team_barrier_wait_final (&team->barrier);
+	  gomp_team_barrier_wait_final_select (&team->barrier);
 	  gomp_finish_task (task);
 
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 
 	  local_fn = thr->fn;
 	  local_data = thr->data;
@@ -153,12 +150,12 @@ gomp_thread_start (void *xdata)
     }
 
   /* Migrate back to origin just in case application migrated us elsewhere */
-  if (popcorn_global.distributed && current_nid() > 0)
+  if (popcorn_distributed () && current_nid () > 0)
     migrate (0, NULL, NULL);
 
   /* If distributed, wait for everybody to get back to origin before exiting */
-  if (popcorn_global.finished)
-    gomp_simple_barrier_wait (&pool->threads_dock);
+  if (popcorn_finished ())
+    gomp_simple_barrier_wait_select (&pool->threads_dock);
 
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
@@ -285,7 +282,7 @@ gomp_release_pool_threads_final ()
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_thread_pool *pool = thr->thread_pool;
 
-  if (popcorn_global.distributed)
+  if (popcorn_distributed ())
     {
       /* Migrate back to origin just in case application migrated us
 	 elsewhere */
@@ -298,11 +295,11 @@ gomp_release_pool_threads_final ()
 	     cleanup */
 	  for (i = 0; i < pool->threads_used; i++)
 	    pool->threads[i]->fn = NULL;
-	  popcorn_global.finished = true;
+	  popcorn_set_finished (true);
 	  /* Break threads out of execution loop */
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 	  /* Wait for everybody to migrate back */
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 	}
     }
 }
@@ -396,7 +393,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   icv = task ? &task->icv : &gomp_global_icv;
   if (__builtin_expect (gomp_places_list != NULL, 0) && thr->place == 0)
     gomp_init_affinity ();
-  popcorn_place = popcorn_global.distributed && !nested;
+  popcorn_place = popcorn_distributed () && !nested;
 
   /* Always save the previous state, even if this isn't a nested team.
      In particular, we should save any work share state from an outer
@@ -954,7 +951,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (nested)
     gomp_barrier_wait (&team->barrier);
   else
-    gomp_simple_barrier_wait (&pool->threads_dock);
+    gomp_simple_barrier_wait_select (&pool->threads_dock);
 
   /* Decrease the barrier threshold to match the number of threads
      that should arrive back at the end of this team.  The extra
@@ -1006,10 +1003,7 @@ gomp_team_end (void)
      As #pragma omp cancel parallel might get awaited count in
      team->barrier in a inconsistent state, we need to use a different
      counter here.  */
-  if(popcorn_global.hybrid_barrier)
-    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
-  else
-    gomp_team_barrier_wait_final (&team->barrier);
+  gomp_team_barrier_wait_final_select (&team->barrier);
   if (__builtin_expect (team->team_cancelled, 0))
     {
       struct gomp_work_share *ws = team->work_shares_to_free;
@@ -1022,6 +1016,13 @@ gomp_team_end (void)
 	  ws = next_ws;
 	}
       while (ws != NULL);
+    }
+  else if(thr->ts.work_share->sched == GFS_HIERARCHY_DYNAMIC ||
+	  thr->ts.work_share->sched == GFS_HETPROBE)
+    {
+      gomp_fini_work_share(thr->ts.work_share);
+      free(thr->ts.work_share);
+      popcorn_global.ws = NULL;
     }
   else
     gomp_fini_work_share (thr->ts.work_share);

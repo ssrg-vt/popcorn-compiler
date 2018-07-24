@@ -122,9 +122,9 @@ extern bool GOMP_loop_end_cancel (void);
 /* loop_ull.c */
 
 extern void GOMP_loop_ull_dynamic_init (unsigned long long,
-					 unsigned long long,
-					 unsigned long long,
-					 unsigned long long);
+					unsigned long long,
+					unsigned long long,
+					unsigned long long);
 
 extern bool GOMP_loop_ull_static_start (bool, unsigned long long,
 					unsigned long long,
