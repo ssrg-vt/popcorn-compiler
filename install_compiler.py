@@ -31,6 +31,7 @@ llvm_targets = {
 
 # LLVM 3.7.1 SVN URL
 llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
+llvm_revision = '320332'
 # Clang SVN URL
 clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 # Binutils 2.27 URL
@@ -273,14 +274,14 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     # DOWNLOAD LLVM
     #=====================================================
     print('Downloading LLVM source...')
-    args = ['svn', 'co', llvm_url, llvm_download_path]
+    args = ['svn', 'co', llvm_url, llvm_download_path, '-r', llvm_revision]
     run_cmd('download LLVM source', args)
 
     #=====================================================
     # DOWNLOAD CLANG
     #=====================================================
     print('Downloading Clang source...')
-    args = ['svn', 'co', clang_url, clang_download_path]
+    args = ['svn', 'co', clang_url, clang_download_path, '-r', llvm_revision]
     run_cmd('download Clang source', args)
 
     #=====================================================
