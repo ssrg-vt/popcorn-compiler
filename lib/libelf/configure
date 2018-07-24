@@ -4714,9 +4714,9 @@ $as_echo_n "checking for working mmap... " >&6; }
 if ${ac_cv_func_mmap_fixed_mapped+:} false; then :
   $as_echo_n "(cached) " >&6
 else
-  if test "$cross_compiling" = yes; then :
-  ac_cv_func_mmap_fixed_mapped=no
-else
+#  if test "$cross_compiling" = yes; then :
+#  ac_cv_func_mmap_fixed_mapped=no
+#else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 $ac_includes_default
@@ -4863,7 +4863,7 @@ else
 fi
 rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
   conftest.$ac_objext conftest.beam conftest.$ac_ext
-fi
+#fi
 
 fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_func_mmap_fixed_mapped" >&5
