@@ -74,6 +74,7 @@ ARGS?=
 MIGTEST?=0
 RESUME?=0
 DEBUG?=0
+ARM_TARGET_IP?=potato
 
 all: $(PROG_X86) $(PROG_ARM)
 
@@ -120,10 +121,10 @@ test-x86: $(PROG_X86)
 		$(PROXY_X86) $(PROG_X86) $(ARGS)
 
 test-arm: $(PROG_ARM)
-	@ssh potato "rm -rf /tmp/proxy && killall -q -9 proxy; true"
-	scp $(PROXY_ARM) potato:/tmp/proxy
-	scp $(PROG_ARM) potato:/tmp
-	ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+	@ssh $(ARM_TARGET_IP) "rm -rf /tmp/proxy && killall -q -9 proxy; true"
+	scp $(PROXY_ARM) $(ARM_TARGET_IP):/tmp/proxy
+	scp $(PROG_ARM) $(ARM_TARGET_IP):/tmp
+	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		/tmp/proxy /tmp/$(PROG_ARM) $(ARGS)

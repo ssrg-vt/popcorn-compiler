@@ -81,46 +81,97 @@ def setup_argument_parsing():
                         help="Skip checking for prerequisites (see README)",
                         action="store_true",
                         dest="skip_prereq_check")
+
     process_opts.add_argument("--skip-llvm-clang-install",
                         help="Skip installation of LLVM and Clang",
                         action="store_true",
                         dest="skip_llvm_clang_install")
+    process_opts.add_argument("--only-llvm-clang-install",
+                        help="Install only llvm and clang",
+                        action="store_true",
+                        dest="only_llvm_clang_install")
+
     process_opts.add_argument("--skip-binutils-install",
                         help="Skip installation of binutils",
                         action="store_true",
                         dest="skip_binutils_install")
+    process_opts.add_argument("--only-binutils-install",
+                        help="Install only binutils",
+                        action="store_true",
+                        dest="only_binutils_install")
+
     process_opts.add_argument("--skip-hermit-x86-64-install",
                         help="Skip installation of the HermitCore x86_64 kernel",
                         action="store_true",
                         dest="skip_hermit_x86_64_install")
+    process_opts.add_argument("--only-hermit-x86-64-install",
+                        help="Install only hermit x86-64",
+                        action="store_true",
+                        dest="only_hermit_x86_64_install")
+
     process_opts.add_argument("--skip-hermit-aarch64-install",
                         help="Skip installation of the HermitCore aarch64 kernel",
                         action="store_true",
                         dest="skip_hermit_aarch64_install")
+    process_opts.add_argument("--only-hermit-aarch64-install",
+                        help="Install only hermit aarch64",
+                        action="store_true",
+                        dest="only_hermit_aarch64_install")
+
     process_opts.add_argument("--skip-newlib-x86-64-install",
                         help="Skip installation of newlib x86_64",
                         action="store_true",
                         dest="skip_newlib_x86_64_install")
+    process_opts.add_argument("--only-newlib-x86-64-install",
+                        help="Install only newlib x86-64",
+                        action="store_true",
+                        dest="only_newlib_x86_64_install")
+
     process_opts.add_argument("--skip-newlib-aarch64-install",
                         help="Skip installation of newlib aarch64",
                         action="store_true",
                         dest="skip_newlib_aarch64_install")
+    process_opts.add_argument("--only-newlib-aarch64-install",
+                        help="Install only newlib aarch64",
+                        action="store_true",
+                        dest="only_newlib_aarch64_install")
+
     process_opts.add_argument("--skip-pte-install",
                         help="Skip installation of pthread-embedded",
                         action="store_true",
                         dest="skip_pte_install")
+    process_opts.add_argument("--only-pte-install",
+                        help="Install only pthread-embedded",
+                        action="store_true",
+                        dest="only_pte_install")
+
     process_opts.add_argument("--skip-libraries-install",
                         help="Skip installation of libraries",
                         action="store_true",
                         dest="skip_libraries_install")
+    process_opts.add_argument("--only-libraries-install",
+                        help="Install only libraries",
+                        action="store_true",
+                        dest="only_libraries_install")
+
     process_opts.add_argument("--skip-tools-install",
                         help="Skip installation of tools",
                         action="store_true",
                         dest="skip_tools_install")
+    process_opts.add_argument("--only-tools-install",
+                        help="Install only tools",
+                        action="store_true",
+                        dest="only_tools_install")
+
     process_opts.add_argument("--skip-utils-install",
                         help="Skip installation of util scripts",
                         action="store_true",
                         dest="skip_utils_install")
+    process_opts.add_argument("--only-utils-install",
+                        help="Install only utils",
+                        action="store_true",
+                        dest="only_utils_install")
+
     process_opts.add_argument("--install-call-info-library",
                         help="Install application call information library",
                         action="store_true",
@@ -738,7 +789,8 @@ def install_hermit_aarch64(base_path, install_path, threads):
     os.chdir(hermit_download_path + '/build')
 
     try:
-        rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64', '-DCMAKE_INSTALL_PREFIX=%s' %
+        rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64',
+            '-DTARGET_ARCH=aarch64-hermit', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
             '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options or make it optional at some point
@@ -841,6 +893,54 @@ def install_binutils(base_path, install_path, threads):
 
 def main(args):
 
+    # Check if we have one of the 'only-*' parameters enabled
+    if args.only_llvm_clang_install:
+        install_clang_llvm(args.base_path, args.install_path, args.threads,
+                           args.llvm_targets)
+        return
+
+    if args.only_binutils_install:
+        install_binutils(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_hermit_x86_64_install:
+        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_newlib_aarch64_install:
+        install_newlib_aarch64(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_newlib_x86_64_install:
+        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_hermit_aarch64_install:
+        install_hermit_aarch64(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_pte_install:
+        install_pte(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_libraries_install:
+        install_libraries(args.base_path, args.install_path,
+                          args.install_targets, args.threads,
+                          args.debug_stack_transformation,
+                          args.libmigration_type,
+                          args.enable_libmigration_timing)
+        return
+
+    if args.only_tools_install:
+        install_tools(args.base_path, args.install_path, args.threads)
+        return
+
+    if args.only_utils_install:
+        install_utils(args.base_path, args.install_path, args.threads)
+        return
+
+    # Regular install path below:
+
     if not args.skip_llvm_clang_install:
         install_clang_llvm(args.base_path, args.install_path, args.threads,
                            args.llvm_targets)
@@ -859,6 +959,7 @@ def main(args):
 
     if not args.skip_hermit_aarch64_install:
         install_hermit_aarch64(args.base_path, args.install_path, args.threads)
+
     if not args.skip_pte_install:
         install_pte(args.base_path, args.install_path, args.threads)
 
