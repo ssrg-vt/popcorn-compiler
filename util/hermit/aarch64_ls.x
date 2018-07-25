@@ -135,13 +135,14 @@ SECTIONS
   .tdata : {
      tls_start = .;
      *(.tdata .tdata.* .gnu.linkonce.td.*)
+	 tdata_end = .;
   } :my_segment :tls_segment
   .tbss : {
     hbss_start = .;
     *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
-    tls_end = .;
   } :my_segment :tls_segment
   .kbss : {
+    tls_end = .;
     *(.kbss)
   } :my_segment
   .bss : {
