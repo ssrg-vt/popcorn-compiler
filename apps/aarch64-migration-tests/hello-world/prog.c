@@ -7,8 +7,8 @@
 int data_var = 10;
 int bss_var;
 int *heap_ptr;
-//__thread int tdata_var = 10;
-//__thread int tbss_var;
+__thread int tdata_var = 10;
+__thread int tbss_var;
 
 extern int sys_msleep(unsigned int ms);
 
@@ -25,8 +25,8 @@ int main(int argc, char **argv) {
 	stack_var = 0;
 	bss_var = 0;
 	data_var = 0;
-//	tdata_var = 0;
-//	tbss_var = 0;
+	tdata_var = 0;
+	tbss_var = 0;
 
 	for(i=0; i<10; i++) {
 		sleep(1);
@@ -35,11 +35,11 @@ int main(int argc, char **argv) {
 		printf(" - bss:   %d\n", bss_var++);
 		printf(" - data:  %d\n", data_var++);
 		printf(" - heap:  %d\n", (*heap_ptr)++);
-//		printf(" - tdata:  %d\n", tdata_var++);
-//		printf(" - tbss:  %d\n", tbss_var++);
+		printf(" - tdata:  %d\n", tdata_var++);
+		printf(" - tbss:  %d\n", tbss_var++);
 
-/*		if(i == 3)
-			HERMIT_FORCE_MIGRATION(); */
+		if(i == 3)
+			HERMIT_FORCE_MIGRATION();
 		HERMIT_MIGPOINT();
 	}
 

@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
-#define ITERATIONS 1
+#define ITERATIONS 3
 
 extern void sys_msleep(int ms);
 void sleep(int sec) {
