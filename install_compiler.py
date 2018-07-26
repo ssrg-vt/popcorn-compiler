@@ -32,7 +32,7 @@ binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
 hermit_x86_64_git_branch = 'hermit-popcorn-x86-master'
-hermit_aarch64_git_branch = 'hermit-pierre-arm-migration'
+hermit_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
 newlib_x86_64_git_branch = 'hermit-popcorn-x86-master'
