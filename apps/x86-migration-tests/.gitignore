@@ -1,0 +1,8 @@
+bss.bin
+data.bin
+fds.bin
+heap.bin
+mdata.bin
+stack.bin.*
+tls.bin.*
+
