@@ -904,7 +904,7 @@ def main(args):
         return
 
     if args.only_hermit_x86_64_install:
-        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
+        install_hermit_x86_64(args.base_path, args.install_path, args.threads)
         return
 
     if args.only_newlib_aarch64_install:
