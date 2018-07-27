@@ -18,8 +18,7 @@ archs = {	Arch.X86 : x86_obj,
 
 #TODO add power later here
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
-considered_sections = [".text", ".data", ".tdata", ".tbss", ".bss"]
-#, ".rodata"]
+considered_sections = [".text", ".data", ".tdata", ".tbss", ".bss", ".rodata"]
 
 # TODO add power later here
 def buildArgParser():

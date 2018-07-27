@@ -51,7 +51,9 @@ __TEXT__                /* marker for the TEXT section insertion */
   PROVIDE (__etext = .);
   PROVIDE (_etext = .);
   PROVIDE (etext = .);
-  .rodata : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
+  .rodata : ALIGN(0x100000) { 
+__RODATA__              /* marker for the RODATA section insertion */
+ }
   .rodata1 : { *(.rodata1) }
   .eh_frame_hdr   : { *(.eh_frame_hdr) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }
