@@ -40,6 +40,10 @@ static struct {
 	volatile int free_lock[2];
 } mal;
 
+/* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
+static void __attribute__((constructor)) __init_malloc()
+{ memset(&mal, 0, sizeof(mal)); }
+
 
 #define SIZE_ALIGN (4*sizeof(size_t))
 #define SIZE_MASK (-SIZE_ALIGN)
