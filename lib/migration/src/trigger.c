@@ -90,7 +90,7 @@ static void __migrate_sighandler(int sig, siginfo_t *info, void *args)
   // Tell the OS we're requesting this thread migrate.
   // TODO in the real version, the OS should *know* that the thread is to be
   // migrated and does not need to be told.
-  if(syscall(SYSCALL_PROPOSE_MIGRATION, 0, 1))
+  if(syscall(SYS_propose_migration, 0, 1))
     perror("Could not propose the migration destination for the thread");
 }
 
