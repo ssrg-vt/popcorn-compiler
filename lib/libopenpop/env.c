@@ -1457,6 +1457,10 @@ initialize_env (void)
   /* Users can selectively disable Popcorn optimizations. */
   if (popcorn_global.distributed)
     {
+      /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
+      memset(&popcorn_global, 0, sizeof(popcorn_global));
+      memset(popcorn_node, 0, sizeof(popcorn_node));
+
       parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
       parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
       popcorn_global.het_workshare =

@@ -9,10 +9,6 @@
 #include <assert.h>
 #include "hierarchy.h"
 
-#ifdef _TIME_PARALLEL
-# include <debug/log.h>
-#endif
-
 global_info_t ALIGN_PAGE popcorn_global;
 node_info_t ALIGN_PAGE popcorn_node[MAX_POPCORN_NODES];
 
@@ -635,9 +631,6 @@ static void calc_het_probe_workshare(int nid, bool ull)
     /* Calculate core speed ratings based on the ratio to the minimum time */
     popcorn_global.scaled_thread_range_float = 0.0;
     scale = 1.0 / ((float)min / (float)popcorn_global.workshare_time[max_idx]);
-#ifdef _TIME_PARALLEL
-    popcorn_log("  -> Core speed ratings:");
-#endif
     for(i = 0; i < MAX_POPCORN_NODES; i++)
     {
       cur_elapsed = popcorn_global.workshare_time[i];
@@ -648,13 +641,7 @@ static void calc_het_probe_workshare(int nid, bool ull)
         popcorn_global.scaled_thread_range_float +=
           popcorn_global.core_speed_rating_float[i] *
           popcorn_node[i].sync.num;
-#ifdef _TIME_PARALLEL
-        popcorn_log(" %.2f", popcorn_global.core_speed_rating_float[i]);
-#endif
       }
-#ifdef _TIME_PARALLEL
-      popcorn_log("\n");
-#endif
     }
 
     ws = popcorn_global.ws;
@@ -675,8 +662,7 @@ static inline long calc_chunk_from_ratio(int nid, struct gomp_work_share *ws)
      underestimating and forcing another round of global work distribution */
   chunk = ceilf(one_thread_percent * (float)popcorn_global.remaining);
   remainder = chunk % ws->incr;
-  if(!remainder) return chunk;
-  else return chunk + ws->incr - remainder;
+  return remainder ? (chunk + ws->incr - remainder) : chunk;
 }
 
 bool hierarchy_next_hetprobe(int nid, long *start, long *end)

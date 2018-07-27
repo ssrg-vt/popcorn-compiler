@@ -1195,6 +1195,7 @@ task_to_priority_node (enum priority_queue_type type,
 
 #if defined _TIME_PARALLEL || defined _TIME_BARRIER
 # include <time.h>
+# include <debug/log.h>
 #endif
 
 /* hierarchy.c */
