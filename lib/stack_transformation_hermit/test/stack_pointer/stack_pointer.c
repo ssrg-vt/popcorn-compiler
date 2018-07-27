@@ -12,7 +12,7 @@ void outer_frame()
   if(!post_transform)
   {
 #ifdef __aarch64__
-    TIME_AND_TEST_REWRITE("./stack_pointer_aarch64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_aarch64", outer_frame);
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./stack_pointer_powerpc64", outer_frame);
 #elif defined(__x86_64__)

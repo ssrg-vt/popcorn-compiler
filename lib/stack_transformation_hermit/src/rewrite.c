@@ -21,7 +21,7 @@
  * because we know each thread will only ever use a pair of these at a time.
  */
 //FIXME Make it work as Thread Local Variable
-static struct rewrite_context src_ctx, dest_ctx;
+static __thread struct rewrite_context src_ctx, dest_ctx;
 
 #endif
 
@@ -96,9 +96,8 @@ int st_rewrite_stack(st_handle handle_src,
                      void* regset_dest,
                      void* sp_base_dest)
 {
-  rewrite_context /*src,*/ dest;
+  rewrite_context src, dest;
   uint64_t* saved_fbp;
-  void *src_act_cfa;
 
   if(!handle_src || !regset_src || !sp_base_src ||
      !handle_dest || !regset_dest || !sp_base_dest)
@@ -115,12 +114,8 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("SP Base Dest = %p\n", sp_base_dest);
   /* Initialize rewriting contexts. */
   src = init_src_context(handle_src, regset_src, sp_base_src);
-  ST_INFO("1. Source ACT = %p\n", ACT(src).cfa);
-  src_act_cfa = ACT(src).cfa;
 
   dest = init_dest_context(handle_dest, regset_dest, sp_base_dest);
-  ST_INFO("2. Source ACT = %p\n", ACT(src).cfa);
-  //ACT(src).cfa = src_act_cfa;
 
   if(!src || !dest)
   {
@@ -277,35 +272,24 @@ static rewrite_context init_dest_context(st_handle handle,
 
   TIMER_START(init_dest_context);
 
-  ST_INFO("3. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &dest_ctx;
-  ST_INFO("Compiler TLS\n");
 #else
   ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
 #endif
-  ST_INFO("4. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->handle = handle;
-  ST_INFO("4.1 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->num_acts = 1;
-  ST_INFO("4.2 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->act = 0;
-  ST_INFO("4.3 Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   ctx->regs = regset;
-  ST_INFO("4.4 Source ACT = %p, stack_base = %p\n", ACT(src).cfa, sp_base);//src->acts[src->act].cfa);
   ctx->stack_base = sp_base;
 
-  ST_INFO("5. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   init_data_pools(ctx);
-  ST_INFO("6. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   list_init(fixup, &ctx->stack_pointers);
-  ST_INFO("7. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
 
   // Note: cannot setup frame information because CFA will be invalid, need to
   // set up SP & find call site information
 
   TIMER_STOP(init_dest_context);
-  ST_INFO("8. Source ACT = %p\n", ACT(src).cfa);//src->acts[src->act].cfa);
   return ctx;
 }
 
