@@ -54,7 +54,6 @@ class AbstractArchitecture():
 			"(0x[0-9a-f]+)[\s]+(.*)$")
 		oneLineRe = ("^[\s]+(\.[texrodalcbs\.]+[\S]+)[\s]+(0x[0-9a-f]+)[\s]+" +
 			"(0x[0-9a-f]+)[\s]+(0x[0-9a-f]+)[\s]+(.*)$")
-		extension = ("^[\s]+(0x[0-9a-f]+)[\s]+(.*)$")
 
 		with open(filePath, "r") as mapfile:
 			lines = mapfile.readlines()
@@ -72,21 +71,6 @@ class AbstractArchitecture():
 						objectFile = matchResult2.group(4)
 						s = Symbol.Symbol(name, address, size, alignment,
 						objectFile, self.getArch())
-						'''
-						i = 1;
-						while True:
-							matchResult4 = re.match(extension, lines[index+i])
-							if matchResult4:
-								res.append(s)
-								address = int(matchResult4.group(1), 0)
-								objectFile = matchResult4.group(2)
-								s = Symbol.Symbol(name, address, size, alignment, objectFile, self.getArch())
-								#print(str(address) + "      " + objectFile)
-								#print(lines[index+i])
-								i = i+1
-							else:
-								break
-						'''
 					else:
 						er("missed a two lines symbol while parsing	mapfile:\n")
 						er("line1: " + line + "\n")
@@ -102,21 +86,6 @@ class AbstractArchitecture():
 						objectFile = matchResult3.group(5)
 						s = Symbol.Symbol(name, address, size, alignment,
 							objectFile, self.getArch())
-						'''
-						i = 1;
-						while True:
-							matchResult4 = re.match(extension, lines[index+i])
-							if matchResult4:
-								res.append(s)
-								address = int(matchResult4.group(1), 0)
-								objectFile = matchResult4.group(2)
-								s = Symbol.Symbol(name, address, size, alignment, objectFile, self.getArch())
-								#print(str(address) + "      " + objectFile)
-								#print(lines[index+i])
-								i = i+1
-							else:
-								break
-						'''
 				if s:
 					res.append(s)
 
@@ -137,6 +106,7 @@ class AbstractArchitecture():
 			sectionName = section.getName()
 			if (addr >= sectionAddr) and (addr < (sectionAddr + sectionSize)):
 				res = sectionName
+				'''
 				if not symbol.getName().startswith(sectionName):
 				# Sanity check if the names fit. is it possible to have a symbol
 				# name _not_ starting with the containing section name?
@@ -150,7 +120,7 @@ class AbstractArchitecture():
 						str(hex(sectionSize)))
 
 				break
-
+				'''
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):
@@ -218,6 +188,12 @@ class AbstractArchitecture():
 					existingSymbol.setObjectFile(symbol.getObjectFile(arch), arch)
 					updated = True
 					break
-
 			if not updated:
 				symbolsList[sectionName].append(symbol)
+
+	def printSymbols(self, symbolsList):
+		consideredSections = symbolsList.keys()
+		for sectionName in consideredSections:
+			for symbol in symbolsList[sectionName]:
+				arch = self.getArch();
+				print(symbol.getName() + "\t" + str(arch) + "\t" + str(hex(symbol.getAddress(arch))) + "\t" + str(symbol.getSize(arch)) + "\t" + str(symbol.getAlignment(arch)))

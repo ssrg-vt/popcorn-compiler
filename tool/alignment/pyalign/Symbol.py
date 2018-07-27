@@ -9,7 +9,7 @@ from Arch import Arch
 from Globals import er
 
 def symbolObjectFileSanityCheck(obj):
-	
+		
 	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
 	reObj = "^(.+\.o)"				# or an object file
 	if (not re.match(reLib, obj)) and (not re.match(reObj, obj)):
@@ -203,14 +203,14 @@ class Symbol:
 					# convention for the user object files created by the
 					# popcorn compiler. Need a better way to handle that when
 					# we get to power8
-					if cmpstr1.endswith("_x86_64.o"):
-						if (cmpstr1.replace("_x86_64.o", "") ==
-							cmpstr2.replace(".o", "")):
+					if cmpstr1.endswith(".x86.o"):
+						if (cmpstr1.replace("x86.o", "") ==
+							cmpstr2.replace("arm.o", "")):
 								res = True
 								continue
-					elif cmpstr2.endswith("_x86_64.o"):
-						if (cmpstr2.replace("_x86_64.o", "") ==
-							cmpstr1.replace(".o", "")):
+					elif cmpstr2.endswith(".x86.o"):
+						if (cmpstr2.replace("x86.o", "") ==
+							cmpstr1.replace("arm.o", "")):
 								res = True
 								continue
 

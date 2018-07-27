@@ -57,7 +57,6 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
@@ -77,7 +76,7 @@ class Linker:
 							symbol.getObjectFile(archEnum) + "\"(" +
 							symbol.getName() + "); /* size " +
 							hex(symbol.getSize(archEnum)) +	" */\n")
-
+					
 						# Then add padding after if needed
 						padding_after = symbol.getPaddingAfter(archEnum)
 						if padding_after:

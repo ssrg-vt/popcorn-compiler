@@ -18,8 +18,8 @@ archs = {	Arch.X86 : x86_obj,
 
 #TODO add power later here
 considered_archs = [archs[Arch.X86], archs[Arch.ARM]]
-considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata",
-		".tbss"]
+considered_sections = [".text", ".data", ".tdata", ".tbss", ".bss"]
+#, ".rodata"]
 
 # TODO add power later here
 def buildArgParser():
@@ -157,6 +157,10 @@ def align(sl):
 
 	return sl
 
+def printBySection(sl):
+	for symbol in sl:
+		print(symbol.getName())
+
 if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
@@ -174,7 +178,13 @@ if __name__ == "__main__":
 	# Add symbols to the list
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
-
+	'''
+	for arch in considered_archs:
+		arch.printSymbols(work)
+	
+	for section in considered_sections:
+		printBySection(work[section])
+	'''
 	# Order symbols in each section based on the number of arch referencing
 	# each symbol
 	for section in considered_sections:
