@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
 		printf("  argv[%d]: %s\n", i, argv[i]);
 	}
 
-	printf("environ: %x\n", environ);
+	printf("environ: %p\n", environ);
 	i = 0;
 	while(environ[i] != NULL)
 		printf("  %s\n", environ[i++]);
