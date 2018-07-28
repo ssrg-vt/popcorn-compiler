@@ -34,8 +34,7 @@ hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
 hermit_git_branch = 'hermit-popcorn-master'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
-newlib_x86_64_git_branch = 'hermit-popcorn-x86-master'
-newlib_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
+newlib_git_branch = 'hermit-popcorn-master'
 
 pte_git_url = "https://github.com/ssrg-vt/pthread-embedded.git"
 pte_git_branch = "hermit-popcorn-master"
@@ -108,23 +107,14 @@ def setup_argument_parsing():
                         action="store_true",
                         dest="only_hermit_install")
 
-    process_opts.add_argument("--skip-newlib-x86-64-install",
-                        help="Skip installation of newlib x86_64",
+    process_opts.add_argument("--skip-newlib-install",
+                        help="Skip installation of Newlib",
                         action="store_true",
-                        dest="skip_newlib_x86_64_install")
-    process_opts.add_argument("--only-newlib-x86-64-install",
-                        help="Install only newlib x86-64",
+                        dest="skip_newlib_install")
+    process_opts.add_argument("--only-newlib-install",
+                        help="Install only Newlib",
                         action="store_true",
-                        dest="only_newlib_x86_64_install")
-
-    process_opts.add_argument("--skip-newlib-aarch64-install",
-                        help="Skip installation of newlib aarch64",
-                        action="store_true",
-                        dest="skip_newlib_aarch64_install")
-    process_opts.add_argument("--only-newlib-aarch64-install",
-                        help="Install only newlib aarch64",
-                        action="store_true",
-                        dest="only_newlib_aarch64_install")
+                        dest="only_newlib_install")
 
     process_opts.add_argument("--skip-pte-install",
                         help="Skip installation of pthread-embedded",
@@ -293,11 +283,6 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     llvm_download_path = os.path.join(install_path, 'x86_64-host/src/llvm')
     clang_download_path = os.path.join(llvm_download_path, 'tools/clang')
-
-#    llvm_patch_path = os.path.join(base_path, 'patches/llvm/llvm-3.7.1.patch')
-#    clang_patch_path = os.path.join(base_path, 'patches/llvm/clang-3.7.1.patch')
-#    llvm_hermit_patch_path = os.path.join(base_path, 'patches/llvm/hermit-llvm-3.7.1.patch')
-#    clang_hermit_patch_path = os.path.join(base_path, 'patches/llvm/hermit-clang-3.7.1.patch')
 
     cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}/x86_64-host'.format(install_path),
                    '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
@@ -616,25 +601,25 @@ def install_pte(base_path, install_path, threads):
 
     os.chdir(cur_dir)
 
-def install_newlib_x86_64(base_path, install_path, threads):
+def install_newlib(base_path, install_path, threads):
     cur_dir = os.getcwd()
-    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib_x86_64')
+    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib')
 
     # Cleanup src dir if needed
     if(os.path.isdir(newlib_download_path)):
         shutil.rmtree(newlib_download_path)
 
-    print('Downloading newlib x86_64')
+    print('Downloading newlib')
 
     try:
         rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
-            newlib_x86_64_git_branch, newlib_git_url, newlib_download_path])
+            newlib_git_branch, newlib_git_url, newlib_download_path])
     except Exception as e:
-        sys.exit('Cannot download newlib for x86_64: {}'.format(e))
+        sys.exit('Cannot download newlib: {}'.format(e))
 
     print('Configuring newlib for x86_64')
-    os.makedirs(newlib_download_path + '/build')
-    os.chdir(newlib_download_path + '/build')
+    os.makedirs(newlib_download_path + '/build-x86-64')
+    os.chdir(newlib_download_path + '/build-x86-64')
 
     newlib_conf = ['../configure', '--target=x86_64-hermit',
             '--prefix=%s' % install_path, '--disable-shared',
@@ -661,27 +646,9 @@ def install_newlib_x86_64(base_path, install_path, threads):
     except Exception as e:
         sys.exit('Cannot build/install newlib x86_64: {}'.format(e))
 
-    os.chdir(cur_dir)
-
-def install_newlib_aarch64(base_path, install_path, threads):
-    cur_dir = os.getcwd()
-    newlib_download_path = os.path.join(install_path, 'x86_64-host/src/newlib_aarch64')
-
-    # Cleanup src dir if needed
-    if(os.path.isdir(newlib_download_path)):
-        shutil.rmtree(newlib_download_path)
-
-    print('Downloading newlib aarch64')
-
-    try:
-        rv = subprocess.check_call(['git', 'clone', '--depth=50', '-b',
-            newlib_aarch64_git_branch, newlib_git_url, newlib_download_path])
-    except Exception as e:
-        sys.exit('Cannot download newlib aarch64: {}'.format(e))
-
-    print('Configuring newlib aarch64')
-    os.makedirs(newlib_download_path + '/build')
-    os.chdir(newlib_download_path + '/build')
+    print('Configuring newlib for aarch64')
+    os.makedirs(newlib_download_path + '/build-aarch64')
+    os.chdir(newlib_download_path + '/build-aarch64')
 
     try:
        rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -DHAVE_INITFINI_ARRAY -O2 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
@@ -710,10 +677,9 @@ def install_newlib_aarch64(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(['make', '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install'])
-        rv = shutil.copyfile(newlib_download_path + '/build/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
+        rv = shutil.copyfile(newlib_download_path + '/build-aarch64/aarch64-hermit/newlib/libc/sys/hermit/crt0.o', install_path + '/aarch64-hermit/lib/crt0.o')
     except Exception as e:
        sys.exit('Cannot build/install newlib aarch64: {}'.format(e))
-
     os.chdir(cur_dir)
 
 def install_hermit(base_path, install_path, threads):
@@ -879,12 +845,8 @@ def main(args):
         install_hermit(args.base_path, args.install_path, args.threads)
         return
 
-    if args.only_newlib_aarch64_install:
-        install_newlib_aarch64(args.base_path, args.install_path, args.threads)
-        return
-
-    if args.only_newlib_x86_64_install:
-        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
+    if args.only_newlib_install:
+        install_newlib(args.base_path, args.install_path, args.threads)
         return
 
     if args.only_pte_install:
@@ -916,11 +878,9 @@ def main(args):
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_newlib_x86_64_install:
-        install_newlib_x86_64(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_newlib_aarch64_install:
-        install_newlib_aarch64(args.base_path, args.install_path, args.threads)
+    if not args.skip_newlib_install:
+        install_newlib(args.base_path, args.install_path, args.threads)
 
     if not args.skip_hermit_install:
         install_hermit(args.base_path, args.install_path, args.threads)

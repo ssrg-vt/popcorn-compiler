@@ -60,9 +60,8 @@ installation:
   https://github.com/ssrg-vt/pthread-embedded
 
 Concerning branches, there is a stable branch for each repository. Because of
-various reasons there are generally not named `master`. In addition, some
-repositories have 2 stable branches: one for x86-64 and one for aarch64. The
-list of stable branches is as follows:
+various reasons there are generally not named `master`. The list of stable
+branches is as follows:
 
 - **popcorn-compiler**: `hermit-master`
 - **llvm**: `hermit-popcorn-master`
@@ -70,8 +69,7 @@ list of stable branches is as follows:
 - **HermitCore**:
   - `hermit-popcorn-master`
 - **newlib**:
-  - `hermit-popcorn-x86-master` (x86-64)
-  - `hermit-popcorn-aarch64-master` (aarch64)
+  - `hermit-popcorn-master`
 - **binutils**: `hermit-popcorn-master`
 - **pte**: `hermit-popcorn-master`
 
@@ -99,7 +97,9 @@ installation_dir/
  `installation_dir/x86_64-host/src/<tool name>`, do your modification. Next 
  you need to recompile and reinstall the tool.
    - For LLVM, hermitcore, newlib, binutils: there is a `build` folder within
-   the source folder, `make` then `make install` will recompile and reinstall
+   the source folder, `make` then `make install` will recompile and reinstall.
+   Note that for both HermitCore and Newlib there is two build folders, one for
+   aarch64 and one for x86-64
    - For pte, directly in the source folder you cna use `make` and 
    `make install`
 
