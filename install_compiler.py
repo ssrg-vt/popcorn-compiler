@@ -31,8 +31,7 @@ binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_x86_64_git_branch = 'hermit-popcorn-x86-master'
-hermit_aarch64_git_branch = 'hermit-popcorn-aarch64-master'
+hermit_git_branch = 'hermit-popcorn-master'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
 newlib_x86_64_git_branch = 'hermit-popcorn-x86-master'
@@ -100,23 +99,14 @@ def setup_argument_parsing():
                         action="store_true",
                         dest="only_binutils_install")
 
-    process_opts.add_argument("--skip-hermit-x86-64-install",
-                        help="Skip installation of the HermitCore x86_64 kernel",
+    process_opts.add_argument("--skip-hermit-install",
+                        help="Skip installation of the HermitCore kernel",
                         action="store_true",
-                        dest="skip_hermit_x86_64_install")
-    process_opts.add_argument("--only-hermit-x86-64-install",
-                        help="Install only hermit x86-64",
+                        dest="skip_hermit_install")
+    process_opts.add_argument("--only-hermit-install",
+                        help="Install only hermitcore kernel",
                         action="store_true",
-                        dest="only_hermit_x86_64_install")
-
-    process_opts.add_argument("--skip-hermit-aarch64-install",
-                        help="Skip installation of the HermitCore aarch64 kernel",
-                        action="store_true",
-                        dest="skip_hermit_aarch64_install")
-    process_opts.add_argument("--only-hermit-aarch64-install",
-                        help="Install only hermit aarch64",
-                        action="store_true",
-                        dest="only_hermit_aarch64_install")
+                        dest="only_hermit_install")
 
     process_opts.add_argument("--skip-newlib-x86-64-install",
                         help="Skip installation of newlib x86_64",
@@ -726,27 +716,28 @@ def install_newlib_aarch64(base_path, install_path, threads):
 
     os.chdir(cur_dir)
 
-def install_hermit_x86_64(base_path, install_path, threads):
+def install_hermit(base_path, install_path, threads):
     cur_dir = os.getcwd()
-    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore_x86_64')
+    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore')
 
     # Cleanup src dir if needed
     if(os.path.isdir(hermit_download_path)):
         shutil.rmtree(hermit_download_path)
 
-    print('Downloading HermitCore x86_64 kernel')
+    print('Downloading HermitCore kernel')
 
     try:
         rv = subprocess.check_call(['git', 'clone',
-            '--recurse-submodules', '-b', hermit_x86_64_git_branch, hermit_git_url,
+            '--recurse-submodules', '-b', hermit_git_branch, hermit_git_url,
             hermit_download_path])
     except Exception as e:
-        sys.exit('Cannot download HermitCore x86_64: {}'.format(e))
+        sys.exit('Cannot download HermitCore: {}'.format(e))
 
+    # Build x86-64
     print('Running Cmake for HermitCore x86_64')
 
-    os.makedirs(hermit_download_path + '/build')
-    os.chdir(hermit_download_path + '/build')
+    os.makedirs(hermit_download_path + '/build-x86-64')
+    os.chdir(hermit_download_path + '/build-x86-64')
 
     try:
         rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
@@ -764,29 +755,11 @@ def install_hermit_x86_64(base_path, install_path, threads):
     except Exception as e:
         sys.exit('Error building hermitcore x86_64: {}'.format(e))
 
-    os.chdir(cur_dir)
-
-def install_hermit_aarch64(base_path, install_path, threads):
-    cur_dir = os.getcwd()
-    hermit_download_path = os.path.join(install_path, 'x86_64-host/src/HermitCore_aarch64')
-
-    # Cleanup src dir if needed
-    if(os.path.isdir(hermit_download_path)):
-        shutil.rmtree(hermit_download_path)
-
-    print('Downloading HermitCore aarch64 kernel')
-
-    try:
-        rv = subprocess.check_call(['git', 'clone',
-            '--recurse-submodules', '-b', hermit_aarch64_git_branch, hermit_git_url,
-            hermit_download_path])
-    except Exception as e:
-        sys.exit('Cannot download HermitCore aarch64: {}'.format(e))
-
+    # Build aarch64
     print('Running Cmake for HermitCore aarch64')
 
-    os.makedirs(hermit_download_path + '/build')
-    os.chdir(hermit_download_path + '/build')
+    os.makedirs(hermit_download_path + '/build-aarch64')
+    os.chdir(hermit_download_path + '/build-aarch64')
 
     try:
         rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64',
@@ -806,7 +779,6 @@ def install_hermit_aarch64(base_path, install_path, threads):
         sys.exit('Error building hermitcore aarch64: {}'.format(e))
 
     os.chdir(cur_dir)
-
 
 def install_binutils(base_path, install_path, threads):
     cur_dir = os.getcwd()
@@ -903,8 +875,8 @@ def main(args):
         install_binutils(args.base_path, args.install_path, args.threads)
         return
 
-    if args.only_hermit_x86_64_install:
-        install_hermit_x86_64(args.base_path, args.install_path, args.threads)
+    if args.only_hermit_install:
+        install_hermit(args.base_path, args.install_path, args.threads)
         return
 
     if args.only_newlib_aarch64_install:
@@ -913,10 +885,6 @@ def main(args):
 
     if args.only_newlib_x86_64_install:
         install_newlib_x86_64(args.base_path, args.install_path, args.threads)
-        return
-
-    if args.only_hermit_aarch64_install:
-        install_hermit_aarch64(args.base_path, args.install_path, args.threads)
         return
 
     if args.only_pte_install:
@@ -954,11 +922,8 @@ def main(args):
     if not args.skip_newlib_aarch64_install:
         install_newlib_aarch64(args.base_path, args.install_path, args.threads)
 
-    if not args.skip_hermit_x86_64_install:
-        install_hermit_x86_64(args.base_path, args.install_path, args.threads)
-
-    if not args.skip_hermit_aarch64_install:
-        install_hermit_aarch64(args.base_path, args.install_path, args.threads)
+    if not args.skip_hermit_install:
+        install_hermit(args.base_path, args.install_path, args.threads)
 
     if not args.skip_pte_install:
         install_pte(args.base_path, args.install_path, args.threads)

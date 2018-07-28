@@ -68,8 +68,7 @@ list of stable branches is as follows:
 - **llvm**: `hermit-popcorn-master`
 - **clang**: `hermit-popcorn-master`
 - **HermitCore**:
-  - `hermit-popcorn-x86-master` (x86-64)
-  - `hermit-popcorn-aarch64-master` (aarch64)
+  - `hermit-popcorn-master`
 - **newlib**:
   - `hermit-popcorn-x86-master` (x86-64)
   - `hermit-popcorn-aarch64-master` (aarch64)
