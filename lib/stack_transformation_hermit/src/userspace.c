@@ -189,7 +189,6 @@ stack_bounds get_stack_bounds()
 	  exit(1);
   }
 
-
 #if 0 
   /* If not already resolved, get stack limits for thread. */
 #if _TLS_IMPL == COMPILER_TLS
@@ -216,24 +215,15 @@ stack_bounds get_stack_bounds()
   /* Determine which half of stack we're currently using. */
 #ifdef __aarch64__
   asm volatile("mov %0, sp" : "=r"(cur_stack) ::);
-  ST_INFO("AARCH64 is defined\n");
 #elif defined __powerpc64__
   asm volatile("mr %0, 1" : "=r"(cur_stack) ::);
 #elif defined __x86_64__
   asm volatile("movq %%rsp, %0" : "=g"(cur_stack) ::);
 #endif
   if(cur_stack >= cur_bounds.low + B_STACK_OFFSET)
-  {
     cur_bounds.low += B_STACK_OFFSET;
-    ST_INFO("Low Bound Increased by offset\n");
-  }
-  else 
-  {
-    cur_bounds.high = cur_bounds.low + B_STACK_OFFSET;
-    ST_INFO("Hight Bound Increased by offset\n");
-  }
+  else cur_bounds.high = cur_bounds.low + B_STACK_OFFSET;
 
-  ST_INFO("cur stack = %p low bound = %p high bound = %p\n", cur_stack, cur_bounds.low, cur_bounds.high);
   return cur_bounds;
 }
 
@@ -378,7 +368,6 @@ static bool get_thread_stack(stack_bounds* bounds)
 	bounds->low = sys_stackaddr();
 	bounds->high = (void *)((uint64_t)bounds->low + (uint64_t)sys_stacksize()) - 1;
 
-	ST_INFO("bounds->low = %p bounds->high = %p stack_size = %x\n", bounds->low, bounds->high, (uint64_t)sys_stacksize());
 	if(!bounds->low) {
 		fprintf(stderr, "Cannot get stack location from hermitcore kernel\n");
 		exit(1);

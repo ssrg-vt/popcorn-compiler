@@ -129,8 +129,6 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
 {
   ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
   ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs), "Invalid stack pointer\n");
-  ST_INFO("REGOPS(ctx)->sp(ctx->acts[act].regs) = %p\n", REGOPS(ctx)->sp(ctx->acts[act].regs));
-  ST_INFO("ctx->acts[act].site.frame_size = %p\n", ctx->acts[act].site.frame_size);
   return REGOPS(ctx)->sp(ctx->acts[act].regs) + ctx->acts[act].site.frame_size;
 }
 
@@ -144,7 +142,6 @@ void bootstrap_first_frame(rewrite_context ctx, void* regset)
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
   setup_callee_saved_bits(ctx, 0);
   ctx->acts[0].regs = ctx->regset_pool;
-  ST_INFO("ctx->regset_pool = %p\n", ctx->regset_pool);
   REGOPS(ctx)->regset_copyin(ctx->acts[0].regs, regset);
 }
 

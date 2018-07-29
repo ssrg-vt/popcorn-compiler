@@ -21,7 +21,7 @@
  * because we know each thread will only ever use a pair of these at a time.
  */
 //FIXME Make it work as Thread Local Variable
-static __thread struct rewrite_context src_ctx, dest_ctx;
+static struct rewrite_context src_ctx, dest_ctx;
 
 #endif
 
@@ -111,10 +111,8 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("--> Initializing rewrite (%s -> %s) <--\n",
           arch_name(handle_src->arch), arch_name(handle_dest->arch));
 
-  ST_INFO("SP Base Dest = %p\n", sp_base_dest);
   /* Initialize rewriting contexts. */
   src = init_src_context(handle_src, regset_src, sp_base_src);
-
   dest = init_dest_context(handle_dest, regset_dest, sp_base_dest);
 
   if(!src || !dest)
@@ -126,17 +124,6 @@ int st_rewrite_stack(st_handle handle_src,
 
   ST_INFO("--> Unwinding source stack to find live activations <--\n");
 
-  struct regset_aarch64 *reg_aarch64 = regset_src;
-/*
-  ST_INFO("Stack Pointer = %p\n", reg_aarch64->sp);
-  ST_INFO("Program Counter = %p\n", reg_aarch64->pc);
-
-  for(int i=0; i<31; i++)
-  	ST_INFO("x[%d] = %x\n", i, reg_aarch64->x[i]);
-
-  for(int j=0; j<32; j++)
-	ST_INFO("v[%d] = %x\n", j, reg_aarch64->v[j]); 
-*/
   /* Unwind source stack to determine destination stack size. */
   unwind_and_size(src, dest);
 
@@ -254,7 +241,7 @@ static rewrite_context init_src_context(st_handle handle,
     ST_ERR(1, "could not get source call site information for outermost frame "
            "(address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   ACT(ctx).cfa = calculate_cfa(ctx, 0);
-  ST_INFO("ACT(ctx).cfa = %p\n", ACT(ctx).cfa);
+
   TIMER_STOP(init_src_context);
   return ctx;
 }

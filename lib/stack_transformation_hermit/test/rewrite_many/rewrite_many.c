@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <assert.h>
+//#include <assert.h>
 
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
@@ -79,7 +79,7 @@ long recurse(int depth)
   case 5: return a6 + a14 + b6 + b14;
   case 6: return a7 + a15 + b7 + b15;
   case 7: return a8 + a16 + b8 + b16;
-  default: assert(0 && "Did not correctly restore stack frame"); return 0;
+  //default: assert(0 && "Did not correctly restore stack frame"); return 0;
   }
 }
 

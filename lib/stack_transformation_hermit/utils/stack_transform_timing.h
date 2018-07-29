@@ -53,7 +53,7 @@ get_call_site() { return __builtin_return_address(0); }
     } \
     else \
     { \
-      fprintf(stderr, "1. Couldn't open ELF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \
@@ -101,7 +101,7 @@ get_call_site() { return __builtin_return_address(0); }
         SET_PC_IMM(func); \
       } \
     } \
-    else fprintf(stderr, "2. Couldn't open ELF information\n"); \
+    else fprintf(stderr, "Couldn't open ELF information\n"); \
   })
 
 /*
@@ -187,7 +187,7 @@ get_call_site() { return __builtin_return_address(0); }
     } \
     else \
     { \
-      fprintf(stderr, "3. Couldn't open ELF information\n"); \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
       if(src) st_destroy(src); \
       if(dest) st_destroy(dest); \
     } \

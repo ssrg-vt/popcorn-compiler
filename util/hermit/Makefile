@@ -11,9 +11,9 @@ PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
 # CFLAGS (common / x86 only / arm only)
-CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
-		-popcorn-alignment -ffunction-sections -fdata-sections 
+		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common -ftls-model=initial-exec 
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
 CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit 
 #-fno-builtin #TODO fnobuiltin needed?
