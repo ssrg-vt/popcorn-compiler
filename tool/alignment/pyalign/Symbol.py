@@ -9,12 +9,10 @@ from Arch import Arch
 from Globals import er
 
 def symbolObjectFileSanityCheck(obj):
-		
 	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
 	reObj = "^(.+\.o)"				# or an object file
 	if (not re.match(reLib, obj)) and (not re.match(reObj, obj)):
 		return False
-	
 	return True
 
 class Symbol:

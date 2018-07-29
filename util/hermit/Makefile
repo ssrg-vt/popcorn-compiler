@@ -13,10 +13,9 @@ PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 # CFLAGS (common / x86 only / arm only)
 CFLAGS+=-O3 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
-		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common -ftls-model=initial-exec 
+		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
 CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit 
-#-fno-builtin #TODO fnobuiltin needed?
 
 # Include paths (common / x86 only / arm only)
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
@@ -36,8 +35,7 @@ OBJS_ARM=$(SRCS:.c=.arm.o)
 PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
-#LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
-LINKER_SCRIPT_ARM=/home/mehrab/linker.x
+LINKER_SCRIPT_ARM=$(PH_PREFIX_ARM)/lib/ls.x
 
 # Additional object files to link with any application (x86)
 ADD_OBJS_X86=$(PH_PREFIX_X86)/lib/crt0.o \
@@ -99,7 +97,7 @@ ARGS?=
 MIGTEST?=0
 RESUME?=0
 DEBUG?=0
-
+ARM_TARGET_IP?=potato
 
 all: align $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
@@ -165,9 +163,10 @@ test-x86: $(PROG_X86_ALIGNED)
 		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
 
 test-arm: $(PROG_ARM_ALIGNED)
-	scp $(PROXY_ARM) potato:/tmp/proxy
-	scp $(PROG_ARM_ALIGNED) potato:/tmp
-	ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+	@ssh $(ARM_TARGET_IP) "rm -rf /tmp/proxy && killall -q -9 proxy; true"
+	scp $(PROXY_ARM) $(ARM_TARGET_IP):/tmp/proxy
+	scp $(PROG_ARM_ALIGNED) $(ARM_TARGET_IP):/tmp
+	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		/tmp/proxy /tmp/$(PROG_ARM_ALIGNED) $(ARGS)

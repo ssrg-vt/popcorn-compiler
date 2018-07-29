@@ -42,6 +42,8 @@ class Linker:
 					# architecture -> there is probably a more intelligent way
 					#output_buffer.append(section + "\t: ALIGN(0x100000)\n")
 					#output_buffer.append("{\n")
+					#This code is no more necessary because coarse-grain alignment
+					#is hard coded in the template linker scripts
 
 					# FIXME: sometimes the linker fills the start of some
 					# sections (at least .data) with something named **common,
@@ -76,7 +78,7 @@ class Linker:
 							symbol.getObjectFile(archEnum) + "\"(" +
 							symbol.getName() + "); /* size " +
 							hex(symbol.getSize(archEnum)) +	" */\n")
-					
+
 						# Then add padding after if needed
 						padding_after = symbol.getPaddingAfter(archEnum)
 						if padding_after:

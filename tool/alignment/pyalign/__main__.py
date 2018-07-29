@@ -156,10 +156,6 @@ def align(sl):
 
 	return sl
 
-def printBySection(sl):
-	for symbol in sl:
-		print(symbol.getName())
-
 if __name__ == "__main__":
 	# Argument parsing stuff
 	parser = buildArgParser()
@@ -177,13 +173,7 @@ if __name__ == "__main__":
 	# Add symbols to the list
 	for arch in considered_archs:
 		arch.updateSymbolsList(work)
-	'''
-	for arch in considered_archs:
-		arch.printSymbols(work)
-	
-	for section in considered_sections:
-		printBySection(work[section])
-	'''
+
 	# Order symbols in each section based on the number of arch referencing
 	# each symbol
 	for section in considered_sections:

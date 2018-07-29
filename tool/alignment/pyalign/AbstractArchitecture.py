@@ -188,12 +188,6 @@ class AbstractArchitecture():
 					existingSymbol.setObjectFile(symbol.getObjectFile(arch), arch)
 					updated = True
 					break
+
 			if not updated:
 				symbolsList[sectionName].append(symbol)
-
-	def printSymbols(self, symbolsList):
-		consideredSections = symbolsList.keys()
-		for sectionName in consideredSections:
-			for symbol in symbolsList[sectionName]:
-				arch = self.getArch();
-				print(symbol.getName() + "\t" + str(arch) + "\t" + str(hex(symbol.getAddress(arch))) + "\t" + str(symbol.getSize(arch)) + "\t" + str(symbol.getAlignment(arch)))
