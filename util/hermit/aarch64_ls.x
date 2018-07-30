@@ -9,9 +9,9 @@ ENTRY(_start)
 phys = 0x200000;
 cores = 512;
 PHDRS {
-	my_segment PT_LOAD ;
+        load_segment PT_LOAD ;
 	tls_segment PT_TLS ;
-	gnu_segment PT_GNU_STACK FLAGS (7) ;
+        gnu_segment PT_GNU_STACK FLAGS (7) ;
 }
 SECTIONS
 {
@@ -20,7 +20,17 @@ SECTIONS
     *(.mboot)
     . = ALIGN((1 << 12));
     *(.kmsg)
-  } :my_segment
+  } :load_segment
+  .percore : {
+    . = ALIGN(64);
+    percore_start = .;
+    *(.percore)
+    . = ALIGN(64);
+    percore_end0 = .;
+	/* reserve space for more cores */
+    . += cores * (percore_end0 - percore_start) - (percore_end0 - percore_start);
+    percore_end = .;
+  }
   .ktext ALIGN(4096) : AT(ADDR(.ktext)) {
     *(.ktext)
     *(.ktext.*)
@@ -72,14 +82,14 @@ SECTIONS
   .init_array     :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
-    KEEP (*(SORT(.init_array.*) SORT(.ctors.*)))
+    KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
     KEEP (*(.init_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
     PROVIDE_HIDDEN (__init_array_end = .);
   }
   .fini_array     :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
-    KEEP (*(SORT(.fini_array.*) SORT(.dtors.*)))
+    KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
     KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
     PROVIDE_HIDDEN (__fini_array_end = .);
   }
@@ -114,7 +124,7 @@ SECTIONS
   }
   .jcr  : { KEEP (*(.jcr)) }
   .got.plt : { *(.got.plt)  *(.igot.plt) }
-  __data_start = .;
+   __data_start = .;
   .data : {
     *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
@@ -122,29 +132,19 @@ SECTIONS
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
   __data_end = .;
-  .percore : {
-    . = ALIGN(64);
-    percore_start = .;
-    *(.percore)
-    . = ALIGN(64);
-    percore_end0 = .;
-    /* reserve space for more cores */
-    . += cores * (percore_end0 - percore_start) - (percore_end0 - percore_start);
-    percore_end = .;
-  }
   .tdata : {
      tls_start = .;
      *(.tdata .tdata.* .gnu.linkonce.td.*)
-	 tdata_end = .;
-  } :my_segment :tls_segment
+     tdata_end = .;
+  } :load_segment :tls_segment
   .tbss : {
     hbss_start = .;
     *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
-  } :my_segment :tls_segment
-  .kbss : {
     tls_end = .;
-    *(.kbss)
-  } :my_segment
+  } :load_segment :tls_segment
+  .kbss : {
+    *(.kbss .kbss.*)
+  } :load_segment
   .bss : {
     __bss_start = .;
     *(.bss .bss.* .gnu.linkonce.b.*)
@@ -153,7 +153,7 @@ SECTIONS
   }
   kernel_end = .;
   /* Stabs debugging sections.  */
-  .stab          0 : { *(.stab) } :my_segment
+  .stab          0 : { *(.stab) }
   .stabstr       0 : { *(.stabstr) }
   .stab.excl     0 : { *(.stab.excl) }
   .stab.exclstr  0 : { *(.stab.exclstr) }

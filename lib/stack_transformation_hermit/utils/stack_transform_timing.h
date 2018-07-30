@@ -26,21 +26,17 @@ get_call_site() { return __builtin_return_address(0); }
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_AARCH64(regset); \
     regset.pc = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
     st_handle src = st_init(aarch64_bin); \
     st_handle dest = st_init(x86_64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
     if(src && dest) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
       st_destroy(src); \
       st_destroy(dest); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
         printf("[ST] Setup time: %lu\n", \
               (init.tv_sec * 1000000000 + init.tv_nsec) - \
               (start.tv_sec * 1000000000 + start.tv_nsec)); \
@@ -78,19 +74,15 @@ get_call_site() { return __builtin_return_address(0); }
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_AARCH64(regset); \
     regset.pc = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
     st_handle src = st_init(aarch64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
     if(src) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, src, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
       st_destroy(src); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
         printf("[ST] Setup time: %lu\n", \
               (init.tv_sec * 1000000000 + init.tv_nsec) - \
               (start.tv_sec * 1000000000 + start.tv_nsec)); \
