@@ -751,7 +751,19 @@ int32_t __kmpc_reduce(ident_t *loc,
   case critical_reduce_block: GOMP_critical_start(); return 1;
   case atomic_reduce_block: return 2;
   case tree_reduce_block:
-    return hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+    if(hierarchy_reduce(thr->popcorn_nid, reduce_data, func)) return 1;
+    else
+    {
+      /*
+       * This thread is not the final thread, meaning we need to wait until the
+       * final thread has finished all reductions.  Due to how clang emits
+       * OpenMP calls, this thread *won't* call __kmpc_end_reduce(), so wait on
+       * the barrier here.  The final thread will release after all reductions
+       * have been completed.
+       */
+      __kmpc_barrier(loc, global_tid);
+      return 0;
+    }
   default: return 1;
   }
 }
@@ -774,7 +786,7 @@ void __kmpc_end_reduce(ident_t *loc,
   assert(thr->reduction_method != reduction_method_not_defined);
   if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
   thr->reduction_method = reduction_method_not_defined;
-  GOMP_barrier();
+  __kmpc_barrier(loc, global_tid);
 }
 
 /*
