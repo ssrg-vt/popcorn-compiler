@@ -77,7 +77,7 @@ PROG_ARM_ALIGNED=$(PROG_ARM)_aligned
 
 # alignment
 ALIGN=$(PH_PREFIX_HOST)/bin/pyalign
-ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align-hermit.py
+ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align.py
 # LDFLAGS (common / x86 only / arm only)
 LDFLAGS=-static
 LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86) -Map $(MAP_X86)
