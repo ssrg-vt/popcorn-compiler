@@ -1017,13 +1017,6 @@ gomp_team_end (void)
 	}
       while (ws != NULL);
     }
-  else if(thr->ts.work_share->sched == GFS_HIERARCHY_DYNAMIC ||
-	  thr->ts.work_share->sched == GFS_HETPROBE)
-    {
-      gomp_fini_work_share(thr->ts.work_share);
-      free(thr->ts.work_share);
-      popcorn_global.ws = NULL;
-    }
   else
     gomp_fini_work_share (thr->ts.work_share);
 

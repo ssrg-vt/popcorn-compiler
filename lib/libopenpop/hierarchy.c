@@ -749,16 +749,29 @@ void hierarchy_loop_end(int nid)
                                      false, NULL);
   if(leader)
   {
-    free(popcorn_node[nid].ws);
+    gomp_fini_work_share(popcorn_node[nid].ws);
+    popcorn_free(popcorn_node[nid].ws);
+    gomp_ptrlock_destroy(popcorn_node[nid].ws_lock);
     popcorn_node[nid].ws = NULL;
+    leader = select_leader_synchronous(&popcorn_global.sync,
+                                       &popcorn_global.bar,
+                                       false, NULL);
+    if(leader)
+    {
+      gomp_fini_work_share(popcorn_global.ws);
+      free(popcorn_global.ws);
+      gomp_ptrlock_destroy(popcorn_global.ws_lock);
+      popcorn_global.ws = NULL;
+      hierarchy_leader_cleanup(&popcorn_global.sync);
+    }
+    gomp_team_barrier_wait_nospin(&popcorn_global.bar);
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
 
-  /* We can free the local work share right now, but we have to delay freeing
-     the global work share until gomp_team_end() which looks at the thread's
-     work share pointer to determine actions. Swing the main thread's work
-     share pointer to the global work share for later freeing. */
-  if(thr->ts.team_id == 0) thr->ts.work_share = popcorn_global.ws;
+  /* gomp_team_end() still expects the main thread to have a valid work share
+     pointer */
+  if(thr->ts.team_id == 0) thr->ts.work_share = &thr->ts.team->work_shares[0];
+  else thr->ts.work_share = NULL;
 }
 
