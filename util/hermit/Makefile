@@ -15,7 +15,7 @@ CFLAGS+=-O1 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
-CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit 
+CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit
 
 # Include paths (common / x86 only / arm only)
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
@@ -77,9 +77,9 @@ PROG_ARM_ALIGNED=$(PROG_ARM)_aligned
 
 # alignment
 ALIGN=$(PH_PREFIX_HOST)/bin/pyalign
-ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align-edited.py # TODO update with check-align-hermit.py
+ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align-hermit.py
 # LDFLAGS (common / x86 only / arm only)
-LDFLAGS=-static 
+LDFLAGS=-static
 LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86) -Map $(MAP_X86)
 LDFLAGS_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ARM) -Map $(MAP_ARM)
 LDFLAGS_ALIGN_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_ALIGNED_X86) -Map $(MAP_ALIGNED_X86)
@@ -100,7 +100,7 @@ DEBUG?=0
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME := $(shell ssh $(ARM_TARGET_IP) "pwd")
 
-all: align $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
+all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 check: all
 	$(ALIGN_CHECK) $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
@@ -131,7 +131,7 @@ $(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM)
 	@# 4. Link
 	$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
 
-align: $(PROG_X86) $(PROG_ARM)
+$(LINKER_SCRIPT_ALIGNED_X86) $(LINKER_SCRIPT_ALIGNED_ARM): $(PROG_X86) $(PROG_ARM)
 	@#5. Align
 	$(ALIGN) --compiler-inst $(PH_PREFIX_HOST) \
 	--x86-bin $(PROG_X86) --arm-bin $(PROG_ARM) \
@@ -139,7 +139,7 @@ align: $(PROG_X86) $(PROG_ARM)
 	--output-x86-ls $(LINKER_SCRIPT_ALIGNED_X86) \
 	--output-arm-ls $(LINKER_SCRIPT_ALIGNED_ARM)
 
-$(PROG_X86_ALIGNED):
+$(PROG_X86_ALIGNED): $(LINKER_SCRIPT_ALIGNED_X86) $(LINKER_SCRIPT_ALIGNED_ARM)
 	@# 6. Link with aligned script
 	$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
 	@# 7. Post-process
@@ -158,7 +158,7 @@ $(PROG_ARM_ALIGNED):
 		$(PROG_ARM_ALIGNED)
 
 test-x86: $(PROG_X86_ALIGNED)
-	sudo HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+	HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
