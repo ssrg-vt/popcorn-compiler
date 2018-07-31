@@ -137,10 +137,10 @@ tdata_end = .;
 .tbss : ALIGN(0x100000) {
 hbss_start = .;
 __TBSS__                /* marker for the TBSS section insertion */
-tls_end = .;
 } :load_segment :tls_segment
 
   .kbss : ALIGN(0x100000){
+    tls_end = .; 
     *(.kbss .kbss.*)
   } :load_segment
   .bss : ALIGN(0x2000000){
