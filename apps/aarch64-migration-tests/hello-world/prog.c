@@ -38,8 +38,6 @@ int main(int argc, char **argv) {
 		printf(" - tdata:  %d\n", tdata_var++);
 		printf(" - tbss:  %d\n", tbss_var++);
 
-		if(i == 3)
-			HERMIT_FORCE_MIGRATION();
 		HERMIT_MIGPOINT();
 	}
 
