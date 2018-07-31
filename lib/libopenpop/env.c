@@ -1048,7 +1048,7 @@ parse_wait_policy (void)
 
   env = getenv ("OMP_WAIT_POLICY");
   if (env == NULL)
-    return -1;
+    return 1;
 
   while (isspace ((unsigned char) *env))
     ++env;
@@ -1367,7 +1367,7 @@ static void __attribute__((constructor))
 initialize_env (void)
 {
   unsigned long thread_limit_var, stacksize = GOMP_DEFAULT_STACKSIZE;
-  int wait_policy;
+  int wait_policy, cluster_cpus;
 
   /* Do a compile time check that mkomp_h.pl did good job.  */
   omp_check_defines ();
@@ -1449,8 +1449,7 @@ initialize_env (void)
   if (gomp_throttled_spin_count_var > gomp_spin_count_var)
     gomp_throttled_spin_count_var = gomp_spin_count_var;
 
-  /* Parse thread placement across nodes from environment variables. Don't
-     enable if user specified places, not yet supported. */
+  /* Parse thread placement across nodes from environment variables. */
   if (!gomp_global_icv.bind_var)
     {
       /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
@@ -1462,6 +1461,14 @@ initialize_env (void)
   /* Users can selectively disable Popcorn optimizations. */
   if (popcorn_global.distributed)
     {
+      /* If the OS is reporting all CPUs in the Popcorn cluster, update the
+	 number of available CPUs.  Otherwise, reset the throttled spin count
+	 to perform active waiting regardless of the number of reported CPUs. */
+      cluster_cpus = gomp_parse_cpuinfo ();
+      if (cluster_cpus > 0 && cluster_cpus != gomp_available_cpus)
+	gomp_available_cpus = cluster_cpus;
+      else if (wait_policy > 0)
+	gomp_throttled_spin_count_var = gomp_spin_count_var;
       parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
       parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
       popcorn_global.het_workshare =

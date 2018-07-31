@@ -808,6 +808,7 @@ extern unsigned gomp_resolve_num_threads (unsigned, unsigned);
 
 /* proc.c (in config/) */
 
+extern int gomp_parse_cpuinfo(void);
 extern void gomp_init_num_threads (void);
 extern unsigned gomp_dynamic_max_threads (void);
 
