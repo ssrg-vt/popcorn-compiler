@@ -173,11 +173,11 @@ test-arm: $(PROG_ARM_ALIGNED)
 		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
 
 objdump-x86:
-	objdump --source $(PROG_X86) > /tmp/objdump-x86.txt && \
+	objdump --source $(PROG_X86_ALIGNED) > /tmp/objdump-x86.txt && \
 		vim /tmp/objdump-x86.txt
 
 objdump-arm:
-	aarch64-linux-gnu-objdump --source $(PROG_ARM) > /tmp/objdump-arm.txt && \
+	aarch64-linux-gnu-objdump --source $(PROG_ARM_ALIGNED) > /tmp/objdump-arm.txt && \
 		vim /tmp/objdump-arm.txt
 
 dump-stackinfo-x86:
