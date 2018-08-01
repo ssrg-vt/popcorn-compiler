@@ -111,8 +111,8 @@ __RODATA__              /* marker for the RODATA section insertion */
   }
   .jcr  : { KEEP (*(.jcr)) }
   .got.plt : { *(.got.plt)  *(.igot.plt) }
-  __data_start = .;
  .data : ALIGN(0x100000) {
+  __data_start = .;
 __DATA__                /* marker for the DATA section insertion */
 }
   .data1          : { *(.data1) }
