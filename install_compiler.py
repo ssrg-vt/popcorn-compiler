@@ -27,7 +27,7 @@ llvm_git_branch = 'hermit-popcorn-master'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
 clang_git_branch = 'hermit-popcorn-master'
 
-binutils_git_url = 'https://github.com/ssrg-vt/binutils-1.git'
+binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
