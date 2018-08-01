@@ -9,8 +9,8 @@ ENTRY(_start)
 phys = 0x800000;
 cores = 512;
 PHDRS {
-	my_segment PT_LOAD ;
-	your_segment PT_TLS ;
+	load_segment PT_LOAD ;
+	tls_segment PT_TLS ;
 	gnu_segment PT_GNU_STACK FLAGS (7) ;
 }
 SECTIONS
@@ -21,7 +21,7 @@ SECTIONS
     *(.mboot)
     . = ALIGN((1 << 12));
     *(.kmsg)
-  } :my_segment
+  } :load_segment
   .ktext ALIGN(4096) : AT(ADDR(.ktext)) {
     *(.ktext)
     *(.ktext.*)
@@ -137,29 +137,29 @@ SECTIONS
   .tdata : {
      tls_start = .;
      *(.tdata .tdata.* .gnu.linkonce.td.*)
-	 tdata_end = .;
-  } :my_segment :your_segment
+	tdata_end = .;
+  } :load_segment :tls_segment
   .tbss : {
     hbss_start = .;
     *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
-  } :my_segment :your_segment
+  } :load_segment :tls_segment
  .kbss : {
     tls_end = .;
     *(.kbss)
-  } :my_segment
+  } :load_segment
   .bss : {
     __bss_start = .;
     *(.bss .bss.* .gnu.linkonce.b.*)
     *(COMMON)
     *(LARGE_COMMON)
-  } :my_segment
+  } :load_segment
   kernel_end = .;
 
 
 
 
   /* Stabs debugging sections.  */
-  .stab          0 : { *(.stab) } :my_segment
+  .stab          0 : { *(.stab) } :load_segment 
   .stabstr       0 : { *(.stabstr) }
   .stab.excl     0 : { *(.stab.excl) }
   .stab.exclstr  0 : { *(.stab.exclstr) }

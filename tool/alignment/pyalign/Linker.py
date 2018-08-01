@@ -40,8 +40,10 @@ class Linker:
 					# FIXME: We rely on this super coarse-grain alignment
 					# to have the sections start at the same offset on each
 					# architecture -> there is probably a more intelligent way
-					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
-					output_buffer.append("{\n")
+					#output_buffer.append(section + "\t: ALIGN(0x100000)\n")
+					#output_buffer.append("{\n")
+					#This code is no more necessary because coarse-grain alignment
+					#is hard coded in the template linker scripts
 
 					# FIXME: sometimes the linker fills the start of some
 					# sections (at least .data) with something named **common,
@@ -57,7 +59,6 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
@@ -91,7 +92,7 @@ class Linker:
 							output_buffer.append("\t*(" + symbolName + ");\n")
 
 					# Section "closing" part
-					output_buffer.append("}\n")
+					#output_buffer.append("}\n")
 
 			if not foundMarker:
 				output_buffer.append(line)

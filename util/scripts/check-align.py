@@ -10,9 +10,7 @@ binA = None
 binB = None
 verbose = False
 continueCheck = True
-consideredSections = [".text", ".data", ".rodata", ".bss", ".tdata", ".tbss",
-	".ldata", ".lrodata", ".lbss", ".init", ".fini", ".init_array",
-	".fini_array", ".ctors", ".dtors"]
+consideredSections = [".text", ".data", ".bss", ".tdata", ".tbss","rodata"]
 
 ###############################################################################
 # Utility functions
@@ -66,8 +64,8 @@ def addrInConsideredSec(addr, sectionInfo):
 			secStart = section["address"]
 			secEnd = section["address"] + section["size"]
 			if (addr >= secStart) and (addr < secEnd):
-				return True
-	return False
+				return section["name"], True
+	return "NULL", False
 
 def getSymbols(binFile):
 	symbols = {}
@@ -94,7 +92,8 @@ def checkSymbols(symbolsA, symbolsB, sectionInfo):
 	retCode = 0
 
 	for symbol in sorted(symbolsA):
-		if not addrInConsideredSec(symbolsA[symbol][0], sectionInfo):
+		sectionName, ret = addrInConsideredSec(symbolsA[symbol][0], sectionInfo)
+		if ret == False:
 			continue
 		if symbol not in symbolsB:
 			if verbose:
@@ -102,7 +101,7 @@ def checkSymbols(symbolsA, symbolsB, sectionInfo):
 			continue
 		else:
 			if symbolsA[symbol][0] != symbolsB[symbol][0]:
-				print("Error: '" + symbol + "' (" + symbolsA[symbol][1] + \
+				print("Error: (" + sectionName + ") '" + symbol + "' (" + symbolsA[symbol][1] + \
 							") not aligned (" + hex(symbolsA[symbol][0]) + " vs. " + \
 							hex(symbolsB[symbol][0]) + ")")
 				retCode = 1

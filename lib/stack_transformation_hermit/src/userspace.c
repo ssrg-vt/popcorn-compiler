@@ -189,7 +189,7 @@ stack_bounds get_stack_bounds()
 	  exit(1);
   }
 
-#if 0
+#if 0 
   /* If not already resolved, get stack limits for thread. */
 #if _TLS_IMPL == COMPILER_TLS
   if(bounds.high == NULL)
@@ -222,7 +222,7 @@ stack_bounds get_stack_bounds()
 #endif
   if(cur_stack >= cur_bounds.low + B_STACK_OFFSET)
     cur_bounds.low += B_STACK_OFFSET;
-  else cur_bounds.high = cur_bounds.low += B_STACK_OFFSET;
+  else cur_bounds.high = cur_bounds.low + B_STACK_OFFSET;
 
   return cur_bounds;
 }
@@ -366,7 +366,7 @@ static bool get_thread_stack(stack_bounds* bounds)
 {
 	bounds->low = 0x0;
 	bounds->low = sys_stackaddr();
-	bounds->high = (void *)((uint64_t)bounds->low + (uint64_t)sys_stacksize());
+	bounds->high = (void *)((uint64_t)bounds->low + (uint64_t)sys_stacksize()) - 1;
 
 	if(!bounds->low) {
 		fprintf(stderr, "Cannot get stack location from hermitcore kernel\n");

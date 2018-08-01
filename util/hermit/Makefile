@@ -11,11 +11,11 @@ PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
 # CFLAGS (common / x86 only / arm only)
-CFLAGS+=-O1 -Wall -Wno-unused-variable -g -nostdlib \
+CFLAGS+=-O1 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
-		-popcorn-alignment
+		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
-CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit -fno-builtin #TODO fnobuiltin needed?
+CFLAGS_ARM=$(CFLAGS) -target aarch64-hermit
 
 # Include paths (common / x86 only / arm only)
 INC=-I$(POPHERMIT)/lib/stack_transformation_hermit/utils \
@@ -26,6 +26,7 @@ INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 # Compiler and linker
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
+#LD=/usr/local/popcorn/bin/ld.gold
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
@@ -57,10 +58,32 @@ LIBS=-lhermit -lstack-transform -lelf -lm -lc -lgcc
 KERNEL_X86=$(PH_PREFIX_X86)/lib/libhermit.a
 KERNEL_ARM=$(PH_PREFIX_ARM)/lib/libhermit.a
 
+# Generated unaligned MAP files
+MAP_X86=map_x86-64.txt
+MAP_ARM=map_aarch64.txt
+
+# Generated aligned MAP files
+MAP_ALIGNED_X86=aligned_map_x86-64.txt
+MAP_ALIGNED_ARM=aligned_map_aarch64.txt
+
+
+# Generated Linker Scripts
+LINKER_SCRIPT_ALIGNED_X86=aligned_linker_script_x86.x
+LINKER_SCRIPT_ALIGNED_ARM=aligned_linker_script_aarch64.x
+
+#Final Aligned Executable
+PROG_X86_ALIGNED=$(PROG_X86)_aligned
+PROG_ARM_ALIGNED=$(PROG_ARM)_aligned
+
+# alignment
+ALIGN=$(PH_PREFIX_HOST)/bin/pyalign
+ALIGN_CHECK=$(PH_PREFIX_HOST)/bin/check-align.py
 # LDFLAGS (common / x86 only / arm only)
 LDFLAGS=-static
-LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86)
-LDFLAGS_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ARM)
+LDFLAGS_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_X86) -Map $(MAP_X86)
+LDFLAGS_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ARM) -Map $(MAP_ARM)
+LDFLAGS_ALIGN_X86=$(LDFLAGS) -L$(PH_PREFIX_X86)/lib -T $(LINKER_SCRIPT_ALIGNED_X86) -Map $(MAP_ALIGNED_X86)
+LDFLAGS_ALIGN_ARM=$(LDFLAGS) -L$(PH_PREFIX_ARM)/lib -T $(LINKER_SCRIPT_ALIGNED_ARM) -Map $(MAP_ALIGNED_ARM)
 
 # ----------------------
 # Hermit runtime options
@@ -75,8 +98,12 @@ MIGTEST?=0
 RESUME?=0
 DEBUG?=0
 ARM_TARGET_IP?=potato
+ARM_TARGET_HOME := $(shell ssh $(ARM_TARGET_IP) "pwd")
 
-all: $(PROG_X86) $(PROG_ARM)
+all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
+
+check: all
+	$(ALIGN_CHECK) $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 %.x86.o: %.c
 	@# 1. emit bitcode
@@ -99,35 +126,51 @@ all: $(PROG_X86) $(PROG_ARM)
 $(PROG_X86): $(OBJS_X86) $(KERNEL_X86)
 	@# 4. Link
 	$(LD) -o $(PROG_X86) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_X86)
-	@# 5. Post-process
-	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86)
-	@# 6. Change OSABI
-	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
-		$(PROG_X86)
 
 $(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM)
 	@# 4. Link
 	$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
-	@# 5. Post-process
-	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM)
-	@# 6. Change OSABI
-	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
-		$(PROG_ARM)
 
-test-x86: $(PROG_X86)
+$(LINKER_SCRIPT_ALIGNED_X86) $(LINKER_SCRIPT_ALIGNED_ARM): $(PROG_X86) $(PROG_ARM)
+	@#5. Align
+	$(ALIGN) --compiler-inst $(PH_PREFIX_HOST) \
+	--x86-bin $(PROG_X86) --arm-bin $(PROG_ARM) \
+	--x86-map $(MAP_X86) --arm-map $(MAP_ARM) \
+	--output-x86-ls $(LINKER_SCRIPT_ALIGNED_X86) \
+	--output-arm-ls $(LINKER_SCRIPT_ALIGNED_ARM)
+
+$(PROG_X86_ALIGNED): $(LINKER_SCRIPT_ALIGNED_X86) $(KERNEL_X86)
+	@# 6. Link with aligned script
+	$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
+	@# 7. Post-process
+	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86_ALIGNED)
+	@# 8. Change OSABI
+	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+		$(PROG_X86_ALIGNED)
+
+$(PROG_ARM_ALIGNED): $(LINKER_SCRIPT_ALIGNED_ARM) $(KERNEL_ARM)
+	@# 6. Link with aligned script
+	$(LD) -o $(PROG_ARM_ALIGNED) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ALIGN_ARM)
+	@# 7. Post-process
+	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM_ALIGNED)
+	@# 8. Change OSABI
+	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+		$(PROG_ARM_ALIGNED)
+
+test-x86: $(PROG_X86_ALIGNED)
 	HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
-		$(PROXY_X86) $(PROG_X86) $(ARGS)
+		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
 
-test-arm: $(PROG_ARM)
-	@ssh $(ARM_TARGET_IP) "rm -rf /tmp/proxy && killall -q -9 proxy; true"
-	scp $(PROXY_ARM) $(ARM_TARGET_IP):/tmp/proxy
-	scp $(PROG_ARM) $(ARM_TARGET_IP):/tmp
+test-arm: $(PROG_ARM_ALIGNED)
+	@ssh $(ARM_TARGET_IP) "rm -rf $(ARM_TARGET_HOME)/proxy && killall -q -9 proxy; true"
+	scp $(PROXY_ARM) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/proxy
+	scp $(PROG_ARM_ALIGNED) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/
 	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
-		/tmp/proxy /tmp/$(PROG_ARM) $(ARGS)
+		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
 
 objdump-x86:
 	objdump --source $(PROG_X86) > /tmp/objdump-x86.txt && \
@@ -150,5 +193,7 @@ dump-llvm-stackmaps-arm:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG_ARM)
 
 clean:
-	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM) stack-transform.log bss.bin \
+	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM) \
+	$(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED) \
+	stack-transform.log bss.bin map* aligned* \
 	data.bin fds.bin heap.bin mdata.bin stack.bin.* tls.bin.*

@@ -27,7 +27,7 @@ llvm_git_branch = 'hermit-popcorn-master'
 clang_git_url = 'https://github.com/ssrg-vt/clang.git'
 clang_git_branch = 'hermit-popcorn-master'
 
-binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
+binutils_git_url = 'https://github.com/ssrg-vt/binutils-1.git'
 binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
@@ -788,12 +788,12 @@ def install_binutils(base_path, install_path, threads):
     os.makedirs(binutils_download_path + '/build_aarch64')
     os.chdir(binutils_download_path + '/build_aarch64')
 
-    #compile and install for x86_64 target
+    #compile and install for aarch64 target
     try:
         rv = subprocess.check_call(['../configure', '--target=aarch64-hermit',
             '--prefix=%s' % binutils_prefix, '--with-sysroot',
             '--disable-multilib', '--disable-shared', '--disable-nls',
-            '--disable-gdb',
+            '--disable-gdb', '--disable-gas',
             '--disable-libdecnumber', '--disable-readline', '--disable-sim',
             '--disable-libssp', '--enable-tls', '--enable-lto',
             '--enable-plugin'])

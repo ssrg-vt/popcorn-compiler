@@ -86,7 +86,6 @@ class AbstractArchitecture():
 						objectFile = matchResult3.group(5)
 						s = Symbol.Symbol(name, address, size, alignment,
 							objectFile, self.getArch())
-
 				if s:
 					res.append(s)
 
@@ -107,6 +106,7 @@ class AbstractArchitecture():
 			sectionName = section.getName()
 			if (addr >= sectionAddr) and (addr < (sectionAddr + sectionSize)):
 				res = sectionName
+				'''
 				if not symbol.getName().startswith(sectionName):
 				# Sanity check if the names fit. is it possible to have a symbol
 				# name _not_ starting with the containing section name?
@@ -120,7 +120,7 @@ class AbstractArchitecture():
 						str(hex(sectionSize)))
 
 				break
-
+				'''
 			# Super special case, I have seen this in some map files, don't
 			# really know what it means ...
 			if (addr == (sectionAddr + sectionSize)):
