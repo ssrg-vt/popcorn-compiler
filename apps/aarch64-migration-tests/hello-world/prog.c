@@ -16,6 +16,8 @@ inline unsigned sleep(unsigned int secs) {
 	return sys_msleep(secs * 1000);
 }
 
+extern void kprintf(char *format, ...);
+
 int main(int argc, char **argv) {
 	int i, stack_var;
 
@@ -30,6 +32,7 @@ int main(int argc, char **argv) {
 
 	for(i=0; i<10; i++) {
 		sleep(1);
+
 		printf("iteration %d\n", i);
 		printf(" - stack: %d\n", stack_var++);
 		printf(" - bss:   %d\n", bss_var++);
@@ -38,7 +41,9 @@ int main(int argc, char **argv) {
 		printf(" - tdata:  %d\n", tdata_var++);
 		printf(" - tbss:  %d\n", tbss_var++);
 
-		HERMIT_MIGPOINT();
+		if(i == 2)
+			HERMIT_FORCE_MIGRATION();
+
 	}
 
 	free(heap_ptr);
