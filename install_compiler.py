@@ -507,7 +507,7 @@ def install_stack_transformation(base_path, install_path, num_threads, st_debug)
 
     print('Making stack_transformation...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
-    if st_debug: args += ['-type=debug']
+    if st_debug: args += ['type=debug']
     run_cmd('make libstack-transform', args)
     args += ['install']
     run_cmd('install libstack-transform', args)
