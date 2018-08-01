@@ -10,7 +10,7 @@ binA = None
 binB = None
 verbose = False
 continueCheck = True
-consideredSections = [".text", ".data", ".bss", ".tdata", ".tbss","rodata"]
+consideredSections = [".text", ".data", ".bss", ".tdata", ".tbss",".rodata"]
 
 ###############################################################################
 # Utility functions
