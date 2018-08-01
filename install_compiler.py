@@ -632,7 +632,7 @@ def install_newlib(base_path, install_path, threads):
             'AS_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-as' % install_path,
             'AR_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ar' % install_path,
             'RANLIB_FOR_TARGET=%s/x86_64-host/bin/x86_64-hermit-ranlib' % install_path,
-            'CFLAGS_FOR_TARGET=-O2 -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -mtune=native -popcorn-libc']
+            'CFLAGS_FOR_TARGET=-O2 -g -m64 -DHAVE_INITFINI_ARRAY -ffunction-sections -fdata-sections -mtune=native -popcorn-libc']
 
     try:
         rv = subprocess.check_call(newlib_conf)
@@ -651,7 +651,7 @@ def install_newlib(base_path, install_path, threads):
     os.chdir(newlib_download_path + '/build-aarch64')
 
     try:
-       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -DHAVE_INITFINI_ARRAY -O2 -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
+       rv = os.environ["CFLAGS_FOR_TARGET"] = "-m64 -DHAVE_INITFINI_ARRAY -O2 -g -ftree-vectorize -target aarch64-hermit -ffunction-sections -fdata-sections -popcorn-libc"
        rv = os.environ["CXXFLAGS_FOR_TARGET"] = "-m64 -O3 -ftree-vectorize"
        rv = os.environ["AS_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-as" % install_path
        rv = os.environ["AR_FOR_TARGET"] = "%s/x86_64-host/bin/aarch64-hermit-ar" % install_path
