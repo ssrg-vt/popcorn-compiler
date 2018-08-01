@@ -3,3 +3,13 @@ prog_x86-64
 *.o
 *.bc
 stack-transform.log
+aligned_linker_script_aarch64.x
+aligned_linker_script_x86.x
+aligned_map_aarch64.txt
+aligned_map_x86-64.txt
+map_aarch64.txt
+map_x86-64.txt
+prog_aarch64_aligned
+prog_x86-64_aligned
+prog_x86-64
+prog_aarch64
