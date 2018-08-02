@@ -437,5 +437,8 @@ POPCORN_OPENMP_0.1 {
   __kmpc_end_reduce_nowait;
   __kmpc_global_thread_num;
   __kmpc_threadprivate_cached;
+  omp_popcorn_threads;
+  omp_popcorn_threads_per_node;
+  omp_popcorn_core_speed;
 };
 

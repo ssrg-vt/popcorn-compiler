@@ -22,6 +22,29 @@ bool popcorn_hybrid_barrier() { return popcorn_global.hybrid_barrier; }
 bool popcorn_hybrid_reduce() { return popcorn_global.hybrid_reduce; }
 bool popcorn_het_workshare() { return popcorn_global.het_workshare; }
 
+unsigned long omp_popcorn_threads()
+{
+  int i;
+  unsigned long num = 0;
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+    num += popcorn_global.threads_per_node[i];
+  return num;
+}
+
+unsigned long omp_popcorn_threads_per_node(int nid)
+{
+  if(nid >= 0 && nid < MAX_POPCORN_NODES)
+    return popcorn_global.threads_per_node[nid];
+  else return UINT64_MAX;
+}
+
+unsigned long omp_popcorn_core_speed(int nid)
+{
+  if(nid >= 0 && nid < MAX_POPCORN_NODES)
+    return popcorn_global.core_speed_rating[nid];
+  else return UINT64_MAX;
+}
+
 void popcorn_set_distributed(bool flag) { popcorn_global.distributed = flag; }
 void popcorn_set_finished(bool flag) { popcorn_global.finished = flag; }
 void popcorn_set_hybrid_barrier(bool flag) { popcorn_global.hybrid_barrier = flag; }

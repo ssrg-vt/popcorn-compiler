@@ -159,6 +159,10 @@ extern int omp_target_associate_ptr (void *, void *, __SIZE_TYPE__,
 				     __SIZE_TYPE__, int) __GOMP_NOTHROW;
 extern int omp_target_disassociate_ptr (void *, int) __GOMP_NOTHROW;
 
+extern unsigned long omp_popcorn_threads () __GOMP_NOTHROW;
+extern unsigned long omp_popcorn_threads_per_node (int) __GOMP_NOTHROW;
+extern unsigned long omp_popcorn_core_speed (int) __GOMP_NOTHROW;
+
 #ifdef __cplusplus
 }
 #endif
