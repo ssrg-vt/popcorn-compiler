@@ -28,8 +28,11 @@
 
 #ifdef _KMP_DEBUG
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
+# define DEBUG_ONE( ... ) \
+  do { if(gtid == 0) fprintf(stderr, __VA_ARGS__); } while (0);
 #else
 # define DEBUG( ... )
+# define DEBUG_ONE( ... )
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -141,7 +144,7 @@ get_scaled_range(int32_t gtid, unsigned long *start, unsigned long *range)
   int i, tcount = 0, diff;
   unsigned long cur_range = 0;
   *start = UINT64_MAX;
-  *range = UINT64_MAX;
+  *range = 0;
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
@@ -194,7 +197,12 @@ static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
   unsigned long start, range, scaled_thr = popcorn_global.scaled_thread_range;\
                                                                               \
   get_scaled_range(gtid, &start, &range);                                     \
-  assert(start != UINT64_MAX && "Invalid core speed rating");                 \
+  if(range == 0)                                                              \
+  {                                                                           \
+    *plower = *pupper + incr;                                                 \
+    return;                                                                   \
+  }                                                                           \
+                                                                              \
   switch(schedtype)                                                           \
   {                                                                           \
   case kmp_sch_static: {                                                      \
@@ -221,8 +229,14 @@ static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
     break;                                                                    \
   }                                                                           \
   case kmp_sch_static_chunked: {                                              \
-    assert(false && "TODO!");                                                 \
-    *plower = *pupper + incr;                                                 \
+    TYPE span;                                                                \
+    if(chunk < 1) chunk = 1;                                                  \
+    span = chunk * incr;                                                      \
+    *pstride = span * scaled_thr;                                             \
+    *plower = *plower + (span * start);                                       \
+    *pupper = *plower + (span * range) - incr;                                \
+    if(plastiter != NULL)                                                     \
+      *plastiter = (start == ((total_trips - 1)/chunk) % scaled_thr);         \
     break;                                                                    \
   }                                                                           \
   default:                                                                    \
