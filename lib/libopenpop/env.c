@@ -126,6 +126,11 @@ parse_schedule (void)
       gomp_global_icv.run_sched_var = GFS_AUTO;
       env += 4;
     }
+  else if (strncasecmp (env, "hetprobe", 8) == 0)
+    {
+      gomp_global_icv.run_sched_var = GFS_HETPROBE;
+      env += 8;
+    }
   else
     goto unknown;
 

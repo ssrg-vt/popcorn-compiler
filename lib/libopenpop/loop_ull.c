@@ -82,11 +82,26 @@ gomp_loop_ull_init (struct gomp_work_share *ws, bool up, gomp_ull start,
 
 /* The Intel OpenMP runtime doesn't grab the first batch of iterations during
    initialization.  Expose an API for the shim layer to solely initialize the
-   dynamic work-sharing region. */
+   work-sharing region. */
+
+static void
+gomp_loop_ull_static_init (gomp_ull start, gomp_ull end,
+			   gomp_ull incr, gomp_ull chunk_size)
+{
+  struct gomp_thread *thr = gomp_thread ();
+
+  thr->ts.static_trip = 0;
+  if (gomp_work_share_start (false))
+    {
+      gomp_loop_ull_init (thr->ts.work_share, true, start, end, incr,
+			  GFS_STATIC, chunk_size);
+      gomp_work_share_init_done ();
+    }
+}
 
 static void
 gomp_loop_ull_dynamic_init (gomp_ull start, gomp_ull end,
-			     gomp_ull incr, gomp_ull chunk_size)
+			    gomp_ull incr, gomp_ull chunk_size)
 {
   struct gomp_thread *thr = gomp_thread ();
   if (gomp_work_share_start (false))
@@ -577,6 +592,8 @@ GOMP_loop_ull_ordered_runtime_next (gomp_ull *istart, gomp_ull *iend)
    a wrapper function otherwise.  */
 
 #ifdef HAVE_ATTRIBUTE_ALIAS
+extern __typeof(gomp_loop_ull_static_init) GOMP_loop_ull_static_init
+	__attribute__((alias ("gomp_loop_ull_static_init")));
 extern __typeof(gomp_loop_ull_dynamic_init) GOMP_loop_ull_dynamic_init
 	__attribute__((alias ("gomp_loop_ull_dynamic_init")));
 
@@ -624,8 +641,15 @@ extern __typeof(gomp_loop_ull_ordered_guided_next) GOMP_loop_ull_ordered_guided_
 	__attribute__((alias ("gomp_loop_ull_ordered_guided_next")));
 #else
 void
+GOMP_loop_ull_static_init (gomp_ull start, gomp_ull end,
+			   gomp_ull inc, gomp_ull chunk_size)
+{
+  gomp_loop_ull_static_init (start, end, inc, chunk_size);
+}
+
+void
 GOMP_loop_ull_dynamic_init (gomp_ull start, gomp_ull end,
-          gomp_ull inc, gomp_ull chunk_size)
+			    gomp_ull inc, gomp_ull chunk_size)
 {
   gomp_loop_ull_dynamic_init (start, end, inc, chunk_size);
 }

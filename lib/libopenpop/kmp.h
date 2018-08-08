@@ -30,6 +30,7 @@ enum sched_type {
   kmp_sch_static_chunked = 33, /* statically chunked algorithm */
   kmp_sch_static = 34, /* static unspecialized */
   kmp_sch_dynamic_chunked = 35, /* dynamically chunked algorithm */
+  kmp_sch_runtime = 37, /* runtime chooses from parsing OMP_SCHEDULE */
   kmp_sch_hetprobe = 39, /* probe heterogeneous machines */
   kmp_sch_default = kmp_sch_static, /* default scheduling algorithm */
   kmp_sch_dynamic_chunked_hierarchy = 128 /* hierarhical dynamic chunked algorithm */
