@@ -547,10 +547,10 @@ void hierarchy_init_workshare_hetprobe(int nid,
       global = malloc(sizeof(struct gomp_work_share));
       gomp_init_work_share(global, false, nthreads);
       loop_init(global, lb, ub, incr, GFS_HETPROBE, chunk, nid);
-      popcorn_global.page_faults = get_page_faults();
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
     popcorn_global.workshare_time[nid] = 0;
+    popcorn_node[nid].page_faults = get_page_faults();
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
@@ -582,10 +582,10 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
       global = malloc(sizeof(struct gomp_work_share));
       gomp_init_work_share(global, false, nthreads);
       loop_init_ull(global, true, lb, ub, incr, GFS_HETPROBE, chunk, nid);
-      popcorn_global.page_faults = get_page_faults();
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
     popcorn_global.workshare_time[nid] = 0;
+    popcorn_node[nid].page_faults = get_page_faults();
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
@@ -661,7 +661,6 @@ static void log_hetprobe_results()
       max_node = i;
     }
   }
-  max_time /= 1000;
 
   cur += snprintf(cur, sizeof(buf), "CSR:");
   for(i = 0; i < MAX_POPCORN_NODES; i++)
@@ -743,7 +742,7 @@ static void calc_het_probe_workshare(int nid, bool ull)
     // Note: this is only correct in the 2-node case where send/receive
     // statistics are symmetric!
     popcorn_global.page_faults = get_page_faults() -
-                                 popcorn_global.page_faults;
+                                 popcorn_node[nid].page_faults;
 
     /* Calculate iteration splits between nodes.  This is done by the global
        leader, as having threads accurately calculating boundary conditions
