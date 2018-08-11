@@ -403,6 +403,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   struct gomp_team *team = thr->ts.team;                                      \
   int nthreads = team ? team->nthreads : 1;                                   \
   bool distributed = popcorn_distributed();                                   \
+  TYPE total_trips;                                                           \
                                                                               \
   DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d"SPEC SPEC SPEC SPEC"\n",      \
         loc->psource, gtid, schedule, lb, ub, st, chunk);                     \
@@ -456,6 +457,15 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
     DYN_HIERARCHY_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);              \
     break;                                                                    \
   case kmp_sch_hetprobe:                                                      \
+    if(chunk <= 1) /* Auto-select probe size */                               \
+    {                                                                         \
+      if(st == 1) total_trips = (ub - lb) + 1;                                \
+      else if(st == -1) total_trips = (lb - ub) + 1;                          \
+      else if(st > 1) total_trips = ((ub - lb) / st) + 1;                     \
+      else total_trips = ((lb - ub) / (-st)) + 1;                             \
+      chunk = ((float)total_trips * 0.15) / nthreads;                         \
+      DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
+    }                                                                         \
     HETPROBE_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);                   \
     break;                                                                    \
   default:                                                                    \
@@ -592,8 +602,8 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
     __kmpc_dispatch_fini_##NAME(loc, gtid);                                   \
   }                                                                           \
                                                                               \
-  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d"SPEC SPEC SPEC"\n",        \
-        loc->psource, gtid, ret, *p_last, *p_lb, *p_ub, *p_st);               \
+  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d %d"SPEC SPEC SPEC"\n",     \
+        loc->psource, gtid, ret, ws->sched, *p_last, *p_lb, *p_ub, *p_st);    \
                                                                               \
   return ret;                                                                 \
 }

@@ -92,10 +92,18 @@ typedef struct {
   /* Global timing information for the heterogeneous probing scheduler */
   unsigned long long workshare_time[MAX_POPCORN_NODES];
 
+  /* Global page faults during the probing period */
+  unsigned long long page_faults;
+
   /* Global remaining work after probing period */
   union {
     long remaining;
     unsigned long long remaining_ull;
+  };
+
+  union {
+    long split[MAX_POPCORN_NODES];
+    unsigned long split_ull[MAX_POPCORN_NODES];
   };
 } global_info_t;
 
@@ -118,9 +126,6 @@ typedef struct {
     gomp_ptrlock_t ws_lock;
     struct gomp_work_share *ws;
   };
-
-  /* Timing information for the heterogeneous probing scheduler */
-  struct timespec workshare_start, workshare_end;
 
   char padding[PAGESZ - (2 * sizeof(leader_select_t)) - sizeof(gomp_barrier_t)
                       - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)

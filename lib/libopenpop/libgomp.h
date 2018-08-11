@@ -634,6 +634,9 @@ struct gomp_thread
 
   /* Reduction method for variables currently being reduced. */
   int reduction_method;
+
+  /* Time stamp for this thread's probe start. */
+  struct timespec probe_start;
 };
 
 

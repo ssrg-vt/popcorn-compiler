@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <float.h>
 #include "hierarchy.h"
 
 global_info_t ALIGN_PAGE popcorn_global;
@@ -352,6 +353,26 @@ bool hierarchy_reduce(int nid,
 // Work sharing
 ///////////////////////////////////////////////////////////////////////////////
 
+// TODO for some reason consecutive reads return decreasing values when this
+// value should be monotonically increasing...
+static unsigned long long get_page_faults()
+{
+  unsigned long long i, sent = 0, recv = 0;
+  FILE *fp;
+  if((fp = fopen("/proc/popcorn_stat", "r")))
+  {
+    /* Skip header statistics & irrelevant message types */
+    while(fgetc(fp) != '-');
+    for(i = 0; i < 10; )
+      if(fgetc(fp) == '\n') i++;
+
+    fscanf(fp, " %llu %llu", &sent, &recv);
+    fclose(fp);
+    return sent + recv;
+  }
+  else return 0;
+}
+
 static inline void loop_init(struct gomp_work_share *ws,
                              long start,
                              long end,
@@ -519,20 +540,22 @@ void hierarchy_init_workshare_hetprobe(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init(ws, lb, lb, incr, GFS_HETPROBE, chunk, nid);
+    popcorn_global.workshare_time[nid] = 0;
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
     {
       global = malloc(sizeof(struct gomp_work_share));
       gomp_init_work_share(global, false, nthreads);
       loop_init(global, lb, ub, incr, GFS_HETPROBE, chunk, nid);
+      popcorn_global.page_faults = get_page_faults();
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
     popcorn_global.workshare_time[nid] = 0;
-    clock_gettime(CLOCK_MONOTONIC, &popcorn_node[nid].workshare_start);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
   thr->ts.probing = true;
+  clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
 }
 
 void hierarchy_init_workshare_hetprobe_ull(int nid,
@@ -552,20 +575,22 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init_ull(ws, true, lb, lb, incr, GFS_HETPROBE, chunk, nid);
+    popcorn_global.workshare_time[nid] = 0;
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
     {
       global = malloc(sizeof(struct gomp_work_share));
       gomp_init_work_share(global, false, nthreads);
       loop_init_ull(global, true, lb, ub, incr, GFS_HETPROBE, chunk, nid);
+      popcorn_global.page_faults = get_page_faults();
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
     popcorn_global.workshare_time[nid] = 0;
-    clock_gettime(CLOCK_MONOTONIC, &popcorn_node[nid].workshare_start);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
   thr->ts.probing = true;
+  clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
 }
 
 bool hierarchy_next_dynamic(int nid, long *start, long *end)
@@ -617,6 +642,55 @@ bool hierarchy_next_dynamic_ull(int nid,
   return ret;
 }
 
+// Note: the logging currently assumes only 1 thread is calling at a time!
+// TODO printing floating point operations on aarch64 when starting on x86-64
+// is currently not supported (due to software-emulated FP operations)
+static char buf[1024];
+#define REMAINING_BUF( buf, ptr ) (sizeof(buf) - ((ptr) - (buf)))
+static void log_hetprobe_results()
+{
+  int i, max_node;
+  unsigned long long max_time = 0;
+  char *cur = buf;
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(popcorn_global.workshare_time[i] > max_time)
+    {
+      max_time = popcorn_global.workshare_time[i];
+      max_node = i;
+    }
+  }
+  max_time /= 1000;
+
+  cur += snprintf(cur, sizeof(buf), "CSR:");
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(i && !(i % 8)) cur += snprintf(cur, REMAINING_BUF(buf, cur), "\n");
+    cur += snprintf(cur, REMAINING_BUF(buf, cur), "\t%.3f",
+                    popcorn_global.core_speed_rating_float[i]);
+  }
+
+  float pf_p_us = (float)popcorn_global.page_faults / (float)max_time;
+  snprintf(cur, REMAINING_BUF(buf, cur),
+           "\nProbe: %llu page faults, %llu us, %.3f faults / us\n",
+           popcorn_global.page_faults, max_time, pf_p_us);
+  popcorn_log(buf);
+}
+
+/* Signal core speed value indicating that a particular node shouldn't receive
+   any iterations. */
+#define NO_ITER FLT_MIN
+
+/* Shorthands for rounding numbers */
+#define ROUND( type, val, incr ) \
+  { \
+    type remainder = val % incr; \
+    val = remainder ? (val + incr - remainder) : val; \
+  }
+#define ROUND_LONG( val, incr ) ROUND(long, val, incr)
+#define ROUND_ULL( val, incr ) ROUND(unsigned long long, val, incr)
+
 static void calc_het_probe_workshare(int nid, bool ull)
 {
   bool leader;
@@ -625,12 +699,10 @@ static void calc_het_probe_workshare(int nid, bool ull)
   float scale;
   struct gomp_work_share *ws;
 
-  /* Set this node's elapsed time to finish the workshare */
-  clock_gettime(CLOCK_MONOTONIC, &popcorn_node[nid].workshare_end);
-  cur_elapsed = ELAPSED(popcorn_node[nid].workshare_start,
-                        popcorn_node[nid].workshare_end);
-  popcorn_global.workshare_time[nid] = cur_elapsed;
+  /* Set this node's time to the accumulated average */
+  popcorn_global.workshare_time[nid] /= popcorn_node[nid].sync.num;
 
+  // TODO make this always node 1?
   leader = select_leader_synchronous(&popcorn_global.sync,
                                      &popcorn_global.bar,
                                      false, NULL);
@@ -667,9 +739,72 @@ static void calc_het_probe_workshare(int nid, bool ull)
       }
     }
 
+    /* Calculate number of page faults during probe */
+    // Note: this is only correct in the 2-node case where send/receive
+    // statistics are symmetric!
+    popcorn_global.page_faults = get_page_faults() -
+                                 popcorn_global.page_faults;
+
+    /* Calculate iteration splits between nodes.  This is done by the global
+       leader, as having threads accurately calculating boundary conditions
+       on loop iteration counts using floating point numbers is hard.
+       Additionally, assign work to each node's work share so we can update
+       the global work share to be depleted of iterations (there's no need to
+       dynamically grab more). */
     ws = popcorn_global.ws;
-    if(ull) popcorn_global.remaining_ull = ws->end_ull - ws->next_ull;
-    else popcorn_global.remaining = ws->end - ws->next;
+    float split_range = 0;
+    int i, max_node;
+    if(ull)
+    {
+      popcorn_global.remaining_ull = ws->end_ull - ws->next_ull;
+      for(i = 0; i < MAX_POPCORN_NODES - 1; i++)
+      {
+        if(!popcorn_node[i].sync.num) continue;
+        max_node = i;
+        split_range += popcorn_global.core_speed_rating_float[i] *
+                       popcorn_node[i].sync.num;
+        popcorn_global.split_ull[i] = ws->next_ull +
+          (split_range / popcorn_global.scaled_thread_range_float)
+            * (float)popcorn_global.remaining_ull;
+        ROUND_ULL(popcorn_global.split_ull[i], ws->incr_ull);
+      }
+
+      for(i = 0; i < max_node; i++)
+      {
+        if(i == 0) popcorn_node[0].ws->next_ull = ws->next_ull;
+        else popcorn_node[i].ws->next_ull = popcorn_global.split_ull[i-1];
+        popcorn_node[i].ws->end_ull = popcorn_global.split_ull[i];
+      }
+      popcorn_node[i].ws->next_ull = popcorn_global.split_ull[i-1];
+      popcorn_node[i].ws->end_ull = ws->end_ull;
+      popcorn_global.ws->next_ull = popcorn_global.ws->end_ull;
+    }
+    else
+    {
+      popcorn_global.remaining = ws->end - ws->next;
+      for(i = 0; i < MAX_POPCORN_NODES - 1; i++)
+      {
+        if(!popcorn_node[i].sync.num) continue;
+        max_node = i;
+        split_range += popcorn_global.core_speed_rating_float[i] *
+                       popcorn_node[i].sync.num;
+        popcorn_global.split[i] = ws->next +
+          (split_range / popcorn_global.scaled_thread_range_float)
+            * (float)popcorn_global.remaining;
+        ROUND_LONG(popcorn_global.split[i], ws->incr);
+      }
+
+      for(i = 0; i < max_node; i++)
+      {
+        if(i == 0) popcorn_node[0].ws->next = ws->next;
+        else popcorn_node[i].ws->next = popcorn_global.split[i-1];
+        popcorn_node[i].ws->end = popcorn_global.split[i];
+      }
+      popcorn_node[i].ws->next = popcorn_global.split[i-1];
+      popcorn_node[i].ws->end = ws->end;
+      popcorn_global.ws->next = popcorn_global.ws->end;
+    }
+
     hierarchy_leader_cleanup(&popcorn_global.sync);
   }
   gomp_team_barrier_wait_nospin(&popcorn_global.bar);
@@ -677,38 +812,61 @@ static void calc_het_probe_workshare(int nid, bool ull)
 
 static inline long calc_chunk_from_ratio(int nid, struct gomp_work_share *ws)
 {
-  long chunk, remainder;
+  long chunk;
   float one_thread_percent = popcorn_global.core_speed_rating_float[nid] /
                              popcorn_global.scaled_thread_range_float;
   /* Note: round up because it's better to slightly overestimate loop count
      distributions (which will get corrected when grabbing work) instead of
      underestimating and forcing another round of global work distribution */
   chunk = ceilf(one_thread_percent * (float)popcorn_global.remaining);
-  remainder = chunk % ws->incr;
-  return remainder ? (chunk + ws->incr - remainder) : chunk;
+  ROUND_LONG(chunk, ws->incr);
+  return chunk;
 }
 
 bool hierarchy_next_hetprobe(int nid, long *start, long *end)
 {
-  bool leader;
+  bool leader, probe_path = false;;
   struct gomp_thread *thr = gomp_thread();
   struct gomp_work_share *ws = thr->ts.work_share;
+  struct timespec probe_end;
 
-  if(thr->ts.probing) thr->ts.probing = false; /* Only probe once */
+  if(thr->ts.probing)
+  {
+    thr->ts.probing = false; /* Only probe once */
+    *start = ws->next + (thr->ts.team_id * ws->chunk_size * ws->incr);
+    *end = *start + (ws->chunk_size * ws->incr);
+  }
   else
   {
+    /* Add this thread's elapsed time to the workshare */
+    probe_path = true;
+    clock_gettime(CLOCK_MONOTONIC, &probe_end);
+    __atomic_add_fetch(&popcorn_global.workshare_time[nid],
+                       ELAPSED(thr->probe_start, probe_end) / 1000,
+                       MEMMODEL_ACQ_REL);
+
     leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                        &popcorn_node[nid].bar,
                                        false, NULL);
     if(leader)
     {
       calc_het_probe_workshare(nid, false);
-      ws->chunk_size = calc_chunk_from_ratio(nid, popcorn_global.ws);
+      if(popcorn_global.core_speed_rating_float[nid] == NO_ITER)
+      {
+        /* The scheduler decided not to give this node any iterations, set work
+           share so threads on this node go to ending barrier. */
+        ws->chunk_size = LONG_MAX;
+        ws->next = ws->end = popcorn_global.ws->end;
+      }
+      else ws->chunk_size = calc_chunk_from_ratio(nid, popcorn_global.ws);
       ws->sched = GFS_HIERARCHY_DYNAMIC;
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
   }
+
+  // TODO delete
+  if(probe_path && thr->ts.team_id == 0) log_hetprobe_results();
 
   return hierarchy_next_dynamic(nid, start, end);
 }
@@ -716,13 +874,12 @@ bool hierarchy_next_hetprobe(int nid, long *start, long *end)
 static inline long
 calc_chunk_from_ratio_ull(int nid, struct gomp_work_share *ws)
 {
-  unsigned long long chunk, remainder;
+  unsigned long long chunk;
   float one_thread_percent = popcorn_global.core_speed_rating_float[nid] /
                              popcorn_global.scaled_thread_range_float;
   chunk = ceilf(one_thread_percent * (float)popcorn_global.remaining_ull);
-  remainder = chunk % ws->incr;
-  if(!remainder) return chunk;
-  else return chunk + ws->incr - remainder;
+  ROUND_ULL(chunk, ws->incr);
+  return chunk;
 }
 
 bool hierarchy_next_hetprobe_ull(int nid,
@@ -732,22 +889,47 @@ bool hierarchy_next_hetprobe_ull(int nid,
   bool leader;
   struct gomp_thread *thr = gomp_thread();
   struct gomp_work_share *ws = thr->ts.work_share;
+  struct timespec probe_end;
 
-  if(thr->ts.probing) thr->ts.probing = false; /* Only probe once */
+  if(thr->ts.probing)
+  {
+    thr->ts.probing = false; /* Only probe once */
+    *start =
+      ws->next_ull + (thr->ts.team_id * ws->chunk_size_ull * ws->incr_ull);
+    *end = *start + (ws->chunk_size_ull * ws->incr_ull);
+    return true;
+  }
   else
   {
+    /* Add this thread's elapsed time to the workshare */
+    clock_gettime(CLOCK_MONOTONIC, &probe_end);
+    __atomic_add_fetch(&popcorn_global.workshare_time[nid],
+                       ELAPSED(thr->probe_start, probe_end) / 1000,
+                       MEMMODEL_ACQ_REL);
+
     leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                        &popcorn_node[nid].bar,
                                        false, NULL);
     if(leader)
     {
       calc_het_probe_workshare(nid, true);
-      ws->chunk_size_ull = calc_chunk_from_ratio_ull(nid, popcorn_global.ws);
+      if(popcorn_global.core_speed_rating_float[nid] == NO_ITER)
+      {
+        /* The scheduler decided not to give this node any iterations, set work
+           share so threads on this node go to ending barrier. */
+        ws->chunk_size_ull = ULLONG_MAX;
+        ws->next_ull = ws->end_ull = popcorn_global.ws->end_ull;
+      }
+      else
+        ws->chunk_size_ull = calc_chunk_from_ratio_ull(nid, popcorn_global.ws);
       ws->sched = GFS_HIERARCHY_DYNAMIC;
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
   }
+
+  // TODO delete
+  if(thr->ts.team_id == 0) log_hetprobe_results();
 
   return hierarchy_next_dynamic_ull(nid, start, end);
 }

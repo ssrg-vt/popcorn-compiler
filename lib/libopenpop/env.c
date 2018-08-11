@@ -1236,6 +1236,7 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
   fprintf (stderr, "  OMP_NESTED = '%s'\n",
 	   gomp_global_icv.nest_var ? "TRUE" : "FALSE");
 
+  fprintf (stderr, "  OMP AVAILABLE CPUS = '%lu'\n", gomp_available_cpus);
   fprintf (stderr, "  OMP_NUM_THREADS = '%lu", gomp_global_icv.nthreads_var);
   for (i = 1; i < gomp_nthreads_var_list_len; i++)
     fprintf (stderr, ",%lu", gomp_nthreads_var_list[i]);
