@@ -328,9 +328,6 @@ struct gomp_team_state
      is 1, etc.  This is unused when the compiler knows in advance that
      the loop is statically scheduled.  */
   unsigned long static_trip;
-
-  /* Whether we're probing the compute capabilities of different machines */
-  bool probing;
 };
 
 struct target_mem_desc;

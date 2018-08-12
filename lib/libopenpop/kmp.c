@@ -464,6 +464,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
       else if(st > 1) total_trips = ((ub - lb) / st) + 1;                     \
       else total_trips = ((lb - ub) / (-st)) + 1;                             \
       chunk = ((float)total_trips * 0.15) / nthreads;                         \
+      if(chunk == 0) chunk = 1;                                               \
       DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
     }                                                                         \
     HETPROBE_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);                   \

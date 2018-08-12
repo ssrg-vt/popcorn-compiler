@@ -549,12 +549,11 @@ void hierarchy_init_workshare_hetprobe(int nid,
       loop_init(global, lb, ub, incr, GFS_HETPROBE, chunk, nid);
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
-    popcorn_global.workshare_time[nid] = 0;
     popcorn_node[nid].page_faults = get_page_faults();
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
-  thr->ts.probing = true;
+  thr->ts.static_trip = 0;
   clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
 }
 
@@ -584,12 +583,11 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
       loop_init_ull(global, true, lb, ub, incr, GFS_HETPROBE, chunk, nid);
       gomp_ptrlock_set(&popcorn_global.ws_lock, global);
     }
-    popcorn_global.workshare_time[nid] = 0;
     popcorn_node[nid].page_faults = get_page_faults();
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
-  thr->ts.probing = true;
+  thr->ts.static_trip = 0;
   clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
 }
 
@@ -698,8 +696,10 @@ static void calc_het_probe_workshare(int nid, bool ull)
   float scale;
   struct gomp_work_share *ws;
 
-  /* Set this node's time to the accumulated average */
+  /* Calculate this node's average time & page faults */
   popcorn_global.workshare_time[nid] /= popcorn_node[nid].sync.num;
+  popcorn_node[nid].page_faults = get_page_faults() -
+                                  popcorn_node[nid].page_faults;
 
   // TODO make this always node 1?
   leader = select_leader_synchronous(&popcorn_global.sync,
@@ -722,9 +722,11 @@ static void calc_het_probe_workshare(int nid, bool ull)
       }
     }
 
-    /* Calculate core speed ratings based on the ratio to the minimum time */
+    /* Calculate core speed ratings based on the ratio to the minimum time &
+       accumulate page faults from all nodes. */
     popcorn_global.scaled_thread_range_float = 0.0;
     scale = 1.0 / ((float)min / (float)popcorn_global.workshare_time[max_idx]);
+    popcorn_global.page_faults = 0;
     for(i = 0; i < MAX_POPCORN_NODES; i++)
     {
       cur_elapsed = popcorn_global.workshare_time[i];
@@ -735,14 +737,11 @@ static void calc_het_probe_workshare(int nid, bool ull)
         popcorn_global.scaled_thread_range_float +=
           popcorn_global.core_speed_rating_float[i] *
           popcorn_node[i].sync.num;
+        popcorn_global.page_faults += popcorn_node[nid].page_faults;
       }
     }
-
-    /* Calculate number of page faults during probe */
-    // Note: this is only correct in the 2-node case where send/receive
-    // statistics are symmetric!
-    popcorn_global.page_faults = get_page_faults() -
-                                 popcorn_node[nid].page_faults;
+    // TODO hardcoded for 2 nodes
+    popcorn_global.page_faults /= 2;
 
     /* Calculate iteration splits between nodes.  This is done by the global
        leader, as having threads accurately calculating boundary conditions
@@ -755,6 +754,9 @@ static void calc_het_probe_workshare(int nid, bool ull)
     int i, max_node;
     if(ull)
     {
+      popcorn_global.ws->next_ull += popcorn_global.ws->chunk_size_ull *
+                                     popcorn_global.ws->incr_ull *
+                                     gomp_thread()->ts.team->nthreads;
       popcorn_global.remaining_ull = ws->end_ull - ws->next_ull;
       for(i = 0; i < MAX_POPCORN_NODES - 1; i++)
       {
@@ -780,6 +782,9 @@ static void calc_het_probe_workshare(int nid, bool ull)
     }
     else
     {
+      popcorn_global.ws->next += popcorn_global.ws->chunk_size *
+                                 popcorn_global.ws->incr *
+                                 gomp_thread()->ts.team->nthreads;
       popcorn_global.remaining = ws->end - ws->next;
       for(i = 0; i < MAX_POPCORN_NODES - 1; i++)
       {
@@ -824,21 +829,22 @@ static inline long calc_chunk_from_ratio(int nid, struct gomp_work_share *ws)
 
 bool hierarchy_next_hetprobe(int nid, long *start, long *end)
 {
-  bool leader, probe_path = false;;
+  bool leader;
   struct gomp_thread *thr = gomp_thread();
   struct gomp_work_share *ws = thr->ts.work_share;
   struct timespec probe_end;
 
-  if(thr->ts.probing)
+  switch(thr->ts.static_trip)
   {
-    thr->ts.probing = false; /* Only probe once */
+  case 0: /* Probe period -- only probe once */
+    thr->ts.static_trip = 1;
     *start = ws->next + (thr->ts.team_id * ws->chunk_size * ws->incr);
     *end = *start + (ws->chunk_size * ws->incr);
-  }
-  else
-  {
+    return true;
+  case 1: /* Finished probe, assign remaining iterations */
+    thr->ts.static_trip = 2;
+
     /* Add this thread's elapsed time to the workshare */
-    probe_path = true;
     clock_gettime(CLOCK_MONOTONIC, &probe_end);
     __atomic_add_fetch(&popcorn_global.workshare_time[nid],
                        ELAPSED(thr->probe_start, probe_end) / 1000,
@@ -862,12 +868,13 @@ bool hierarchy_next_hetprobe(int nid, long *start, long *end)
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
+
+    // TODO delete
+    if(thr->ts.team_id == 0) log_hetprobe_results();
+
+    /* Fall through */
+  default: return hierarchy_next_dynamic(nid, start, end);
   }
-
-  // TODO delete
-  if(probe_path && thr->ts.team_id == 0) log_hetprobe_results();
-
-  return hierarchy_next_dynamic(nid, start, end);
 }
 
 static inline long
@@ -890,16 +897,17 @@ bool hierarchy_next_hetprobe_ull(int nid,
   struct gomp_work_share *ws = thr->ts.work_share;
   struct timespec probe_end;
 
-  if(thr->ts.probing)
+  switch(thr->ts.static_trip)
   {
-    thr->ts.probing = false; /* Only probe once */
+  case 0: /* Probe period -- only probe once */
+    thr->ts.static_trip = 1;
     *start =
       ws->next_ull + (thr->ts.team_id * ws->chunk_size_ull * ws->incr_ull);
     *end = *start + (ws->chunk_size_ull * ws->incr_ull);
     return true;
-  }
-  else
-  {
+  case 1: /* Finished probe, assign remaining iterations */
+    thr->ts.static_trip = 2;
+
     /* Add this thread's elapsed time to the workshare */
     clock_gettime(CLOCK_MONOTONIC, &probe_end);
     __atomic_add_fetch(&popcorn_global.workshare_time[nid],
@@ -925,12 +933,13 @@ bool hierarchy_next_hetprobe_ull(int nid,
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
+
+    // TODO delete
+    if(thr->ts.team_id == 0) log_hetprobe_results();
+
+    /* Fall through */
+  default: return hierarchy_next_dynamic_ull(nid, start, end);
   }
-
-  // TODO delete
-  if(thr->ts.team_id == 0) log_hetprobe_results();
-
-  return hierarchy_next_dynamic_ull(nid, start, end);
 }
 
 bool hierarchy_last(long end)
