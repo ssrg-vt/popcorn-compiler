@@ -459,6 +459,46 @@ static inline void loop_init_ull(struct gomp_work_share *ws,
 
 // TODO these don't support nested work sharing regions
 
+void hierarchy_init_workshare_static(int nid,
+                                     long long lb,
+                                     long long ub,
+                                     long long incr,
+                                     long long chunk)
+{
+  struct gomp_thread *thr = gomp_thread();
+  struct gomp_work_share *ws;
+
+  ws = gomp_ptrlock_get(&popcorn_node[nid].ws_lock);
+  if(ws == NULL)
+  {
+    ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
+    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    loop_init(ws, lb, ub, incr, GFS_STATIC, chunk, nid);
+    gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
+  }
+  thr->ts.work_share = ws;
+}
+
+void hierarchy_init_workshare_static_ull(int nid,
+                                         unsigned long long lb,
+                                         unsigned long long ub,
+                                         unsigned long long incr,
+                                         unsigned long long chunk)
+{
+  struct gomp_thread *thr = gomp_thread();
+  struct gomp_work_share *ws;
+
+  ws = gomp_ptrlock_get(&popcorn_node[nid].ws_lock);
+  if(ws == NULL)
+  {
+    ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
+    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    loop_init_ull(ws, true, lb, ub, incr, GFS_STATIC, chunk, nid);
+    gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
+  }
+  thr->ts.work_share = ws;
+}
+
 void hierarchy_init_workshare_dynamic(int nid,
                                       long long lb,
                                       long long ub,
@@ -952,7 +992,7 @@ bool hierarchy_last_ull(unsigned long long end)
   return end >= popcorn_global.ws->end_ull;
 }
 
-void hierarchy_loop_end(int nid)
+void hierarchy_loop_end(int nid, bool global)
 {
   struct gomp_thread *thr = gomp_thread();
   bool leader;
@@ -966,18 +1006,21 @@ void hierarchy_loop_end(int nid)
     popcorn_free(popcorn_node[nid].ws);
     gomp_ptrlock_destroy(popcorn_node[nid].ws_lock);
     popcorn_node[nid].ws = NULL;
-    leader = select_leader_synchronous(&popcorn_global.sync,
-                                       &popcorn_global.bar,
-                                       false, NULL);
-    if(leader)
+    if(global)
     {
-      gomp_fini_work_share(popcorn_global.ws);
-      free(popcorn_global.ws);
-      gomp_ptrlock_destroy(popcorn_global.ws_lock);
-      popcorn_global.ws = NULL;
-      hierarchy_leader_cleanup(&popcorn_global.sync);
+      leader = select_leader_synchronous(&popcorn_global.sync,
+                                         &popcorn_global.bar,
+                                         false, NULL);
+      if(leader)
+      {
+        gomp_fini_work_share(popcorn_global.ws);
+        free(popcorn_global.ws);
+        gomp_ptrlock_destroy(popcorn_global.ws_lock);
+        popcorn_global.ws = NULL;
+        hierarchy_leader_cleanup(&popcorn_global.sync);
+      }
+      gomp_team_barrier_wait_nospin(&popcorn_global.bar);
     }
-    gomp_team_barrier_wait_nospin(&popcorn_global.bar);
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait(&popcorn_node[nid].bar);

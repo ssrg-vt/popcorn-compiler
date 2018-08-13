@@ -375,6 +375,9 @@ static inline enum sched_type select_runtime_schedule()
   return schedule;
 }
 
+/* Percent of loop iterations to spend on probing */
+#define PROBE_PERCENT 0.1
+
 /*
  * Initialize a dynamic work-sharing construct using a given lower bound, upper
  * bound, stride and chunk.
@@ -447,7 +450,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   {                                                                           \
   case kmp_sch_static: /* Fall through */                                     \
   case kmp_sch_static_chunked:                                                \
-    STATIC_INIT(lb, ub + 1, st, chunk);                                       \
+    STATIC_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);                     \
     thr->ts.static_trip = 0;                                                  \
     break;                                                                    \
   case kmp_sch_dynamic_chunked:                                               \
@@ -476,22 +479,22 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
 }
 
 __kmpc_dispatch_init(4, int32_t, " %d",
-                     GOMP_loop_static_init,
+                     hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(4u, uint32_t, " %u",
-                     GOMP_loop_ull_static_init,
+                     hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
                      hierarchy_init_workshare_hetprobe_ull)
 __kmpc_dispatch_init(8, int64_t, " %ld",
-                     GOMP_loop_static_init,
+                     hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(8u, uint64_t, " %lu",
-                     GOMP_loop_ull_static_init,
+                     hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
                      hierarchy_init_workshare_hetprobe_ull)
@@ -510,10 +513,10 @@ void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
                                                                               \
   switch(thr->ts.work_share->sched)                                           \
   {                                                                           \
-  case GFS_STATIC: /* Fall through */                                         \
+  case GFS_STATIC: hierarchy_loop_end(thr->popcorn_nid, false); break;        \
   case GFS_DYNAMIC: GOMP_loop_end(); break;                                   \
   case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
-  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid); break;             \
+  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, true); break;       \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
   }                                                                           \

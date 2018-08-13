@@ -215,6 +215,28 @@ bool hierarchy_reduce(int nid,
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
+ * Initialize work-sharing construct for static scheduling.
+ *
+ * @param nid the node for which to initialize a work-sharing construct
+ * @param lb the lower bound
+ * @param ub the upper bound
+ * @param incr the increment
+ * @param chunk the chunk size
+ */
+void hierarchy_init_workshare_static(int nid,
+                                     long long lb,
+                                     long long ub,
+                                     long long incr,
+                                     long long chunk);
+
+/* Same as above but with unsigned long long types */
+void hierarchy_init_workshare_static_ull(int nid,
+                                         unsigned long long lb,
+                                         unsigned long long ub,
+                                         unsigned long long incr,
+                                         unsigned long long chunk);
+
+/*
  * Initialize work-sharing construct using the hierarchical dynamic scheduler
  * for the node.
  *
@@ -313,8 +335,10 @@ bool hierarchy_last_ull(unsigned long long end);
  * Clean up after a work-sharing region, freeing all resources.
  *
  * @param nid the node for which to (potentially) clean up resources
+ * @param global whether the global workshare was used (dynamic, hetprobe
+ *               scheduler) or not (static scheduler)
  */
-void hierarchy_loop_end(int nid);
+void hierarchy_loop_end(int nid, bool global);
 
 #endif /* _HIERARCHY_H */
 
