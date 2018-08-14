@@ -139,6 +139,7 @@ enum gomp_schedule_type
   GFS_GUIDED,
   GFS_AUTO,
   GFS_HETPROBE,
+  GFS_HIERARCHY_STATIC,
   GFS_HIERARCHY_DYNAMIC,
 };
 

@@ -473,7 +473,7 @@ void hierarchy_init_workshare_static(int nid,
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
-    loop_init(ws, lb, ub, incr, GFS_STATIC, chunk, nid);
+    loop_init(ws, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
@@ -493,7 +493,7 @@ void hierarchy_init_workshare_static_ull(int nid,
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
-    loop_init_ull(ws, true, lb, ub, incr, GFS_STATIC, chunk, nid);
+    loop_init_ull(ws, true, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;

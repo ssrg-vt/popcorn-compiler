@@ -391,6 +391,7 @@ static inline enum sched_type select_runtime_schedule()
  */
 #define __kmpc_dispatch_init(NAME, TYPE, SPEC,                                \
                              STATIC_INIT,                                     \
+                             STATIC_HIERARCHY_INIT,                           \
                              DYN_INIT,                                        \
                              DYN_HIERARCHY_INIT,                              \
                              HETPROBE_INIT)                                   \
@@ -425,6 +426,11 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
     schedule = kmp_sch_dynamic_chunked;                                       \
     DEBUG("Single-thread team, assigning all iterations\n");                  \
   }                                                                           \
+  else if((schedule == kmp_sch_static || schedule == kmp_sch_static_chunked)  \
+          && distributed) {                                                   \
+    schedule = kmp_sch_static_hierarchy;                                      \
+    DEBUG_ONE("Switching to hierarchical static scheduler\n");                \
+  }                                                                           \
   else if(schedule == kmp_sch_dynamic_chunked && distributed) {               \
     schedule = kmp_sch_dynamic_chunked_hierarchy;                             \
     DEBUG_ONE("Switching to hierarchical dynamic scheduler\n");               \
@@ -450,7 +456,11 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   {                                                                           \
   case kmp_sch_static: /* Fall through */                                     \
   case kmp_sch_static_chunked:                                                \
-    STATIC_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);                     \
+    STATIC_INIT(lb, ub + 1, st, chunk);                                       \
+    thr->ts.static_trip = 0;                                                  \
+    break;                                                                    \
+  case kmp_sch_static_hierarchy:                                              \
+    STATIC_HIERARCHY_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);           \
     thr->ts.static_trip = 0;                                                  \
     break;                                                                    \
   case kmp_sch_dynamic_chunked:                                               \
@@ -479,21 +489,25 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
 }
 
 __kmpc_dispatch_init(4, int32_t, " %d",
+                     GOMP_loop_static_init,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(4u, uint32_t, " %u",
+                     GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
                      hierarchy_init_workshare_hetprobe_ull)
 __kmpc_dispatch_init(8, int64_t, " %ld",
+                     GOMP_loop_static_init,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(8u, uint64_t, " %lu",
+                     GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
@@ -513,8 +527,11 @@ void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
                                                                               \
   switch(thr->ts.work_share->sched)                                           \
   {                                                                           \
-  case GFS_STATIC: hierarchy_loop_end(thr->popcorn_nid, false); break;        \
+  case GFS_STATIC: /* Fall through */                                         \
   case GFS_DYNAMIC: GOMP_loop_end(); break;                                   \
+  case GFS_HIERARCHY_STATIC:                                                  \
+    hierarchy_loop_end(thr->popcorn_nid, false);                              \
+    break;                                                                    \
   case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
   case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, true); break;       \
   default:                                                                    \
@@ -558,7 +575,8 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
                                                                               \
   switch(ws->sched)                                                           \
   {                                                                           \
-  case GFS_STATIC: {                                                          \
+  case GFS_STATIC: /* Fall through */                                         \
+  case GFS_HIERARCHY_STATIC: {                                                \
     if(thr->ts.static_trip)                                                   \
     {                                                                         \
       istart = iend = 0;                                                      \

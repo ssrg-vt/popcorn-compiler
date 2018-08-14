@@ -1263,6 +1263,9 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
     case GFS_HIERARCHY_DYNAMIC:
       fputs ("DYNAMIC (hierarchy)", stderr);
       break;
+    case GFS_HIERARCHY_STATIC:
+      fputs ("STATIC (hierarchy)", stderr);
+      break;
     case GFS_HETPROBE:
       fputs ("HETPROBE", stderr);
       break;

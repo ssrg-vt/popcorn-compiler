@@ -33,7 +33,8 @@ enum sched_type {
   kmp_sch_runtime = 37, /* runtime chooses from parsing OMP_SCHEDULE */
   kmp_sch_hetprobe = 39, /* probe heterogeneous machines */
   kmp_sch_default = kmp_sch_static, /* default scheduling algorithm */
-  kmp_sch_dynamic_chunked_hierarchy = 128 /* hierarhical dynamic chunked algorithm */
+  kmp_sch_static_hierarchy = 128, /* hierarhical static algorithm */
+  kmp_sch_dynamic_chunked_hierarchy = 129 /* hierarhical dynamic chunked algorithm */
 };
 
 /* Return whether compiler generated fast reduction method for reduce clause. */
