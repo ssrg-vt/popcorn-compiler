@@ -60,6 +60,7 @@
 #define SET_FP_REGS \
     SET_FP_REGS_NOCLOBBER_AARCH64(*(struct regset_aarch64 *)data_ptr->regset)
 
+#if 0
 #define MIGRATE \
     asm volatile ("mov w0, %w0;" \
                   "mov x1, %1;" \
@@ -74,6 +75,10 @@
                   : /* Clobbered */ \
                   "w0", "x1", "x8" \
     )
+#endif
+
+#include <hermit/migration.h>
+#define MIGRATE hermit_force_migration()
 
 #endif
 

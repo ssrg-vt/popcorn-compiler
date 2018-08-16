@@ -467,6 +467,36 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
 
     os.chdir(cur_dir)
 
+    #=====================================================
+    # CONFIGURE & INSTALL MIGRATION LIBRARY
+    #=====================================================
+    os.chdir(os.path.join(base_path, 'lib/migration'))
+
+    if not st_debug:
+        flags = ''
+    else:
+        flags = 'type=debug'
+
+    print('Making libmigrate...')
+    try:
+        print('Running Make...')
+        if flags != '':
+            rv = subprocess.check_call(['make', flags, '-j',
+                                        str(num_threads),
+                                        'POPCORN={}'.format(install_path)])
+        else:
+            rv = subprocess.check_call(['make', '-j', str(num_threads),
+                                        'POPCORN={}'.format(install_path)])
+        rv = subprocess.check_call(['make', 'install',
+                                    'POPCORN={}'.format(install_path)])
+    except Exception as e:
+        sys.exit('Could not run Make ({})!'.format(e))
+    else:
+        if rv != 0:
+            sys.exit('Make failed.')
+
+    os.chdir(cur_dir)
+
 def install_tools(base_path, install_path, num_threads):
     cur_dir = os.getcwd()
 

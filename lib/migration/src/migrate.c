@@ -2,11 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <assert.h>
-#include <sys/syscall.h>
 #include <pthread.h>
 #include <stack_transform.h>
-#include <sys/prctl.h>
 #include "migrate.h"
 #include "config.h"
 #include "arch.h"
@@ -26,6 +23,16 @@ struct popcorn_thread_status {
 	int peer_nid;
 	int peer_pid;
 } status;
+
+struct node_info {
+	unsigned int status;
+	int arch;
+	int distance;
+};
+
+/* Hermit syscalls */
+extern int sys_get_node_info(int *origin_nid, struct node_info* ni);
+extern int sys_get_thread_status(struct popcorn_thread_status *status);
 
 #if _ENV_SELECT_MIGRATE == 1
 
@@ -132,7 +139,7 @@ static inline int do_migrate(void *addr)
 static inline int do_migrate(void __attribute__((unused)) *fn)
 {
 	struct popcorn_thread_status status;
-	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
+	if(sys_get_thread_status(&status)) return -1;
 
 	return status.proposed_nid;
 }
@@ -145,17 +152,13 @@ static void __attribute__((constructor)) __init_nodes_info(void)
 {
 	int ret;
 	int origin_nid = -1;
-	struct node_info {
-		unsigned int status;
-		int arch;
-		int distance;
-	} ni[MAX_POPCORN_NODES];
+	struct node_info ni[MAX_POPCORN_NODES];
 
 	for (int i = 0; i < MAX_POPCORN_NODES; i++) {
 		archs[i] = ARCH_UNKNOWN;
 	}
 
-	ret = syscall(SYSCALL_GET_NODE_INFO, &origin_nid, ni);
+	ret = sys_get_node_info(&origin_nid, ni);
 	if (ret) {
 		fprintf(stderr, "Cannot retrieve Popcorn node information, %d\n", ret);
 		return;
@@ -170,7 +173,7 @@ static void __attribute__((constructor)) __init_nodes_info(void)
 int current_nid(void)
 {
 	struct popcorn_thread_status status;
-	if (syscall(SYSCALL_GET_THREAD_STATUS, &status)) return -1;
+	if(sys_get_thread_status(&status)) return -1;
 
 	return status.current_nid;
 }
@@ -182,7 +185,6 @@ enum arch current_arch(void)
 
 	return archs[nid];
 }
-
 
 /* Data needed post-migration. */
 struct shim_data {
@@ -203,6 +205,8 @@ static volatile int __hold = 1;
 static void* __attribute__((noinline))
 get_call_site() { return __builtin_return_address(0); };
 
+struct shim_data *hermit_shim_data;
+
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
 // saved by the pthread library.
@@ -210,7 +214,8 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
                                            void *callback_data)
 {
   struct shim_data data;
-  struct shim_data *data_ptr = *pthread_migrate_args();
+  // Pierre FIXME: single-threaded only
+  struct shim_data *data_ptr = hermit_shim_data;
 
   if(data_ptr) // Post-migration
   {
@@ -220,7 +225,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 #endif
 
     if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
-    *pthread_migrate_args() = NULL;
+	hermit_shim_data = NULL;
 
     // Hack: the kernel can't set floating-point registers, so we have to
     // manually copy them over in userspace
@@ -245,7 +250,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
     data.callback = callback;
     data.callback_data = callback_data;
     data.regset = &regs_dst;
-    *pthread_migrate_args() = &data;
+	hermit_shim_data = &data;
 
 #if _TIME_REWRITE == 1
     unsigned long long start, end;
@@ -271,11 +276,15 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
         sp = (unsigned long)regs_dst.powerpc.r[1];
         bp = (unsigned long)regs_dst.powerpc.r[31];
       } else {
-        assert(0 && "Unsupported architecture!");
+        // assert(0 && "Unsupported architecture!");
+		fprintf(stderr, "Unsupported architecture!\n");
+		__builtin_trap();
       }
 
       MIGRATE;
-      assert(0 && "Couldn't migrate!");
+      // assert(0 && "Couldn't migrate!");
+	  fprintf(stderr, "Couldn't migrate!\n");
+	  __builtin_trap();
     }
   }
 }

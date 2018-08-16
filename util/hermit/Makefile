@@ -52,7 +52,7 @@ ADD_OBJS_ARM=$(PH_PREFIX_ARM)/lib/crt0.o \
 		 $(PH_PREFIX_ARM)/lib/crtn.o
 
 # Libraries inclusions (for both x86 and arm)
-LIBS=-lhermit -lstack-transform -lelf -lm -lc -lgcc
+LIBS=-lmigrate -lstack-transform -lhermit -lelf -lm -lc -lgcc
 
 # Kernel library
 KERNEL_X86=$(PH_PREFIX_X86)/lib/libhermit.a
