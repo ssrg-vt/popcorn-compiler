@@ -5,12 +5,12 @@
  * Date: 11/11/2015
  */
 
+#include <libelf/gelf.h>
+
 #include "stack_transform.h"
 #include "definitions.h"
 #include "arch_regs.h"
 #include "util.h"
-
-#include <my_private.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // (Private) Utility functions
@@ -62,129 +62,9 @@ properties_t get_properties(uint16_t arch)
   }
 }
 
-/*Returns 1 if it can find the desired string*/
-int match_string(Elf* e, char* name, int *str_index)
-{
-	Elf64_Ehdr e_hdr;
-	Elf64_Shdr s_hdr;
- 	char *stringTable;
-	char entryStr[100];
-
- 	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
-        	printf("lseek failed\n");
-        	close(e->e_fd);
-        	return -1;
-  	}
-
-  	if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
-        	printf("Read Failed\n");
-        	close(e->e_fd);
-        	return -1;
-  	}
-
-	if(lseek(e->e_fd, e_hdr.e_shoff + e_hdr.e_shentsize*e_hdr.e_shstrndx, SEEK_SET) < 0){
-		printf("lseek failed\n");
-		close(e->e_fd);
-		return -1;
-	}
-
-	if(read(e->e_fd, (void*)&s_hdr, sizeof(Elf64_Shdr)) < 0){
-		printf("Read Failed\n");
-		close(e->e_fd);
-		return -1;
-	}
-	//got string header
-	if(e_hdr.e_shstrndx==SHN_UNDEF)
-		return -1;
-
-        if(lseek(e->e_fd, s_hdr.sh_offset, SEEK_SET) < 0){
-                printf("lseek failed\n");
-                close(e->e_fd);
-                return -1;
-        }
-	stringTable = (char*)malloc(s_hdr.sh_size);
-        if(!stringTable)
-	{
-		printf("Couldn't allocate memories\n");
-		return -1;
-	}
-
-        if(read(e->e_fd, (void*)stringTable, sizeof(char)*s_hdr.sh_size) < 0){
-                printf("Read Failed\n");
-                close(e->e_fd);
-                return -1;
-        }
-
-	for(int i=0, j=0; i<s_hdr.sh_size; i++)
-	{
-		if(stringTable[i] == '\0')
-		{
-			entryStr[j] = '\0';
-			if(!strcmp(entryStr, name))
-			{
-				*str_index = i-j;
-//				free(stringTable);
-				return 1;
-			}
-			j = 0;
-		}
-		else
-		{
-			entryStr[j] = stringTable[i];
-			j++; 
-		}
-	}		
-//	free(stringTable);
-	return -1;
-}
-
-Elf64_Shdr* grep_e_header(Elf *e, int index)
-{
-	Elf64_Ehdr e_hdr;
-	Elf64_Shdr *s_hdr = (Elf64_Shdr*)malloc(sizeof(Elf64_Shdr));
-
-	if(lseek(e->e_fd, 0, SEEK_SET) < 0){
-                 printf("lseek failed\n");
-                 close(e->e_fd);
-                 return NULL;
-         }
-
-        if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
-                printf("Read Failed\n");
-                close(e->e_fd);
-                return NULL;
-        }
- for(int i=0; i<e_hdr.e_shnum; i++)
-{	
-	if(lseek(e->e_fd, e_hdr.e_shoff + e_hdr.e_shentsize*i, SEEK_SET) < 0){
-                 printf("lseek failed\n");
-                 close(e->e_fd);
-                 return NULL;
-         }
-
-        if(read(e->e_fd, (void*)s_hdr, sizeof(Elf64_Ehdr)) < 0){
-                printf("Read Failed\n");
-                close(e->e_fd);
-                return NULL;
-        }
-	if(s_hdr->sh_name == index)	
-	{
-		if(s_hdr->sh_type == SHT_NULL)
-		{
-			printf("SHT_NULL\n");
-			return NULL;
-		}
-		return s_hdr;
-	}
-}
-	printf("Index Not found\n");
-	return NULL; 
-}
-
 /*
  * Search for and return ELF section named SEC.
  */
-/*
 Elf_Scn* get_section(Elf* e, const char* sec)
 {
   size_t shdrstrndx = 0;
@@ -203,129 +83,32 @@ Elf_Scn* get_section(Elf* e, const char* sec)
   }
   return scn; // NULL if not found
 }
-*/
-/*
- * Search for and return ELF section named SEC.
- */
-Elf64_Shdr* my_get_section(Elf* e, const char* sec)
-{
-  size_t shdrstrndx = 0;
-  Elf64_Ehdr e_hdr;
-  Elf64_Shdr *s_hdr;
-  int str_index = 0;
-
-  ASSERT(sec, "invalid arguments to get_section()\n");
-  
- // if(elf_getshdrstrndx(e, &shdrstrndx)) return NULL;
-  if(lseek(e->e_fd, 0, SEEK_SET) < 0)
-  {
-        printf("lseek failed\n");
-        close(e->e_fd);
-    	return NULL;
-  }  
-
-  if(read(e->e_fd, (void*)&e_hdr, sizeof(Elf64_Ehdr)) < 0){
-        printf("Read Failed\n");
-        close(e->e_fd);
-	return NULL;
-  }
-  shdrstrndx = e_hdr.e_shstrndx;
- 
-  if(match_string(e, (char*)sec, &str_index) < 0)
-	return NULL;
-  
-  s_hdr = grep_e_header(e, str_index);
-  return s_hdr; // NULL if not found
-
-}
 
 /*
  * Get the number of entries in section SEC.
  */
-/*
 int64_t get_num_entries(Elf* e, const char* sec)
 {
   Elf_Scn* scn;
   GElf_Shdr shdr;
-  
+
   if(!(scn = get_section(e, sec))) return -1;
   if(gelf_getshdr(scn, &shdr) != &shdr) return -1;
   return shdr.sh_entsize ? (shdr.sh_size / shdr.sh_entsize) : -1;
-}
-*/
-
-int64_t my_get_num_entries(Elf* e, const char* sec)
-{
-  Elf64_Shdr *shdr;
-  int64_t i;
-  
-  if(!(shdr = my_get_section(e, sec)))
-	return -1;
-
-  i = shdr->sh_entsize ? (shdr->sh_size / shdr->sh_entsize) : -1;
-  free(shdr);
-  return i;
 }
 
 /*
  * Return the start of the section SEC in Elf data E.
  */
-/*
 const void* get_section_data(Elf* e, const char* sec)
 {
   Elf_Scn* scn;
   Elf_Data* data = NULL;
-  GElf_Shdr shdr;
 
   if(!(scn = get_section(e, sec))) return NULL;
-  if(gelf_getshdr(scn, &shdr) != &shdr) return NULL;
   if(!(data = elf_getdata(scn, data))) return NULL;
-  
   return data->d_buf;
 }
-*/
-const void* my_get_section_data(Elf* e, const char* sec)
-{   
-  Elf64_Shdr *shdr;
-
-  Elf_Data *data = (Elf_Data*)malloc(sizeof(Elf_Data));  
-  if(data == NULL)
-  {
-	printf("Couldn't allocate memory for Data\n");
-	return NULL;	
-  }
-
-  shdr = my_get_section(e, sec);
-  if(shdr == NULL)
-  {
-	printf("No section found\n");
-	return NULL;
-  }
-
-  data->d_buf = malloc(shdr->sh_size);
-  if(data->d_buf == NULL)
-  {
-	printf("Couldn't allocate memory for data->buf\n");
-	return NULL;	
-  }
-
-  for(int i=0; i<shdr->sh_size; i++)
-  	*((int*)(data->d_buf + i)) = 0;
-  
-  if(lseek(e->e_fd, shdr->sh_offset, SEEK_SET) < 0){
-        printf("lseek failed\n");
-        close(e->e_fd);
-        return NULL;
-  }
-
-  if(read(e->e_fd, (void*)data->d_buf, shdr->sh_size) < 0){
-        printf("Read Failed\n");
-        close(e->e_fd);
-        return NULL;
-  }
-
-  return data->d_buf;
-} 
 
 /*
  * Search through call site entries for the specified return address.

@@ -14,8 +14,6 @@
 #include "unwind.h"
 #include "util.h"
 
-#include <my_begin.h>
-
 #ifdef _LOG
 /* Log file descriptor */
 FILE* __log = NULL;
@@ -66,55 +64,33 @@ __st_dtor(void)
 st_handle st_init(const char* fn)
 {
   const char* id;
-  //Elf64_Ehdr* ehdr;
-  struct Elf64_Ehdr e_hdr;
+  Elf64_Ehdr* ehdr;
   st_handle handle;
 
   if(!fn) goto return_null;
 
   TIMER_START(st_init);
   ST_INFO("Initializing handle for '%s'\n", fn);
-  
+
   if(!(handle = (st_handle)malloc(sizeof(struct _st_handle)))) goto return_null;
   handle->fn = fn;
 
   /* Initialize libelf data */
-//  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
-  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) 
-  {
-	printf("Couldn't open file");
-	goto free_handle;
-  }
+  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
+  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
 
-  if(read(handle->fd, (void*)&e_hdr, sizeof(struct Elf64_Ehdr)) < 0){
-        printf("Read Failed\n");
-        goto close_file;
-  }
-
-  if(lseek(handle->fd, 0, SEEK_SET) < 0){
-	printf("lseek failed\n");
-	goto close_file;
-  }
-
-//  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
-  if(!(handle->elf = my_read_elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
-
-//  handle->elf->e_ehdr = &e_hdr;
-//  printf("Handle = %d\t machine = %d\n", handle->fd, ((Elf64_Ehdr*)(handle->elf->e_ehdr))->e_machine);
   /* Get architecture-specific information */
- // if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
-  handle->arch = e_hdr.e_machine;
-  //printf("shdrstrndx -> %d\n", e_hdr.e_shstrndx);
- // if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
-  id = (char*) e_hdr.e_ident;
+  if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;
+  handle->arch = ehdr->e_machine;
+  if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
   /* Read unwinding addresses */
-  handle->unwind_addr_count = my_get_num_entries(handle->elf,
+  handle->unwind_addr_count = get_num_entries(handle->elf,
                                               SECTION_ST_UNWIND_ADDR);
   if(handle->unwind_addr_count > 0)
   {
-    handle->unwind_addrs = my_get_section_data(handle->elf,
+    handle->unwind_addrs = get_section_data(handle->elf,
                                             SECTION_ST_UNWIND_ADDR);
     if(!handle->unwind_addrs) goto close_elf;
     ST_INFO("Found %lu per-function unwinding metadata entries\n",
@@ -127,10 +103,10 @@ st_handle st_init(const char* fn)
   }
 
   /* Read unwinding information */
-  handle->unwind_count = my_get_num_entries(handle->elf, SECTION_ST_UNWIND);
+  handle->unwind_count = get_num_entries(handle->elf, SECTION_ST_UNWIND);
   if(handle->unwind_count > 0)
   {
-    handle->unwind_locs = my_get_section_data(handle->elf, SECTION_ST_UNWIND);
+    handle->unwind_locs = get_section_data(handle->elf, SECTION_ST_UNWIND);
     if(!handle->unwind_locs ) goto close_elf;
     ST_INFO("Found %lu callee-saved frame unwinding entries\n",
             handle->unwind_count);
@@ -142,11 +118,11 @@ st_handle st_init(const char* fn)
   }
 
   /* Read call site metadata */
-  handle->sites_count = my_get_num_entries(handle->elf, SECTION_ST_ID);
+  handle->sites_count = get_num_entries(handle->elf, SECTION_ST_ID);
   if(handle->sites_count > 0)
   {
-    handle->sites_id = my_get_section_data(handle->elf, SECTION_ST_ID);
-    handle->sites_addr = my_get_section_data(handle->elf, SECTION_ST_ADDR);
+    handle->sites_id = get_section_data(handle->elf, SECTION_ST_ID);
+    handle->sites_addr = get_section_data(handle->elf, SECTION_ST_ADDR);
     if(!handle->sites_id || !handle->sites_addr) goto close_elf;
     ST_INFO("Found %lu call sites\n", handle->sites_count);
   }
@@ -157,10 +133,10 @@ st_handle st_init(const char* fn)
   }
 
   /* Read live value location records */
-  handle->live_vals_count = my_get_num_entries(handle->elf, SECTION_ST_LIVE);
+  handle->live_vals_count = get_num_entries(handle->elf, SECTION_ST_LIVE);
   if(handle->live_vals_count > 0)
   {
-    handle->live_vals = my_get_section_data(handle->elf, SECTION_ST_LIVE);
+    handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
     if(!handle->live_vals) goto close_elf;
     ST_INFO("Found %lu live value location records\n",
             handle->live_vals_count);
@@ -174,11 +150,11 @@ st_handle st_init(const char* fn)
   /* Read architecture-specific live value location records */
   // Note: unlike other sections, we may not have any architecture-specific
   // live value records
-  handle->arch_live_vals_count = my_get_num_entries(handle->elf,
+  handle->arch_live_vals_count = get_num_entries(handle->elf,
                                                  SECTION_ST_ARCH_LIVE);
   if(handle->arch_live_vals_count > 0)
   {
-    handle->arch_live_vals = my_get_section_data(handle->elf,
+    handle->arch_live_vals = get_section_data(handle->elf,
                                               SECTION_ST_ARCH_LIVE);
     if(!handle->arch_live_vals) goto close_elf;
     ST_INFO("Found %lu architecture-specific live value location records\n",
@@ -196,9 +172,7 @@ st_handle st_init(const char* fn)
   return handle;
 
 close_elf:
-//  elf_end(handle->elf);
-  free(handle->elf->e_data);
-  free(handle->elf);
+  elf_end(handle->elf);
 close_file:
   close(handle->fd);
 free_handle:
@@ -218,9 +192,7 @@ void st_destroy(st_handle handle)
   TIMER_START(st_destroy);
   ST_INFO("Cleaning up handle for '%s'\n", handle->fn);
 
-  //elf_end(handle->elf);
-  free(handle->elf->e_data);
-  free(handle->elf);
+  elf_end(handle->elf);
   close(handle->fd);
   free(handle);
 

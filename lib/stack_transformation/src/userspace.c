@@ -11,8 +11,7 @@
 #endif
 #include <unistd.h>
 #include <sys/resource.h>
-#include <stdio.h>
-//#include <sys/syscall.h>
+#include <sys/syscall.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
@@ -20,7 +19,6 @@
 #include "arch/x86_64/regs.h"
 #include "arch/aarch64/regs.h"
 
-#include <hermit/syscall.h>
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
 ///////////////////////////////////////////////////////////////////////////////
@@ -102,12 +100,12 @@ void __st_userspace_ctor(void)
   }
 
   /* Prepare libELF. */
-/*  if(elf_version(EV_CURRENT) == EV_NONE)
+  if(elf_version(EV_CURRENT) == EV_NONE)
   {
     ST_WARN("could not prepare libELF for reading binary\n");
     return;
   }
-*/
+
   /*
    * Initialize ST handles - tries the following approaches to finding the
    * binaries:
@@ -273,9 +271,7 @@ static bool prep_stack(void)
 {
   long ret;
   size_t offset;
-//  struct rlimit rlim;
-  int rlimit;
-
+  struct rlimit rlim;
 #if _TLS_IMPL == PTHREAD_TLS
   stack_bounds bounds;
   stack_bounds* bounds_ptr;
@@ -288,9 +284,8 @@ static bool prep_stack(void)
 #endif
 
   if(!get_main_stack(&bounds)) return false;
-//  if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
-  rlimit = sys_stacksize();
-//  if(!ret)
+  if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
+  if(!ret)
   {
     // Note: the Linux kernel grows the stack automatically, but some versions
     // check to ensure that the stack pointer is near the page being accessed.
@@ -299,8 +294,7 @@ static bool prep_stack(void)
     //   2. Move stack pointer to lowest stack address (according to rlimit)
     //   3. Touch the page using the stack pointer
     //   4. Restore the original stack pointer
-//    bounds.low = bounds.high - rlim.rlim_cur;
-    bounds.low = bounds.high - rlimit;
+    bounds.low = bounds.high - rlim.rlim_cur;
 #ifdef __aarch64__
     asm volatile("mov x27, sp;"
                  "mov sp, %0;"
@@ -355,7 +349,7 @@ static bool get_main_stack(stack_bounds* bounds)
 
   bounds->high = NULL;
   bounds->low = NULL;
-/*
+
   if(snprintf(proc_fn, BUF_SIZE, "/proc/%d/maps", getpid()) < 0) return false;
   if(!(proc_fp = fopen(proc_fn, "r"))) return false;
   if(!(lineptr = (char*)malloc(BUF_SIZE * sizeof(char)))) return false;
@@ -372,9 +366,8 @@ static bool get_main_stack(stack_bounds* bounds)
     }
   }
   free(lineptr);
-  fclose(proc_fp);*/
-  bounds->low = sys_stackaddr();
-  bounds->high = bounds->low + sys_stacksize();
+  fclose(proc_fp);
+
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
 }
@@ -382,18 +375,16 @@ static bool get_main_stack(stack_bounds* bounds)
 /* Read stack information for cloned threads from the pthread library. */
 static bool get_thread_stack(stack_bounds* bounds)
 {
-//  pthread_attr_t attr;
+  pthread_attr_t attr;
   size_t stack_size;
-//  int ret;
+  int ret;
   bool retval;
-/*
+
   ret = pthread_getattr_np(pthread_self(), &attr);
   ret |= pthread_attr_getstack(&attr, &bounds->low, &stack_size);
   if(ret == 0)
-  {*/
+  {
     // TODO is there any important data stored above muslc/start's stack frame?
-    stack_size = sys_stacksize();
-    bounds->low = sys_stackaddr();
     bounds->high = bounds->low + stack_size;
     if(stack_size != MAX_STACK_SIZE)
     {
@@ -402,14 +393,14 @@ static bool get_thread_stack(stack_bounds* bounds)
       bounds->low = bounds->high - MAX_STACK_SIZE;
     }
     retval = true;
-/*  }
+  }
   else
   {
     bounds->high = 0;
     bounds->low = 0;
     ST_WARN("could not get stack limits\n");
     retval = false;
-  }*/
+  }
   ST_INFO("Thread stack limits: %p -> %p\n", bounds->low, bounds->high);
   return retval;
 }
@@ -459,7 +450,7 @@ static int userspace_rewrite_internal(void* sp,
     return 1;
   }
 
-  //ST_INFO("Thread %ld beginning re-write\n", syscall(SYS_gettid));
+  ST_INFO("Thread %ld beginning re-write\n", syscall(SYS_gettid));
 
   /* Divide stack into two halves. */
   stack_a = bounds.high;
