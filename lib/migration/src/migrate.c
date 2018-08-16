@@ -205,7 +205,7 @@ static volatile int __hold = 1;
 static void* __attribute__((noinline))
 get_call_site() { return __builtin_return_address(0); };
 
-struct shim_data *hermit_shim_data;
+struct shim_data *hermit_shim_data = NULL;
 
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
