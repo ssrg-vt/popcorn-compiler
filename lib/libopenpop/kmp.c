@@ -376,7 +376,37 @@ static inline enum sched_type select_runtime_schedule()
 }
 
 /* Percent of loop iterations to spend on probing */
-#define PROBE_PERCENT 0.1
+float popcorn_probe_percent;
+
+static inline long calc_chunk_size_long(long lb,
+                                        long ub,
+                                        long stride,
+                                        int nthreads)
+{
+  long total_trips, chunk;
+  if(stride == 1) total_trips = (ub - lb) + 1;
+  else if(stride == -1) total_trips = (lb - ub) + 1;
+  else if(stride > 1) total_trips = ((ub - lb) / stride) + 1;
+  else total_trips = ((lb - ub) / (-stride)) + 1;
+  chunk = ((float)total_trips * popcorn_probe_percent) / nthreads;
+  if(chunk == 0) chunk = 1;
+  return chunk;
+}
+
+static inline unsigned long long calc_chunk_size_ull(unsigned long long lb,
+                                                     unsigned long long ub,
+                                                     unsigned long long stride,
+                                                     int nthreads)
+{
+  unsigned long long total_trips, chunk;
+  if(stride == 1) total_trips = (ub - lb) + 1;
+  else if(stride == -1) total_trips = (lb - ub) + 1;
+  else if(stride > 1) total_trips = ((ub - lb) / stride) + 1;
+  else total_trips = ((lb - ub) / (-stride)) + 1;
+  chunk = ((float)total_trips * popcorn_probe_percent) / nthreads;
+  if(chunk == 0) chunk = 1;
+  return chunk;
+}
 
 /*
  * Initialize a dynamic work-sharing construct using a given lower bound, upper
@@ -389,7 +419,7 @@ static inline enum sched_type select_runtime_schedule()
  * @param st the stride
  * @param chunk the chunk size
  */
-#define __kmpc_dispatch_init(NAME, TYPE, SPEC,                                \
+#define __kmpc_dispatch_init(NAME, TYPE, SPEC, GOMP_TYPE,                     \
                              STATIC_INIT,                                     \
                              STATIC_HIERARCHY_INIT,                           \
                              DYN_INIT,                                        \
@@ -407,7 +437,6 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   struct gomp_team *team = thr->ts.team;                                      \
   int nthreads = team ? team->nthreads : 1;                                   \
   bool distributed = popcorn_distributed();                                   \
-  TYPE total_trips;                                                           \
                                                                               \
   DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d"SPEC SPEC SPEC SPEC"\n",      \
         loc->psource, gtid, schedule, lb, ub, st, chunk);                     \
@@ -467,20 +496,20 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
     DYN_INIT(lb, ub + 1, st, chunk);                                          \
     break;                                                                    \
   case kmp_sch_dynamic_chunked_hierarchy:                                     \
+    if(chunk <= 1) /* Auto-select dynamic chunk size */                       \
+    {                                                                         \
+      chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
+      DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
+    }                                                                         \
     DYN_HIERARCHY_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);              \
     break;                                                                    \
   case kmp_sch_hetprobe:                                                      \
     if(chunk <= 1) /* Auto-select probe size */                               \
     {                                                                         \
-      if(st == 1) total_trips = (ub - lb) + 1;                                \
-      else if(st == -1) total_trips = (lb - ub) + 1;                          \
-      else if(st > 1) total_trips = ((ub - lb) / st) + 1;                     \
-      else total_trips = ((lb - ub) / (-st)) + 1;                             \
-      chunk = ((float)total_trips * 0.15) / nthreads;                         \
-      if(chunk == 0) chunk = 1;                                               \
+      chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
       DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
     }                                                                         \
-    HETPROBE_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);                   \
+    HETPROBE_INIT(thr->popcorn_nid, loc->psource, lb, ub + 1, st, chunk);     \
     break;                                                                    \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
@@ -488,25 +517,25 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   }                                                                           \
 }
 
-__kmpc_dispatch_init(4, int32_t, " %d",
+__kmpc_dispatch_init(4, int32_t, " %d", long,
                      GOMP_loop_static_init,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
-__kmpc_dispatch_init(4u, uint32_t, " %u",
+__kmpc_dispatch_init(4u, uint32_t, " %u", ull,
                      GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
                      hierarchy_init_workshare_hetprobe_ull)
-__kmpc_dispatch_init(8, int64_t, " %ld",
+__kmpc_dispatch_init(8, int64_t, " %ld", long,
                      GOMP_loop_static_init,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
                      hierarchy_init_workshare_hetprobe)
-__kmpc_dispatch_init(8u, uint64_t, " %lu",
+__kmpc_dispatch_init(8u, uint64_t, " %lu", ull,
                      GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
@@ -606,7 +635,7 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
     *p_last = HIERARCHY_LAST(iend);                                           \
     break;                                                                    \
   case GFS_HETPROBE:                                                          \
-    ret = HETPROBE_NEXT(nid, &istart, &iend);                                 \
+    ret = HETPROBE_NEXT(nid, loc->psource, &istart, &iend);                   \
     *p_last = HIERARCHY_LAST(iend);                                           \
     break;                                                                    \
   default:                                                                    \

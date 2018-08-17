@@ -231,6 +231,41 @@ parse_int (const char *name, int *pvalue, bool allow_zero)
   return true;
 }
 
+/* Parse a floating point environment variable.  Return true if one was
+   present and it was successfully parsed. */
+
+static bool
+parse_float (const char *name, float *pvalue)
+{
+  float value;
+  char *env, *end;
+
+  env = getenv (name);
+  if (!env)
+    return false;
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (*env == '\0')
+    return false;
+
+  errno = 0;
+  value = strtof (env, &end);
+  if (errno || end == env || value < 0.0)
+    {
+      gomp_error ("Invalid value for environment variable %s", name);
+      return false;
+    }
+
+  while (isspace ((unsigned char) *end))
+    ++end;
+  if (*end != '\0')
+    return false;
+
+  *pvalue = value;
+  return true;
+}
+
 /* Parse an unsigned long list environment variable.  Return true if one was
    present and it was successfully parsed.  */
 
@@ -1336,6 +1371,10 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
                popcorn_global.hybrid_barrier ? "TRUE" : "FALSE");
       fprintf (stderr, "  POPCORN_HYBRID_REDUCE = %s\n",
                popcorn_global.hybrid_reduce ? "TRUE" : "FALSE");
+      fprintf (stderr, "  POPCORN_PROBE_PERCENT = %.2f\n",
+               popcorn_probe_percent);
+      fprintf (stderr, "  POPCORN_MAX_PROBES = %lu\n",
+               popcorn_max_probes);
     }
 
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
@@ -1482,6 +1521,20 @@ initialize_env (void)
       parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
       popcorn_global.het_workshare =
         parse_het_workshare_var("POPCORN_HET_WORKSHARE");
+      if (!parse_float("POPCORN_PROBE_PERCENT", &popcorn_probe_percent))
+        popcorn_probe_percent = 0.1;
+      else
+        {
+          if (popcorn_probe_percent <= 0.0 || popcorn_probe_percent >= 1.0)
+            {
+              gomp_error("Invalid value for POPCORN_PROBE_PERCENT");
+              popcorn_probe_percent = 0.1;
+            }
+        }
+      if (!parse_unsigned_long("POPCORN_MAX_PROBES", &popcorn_max_probes,
+                               false))
+        popcorn_max_probes = UINT64_MAX;
+      popcorn_init_workshare_cache(128);
     }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task

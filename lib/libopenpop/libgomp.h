@@ -1200,7 +1200,14 @@ task_to_priority_node (enum priority_queue_type type,
 # include <debug/log.h>
 #endif
 
+/* kmp.c */
+extern float popcorn_probe_percent;
+
 /* hierarchy.c */
+extern size_t popcorn_max_probes;
+
+extern void popcorn_init_workshare_cache(size_t);
+
 extern bool popcorn_distributed ();
 extern bool popcorn_finished ();
 extern bool popcorn_hybrid_barrier ();

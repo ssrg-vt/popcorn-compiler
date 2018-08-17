@@ -21,6 +21,8 @@
 #define ALIGN_PAGE __attribute__((aligned(PAGESZ)))
 #define ALIGN_CACHE __attribute__((aligned(64)))
 
+typedef struct htab *htab_t;
+
 /* Hierarchical reduction configuration */
 #define REDUCTION_ENTRIES 48UL
 typedef union {
@@ -57,21 +59,16 @@ typedef struct {
 
   /* The compute power "rating" of cores on each node.  For example, an
      individual core on a node with a rating of 2 is considered to be twice as
-     fast as a core a node with a rating of 1.  Work-sharing directives adjust
-     how work is distributed according to the node's rating. */
-  // TODO the static het workshare uses unsigned longs but the hetprobe
-  // workshare uses floats...unify!
-  union {
-    struct {
-      unsigned long core_speed_rating[MAX_POPCORN_NODES];
-      unsigned long scaled_thread_range;
-    };
-
-    struct {
-      float core_speed_rating_float[MAX_POPCORN_NODES];
-      float scaled_thread_range_float;
-    };
+     fast as a core a node with a rating of 1, and will get twice as much work.
+     The static scheduler will adjust how work is distributed according to the
+     node's rating. */
+  struct {
+    unsigned long core_speed_rating[MAX_POPCORN_NODES];
+    unsigned long scaled_thread_range;
   };
+
+  /* Cache of computed core speeds from the probing scheduler */
+  htab_t workshare_cache;
 
   /* Global node leader selection */
   leader_select_t ALIGN_PAGE sync;
@@ -95,15 +92,9 @@ typedef struct {
   /* Global page faults during the probing period */
   unsigned long long page_faults;
 
-  /* Global remaining work after probing period */
   union {
-    long remaining;
-    unsigned long long remaining_ull;
-  };
-
-  union {
-    long split[MAX_POPCORN_NODES];
-    unsigned long split_ull[MAX_POPCORN_NODES];
+    long split[MAX_POPCORN_NODES+1];
+    unsigned long split_ull[MAX_POPCORN_NODES+1];
   };
 } global_info_t;
 
@@ -264,12 +255,14 @@ void hierarchy_init_workshare_dynamic_ull(int nid,
  * for the node.
  *
  * @param nid the node for which to initialize a work-sharing construct
+ * @param ident a pointer uniquely identifying the work-sharing region
  * @param lb the loop iteration range's lower bound
  * @param ub the loop iteration range's upper bound
  * @param st the stride
  * @param chunk the chunk size
  */
 void hierarchy_init_workshare_hetprobe(int nid,
+                                       const void *ident,
                                        long long lb,
                                        long long ub,
                                        long long incr,
@@ -277,6 +270,7 @@ void hierarchy_init_workshare_hetprobe(int nid,
 
 /* Same as above but with unsigned long long types */
 void hierarchy_init_workshare_hetprobe_ull(int nid,
+                                           const void *ident,
                                            unsigned long long lb,
                                            unsigned long long ub,
                                            unsigned long long incr,
@@ -308,14 +302,19 @@ bool hierarchy_next_dynamic_ull(int nid,
  * the node.
  *
  * @param nid the node for which to grab more work
+ * @param ident a pointer uniquely identifying the work-sharing region
  * @param start pointer to variable to be set to the start of range
  * @param end pointer to variable to be set to the end of range
  * @return true if there's work remaining to be performed
  */
-bool hierarchy_next_hetprobe(int nid, long *start, long *end);
+bool hierarchy_next_hetprobe(int nid,
+                             const void *ident,
+                             long *start,
+                             long *end);
 
 /* Same as above but with unsigned long long types */
 bool hierarchy_next_hetprobe_ull(int nid,
+                                 const void *ident,
                                  unsigned long long *start,
                                  unsigned long long *end);
 
