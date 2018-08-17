@@ -118,15 +118,19 @@ typedef struct {
     struct gomp_work_share *ws;
   };
 
+  /* Per-node timing information for the heterogeneous probing scheduler */
+  unsigned long long workshare_time;
+
   /* Per-node page fault counts read from '/proc/popcorn_stat'.  Counts are not
      kept consistent between nodes so when calculating page faults during probe
      period we *must* use the difference in fault counts from the same node. */
   unsigned long long page_faults;
 
-  char padding[PAGESZ - (2 * sizeof(leader_select_t)) - sizeof(gomp_barrier_t)
+  char padding[PAGESZ - (2 * sizeof(leader_select_t))
+                      - sizeof(gomp_barrier_t)
                       - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)
                       - sizeof(gomp_ptrlock_t)
-                      - (2 * sizeof(struct timespec))
+                      - sizeof(unsigned long long)
                       - sizeof(unsigned long long)];
 } node_info_t;
 

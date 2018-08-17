@@ -610,18 +610,13 @@ static char buf[2048];
 #define REMAINING_BUF( buf, ptr ) (sizeof(buf) - ((ptr) - (buf)))
 static void log_hetprobe_results(const char *ident, workshare_csr_t *csr)
 {
-  int i, max_node;
+  int i;
   unsigned long long max_time = 0;
   char *cur = buf;
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
-  {
     if(popcorn_global.workshare_time[i] > max_time)
-    {
       max_time = popcorn_global.workshare_time[i];
-      max_node = i;
-    }
-  }
 
   cur += snprintf(cur, sizeof(buf), "%s\nCSR:", ident);
   for(i = 0; i < MAX_POPCORN_NODES; i++)
@@ -819,11 +814,11 @@ void hierarchy_init_workshare_hetprobe(int nid,
     else
     {
       popcorn_node[nid].page_faults = get_page_faults();
-      popcorn_global.workshare_time[nid] = 0;
+      popcorn_node[nid].workshare_time = 0;
     }
 #else
     popcorn_node[nid].page_faults = get_page_faults();
-    popcorn_global.workshare_time[nid] = 0;
+    popcorn_node[nid].workshare_time = 0;
 #endif
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
@@ -900,11 +895,11 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
     else
     {
       popcorn_node[nid].page_faults = get_page_faults();
-      popcorn_global.workshare_time[nid] = 0;
+      popcorn_node[nid].workshare_time = 0;
     }
 #else
     popcorn_node[nid].page_faults = get_page_faults();
-    popcorn_global.workshare_time[nid] = 0;
+    popcorn_node[nid].workshare_time = 0;
 #endif
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
@@ -981,7 +976,8 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
   float scale, cur_rating;
 
   /* Calculate this node's average time & page faults */
-  popcorn_global.workshare_time[nid] /= popcorn_node[nid].sync.num;
+  popcorn_global.workshare_time[nid] =
+    popcorn_node[nid].workshare_time / popcorn_node[nid].sync.num;
   popcorn_node[nid].page_faults = get_page_faults() -
                                   popcorn_node[nid].page_faults;
 
@@ -1071,7 +1067,7 @@ bool hierarchy_next_hetprobe(int nid,
 
     /* Add this thread's elapsed time to the workshare */
     clock_gettime(CLOCK_MONOTONIC, &probe_end);
-    __atomic_add_fetch(&popcorn_global.workshare_time[nid],
+    __atomic_add_fetch(&popcorn_node[nid].workshare_time,
                        ELAPSED(thr->probe_start, probe_end) / 1000,
                        MEMMODEL_ACQ_REL);
 
@@ -1150,7 +1146,7 @@ bool hierarchy_next_hetprobe_ull(int nid,
 
     /* Add this thread's elapsed time to the workshare */
     clock_gettime(CLOCK_MONOTONIC, &probe_end);
-    __atomic_add_fetch(&popcorn_global.workshare_time[nid],
+    __atomic_add_fetch(&popcorn_node[nid].workshare_time,
                        ELAPSED(thr->probe_start, probe_end) / 1000,
                        MEMMODEL_ACQ_REL);
 
