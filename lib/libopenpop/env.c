@@ -1373,10 +1373,16 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
                popcorn_global.hybrid_reduce ? "TRUE" : "FALSE");
       fprintf (stderr, "  POPCORN_PROBE_PERCENT = %.2f\n",
                popcorn_probe_percent);
-      fprintf (stderr, "  POPCORN_MAX_PROBES = %lu\n",
-               popcorn_max_probes);
+      fprintf (stderr, "  POPCORN_MAX_PROBES = %lu\n", popcorn_max_probes);
       fprintf (stderr, "  POPCORN_LOG_STATISTICS = %d\n",
                popcorn_log_statistics);
+      if (popcorn_prime_region)
+        {
+          fprintf(stderr, "  POPCORN_PRIME_REGION = %s\n",
+                  popcorn_prime_region);
+          fprintf(stderr, "  POPCORN_PREFERRED_NODE = %d\n",
+                  popcorn_preferred_node);
+        }
     }
 
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
@@ -1539,6 +1545,9 @@ initialize_env (void)
       popcorn_log_statistics = false;
       parse_boolean("POPCORN_LOG_STATISTICS", &popcorn_log_statistics);
       popcorn_init_workshare_cache(128);
+      popcorn_prime_region = getenv("POPCORN_PRIME_REGION");
+      if (!parse_int("POPCORN_PREFERRED_NODE", &popcorn_preferred_node, true))
+        popcorn_preferred_node = 0;
     }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task

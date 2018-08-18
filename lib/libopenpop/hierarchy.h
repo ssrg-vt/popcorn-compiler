@@ -209,6 +209,12 @@ bool hierarchy_reduce(int nid,
 // Work sharing
 ///////////////////////////////////////////////////////////////////////////////
 
+extern bool popcorn_killswitch;
+
+/* TODO descriptions */
+void hierarchy_init_statistics(int nid);
+void hierarchy_log_statistics(int nid, const void *ident);
+
 /*
  * Initialize work-sharing construct for static scheduling.
  *

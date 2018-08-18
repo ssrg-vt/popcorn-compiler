@@ -1206,6 +1206,8 @@ extern float popcorn_probe_percent;
 /* hierarchy.c */
 extern bool popcorn_log_statistics;
 extern size_t popcorn_max_probes;
+extern const char *popcorn_prime_region;
+extern int popcorn_preferred_node;
 
 extern void popcorn_init_workshare_cache(size_t);
 

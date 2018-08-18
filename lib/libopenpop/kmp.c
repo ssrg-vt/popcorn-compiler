@@ -114,6 +114,21 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   popcorn_log("%s\t%p\t%lu\n", loc->psource, microtask, NS(end) - NS(start));
 #endif
 
+  // TODO hardcoded for 2 nodes
+  if(popcorn_killswitch)
+  {
+    if(popcorn_preferred_node == 0)
+    {
+      omp_set_num_threads(popcorn_global.threads_per_node[0]);
+      popcorn_global.threads_per_node[1] = 0;
+    }
+    else
+    {
+      omp_set_num_threads(popcorn_global.threads_per_node[1] + 1);
+      popcorn_global.threads_per_node[0] = 1;
+    }
+  }
+
   if(argc > 1) free(ctx);
   free(wrapper_data);
 }
@@ -289,6 +304,9 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   else if(incr > 1) total_trips = ((*pupper - *plower) / incr) + 1;           \
   else total_trips = ((*plower - *pupper) / (-incr)) + 1;                     \
                                                                               \
+  if(popcorn_log_statistics)                                                  \
+    hierarchy_init_statistics(gomp_thread()->popcorn_nid);                    \
+                                                                              \
   if(popcorn_global.het_workshare)                                            \
   {                                                                           \
     for_static_skewed_init_##NAME(nthreads, gtid, schedtype, plastiter,       \
@@ -348,6 +366,9 @@ __kmpc_for_static_init(8u, uint64_t, " %lu")
 void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
 {
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
+
+  if(popcorn_log_statistics)
+    hierarchy_log_statistics(gomp_thread()->popcorn_nid, loc->psource);
 }
 
 /*
