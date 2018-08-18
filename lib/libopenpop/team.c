@@ -142,6 +142,9 @@ gomp_thread_start (void *xdata)
 
 	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 
+	  if (popcorn_distributed () && thr->popcorn_nid != current_nid ())
+	    migrate(thr->popcorn_nid, NULL, NULL);
+
 	  local_fn = thr->fn;
 	  local_data = thr->data;
 	  thr->fn = NULL;
