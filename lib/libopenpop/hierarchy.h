@@ -90,7 +90,7 @@ typedef struct {
   unsigned long long workshare_time[MAX_POPCORN_NODES];
 
   /* Global page faults during the probing period */
-  unsigned long long page_faults;
+  unsigned long long page_faults[MAX_POPCORN_NODES];
 
   union {
     long split[MAX_POPCORN_NODES+1];
@@ -338,10 +338,11 @@ bool hierarchy_last_ull(unsigned long long end);
  * Clean up after a work-sharing region, freeing all resources.
  *
  * @param nid the node for which to (potentially) clean up resources
+ * @param ident a pointer uniquely identifying the work-sharing region
  * @param global whether the global workshare was used (dynamic, hetprobe
  *               scheduler) or not (static scheduler)
  */
-void hierarchy_loop_end(int nid, bool global);
+void hierarchy_loop_end(int nid, const void *ident, bool global);
 
 #endif /* _HIERARCHY_H */
 

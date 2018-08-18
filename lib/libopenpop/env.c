@@ -1375,6 +1375,8 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
                popcorn_probe_percent);
       fprintf (stderr, "  POPCORN_MAX_PROBES = %lu\n",
                popcorn_max_probes);
+      fprintf (stderr, "  POPCORN_LOG_STATISTICS = %d\n",
+               popcorn_log_statistics);
     }
 
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
@@ -1534,6 +1536,8 @@ initialize_env (void)
       if (!parse_unsigned_long("POPCORN_MAX_PROBES", &popcorn_max_probes,
                                false))
         popcorn_max_probes = UINT64_MAX;
+      popcorn_log_statistics = false;
+      parse_boolean("POPCORN_LOG_STATISTICS", &popcorn_log_statistics);
       popcorn_init_workshare_cache(128);
     }
 

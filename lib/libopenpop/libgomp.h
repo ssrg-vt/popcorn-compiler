@@ -1204,6 +1204,7 @@ task_to_priority_node (enum priority_queue_type type,
 extern float popcorn_probe_percent;
 
 /* hierarchy.c */
+extern bool popcorn_log_statistics;
 extern size_t popcorn_max_probes;
 
 extern void popcorn_init_workshare_cache(size_t);
@@ -1219,6 +1220,9 @@ extern void popcorn_set_finished (bool);
 extern void popcorn_set_hybrid_barrier (bool);
 extern void popcorn_set_hybrid_reduce (bool);
 extern void popcorn_set_het_workshare (bool);
+
+extern void popcorn_get_page_faults (unsigned long long *,
+                                     unsigned long long *);
 
 extern void hierarchy_hybrid_barrier_final (int, const char *);
 

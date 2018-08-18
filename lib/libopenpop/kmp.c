@@ -559,10 +559,10 @@ void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
   case GFS_STATIC: /* Fall through */                                         \
   case GFS_DYNAMIC: GOMP_loop_end(); break;                                   \
   case GFS_HIERARCHY_STATIC:                                                  \
-    hierarchy_loop_end(thr->popcorn_nid, false);                              \
+    hierarchy_loop_end(thr->popcorn_nid, loc, false);                         \
     break;                                                                    \
   case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
-  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, true); break;       \
+  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, loc, true); break;  \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
   }                                                                           \

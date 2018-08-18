@@ -369,12 +369,16 @@ typedef struct workshare_csr
     long remaining;
     unsigned long long remaining_ull;
   };
+  union {
+    long chunk_size;
+    unsigned long long chunk_size_ull;
+  };
   float scaled_thread_range;
   float core_speed_rating[MAX_POPCORN_NODES];
 } workshare_csr_t;
 
 typedef workshare_csr_t *hash_entry_type;
-static inline void * htab_alloc(size_t size) { return malloc(size); }
+static inline void *htab_alloc(size_t size) { return malloc(size); }
 static inline void htab_free(void *ptr) { free(ptr); }
 
 #include "hashtab.h"
@@ -392,6 +396,7 @@ static inline hash_entry_type new_hash_value(const void *ident)
   new_val->ident = ident;
   new_val->trips = 0;
   new_val->remaining = 0;
+  new_val->chunk_size = 0;
   new_val->scaled_thread_range = 0;
   memset(&new_val->core_speed_rating, 0, sizeof(float) * MAX_POPCORN_NODES);
   return new_val;
@@ -407,24 +412,66 @@ size_t popcorn_max_probes;
 static workshare_csr_t global_csr;
 #endif
 
+static hash_entry_type get_entry(const void *ident)
+{
+  workshare_csr_t tmp = { .ident = ident };
+  return htab_find(popcorn_global.workshare_cache, &tmp);
+}
+
+static hash_entry_type get_or_create_entry(const void *ident, bool *new)
+{
+  hash_entry_type ret;
+  workshare_csr_t tmp = { .ident = ident };
+
+  if(!ident)
+  {
+    popcorn_log("Somebody sent me a bad identity\n");
+    assert(false && "bad identity");
+  }
+
+  *new = false;
+  ret = htab_find(popcorn_global.workshare_cache, &tmp);
+  if(ret == HTAB_EMPTY_ENTRY) /* First time seeing the region */
+  {
+    ret = new_hash_value(ident);
+    *htab_find_slot(&popcorn_global.workshare_cache, &tmp, INSERT) = ret;
+    *new = true;
+  }
+  return ret;
+}
+
 /*********************** Work splitting helper APIs **************************/
 
-static unsigned long long get_page_faults()
+void popcorn_get_page_faults(unsigned long long *sent,
+                             unsigned long long *recv)
 {
-  unsigned long long i, sent = 0, recv = 0;
+  unsigned long long i;
   FILE *fp;
+
+  assert(sent && recv && "Invalid arguments to get_page_faults()");
+
   if((fp = fopen("/proc/popcorn_stat", "r")))
   {
     /* Skip header statistics & irrelevant message types */
     while(fgetc(fp) != '-');
     for(i = 0; i < 10; )
       if(fgetc(fp) == '\n') i++;
-
-    fscanf(fp, " %llu %llu", &sent, &recv);
+    fscanf(fp, " %llu %llu", sent, recv);
     fclose(fp);
-    return sent + recv;
   }
-  else return 0;
+  else
+  {
+    *sent = 0;
+    *recv = 0;
+  }
+}
+
+static void init_statistics(int nid)
+{
+  unsigned long long sent, recv;
+  popcorn_get_page_faults(&sent, &recv);
+  popcorn_node[nid].page_faults = sent;
+  popcorn_node[nid].workshare_time = 0;
 }
 
 static inline void loop_init(struct gomp_work_share *ws,
@@ -603,6 +650,10 @@ calc_chunk_from_ratio_ull(int nid,
   return chunk;
 }
 
+/* Whether or not to dump execution statistics like page faults &
+   per-node execution times. */
+bool popcorn_log_statistics;
+
 // Note: the logging currently assumes only 1 thread is calling at a time!
 // TODO printing floating point operations on aarch64 when starting on x86-64
 // is currently not supported (due to software-emulated FP operations)
@@ -611,15 +662,14 @@ static char buf[2048];
 static void log_hetprobe_results(const char *ident, workshare_csr_t *csr)
 {
   int i;
-  unsigned long long max_time = 0;
   char *cur = buf;
 
-  for(i = 0; i < MAX_POPCORN_NODES; i++)
-    if(popcorn_global.workshare_time[i] > max_time)
-      max_time = popcorn_global.workshare_time[i];
+  // TODO un-do hardcoding of max 2
+  const int max = 2;
 
-  cur += snprintf(cur, sizeof(buf), "%s\nCSR:", ident);
-  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  cur += snprintf(cur, sizeof(buf), "%s\nCSR:",
+                  ident ? ident : "(no identifier)");
+  for(i = 0; i < max; i++)
   {
     if(i && !(i % 8)) cur += snprintf(cur, REMAINING_BUF(buf, cur), "\n");
     cur += snprintf(cur, REMAINING_BUF(buf, cur), "\t%.3f",
@@ -627,20 +677,25 @@ static void log_hetprobe_results(const char *ident, workshare_csr_t *csr)
   }
 
   cur += snprintf(cur, REMAINING_BUF(buf, cur), "\nTimes:");
-  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  for(i = 0; i < max; i++)
   {
     if(i && !(i % 8)) cur += snprintf(cur, REMAINING_BUF(buf, cur), "\n");
     cur += snprintf(cur, REMAINING_BUF(buf, cur), "\t%llu",
                     popcorn_global.workshare_time[i]);
   }
 
-  //float pf_p_us = (float)popcorn_global.page_faults / (float)max_time;
+  cur += snprintf(cur, REMAINING_BUF(buf, cur), "\nFaults:");
+  for(i = 0; i < max; i++)
+  {
+    if(i && !(i % 8)) cur += snprintf(cur, REMAINING_BUF(buf, cur), "\n");
+    cur += snprintf(cur, REMAINING_BUF(buf, cur), "\t%llu",
+                    popcorn_global.page_faults[i]);
+  }
+
   snprintf(cur, REMAINING_BUF(buf, cur),
-           "\nProbe: %llu faults, %llu us, %ld / %llu remaining, "
-           "%ld / %llu probe iters/thread\n",
-           popcorn_global.page_faults, max_time,
-           csr->remaining, csr->remaining_ull,
-           popcorn_global.ws->chunk_size, popcorn_global.ws->chunk_size_ull);
+           "\nProbe: %ld / %llu probe iters/thread, %ld / %llu remaining\n",
+           csr->chunk_size, csr->chunk_size_ull,
+           csr->remaining, csr->remaining_ull);
   popcorn_log(buf);
 }
 
@@ -663,8 +718,10 @@ void hierarchy_init_workshare_static(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init(ws, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
+    if(popcorn_log_statistics) init_statistics(nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
+  if(popcorn_log_statistics) clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
   thr->ts.work_share = ws;
 }
 
@@ -683,8 +740,10 @@ void hierarchy_init_workshare_static_ull(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init_ull(ws, true, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
+    if(popcorn_log_statistics) init_statistics(nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
+  if(popcorn_log_statistics) clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
   thr->ts.work_share = ws;
 }
 
@@ -708,6 +767,7 @@ void hierarchy_init_workshare_dynamic(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init(ws, lb, lb, incr, GFS_HIERARCHY_DYNAMIC, chunk, nid);
+    if(popcorn_log_statistics) init_statistics(nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
     {
@@ -718,6 +778,7 @@ void hierarchy_init_workshare_dynamic(int nid,
     }
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
+  if(popcorn_log_statistics) clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
   thr->ts.work_share = ws;
 }
 
@@ -738,6 +799,7 @@ void hierarchy_init_workshare_dynamic_ull(int nid,
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
     gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
     loop_init_ull(ws, true, lb, lb, incr, GFS_HIERARCHY_DYNAMIC, chunk, nid);
+    if(popcorn_log_statistics) init_statistics(nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
     {
@@ -749,6 +811,7 @@ void hierarchy_init_workshare_dynamic_ull(int nid,
     }
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
+  if(popcorn_log_statistics) clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
   thr->ts.work_share = ws;
 }
 
@@ -764,8 +827,8 @@ void hierarchy_init_workshare_hetprobe(int nid,
   int nthreads = team ? team->nthreads : 1;
   struct gomp_work_share *ws, *global;
 #ifdef _CACHE_HETPROBE
-  workshare_csr_t tmp_ent = { .ident = ident };
-  hash_entry_type ent = NULL;
+  bool new_ent;
+  hash_entry_type ent;
 #endif
 
   ws = gomp_ptrlock_get(&popcorn_node[nid].ws_lock);
@@ -781,14 +844,9 @@ void hierarchy_init_workshare_hetprobe(int nid,
       gomp_init_work_share(global, false, nthreads);
       loop_init(global, lb, ub, incr, GFS_HETPROBE, chunk, nid);
 #ifdef _CACHE_HETPROBE
-      ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-      if(ent == HTAB_EMPTY_ENTRY) /* First time seeing the region */
-      {
-        ent = new_hash_value(ident);
-        *htab_find_slot(&popcorn_global.workshare_cache, &tmp_ent, INSERT)
-          = ent;
-      }
-      else /* Hey we've seen you before! */
+      ent = get_or_create_entry(ident, &new_ent);
+      ent->chunk_size = popcorn_global.ws->chunk_size;
+      if(!new_ent) /* Hey we've seen you before! */
       {
         ent->trips++;
         if(ent->trips >= popcorn_max_probes)
@@ -804,34 +862,23 @@ void hierarchy_init_workshare_hetprobe(int nid,
     if(global->sched == GFS_HIERARCHY_DYNAMIC)
     {
       /* We've seen the region enough times, no more probing */
-      if(!ent) ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
+      if(!ent) ent = get_entry(ident);
       assert(ent && "Missing cache entry");
       ws->next = popcorn_global.split[nid];
       ws->end = popcorn_global.split[nid+1];
       ws->sched = GFS_HIERARCHY_DYNAMIC;
       ws->chunk_size = calc_chunk_from_ratio(nid, incr, ent);
+      if(popcorn_log_statistics) init_statistics(nid);
     }
-    else
-    {
-      popcorn_node[nid].page_faults = get_page_faults();
-      popcorn_node[nid].workshare_time = 0;
-    }
+    else init_statistics(nid);
 #else
-    popcorn_node[nid].page_faults = get_page_faults();
-    popcorn_node[nid].workshare_time = 0;
+    init_statistics(nid);
 #endif
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
   thr->ts.static_trip = 0;
   clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
-#ifdef _CACHE_HETPROBE
-  if(thr->ts.team_id == 0 && ws->sched == GFS_HIERARCHY_DYNAMIC)
-  {
-    if(!ent) ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-    log_hetprobe_results(ident, ent);
-  }
-#endif
 }
 
 void hierarchy_init_workshare_hetprobe_ull(int nid,
@@ -846,7 +893,7 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
   int nthreads = team ? team->nthreads : 1;
   struct gomp_work_share *ws, *global;
 #ifdef _CACHE_HETPROBE
-  workshare_csr_t tmp_ent = { .ident = ident };
+  bool new_ent;
   hash_entry_type ent = NULL;
 #endif
 
@@ -863,14 +910,9 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
       gomp_init_work_share(global, false, nthreads);
       loop_init_ull(global, true, lb, ub, incr, GFS_HETPROBE, chunk, nid);
 #ifdef _CACHE_HETPROBE
-      ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-      if(ent == HTAB_EMPTY_ENTRY)
-      {
-        ent = new_hash_value(ident);
-        *htab_find_slot(&popcorn_global.workshare_cache, &tmp_ent, INSERT)
-          = ent;
-      }
-      else
+      ent = get_or_create_entry(ident, &new_ent);
+      ent->chunk_size_ull = popcorn_global.ws->chunk_size_ull;
+      if(!new_ent) /* Hey we've seen you before! */
       {
         ent->trips++;
         if(ent->trips >= popcorn_max_probes)
@@ -885,34 +927,23 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
 #ifdef _CACHE_HETPROBE
     if(global->sched == GFS_HIERARCHY_DYNAMIC)
     {
-      if(!ent) ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
+      if(!ent) ent = get_entry(ident);
       assert(ent && "Missing cache entry");
       ws->next_ull = popcorn_global.split_ull[nid];
       ws->end_ull = popcorn_global.split_ull[nid+1];
       ws->sched = GFS_HIERARCHY_DYNAMIC;
       ws->chunk_size_ull = calc_chunk_from_ratio_ull(nid, incr, ent);
+      if(popcorn_log_statistics) init_statistics(nid);
     }
-    else
-    {
-      popcorn_node[nid].page_faults = get_page_faults();
-      popcorn_node[nid].workshare_time = 0;
-    }
+    else init_statistics(nid);
 #else
-    popcorn_node[nid].page_faults = get_page_faults();
-    popcorn_node[nid].workshare_time = 0;
+    init_statistics(nid);
 #endif
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
   }
   thr->ts.work_share = ws;
   thr->ts.static_trip = 0;
   clock_gettime(CLOCK_MONOTONIC, &thr->probe_start);
-#ifdef _CACHE_HETPROBE
-  if(thr->ts.team_id == 0 && ws->sched == GFS_HIERARCHY_DYNAMIC)
-  {
-    if(!ent) ent = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-    log_hetprobe_results(ident, ent);
-  }
-#endif
 }
 
 bool hierarchy_next_dynamic(int nid, long *start, long *end)
@@ -972,14 +1003,14 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
 {
   bool leader;
   size_t i, max_idx;
-  unsigned long long cur_elapsed, min = UINT64_MAX, max = 0;
+  unsigned long long cur_elapsed, min = UINT64_MAX, max = 0, sent, recv;
   float scale, cur_rating;
 
   /* Calculate this node's average time & page faults */
   popcorn_global.workshare_time[nid] =
     popcorn_node[nid].workshare_time / popcorn_node[nid].sync.num;
-  popcorn_node[nid].page_faults = get_page_faults() -
-                                  popcorn_node[nid].page_faults;
+  popcorn_get_page_faults(&sent, &recv);
+  popcorn_global.page_faults[nid] = sent - popcorn_node[nid].page_faults;
 
   leader = select_leader_synchronous(&popcorn_global.sync,
                                      &popcorn_global.bar,
@@ -1005,7 +1036,6 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
        the minimum time. Also, accumulate page faults from all nodes. */
     csr->scaled_thread_range = 0.0;
     scale = 1.0 / ((float)min / (float)popcorn_global.workshare_time[max_idx]);
-    popcorn_global.page_faults = 0;
     for(i = 0; i < MAX_POPCORN_NODES; i++)
     {
       cur_elapsed = popcorn_global.workshare_time[i];
@@ -1018,11 +1048,8 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
         else csr->core_speed_rating[i] = cur_rating;
         csr->scaled_thread_range += csr->core_speed_rating[i] *
                                     popcorn_node[i].sync.num;
-        popcorn_global.page_faults += popcorn_node[nid].page_faults;
       }
     }
-    // TODO hardcoded for 2 nodes
-    popcorn_global.page_faults /= 2;
 
     if(ull)
     {
@@ -1077,8 +1104,7 @@ bool hierarchy_next_hetprobe(int nid,
     if(leader)
     {
 #ifdef _CACHE_HETPROBE
-      workshare_csr_t tmp_ent = { .ident = ident };
-      csr = htab_find(popcorn_global.workshare_cache, &tmp_ent);
+      csr = get_entry(ident);
       assert(csr != HTAB_EMPTY_ENTRY && "Missing cache entry");
 #else
       csr = &global_csr;
@@ -1101,21 +1127,6 @@ bool hierarchy_next_hetprobe(int nid,
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
-
-    // TODO delete
-    if(thr->ts.team_id == 0)
-    {
-#ifdef _CACHE_HETPROBE
-      if(!csr)
-      {
-        workshare_csr_t tmp_ent = { .ident = ident };
-        csr = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-      }
-#else
-      csr = &global_csr;
-#endif
-      log_hetprobe_results(ident, csr);
-    }
 
     /* Fall through */
   default: return hierarchy_next_dynamic(nid, start, end);
@@ -1156,8 +1167,7 @@ bool hierarchy_next_hetprobe_ull(int nid,
     if(leader)
     {
 #ifdef _CACHE_HETPROBE
-      workshare_csr_t tmp_ent = { .ident = ident };
-      csr = htab_find(popcorn_global.workshare_cache, &tmp_ent);
+      csr = get_entry(ident);
       assert(csr != HTAB_EMPTY_ENTRY && "Missing cache entry");
 #else
       csr = &global_csr;
@@ -1181,21 +1191,6 @@ bool hierarchy_next_hetprobe_ull(int nid,
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
 
-    // TODO delete
-    if(thr->ts.team_id == 0)
-    {
-#ifdef _CACHE_HETPROBE
-      if(!csr)
-      {
-        workshare_csr_t tmp_ent = { .ident = ident };
-        csr = htab_find(popcorn_global.workshare_cache, &tmp_ent);
-      }
-#else
-      csr = &global_csr;
-#endif
-      log_hetprobe_results(ident, csr);
-    }
-
     /* Fall through */
   default: return hierarchy_next_dynamic_ull(nid, start, end);
   }
@@ -1211,16 +1206,47 @@ bool hierarchy_last_ull(unsigned long long end)
   return end >= popcorn_global.ws->end_ull;
 }
 
-void hierarchy_loop_end(int nid, bool global)
+static workshare_csr_t dummy_csr;
+
+void hierarchy_loop_end(int nid, const void *ident, bool global)
 {
   struct gomp_thread *thr = gomp_thread();
   bool leader;
+#ifdef _CACHE_HETPROBE
+  struct timespec region_end;
+  unsigned long long sent, recv;
+  hash_entry_type ent;
+
+  if(popcorn_log_statistics)
+  {
+    /* If it was originally the hetprobe scheduler we have an entry & region
+       statistics will have been calculated.  If we don't have one, then we
+       need to calculate the region statistics here. */
+    ent = get_entry(ident);
+    if(!ent)
+    {
+      clock_gettime(CLOCK_MONOTONIC, &region_end);
+      __atomic_add_fetch(&popcorn_node[nid].workshare_time,
+                         ELAPSED(thr->probe_start, region_end) / 1000,
+                         MEMMODEL_ACQ_REL);
+    }
+  }
+#endif
 
   leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                      &popcorn_node[nid].bar,
                                      false, NULL);
   if(leader)
   {
+#ifdef _CACHE_HETPROBE
+    if(popcorn_log_statistics && !ent)
+    {
+      popcorn_global.workshare_time[nid] =
+        popcorn_node[nid].workshare_time / popcorn_node[nid].sync.num;
+      popcorn_get_page_faults(&sent, &recv);
+      popcorn_global.page_faults[nid] = sent - popcorn_node[nid].page_faults;
+    }
+#endif
     gomp_fini_work_share(popcorn_node[nid].ws);
     popcorn_free(popcorn_node[nid].ws);
     gomp_ptrlock_destroy(popcorn_node[nid].ws_lock);
@@ -1243,6 +1269,14 @@ void hierarchy_loop_end(int nid, bool global)
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
+
+#ifdef _CACHE_HETPROBE
+  if(thr->ts.team_id == 0 && popcorn_log_statistics)
+  {
+    if(!ent) log_hetprobe_results(ident, &dummy_csr);
+    else log_hetprobe_results(ident, ent);
+  }
+#endif
 
   /* gomp_team_end() still expects the main thread to have a valid work share
      pointer */
