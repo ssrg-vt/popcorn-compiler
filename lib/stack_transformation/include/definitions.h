@@ -15,9 +15,7 @@
 #include <string.h>
 #include <pthread.h>
 
-//#include <libelf/libelf.h>
-#include <my_libelf.h>
-#include <ELF.h>
+#include <libelf/libelf.h>
 
 #include "config.h"
 #include "retvals.h"

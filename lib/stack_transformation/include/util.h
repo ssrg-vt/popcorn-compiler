@@ -57,7 +57,6 @@ Elf_Scn* get_section(Elf* e, const char* sec);
  */
 int64_t get_num_entries(Elf* e, const char* sec);
 
-int64_t my_get_num_entries(Elf* e, const char* sec);
 /*
  * Return the section data encoded in section SEC_NAME in ELF E.
  *
@@ -66,8 +65,6 @@ int64_t my_get_num_entries(Elf* e, const char* sec);
  * @return a pointer to data in the section, or NULL if an error occurred
  */
 const void* get_section_data(Elf* e, const char* sec);
-
-const void* my_get_section_data(Elf* e, const char* sec);
 
 /*
  * Return the call site information for the specified return address.
