@@ -78,7 +78,7 @@
 #endif
 
 #include <hermit/migration.h>
-#define MIGRATE hermit_force_migration()
+#define MIGRATE hermit_force_migration(&regs_dst)
 
 #endif
 

@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
 		printf(" - tbss:  %d\n", tbss_var++);
 
 		if(i == 2)
-			HERMIT_FORCE_MIGRATION();
+			HERMIT_FORCE_MIGRATION(NULL);
 
 	}
 
