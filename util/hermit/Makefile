@@ -58,6 +58,12 @@ LIBS=-lmigrate -lstack-transform -lhermit -lelf -lm -lc -lgcc
 KERNEL_X86=$(PH_PREFIX_X86)/lib/libhermit.a
 KERNEL_ARM=$(PH_PREFIX_ARM)/lib/libhermit.a
 
+# Deps: libmigrate and libstack_transform
+LMIGRATE_X86=$(PH_PREFIX_X86)/lib/libmigrate.a
+LSTACKTRASNFORM_X86=$(PH_PREFIX_X86)/lib/libstack-transform.a
+LMIGRATE_ARM=$(PH_PREFIX_ARM)/lib/libmigrate.a
+LSTACKTRASNFORM_ARM=$(PH_PREFIX_ARM)/lib/libstack-transform.a
+
 # Generated unaligned MAP files
 MAP_X86=map_x86-64.txt
 MAP_ARM=map_aarch64.txt
@@ -123,11 +129,11 @@ check: all
 	@# 3. Compile into object file
 	$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
 
-$(PROG_X86): $(OBJS_X86) $(KERNEL_X86)
+$(PROG_X86): $(OBJS_X86) $(KERNEL_X86) $(LMIGRATE_X86) $(LSTACKTRASNFORM_X86)
 	@# 4. Link
 	$(LD) -o $(PROG_X86) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_X86)
 
-$(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM)
+$(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM) $(LMIGRATE_ARM) $(LSTACKTRASNFORM_ARM)
 	@# 4. Link
 	$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
 
@@ -161,6 +167,7 @@ test-x86: $(PROG_X86_ALIGNED)
 	HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
+		HERMIT_NODE_ID=0 \
 		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
 
 test-arm: $(PROG_ARM_ALIGNED)
@@ -170,6 +177,7 @@ test-arm: $(PROG_ARM_ALIGNED)
 	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
+		HERMIT_NODE_ID=1 \
 		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
 
 objdump-x86:
