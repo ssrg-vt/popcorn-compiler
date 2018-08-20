@@ -25,11 +25,12 @@ LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
                 $(shell ls $(SRC)/arch/powerpc64/*.c) \
                 $(shell ls $(SRC)/arch/x86_64/*.c)
 
-ifeq ($(type),debug)
+# Pierre: enable debug bu default for now
+#ifeq ($(type),debug)
 CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
-else
-CFLAGS += -O3
-endif
+#else
+#CFLAGS += -O3
+#endif
 
 ###############################################################################
 # aarch64
