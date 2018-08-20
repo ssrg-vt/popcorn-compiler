@@ -124,29 +124,31 @@ void __st_userspace_ctor(void)
   else {
     aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
     snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", ___progname);
+    aarch64_handle = st_init(aarch64_fn);
   }
-  aarch64_handle = st_init(aarch64_fn);
   if(aarch64_handle) alloc_aarch64_fn = true;
   else { ST_WARN("could not initialize aarch64 handle\n"); }
 
+#if 0
   if(getenv(ENV_POWERPC64_BIN))
     powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
   else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
   else {
     powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
     snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", ___progname);
+    powerpc64_handle = st_init(powerpc64_fn);
   }
-  powerpc64_handle = st_init(powerpc64_fn);
   if(powerpc64_handle) alloc_powerpc64_fn = true;
   else { ST_WARN("could not initialize powerpc64 handle\n"); }
+#endif
 
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
     x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
     snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", ___progname);
+    x86_64_handle = st_init(x86_64_fn);
   }
-  x86_64_handle = st_init(x86_64_fn);
   if(x86_64_handle) alloc_x86_64_fn = true;
   else { ST_WARN("could not initialize x86-64 handle\n"); }
 }
