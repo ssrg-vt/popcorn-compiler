@@ -5,7 +5,7 @@
 extern void force_migration_flag(int val);
 
 int test_function(int x) {
-	migrate(1, NULL, NULL);
+	migrate(0, NULL, NULL);
 
 	return x;
 }
