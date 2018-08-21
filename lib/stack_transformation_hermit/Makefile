@@ -28,7 +28,7 @@ LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
 # Pierre: enable debug bu default for now
 #ifeq ($(type),debug)
 #CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
-CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS
+CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
 #else
 #CFLAGS += -O3
 #endif
