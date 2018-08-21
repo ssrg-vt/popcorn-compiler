@@ -440,7 +440,7 @@ def install_libraries(base_path, install_path, targets, num_threads, st_debug,
     #=====================================================
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
     #=====================================================
-    os.chdir(os.path.join(base_path, 'lib/stack_transformation_hermit'))
+    os.chdir(os.path.join(base_path, 'lib/stack_transformation'))
 
     if not st_debug:
         flags = ''
