@@ -5,7 +5,7 @@
  * Date: 11/18/2015
  */
 
-#include <time.h>
+#include <sys/time.h>
 
 /* Generate a call site to get rewriting metadata for outermost frame. */
 static void* __attribute__((noinline))
@@ -26,21 +26,17 @@ get_call_site() { return __builtin_return_address(0); }
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_AARCH64(regset); \
     regset.pc = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
     st_handle src = st_init(aarch64_bin); \
     st_handle dest = st_init(x86_64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
     if(src && dest) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
       st_destroy(src); \
       st_destroy(dest); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
         printf("[ST] Setup time: %lu\n", \
               (init.tv_sec * 1000000000 + init.tv_nsec) - \
               (start.tv_sec * 1000000000 + start.tv_nsec)); \
@@ -78,19 +74,15 @@ get_call_site() { return __builtin_return_address(0); }
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_AARCH64(regset); \
     regset.pc = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
     st_handle src = st_init(aarch64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
     if(src) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, src, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
       st_destroy(src); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
         printf("[ST] Setup time: %lu\n", \
               (init.tv_sec * 1000000000 + init.tv_nsec) - \
               (start.tv_sec * 1000000000 + start.tv_nsec)); \
@@ -293,42 +285,42 @@ get_call_site() { return __builtin_return_address(0); }
 #define TIME_REWRITE( aarch64_bin, x86_64_bin ) \
   ({ \
     int ret; \
-    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timeval start = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval init = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval rewrite = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval  end = { .tv_sec = 0, .tv_usec = 0 }; \
     struct regset_x86_64 regset; \
     struct regset_powerpc64 regset_dest; \
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_X86_64(regset); \
     regset.rip = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
+    gettimeofday(&start, NULL); \
     st_handle src = st_init(x86_64_bin); \
     st_handle dest = st_init(powerpc64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
+    gettimeofday(&init, NULL); \
     if(src && dest) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
+      gettimeofday(&rewrite, NULL); \
       st_destroy(src); \
       st_destroy(dest); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
-        printf("[ST] Setup time: %lu\n", \
-              (init.tv_sec * 1000000000 + init.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
-        printf("[ST] Transform time: %lu\n", \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
-              (init.tv_sec * 1000000000 + init.tv_nsec)); \
-        printf("[ST] Cleanup time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
-        printf("[ST] Total elapsed time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+        gettimeofday(&end, NULL); \
+        printf("[ST] Setup time: %lu us\n", \
+              (init.tv_sec * 1000000 + init.tv_usec) - \
+              (start.tv_sec * 1000000 + start.tv_usec)); \
+        printf("[ST] Transform time: %lu us\n", \
+              (rewrite.tv_sec * 1000000 + rewrite.tv_nsec) - \
+              (init.tv_sec * 1000000 + init.tv_usec)); \
+        printf("[ST] Cleanup time: %lu us\n", \
+              (end.tv_sec * 1000000 + end.tv_usec) - \
+              (rewrite.tv_sec * 1000000 + rewrite.tv_usec)); \
+        printf("[ST] Total elapsed time: %lu us\n", \
+              (end.tv_sec * 1000000 + end.tv_usec) - \
+              (start.tv_sec * 1000000 + start.tv_usec)); \
       } \
     } \
     else \
@@ -347,39 +339,39 @@ get_call_site() { return __builtin_return_address(0); }
 #define TIME_AND_TEST_REWRITE( x86_64_bin, func ) \
   ({ \
     int ret; \
-    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timeval start = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval init = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval rewrite = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval end = { .tv_sec = 0, .tv_usec = 0 }; \
     struct regset_x86_64 regset, regset_dest; \
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_X86_64(regset); \
     regset.rip = get_call_site(); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
+    gettimeofday(&start, NULL); \
     st_handle src = st_init(x86_64_bin); \
-    clock_gettime(CLOCK_MONOTONIC, &init); \
+    gettimeofday(&init, NULL); \
     if(src) \
     { \
       ret = st_rewrite_stack(src, &regset, bounds.high, src, &regset_dest, bounds.low); \
-      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
+      gettimeofday(&rewrite, NULL); \
       st_destroy(src); \
       if(ret) \
         fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
+        gettimeofday(&end, NULL); \
         printf("[ST] Setup time: %lu\n", \
-              (init.tv_sec * 1000000000 + init.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+              (init.tv_sec * 1000000 + init.tv_usec) - \
+              (start.tv_sec * 1000000 + start.tv_usec)); \
         printf("[ST] Transform time: %lu\n", \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
-              (init.tv_sec * 1000000000 + init.tv_nsec)); \
+              (rewrite.tv_sec * 1000000 + rewrite.tv_usec) - \
+              (init.tv_sec * 1000000 + init.tv_usec)); \
         printf("[ST] Cleanup time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
+              (end.tv_sec * 1000000 + end.tv_usec) - \
+              (rewrite.tv_sec * 1000000 + rewrite.tv_usec)); \
         printf("[ST] Total elapsed time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+              (end.tv_sec * 1000000 + end.tv_usec) - \
+              (start.tv_sec * 1000000 + start.tv_usec)); \
         post_transform = 1; \
         SET_REGS_X86_64(regset_dest); \
         SET_FRAME_X86_64(regset_dest.rbp, regset_dest.rsp); \
@@ -396,24 +388,24 @@ get_call_site() { return __builtin_return_address(0); }
 #define TIME_AND_TEST_NO_INIT( x86_64_handle, func ) \
   ({ \
     int ret; \
-    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
-    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timeval start = { .tv_sec = 0, .tv_usec = 0 }; \
+    struct timeval end = { .tv_sec = 0, .tv_usec = 0 }; \
     struct regset_x86_64 regset, regset_dest; \
     stack_bounds bounds = get_stack_bounds(); \
     READ_REGS_X86_64(regset); \
     regset.rip = get_call_site(); \
     if(x86_64_handle) \
     { \
-      clock_gettime(CLOCK_MONOTONIC, &start); \
+      gettimeofday(&start, NULL); \
       ret = st_rewrite_stack(x86_64_handle, &regset, bounds.high, \
                              x86_64_handle, &regset_dest, bounds.low); \
       if(ret) fprintf(stderr, "Couldn't re-write the stack\n"); \
       else \
       { \
-        clock_gettime(CLOCK_MONOTONIC, &end); \
+        gettimeofday(&end, NULL); \
         printf("[ST] Transform time: %lu\n", \
-              (end.tv_sec * 1000000000 + end.tv_nsec) - \
-              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+              (end.tv_sec * 1000000 + end.tv_usec) - \
+              (start.tv_sec * 1000000 + start.tv_usec)); \
         post_transform = 1; \
         SET_REGS_X86_64(regset_dest); \
         SET_FRAME_X86_64(regset_dest.rbp, regset_dest.rsp); \

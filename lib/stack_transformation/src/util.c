@@ -12,6 +12,11 @@
 #include "arch_regs.h"
 #include "util.h"
 
+/* Pierre: insert elf architectures identifiers defines here from musl elf.h */
+#define EM_AARCH64	183
+#define EM_PPC64	21
+#define EM_X86_64	62
+
 ///////////////////////////////////////////////////////////////////////////////
 // (Private) Utility functions
 ///////////////////////////////////////////////////////////////////////////////

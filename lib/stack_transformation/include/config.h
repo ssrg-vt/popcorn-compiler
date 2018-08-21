@@ -38,7 +38,7 @@
  */
 #define CLOCK_GETTIME 0
 #define GETTIMEOFDAY 1
-#define _TIMER_SRC CLOCK_GETTIME // musl-libc has vDSO versions for both archs
+#define _TIMER_SRC GETTIMEOFDAY // musl-libc has vDSO versions for both archs
 
 /*
  * Select TLS implementation.  Popcorn compiler support for TLS is a little
@@ -46,7 +46,7 @@
  */
 #define COMPILER_TLS 0
 #define PTHREAD_TLS 1
-#define _TLS_IMPL PTHREAD_TLS
+#define _TLS_IMPL COMPILER_TLS
 
 /*
  * Maximum number of frames that can be rewritten.
@@ -81,10 +81,13 @@
 #define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*
- * Stack limits -- Linux defaults to 8MB.
+ * Stack limits
+ * HermitCore stack size is configurable, so make sure MAX_STACK_SIZE is
+ * consistent with the HermitCore DEFAULT_STACK_SIZE macro, set by cmake (see
+ * <hermitcore sources>/cmake/HermitCore-Configuration.cmake)
  */
-#define MAX_STACK_SIZE (8UL * 1024UL * 1024UL)
-#define B_STACK_OFFSET (4 * 1024 * 1024)
+#define MAX_STACK_SIZE 1048576
+#define B_STACK_OFFSET (MAX_STACK_SIZE / 2)
 
 #endif /* _CONFIG_H */
 
