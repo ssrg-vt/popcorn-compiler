@@ -34,6 +34,9 @@ struct node_info {
 extern int sys_get_node_info(int *origin_nid, struct node_info* ni);
 extern int sys_get_thread_status(struct popcorn_thread_status *status);
 
+/* Stack tranformation cleanup function */
+extern void __st_dtor(void);
+
 #if _ENV_SELECT_MIGRATE == 1
 
 /*
@@ -262,6 +265,8 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
       TIMESTAMP(end);
       printf("Stack transformation time: %lluns\n", TIMESTAMP_DIFF(start, end));
 #endif
+	  /* Cleanup ST data structures and open files */
+      __st_dtor();
 
       if(dst_arch == ARCH_X86_64) {
         regs_dst.x86.rip = __migrate_shim_internal;
@@ -276,13 +281,11 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
         sp = (unsigned long)regs_dst.powerpc.r[1];
         bp = (unsigned long)regs_dst.powerpc.r[31];
       } else {
-        // assert(0 && "Unsupported architecture!");
 		fprintf(stderr, "Unsupported architecture!\n");
 		__builtin_trap();
       }
 
       MIGRATE;
-      // assert(0 && "Couldn't migrate!");
 	  fprintf(stderr, "Couldn't migrate!\n");
 	  __builtin_trap();
     }
