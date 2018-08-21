@@ -8,11 +8,8 @@ int test_function(int x) {
 
 	printf("test_fn called with parameter %d\n", x);
 
-#ifdef __aarch64__
+	/* Migrate to ARM */
 	migrate(1, NULL, NULL);
-#else
-	migrate(0, NULL, NULL);
-#endif
 
 	printf("test_fn returns %d\n", x);
 
