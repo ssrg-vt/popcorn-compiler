@@ -1,2 +1,3 @@
-BIN	:= verbose_unwind
-include ../Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in

@@ -1,2 +1,3 @@
-BIN	:= callee_saved
-include ../Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in

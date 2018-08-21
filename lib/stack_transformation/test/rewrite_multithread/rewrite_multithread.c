@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/syscall.h>
 
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
@@ -14,7 +13,7 @@ static __thread int post_transform = 0;
 
 int outer_frame()
 {
-  int tid = syscall(SYS_gettid);
+  int tid = getpid();
   if(!post_transform)
   {
     printf("--> Child %d beginning re-write <--\n", tid);

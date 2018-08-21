@@ -1,2 +1,3 @@
-BIN	:= rewrite_multithread
-include ../Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in

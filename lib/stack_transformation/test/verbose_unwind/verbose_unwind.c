@@ -12,11 +12,11 @@ int outer_frame()
   if(!post_transform)
   {
 #ifdef __aarch64__
-    TIME_AND_TEST_REWRITE("./verbose_unwind_aarch64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_aarch64_aligned", outer_frame);
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./verbose_unwind_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    TIME_AND_TEST_REWRITE("./verbose_unwind_x86-64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_x86-64_aligned", outer_frame);
 #endif
   }
   return rand();
@@ -39,6 +39,7 @@ int main(int argc, char** argv)
   if(argc > 1)
     max_depth = atoi(argv[1]);
 
-  return recurse(1);
+  recurse(1);
+  return 0;
 }
 

@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <assert.h>
+//#include <assert.h>
 
 #include <stack_transform.h>
 #include "stack_transform_timing.h"
@@ -13,11 +13,11 @@ long outer_frame()
   if(!post_transform)
   {
 #ifdef __aarch64__
-    TIME_AND_TEST_REWRITE("./rewrite_many_aarch64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_aarch64_aligned", outer_frame);
 #elif defined(__powerpc64__)
     TIME_AND_TEST_REWRITE("./rewrite_many_powerpc64", outer_frame);
 #elif defined(__x86_64__)
-    TIME_AND_TEST_REWRITE("./rewrite_many_x86-64", outer_frame);
+    TIME_AND_TEST_REWRITE("./prog_x86-64_aligned", outer_frame);
 #endif
   }
   return rand();
@@ -79,7 +79,7 @@ long recurse(int depth)
   case 5: return a6 + a14 + b6 + b14;
   case 6: return a7 + a15 + b7 + b15;
   case 7: return a8 + a16 + b8 + b16;
-  default: assert(0 && "Did not correctly restore stack frame"); return 0;
+  //default: assert(0 && "Did not correctly restore stack frame"); return 0;
   }
 }
 
@@ -88,6 +88,8 @@ int main(int argc, char** argv)
   if(argc > 1)
     max_depth = atoi(argv[1]);
 
-  return recurse(1);
+  recurse(1);
+
+  return 0;
 }
 

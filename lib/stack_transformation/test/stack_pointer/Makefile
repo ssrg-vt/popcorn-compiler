@@ -1,2 +1,3 @@
-BIN	:= stack_pointer
-include ../Makefile
+CFLAGS="-I../../utils/"
+
+-include Makefile.in
