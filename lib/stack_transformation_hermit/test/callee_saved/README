@@ -1,9 +1,0 @@
-This test stores a value in a callee-saved register, recurses down the call
-chain, and re-uses the value after returning.  This tests the runtime's ability
-to detect values in callee-saved registers and place them in the correct
-callee-saved slot or outermost activation register set.
-
-Expected output for default run:
---------------------------------
-
-Expected 12345678deadbeef, got 12345678deadbeef
