@@ -124,13 +124,13 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   {
     if(popcorn_preferred_node == 0)
     {
-      omp_set_num_threads(popcorn_global.threads_per_node[0]);
-      popcorn_global.threads_per_node[1] = 0;
+      omp_set_num_threads(popcorn_global.node_places[0]);
+      popcorn_global.node_places[1] = 0;
     }
     else
     {
-      omp_set_num_threads(popcorn_global.threads_per_node[1] + 1);
-      popcorn_global.threads_per_node[0] = 1;
+      omp_set_num_threads(popcorn_global.node_places[1] + 1);
+      popcorn_global.node_places[0] = 1;
     }
   }
 

@@ -1354,9 +1354,9 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
       fputs ("  POPCORN_PLACES ({node, threads}) =", stderr);
       for (i = 0; i < MAX_POPCORN_NODES; i++)
         {
-          if (popcorn_global.threads_per_node[i])
+          if (popcorn_global.node_places[i])
             fprintf (stderr, " {%u, %lu}", i,
-                     popcorn_global.threads_per_node[i]);
+                     popcorn_global.node_places[i]);
         }
       fputs ("\n", stderr);
       fputs ("  POPCORN_HET_WORKSHARE({node, rating}) =", stderr);

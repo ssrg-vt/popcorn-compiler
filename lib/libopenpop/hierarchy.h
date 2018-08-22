@@ -53,11 +53,17 @@ typedef struct {
   bool hybrid_reduce;
   bool het_workshare;
 
-  // TODO
+  /* Once flipped, disables distributed execution. */
   bool popcorn_killswitch;
 
-  /* Popcorn nodes available & thread placement across nodes */
+  /* Popcorn nodes available & thread placement across nodes as specified by
+     user at application startup.  This may *not* reflect the values for the
+     current region as the runtime has the flexibility to decide who executes
+     where.  Use threads_per_node to get the current thread placement. */
   unsigned long nodes;
+  unsigned long node_places[MAX_POPCORN_NODES];
+
+  /* Per-node thread counts for the current parallel region */
   unsigned long threads_per_node[MAX_POPCORN_NODES];
 
   /* The compute power "rating" of cores on each node.  For example, an
@@ -151,7 +157,8 @@ extern node_info_t popcorn_node[MAX_POPCORN_NODES];
 void hierarchy_init_global(int nodes);
 
 /*
- * Initialize per-node synchronization data structures.
+ * Initialize per-node synchronization data structures after assigning threads
+ * to nodes.
  * @param nid the node ID
  */
 void hierarchy_init_node(int nid);

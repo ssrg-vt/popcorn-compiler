@@ -1192,9 +1192,6 @@ task_to_priority_node (enum priority_queue_type type,
 /* Time parallel sections & related statistics */
 #define _TIME_PARALLEL 1
 
-/* Print time waiting at barriers to detect load imbalance among nodes */
-//#define _TIME_BARRIER 1
-
 #if defined _TIME_PARALLEL || defined _TIME_BARRIER
 # include <time.h>
 # include <debug/log.h>

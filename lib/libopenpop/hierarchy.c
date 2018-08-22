@@ -59,7 +59,7 @@ void popcorn_set_het_workshare(bool flag) { popcorn_global.het_workshare = flag;
 
 void hierarchy_init_global(int nodes)
 {
-  popcorn_global.sync.remaining = popcorn_global.sync.num = nodes;
+  popcorn_global.sync.remaining = popcorn_global.sync.num =
   popcorn_global.opt.remaining = popcorn_global.opt.num = nodes;
   /* Note: *must* use reinit_all, otherwise there's a race condition between
      leaders who have been released are reading generation in the barrier's
@@ -69,13 +69,9 @@ void hierarchy_init_global(int nodes)
 
 void hierarchy_init_node(int nid)
 {
-  size_t num;
-
-  assert(popcorn_node[nid].sync.num == popcorn_node[nid].opt.num &&
-         "Corrupt node configuration");
-
-  num = popcorn_node[nid].sync.num;
-  popcorn_node[nid].sync.remaining = popcorn_node[nid].opt.remaining = num;
+  size_t num = popcorn_global.threads_per_node[nid];
+  popcorn_node[nid].sync.remaining = popcorn_node[nid].sync.num =
+  popcorn_node[nid].opt.remaining = popcorn_node[nid].opt.num = num;
   /* See note in hierarchy_init_global() above */
   gomp_barrier_reinit_all(&popcorn_node[nid].bar, num);
 }
@@ -85,18 +81,16 @@ int hierarchy_assign_node(unsigned tnum)
   unsigned cur = 0, thr_total = 0;
   for(cur = 0; cur < MAX_POPCORN_NODES; cur++)
   {
-    thr_total += popcorn_global.threads_per_node[cur];
+    thr_total += popcorn_global.node_places[cur];
     if(tnum < thr_total)
     {
-      popcorn_node[cur].sync.num++;
-      popcorn_node[cur].opt.num++;
+      popcorn_global.threads_per_node[cur]++;
       return cur;
     }
   }
 
   /* If we've exhausted the specification default to origin */
-  popcorn_node[0].sync.num++;
-  popcorn_node[0].opt.num++;
+  popcorn_global.threads_per_node[0]++;
   return 0;
 }
 
@@ -147,25 +141,13 @@ static void hierarchy_leader_cleanup(leader_select_t *l)
 void hierarchy_hybrid_barrier(int nid, const char *desc)
 {
   bool leader;
-#ifdef _TIME_BARRIER
-  struct timespec start, end;
-#endif
 
   leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                      &popcorn_node[nid].bar,
                                      false, NULL);
   if(leader)
   {
-#ifdef _TIME_BARRIER
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
     gomp_team_barrier_wait_nospin(&popcorn_global.bar);
-#ifdef _TIME_BARRIER
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    printf("%s barrier wait: %lld ns\n",
-           (desc ? desc : "Anonymous"),
-           ELAPSED(start, end));
-#endif
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
@@ -174,29 +156,14 @@ void hierarchy_hybrid_barrier(int nid, const char *desc)
 bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 {
   bool ret = false, leader;
-#ifdef _TIME_BARRIER
-  struct timespec start, end;
-#endif
 
   leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                      &popcorn_node[nid].bar,
                                      false, NULL);
   if(leader)
   {
-#ifdef _TIME_BARRIER
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
     ret = gomp_team_barrier_wait_cancel_nospin(&popcorn_global.bar);
     // TODO if cancelled at global level need to cancel local barrier
-#ifdef _TIME_BARRIER
-    if(!ret)
-    {
-      clock_gettime(CLOCK_MONOTONIC, &end);
-      printf("%s cancel barrier wait: %lld ns\n",
-             (desc ? desc : "Anonymous"),
-             ELAPSED(start, end));
-    }
-#endif
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
   }
   ret |= gomp_team_barrier_wait_cancel(&popcorn_node[nid].bar);
@@ -214,25 +181,13 @@ bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 {
   bool leader;
-#ifdef _TIME_BARRIER
-  struct timespec start, end;
-#endif
 
   leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                      &popcorn_node[nid].bar,
                                      true, NULL);
   if(leader)
   {
-#ifdef _TIME_BARRIER
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
     gomp_team_barrier_wait_final_nospin(&popcorn_global.bar);
-#ifdef _TIME_BARRIER
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    printf("%s final team barrier wait: %lld ns\n",
-           (desc ? desc : "Anonymous"),
-           ELAPSED(start, end));
-#endif
     gomp_team_barrier_wait_final_last(&popcorn_node[nid].bar);
   }
   else gomp_team_barrier_wait_final(&popcorn_node[nid].bar);
@@ -500,7 +455,7 @@ static inline void loop_init(struct gomp_work_share *ws,
 #ifdef HAVE_SYNC_BUILTINS
   {
     /* For dynamic scheduling prepare things to make each iteration faster. */
-    long nthreads = popcorn_node[nid].sync.num;
+    long nthreads = popcorn_global.threads_per_node[nid];
     if(__builtin_expect (incr > 0, 1))
     {
       /* Cheap overflow protection.  */
@@ -543,7 +498,7 @@ static inline void loop_init_ull(struct gomp_work_share *ws,
   {
     /* For dynamic scheduling prepare things to make each iteration
        faster.  */
-    long nthreads = popcorn_node[nid].sync.num;
+    long nthreads = popcorn_global.threads_per_node[nid];
     if(__builtin_expect (up, 1))
     {
       /* Cheap overflow protection.  */
@@ -593,8 +548,9 @@ static int calculate_splits(workshare_csr_t *csr, struct gomp_work_share *ws)
   popcorn_global.split[0] = ws->next;
   for(i = 1; i < MAX_POPCORN_NODES; i++)
   {
-    if(!popcorn_node[i].sync.num) continue;
-    split_range += csr->core_speed_rating[i-1] * popcorn_node[i-1].sync.num;
+    if(!popcorn_global.threads_per_node[i]) continue;
+    split_range += csr->core_speed_rating[i-1] *
+                   popcorn_global.threads_per_node[i-1];
     popcorn_global.split[i] = ws->next +
       (split_range / csr->scaled_thread_range) * remaining;
     ROUND_LONG(popcorn_global.split[i], ws->incr);
@@ -631,8 +587,9 @@ calculate_splits_ull(workshare_csr_t *csr, struct gomp_work_share *ws)
   popcorn_global.split_ull[0] = ws->next_ull;
   for(i = 1; i < MAX_POPCORN_NODES; i++)
   {
-    if(!popcorn_node[i].sync.num) continue;
-    split_range += csr->core_speed_rating[i-1] * popcorn_node[i-1].sync.num;
+    if(!popcorn_global.threads_per_node[i]) continue;
+    split_range += csr->core_speed_rating[i-1] *
+                   popcorn_global.threads_per_node[i-1];
     popcorn_global.split_ull[i] = ws->next_ull +
       (split_range / csr->scaled_thread_range) * remaining;
     ROUND_ULL(popcorn_global.split_ull[i], ws->incr_ull);
@@ -785,7 +742,7 @@ void hierarchy_log_statistics(int nid, const void *ident)
                                      false, NULL);
   if(leader)
   {
-    popcorn_node[nid].workshare_time /= popcorn_node[nid].sync.num;
+    popcorn_node[nid].workshare_time /= popcorn_global.threads_per_node[nid];
     popcorn_get_page_faults(&sent, &recv);
     popcorn_node[nid].page_faults = sent - popcorn_node[nid].page_faults;
     hierarchy_leader_cleanup(&popcorn_node[nid].sync);
@@ -817,7 +774,7 @@ void hierarchy_init_workshare_static(int nid,
   if(ws == NULL)
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init(ws, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
     if(popcorn_log_statistics) init_statistics(nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
@@ -839,7 +796,7 @@ void hierarchy_init_workshare_static_ull(int nid,
   if(ws == NULL)
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init_ull(ws, true, lb, ub, incr, GFS_HIERARCHY_STATIC, chunk, nid);
     if(popcorn_log_statistics) init_statistics(nid);
     gomp_ptrlock_set(&popcorn_node[nid].ws_lock, ws);
@@ -866,7 +823,7 @@ void hierarchy_init_workshare_dynamic(int nid,
        the next batch from the global pool immediately.  This is because we
        don't know where each node's pool of work starts/ends. */
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init(ws, lb, lb, incr, GFS_HIERARCHY_DYNAMIC, chunk, nid);
     if(popcorn_log_statistics) init_statistics(nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
@@ -898,7 +855,7 @@ void hierarchy_init_workshare_dynamic_ull(int nid,
   if(ws == NULL)
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init_ull(ws, true, lb, lb, incr, GFS_HIERARCHY_DYNAMIC, chunk, nid);
     if(popcorn_log_statistics) init_statistics(nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
@@ -948,7 +905,7 @@ void hierarchy_init_workshare_hetprobe(int nid,
   if(ws == NULL)
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init(ws, lb, lb, incr, GFS_HETPROBE, chunk, nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
@@ -1021,7 +978,7 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
   if(ws == NULL)
   {
     ws = popcorn_malloc(sizeof(struct gomp_work_share), nid);
-    gomp_init_work_share(ws, false, popcorn_node[nid].sync.num);
+    gomp_init_work_share(ws, false, popcorn_global.threads_per_node[nid]);
     loop_init_ull(ws, true, lb, lb, incr, GFS_HETPROBE, chunk, nid);
     global = gomp_ptrlock_get(&popcorn_global.ws_lock);
     if(global == NULL)
@@ -1077,7 +1034,7 @@ bool hierarchy_next_dynamic(int nid, long *start, long *end)
   if(!ret && !ws->threads_completed)
   {
     /* Local work share is out of work to distribute; replenish from global */
-    chunk = ws->chunk_size * popcorn_node[nid].sync.num;
+    chunk = ws->chunk_size * popcorn_global.threads_per_node[nid];
     ret = gomp_iter_dynamic_next_raw(&ws->next, &ws->end,
                                      popcorn_global.ws, chunk);
     if(ret) ret = gomp_iter_dynamic_next_locked_ws(start, end, ws);
@@ -1101,7 +1058,7 @@ bool hierarchy_next_dynamic_ull(int nid,
   ret = gomp_iter_ull_dynamic_next_locked_ws(start, end, ws);
   if(!ret && !ws->threads_completed)
   {
-    chunk = ws->chunk_size_ull * popcorn_node[nid].sync.num;
+    chunk = ws->chunk_size_ull * popcorn_global.threads_per_node[nid];
     ret = gomp_iter_ull_dynamic_next_raw(&ws->next_ull, &ws->end_ull,
                                          popcorn_global.ws, chunk);
     if(ret) ret = gomp_iter_ull_dynamic_next_locked_ws(start, end, ws);
@@ -1125,7 +1082,8 @@ static float calc_avg_us_per_pf()
     if(cur_elapsed)
     {
       uspf = (float)cur_elapsed / (float)popcorn_global.page_faults[i];
-      avg_uspf += uspf * ((float)popcorn_node[i].sync.num / nthreads);
+      avg_uspf +=
+        uspf * ((float)popcorn_global.threads_per_node[i] / nthreads);
     }
   }
 
@@ -1150,7 +1108,8 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
 
   /* Calculate this node's average time & page faults */
   popcorn_global.workshare_time[nid] =
-    MAX(popcorn_node[nid].workshare_time / popcorn_node[nid].sync.num, 1);
+    MAX(popcorn_node[nid].workshare_time /
+        popcorn_global.threads_per_node[nid], 1);
   popcorn_get_page_faults(&sent, &recv);
   popcorn_global.page_faults[nid] = sent - popcorn_node[nid].page_faults;
 
@@ -1181,9 +1140,10 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
           if(i == popcorn_preferred_node)
           {
             popcorn_global.core_speed_rating[i] = 1;
-            popcorn_global.scaled_thread_range = popcorn_node[i].sync.num;
+            popcorn_global.scaled_thread_range =
+              popcorn_global.threads_per_node[i];
             csr->core_speed_rating[i] = 1.0;
-            csr->scaled_thread_range = popcorn_node[i].sync.num;
+            csr->scaled_thread_range = popcorn_global.threads_per_node[i];
           }
           else
           {
@@ -1230,7 +1190,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
                                   csr->core_speed_rating[i],
                                   csr->trips);
           csr->scaled_thread_range += csr->core_speed_rating[i] *
-                                      popcorn_node[i].sync.num;
+                                      popcorn_global.threads_per_node[i];
         }
       }
     }
@@ -1398,7 +1358,8 @@ void hierarchy_loop_end(int nid, const void *ident, bool global)
     if(popcorn_log_statistics && !ent)
     {
       popcorn_global.workshare_time[nid] =
-        popcorn_node[nid].workshare_time / popcorn_node[nid].sync.num;
+        popcorn_node[nid].workshare_time /
+        popcorn_global.threads_per_node[nid];
       popcorn_get_page_faults(&sent, &recv);
       popcorn_global.page_faults[nid] = sent - popcorn_node[nid].page_faults;
     }
