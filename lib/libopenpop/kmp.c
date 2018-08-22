@@ -114,8 +114,13 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   popcorn_log("%s\t%p\t%lu\n", loc->psource, microtask, NS(end) - NS(start));
 #endif
 
+  /*
+   * We've already set the core speed ratios to adjust for single-node
+   * execution, change the configuration so that only threads on the
+   * preferred node execute.
+   */
   // TODO hardcoded for 2 nodes
-  if(popcorn_killswitch)
+  if(popcorn_global.popcorn_killswitch)
   {
     if(popcorn_preferred_node == 0)
     {
@@ -495,9 +500,9 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
     {                                                                         \
       TYPE probe_size = nthreads * chunk * st;                                \
       if(probe_size > (TYPE)((float)(ub - lb) * 0.25)) {                      \
-        schedule = kmp_sch_dynamic_chunked_hierarchy;                         \
+        schedule = kmp_sch_static_hierarchy;                                  \
         DEBUG_ONE("Probe chunk too big (" SPEC "), reverting to "             \
-                  "hierarchical dynamic scheduler\n", probe_size);            \
+                  "hierarchical static scheduler\n", probe_size);             \
       }                                                                       \
     }                                                                         \
   }                                                                           \

@@ -375,6 +375,7 @@ typedef struct workshare_csr
     long chunk_size;
     unsigned long long chunk_size_ull;
   };
+  float uspf;
   float scaled_thread_range;
   float core_speed_rating[MAX_POPCORN_NODES];
 } workshare_csr_t;
@@ -399,7 +400,8 @@ static inline hash_entry_type new_hash_value(const void *ident)
   new_val->trips = 0;
   new_val->remaining = 0;
   new_val->chunk_size = 0;
-  new_val->scaled_thread_range = 0;
+  new_val->uspf = 0.0;
+  new_val->scaled_thread_range = 0.0;
   memset(&new_val->core_speed_rating, 0, sizeof(float) * MAX_POPCORN_NODES);
   return new_val;
 }
@@ -410,9 +412,6 @@ void popcorn_init_workshare_cache(size_t size)
 size_t popcorn_max_probes;
 const char *popcorn_prime_region;
 int popcorn_preferred_node;
-
-/* Once set, only use the preferred node for all subsequent hetprobe regions */
-bool popcorn_killswitch = false;
 
 #ifndef _CACHE_HETPROBE
 /* If not using a cache, use a single global core speed rating struct which
@@ -743,9 +742,11 @@ static void log_hetprobe_results(const char *ident, workshare_csr_t *csr)
   }
 
   snprintf(cur, REMAINING_BUF(buf, cur),
-           "\nProbe: %ld / %llu probe iters/thread, %ld / %llu remaining\n",
+           "\nProbe: %ld / %llu probe iters/thread, "
+           "%ld / %llu remaining, %.3f us/fault\n",
            csr->chunk_size, csr->chunk_size_ull,
-           csr->remaining, csr->remaining_ull);
+           csr->remaining, csr->remaining_ull,
+           csr->uspf);
   popcorn_log(buf);
 }
 
@@ -931,7 +932,7 @@ void hierarchy_init_workshare_hetprobe(int nid,
   hash_entry_type ent = NULL;
 #endif
 
-  if(popcorn_killswitch)
+  if(popcorn_global.popcorn_killswitch)
   {
     /* Somebody hit the distributed execution killswitch, only give work to the
        preferred node. */
@@ -1006,7 +1007,7 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
   hash_entry_type ent = NULL;
 #endif
 
-  if(popcorn_killswitch)
+  if(popcorn_global.popcorn_killswitch)
   {
     if(nid == popcorn_preferred_node)
       hierarchy_init_workshare_static_ull(nid, lb, ub, incr, chunk);
@@ -1131,6 +1132,12 @@ static float calc_avg_us_per_pf()
   return avg_uspf;
 }
 
+static inline float time_weighted_average(float cur, float prev, bool first)
+{
+  if(first) return cur;
+  else return (0.75 * cur) + (0.25 * prev);
+}
+
 #define MAX( a, b ) ((a) > (b) ? (a) : (b))
 
 // TODO this is ugly, refactor
@@ -1139,7 +1146,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
   bool leader, calc_csr = true;
   size_t i, max_idx;
   unsigned long long cur_elapsed, min = UINT64_MAX, max = 0, sent, recv;
-  float scale, cur_rating, avg_uspf;
+  float scale, cur_rating;
 
   /* Calculate this node's average time & page faults */
   popcorn_global.workshare_time[nid] =
@@ -1152,20 +1159,22 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
                                      false, NULL);
   if(leader)
   {
+    csr->uspf =
+      time_weighted_average(calc_avg_us_per_pf(), csr->uspf, csr->trips);
+
     /* If we've reached max probes, make a determination -- are we going to run
        across nodes or not? */
     if(csr->trips >= popcorn_max_probes && popcorn_prime_region &&
        strcmp(csr->ident, popcorn_prime_region) == 0)
     {
-      avg_uspf = calc_avg_us_per_pf();
-      if(avg_uspf <= 100.0)
+      if(csr->uspf <= 100.0)
       {
         /* It's not worth it -- use only the preferred node.  Note that we
            still need to set up the CSR for the remaining iterations in this
            work-sharing region.  Also set the global core speed rating, as
            the next hetprobe region will default to the static scheduler. */
         calc_csr = false;
-        popcorn_killswitch = true;
+        popcorn_global.popcorn_killswitch = true;
         popcorn_global.het_workshare = true;
         for(i = 0; i < MAX_POPCORN_NODES; i++)
         {
@@ -1216,9 +1225,10 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
         {
           /* Update CSRs based on an exponentially-weighted moving average */
           cur_rating = (float)min / (float)cur_elapsed * scale;
-          if(csr->trips) csr->core_speed_rating[i] =
-            0.75 * cur_rating + 0.25 * csr->core_speed_rating[i];
-          else csr->core_speed_rating[i] = cur_rating;
+          csr->core_speed_rating[i] =
+            time_weighted_average(cur_rating,
+                                  csr->core_speed_rating[i],
+                                  csr->trips);
           csr->scaled_thread_range += csr->core_speed_rating[i] *
                                       popcorn_node[i].sync.num;
         }

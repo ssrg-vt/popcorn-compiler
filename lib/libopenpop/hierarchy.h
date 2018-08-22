@@ -53,6 +53,9 @@ typedef struct {
   bool hybrid_reduce;
   bool het_workshare;
 
+  // TODO
+  bool popcorn_killswitch;
+
   /* Popcorn nodes available & thread placement across nodes */
   unsigned long nodes;
   unsigned long threads_per_node[MAX_POPCORN_NODES];
@@ -208,8 +211,6 @@ bool hierarchy_reduce(int nid,
 ///////////////////////////////////////////////////////////////////////////////
 // Work sharing
 ///////////////////////////////////////////////////////////////////////////////
-
-extern bool popcorn_killswitch;
 
 /* TODO descriptions */
 void hierarchy_init_statistics(int nid);
