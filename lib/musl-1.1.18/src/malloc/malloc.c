@@ -38,7 +38,7 @@ static struct {
 	volatile uint64_t binmap;
 	struct bin bins[64];
 	volatile int free_lock[2];
-} mal;
+} __attribute__((aligned(4096))) mal;
 
 /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
 static void __attribute__((constructor)) __init_malloc()
