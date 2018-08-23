@@ -117,53 +117,60 @@ check: all
 	$(ALIGN_CHECK) $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 %.x86.o: %.c
+	@echo "[x86_64-cc] $<.x86.o"
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $<.x86.bc
+	@$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $<.x86.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.x86.bc $<.x86.bc
+	@$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.x86.bc $<.x86.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS_X86)	-c $<.x86.bc -o $@
+	@$(CC) $(CFLAGS_X86)	-c $<.x86.bc -o $@
 
 %.arm.o: %.c
+	@echo "[aarch64-cc] $<.x86.o"
 	@# 1. emit bitcode
-	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $<.arm.bc
+	@$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $<.arm.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.arm.bc $<.arm.bc
+	@$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.arm.bc $<.arm.bc
 	@# 3. Compile into object file
-	$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
+	@$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
 
 $(PROG_X86): $(OBJS_X86) $(KERNEL_X86) $(LMIGRATE_X86) $(LSTACKTRASNFORM_X86)
+	@echo "[ld-unaligned] $(PROG_X86)"
 	@# 4. Link
-	$(LD) -o $(PROG_X86) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_X86)
+	@$(LD) -o $(PROG_X86) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_X86)
 
 $(PROG_ARM): $(OBJS_ARM) $(KERNEL_ARM) $(LMIGRATE_ARM) $(LSTACKTRASNFORM_ARM)
+	@echo "[ld-unaligned] $(PROG_ARM)"
 	@# 4. Link
-	$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
+	@$(LD) -o $(PROG_ARM) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ARM)
 
 $(LINKER_SCRIPT_ALIGNED_X86) $(LINKER_SCRIPT_ALIGNED_ARM): $(PROG_X86) $(PROG_ARM)
+	@echo "[align] $(PROG_X86) $(PROG_ARM)"
 	@#5. Align
-	$(ALIGN) --compiler-inst $(PH_PREFIX_HOST) \
+	@$(ALIGN) --compiler-inst $(PH_PREFIX_HOST) \
 	--x86-bin $(PROG_X86) --arm-bin $(PROG_ARM) \
 	--x86-map $(MAP_X86) --arm-map $(MAP_ARM) \
 	--output-x86-ls $(LINKER_SCRIPT_ALIGNED_X86) \
 	--output-arm-ls $(LINKER_SCRIPT_ALIGNED_ARM)
 
 $(PROG_X86_ALIGNED): $(LINKER_SCRIPT_ALIGNED_X86) $(KERNEL_X86)
+	@echo "[ld-aligned] $(PROG_X86_ALIGNED)"
 	@# 6. Link with aligned script
-	$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
+	@$(LD) -o $(PROG_X86_ALIGNED) $(OBJS_X86) $(ADD_OBJS_X86) $(LIBS) $(LDFLAGS_ALIGN_X86)
 	@# 7. Post-process
-	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86_ALIGNED)
+	@$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_X86_ALIGNED)
 	@# 8. Change OSABI
-	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+	@$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
 		$(PROG_X86_ALIGNED)
 
 $(PROG_ARM_ALIGNED): $(LINKER_SCRIPT_ALIGNED_ARM) $(KERNEL_ARM)
+	@echo "[ld-aligned] $(PROG_ARM_ALIGNED)"
 	@# 6. Link with aligned script
-	$(LD) -o $(PROG_ARM_ALIGNED) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ALIGN_ARM)
+	@$(LD) -o $(PROG_ARM_ALIGNED) $(OBJS_ARM) $(ADD_OBJS_ARM) $(LIBS) $(LDFLAGS_ALIGN_ARM)
 	@# 7. Post-process
-	$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM_ALIGNED)
+	@$(PH_PREFIX_HOST)/bin/gen-stackinfo -f $(PROG_ARM_ALIGNED)
 	@# 8. Change OSABI
-	$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
+	@$(PH_PREFIX_HOST)/bin/x86_64-hermit-elfedit --output-osabi=HermitCore \
 		$(PROG_ARM_ALIGNED)
 
 test-x86: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
