@@ -30,11 +30,14 @@ struct bin {
 	struct chunk *tail;
 };
 
-static struct {
+struct {
 	volatile uint64_t binmap;
 	struct bin bins[64];
 	volatile int free_lock[2];
-} mal[MAX_POPCORN_NODES];
+	char padding[4096 - sizeof(uint64_t)
+			  - (sizeof(struct bin) * 64)
+			  - (sizeof(int) * 2)];
+} __attribute__((aligned(4096))) mal[MAX_POPCORN_NODES];
 
 /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
 static void __attribute__((constructor)) __init_malloc()
