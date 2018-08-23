@@ -90,10 +90,8 @@ typedef struct {
   aligned_void_ptr ALIGN_PAGE reductions[MAX_POPCORN_NODES];
 
   /* Global work share */
-  union ALIGN_PAGE {
-    gomp_ptrlock_t ws_lock;
-    struct gomp_work_share *ws;
-  };
+  struct gomp_work_share ALIGN_PAGE ws;
+  gomp_ptrlock_t ws_lock;
 
   /* Global timing information for the heterogeneous probing scheduler */
   unsigned long long workshare_time[MAX_POPCORN_NODES];
@@ -122,10 +120,8 @@ typedef struct {
   /* Per-node work shares.  Maintains a local view of the work-sharing region
      which will be replenished dynamically from the global work distribution
      queue. */
-  union {
-    gomp_ptrlock_t ws_lock;
-    struct gomp_work_share *ws;
-  };
+  struct gomp_work_share ws;
+  gomp_ptrlock_t ws_lock;
 
   /* Per-node timing information for the heterogeneous probing scheduler */
   unsigned long long workshare_time;
@@ -138,6 +134,7 @@ typedef struct {
   char padding[PAGESZ - (2 * sizeof(leader_select_t))
                       - sizeof(gomp_barrier_t)
                       - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)
+                      - sizeof(struct gomp_work_share)
                       - sizeof(gomp_ptrlock_t)
                       - sizeof(unsigned long long)
                       - sizeof(unsigned long long)];

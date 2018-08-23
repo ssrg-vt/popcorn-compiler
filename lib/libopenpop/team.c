@@ -939,7 +939,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       nodes = 0;
       for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
 	{
-	  if (popcorn_global.threads_per_node[i])
+	  if (popcorn_global.threads_per_node[nid])
 	    {
 	      hierarchy_init_node(nid);
 	      nodes++;
