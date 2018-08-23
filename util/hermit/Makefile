@@ -106,6 +106,9 @@ DEBUG?=0
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME := $(shell ssh $(ARM_TARGET_IP) "pwd")
 
+# Transfer method can be 'rsync --no-whole-file' or ssh, rsync is faster
+TRANFER_METHOD=rsync --no-whole-file
+
 all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 check: all
@@ -173,15 +176,21 @@ test-x86: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 
 test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
 	@ssh $(ARM_TARGET_IP) "rm -rf $(ARM_TARGET_HOME)/proxy && killall -q -9 proxy; true"
-	scp $(PROXY_ARM) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/proxy
-	scp $(PROG_ARM_ALIGNED) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/
-	scp $(PROG_X86_ALIGNED) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/
+	$(TRANFER_METHOD) $(PROXY_ARM) $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/
 	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		HERMIT_NODE_ID=1 ST_AARCH64_BIN=$(PROG_ARM_ALIGNED) \
 		ST_X86_64_BIN=$(PROG_X86_ALIGNED) \
 		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
+
+transfer-checkpoint-to-arm:
+	$(TRANFER_METHOD) *.bin stack.bin.* tls.bin.* $(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+
+transfer-checkpoint-from-arm:
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/stack.bin.* .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/tls.bin.* .
 
 objdump-x86:
 	objdump --source $(PROG_X86_ALIGNED) > /tmp/objdump-x86.txt && \
