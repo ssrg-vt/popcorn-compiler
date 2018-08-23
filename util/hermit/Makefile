@@ -26,7 +26,9 @@ INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 # Compiler and linker
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
-#LD=/usr/local/popcorn/bin/ld.gold
+
+# Options to pass to LLVM opt
+OPT_OPTIONS=-O1 -optimize-regalloc -insert-stackmaps
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
@@ -118,8 +120,7 @@ check: all
 	@# 1. emit bitcode
 	$(CC) $(CFLAGS_X86) $(INC_X86) -c $< -emit-llvm -o $<.x86.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt -O1 -optimize-regalloc -insert-stackmaps \
-		-o $<.x86.bc $<.x86.bc
+	$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.x86.bc $<.x86.bc
 	@# 3. Compile into object file
 	$(CC) $(CFLAGS_X86)	-c $<.x86.bc -o $@
 
@@ -127,8 +128,7 @@ check: all
 	@# 1. emit bitcode
 	$(CC) $(CFLAGS_ARM) $(INC_ARM) -c $< -emit-llvm -o $<.arm.bc
 	@# 2. Optimize
-	$(PH_PREFIX_HOST)/bin/opt -O1 -optimize-regalloc -insert-stackmaps \
-		-o $<.arm.bc $<.arm.bc
+	$(PH_PREFIX_HOST)/bin/opt $(OPT_OPTIONS) -o $<.arm.bc $<.arm.bc
 	@# 3. Compile into object file
 	$(CC) $(CFLAGS_ARM)	-c $<.arm.bc -o $@
 
