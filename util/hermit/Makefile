@@ -26,7 +26,6 @@ INC_ARM=$(INC) -isystem $(PH_PREFIX_ARM)/include -nostdinc
 # Compiler and linker
 CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
-#LD=/usr/local/popcorn/bin/ld.gold
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
