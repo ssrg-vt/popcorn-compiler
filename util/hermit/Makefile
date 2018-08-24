@@ -28,7 +28,7 @@ CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
 
 # Options to pass to LLVM opt
-OPT_OPTIONS=-O1 -optimize-regalloc -insert-stackmaps
+OPT_OPTIONS=-O2 -optimize-regalloc -insert-stackmaps
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
