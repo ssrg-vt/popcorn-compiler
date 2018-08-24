@@ -30,9 +30,10 @@ struct node_info {
 	int distance;
 };
 
-/* Hermit syscalls */
+/* Hermit syscalls/interface */
 extern int sys_get_node_info(int *origin_nid, struct node_info* ni);
 extern int sys_get_thread_status(struct popcorn_thread_status *status);
+extern void force_migration_flag(int val);
 
 /* Stack tranformation cleanup function */
 extern void __st_dtor(void);
@@ -285,6 +286,7 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 		__builtin_trap();
       }
 
+      force_migration_flag(1);
       MIGRATE;
 	  fprintf(stderr, "Couldn't migrate!\n");
 	  __builtin_trap();
