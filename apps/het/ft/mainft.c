@@ -46,13 +46,13 @@ static char getclass();
 
 logical timers_enabled;
 
+  logical verified;
 
 int main(int argc, char *argv[])
 {
   int niter;
   char Class;
   double total_time, mflops;
-  logical verified;
 
   FILE *fp;
   if ((fp = fopen("timer.flag", "r")) != NULL) {

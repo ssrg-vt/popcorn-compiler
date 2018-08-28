@@ -43,14 +43,10 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE 0
-
+#define TARGET_NODE 1
 extern void force_migration_flag(int val);
 int migfun(void) {
-		printf("migration function called\n");
-			force_migration_flag(1);
-				migrate(TARGET_NODE, NULL, NULL);
-					return 0;
+	return migrate(TARGET_NODE, NULL, NULL);
 }
 
 

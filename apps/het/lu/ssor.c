@@ -41,10 +41,7 @@
 
 extern void force_migration_flag(int val);
 int migfun(void) {
-		printf("migration function called\n");
-			force_migration_flag(1);
-				migrate(TARGET_NODE, NULL, NULL);
-					return 0;
+	return migrate(TARGET_NODE, NULL, NULL);
 }
   double tmp, tv[ISIZ2][ISIZ1][5];
   double delunm[5];
@@ -132,7 +129,7 @@ void ssor(int niter)
 
 	printf("Progress: %d/%d\n", istep, niter);
 //	HERMIT_MIGPOINT();
-	if(istep == niter/25)
+	if(istep == niter/50)
 		migfun();
 
     if ((istep % 20) == 0 || istep == itmax || istep == 1) {

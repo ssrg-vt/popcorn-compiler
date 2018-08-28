@@ -46,15 +46,11 @@
 
 #include <hermit/migration.h>
 
-#define USE_MALLOC	0
+#define USE_MALLOC	1
 
-#define TARGET_NODE	0
-extern void force_migration_flag(int val);
+#define TARGET_NODE	1
 int migfun(void) {
-	printf("migration function called\n");
-	force_migration_flag(1);
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
+	return migrate(TARGET_NODE, NULL, NULL);
 }
 
 static void setup(int *n1, int *n2, int *n3);

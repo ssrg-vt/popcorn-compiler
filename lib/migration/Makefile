@@ -33,7 +33,7 @@ INC_ARM     := $(INC) -isystem $(POPCORN_ARM)/include
 INC_X86     := $(INC) -isystem $(POPCORN_X86)/include
 
 OPT       := $(POPCORN)/x86_64-host/bin/opt
-OPT_FLAGS := -O3 -disable-loop-vectorization -disable-slp-vectorization \
+OPT_FLAGS := -disable-loop-vectorization -disable-slp-vectorization \
              -insert-stackmaps -no-live-vals
 
 AR      := $(POPCORN)/x86_64-host/bin/x86_64-hermit-ar

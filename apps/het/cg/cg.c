@@ -46,7 +46,10 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE 1
+#define TARGET_NODE 0
+void migfun(void) {
+	return migrate(TARGET_NODE, NULL, NULL);
+}
 
 //---------------------------------------------------------------------
 /* common / main_int_mem / */
@@ -123,13 +126,6 @@ static void sprnvc(int n, int nz, int nn1, double v[], int iv[]);
 static int icnvrt(double x, int ipwr2);
 static void vecset(int n, double v[], int iv[], int *nzv, int i, double val);
 //---------------------------------------------------------------------
-
-extern void force_migration_flag(int val);
-void migfun(void) {
-	force_migration_flag(1);
-	migrate(TARGET_NODE, NULL, NULL);
-	return;
-}
 
 int main(int argc, char *argv[])
 {
