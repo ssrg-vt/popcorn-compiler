@@ -11,11 +11,15 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <sys/time.h>
+#include <hermit/migration.h>
 
+#if 0
 #define TARGET_NODE 0
 int migfun(void) {
 	return migrate(TARGET_NODE, NULL, NULL);
 }
+#endif
 
 #ifdef ENABLE_PARSEC_HOOKS
 #include <hooks.h>
@@ -288,10 +292,12 @@ int bs_thread(void *tid_ptr) {
     int end = start + (numOptions / nThreads);
 
     for (j=0; j<NUM_RUNS; j++) {
-		printf("%d\n", j);
+//		printf("%d\n", j);
 
-		if(j == NUM_RUNS/2)
-			migfun();
+		popcorn_check_migrate();
+
+//		if(j == NUM_RUNS/2)
+//			migfun();
 
 #ifdef ENABLE_OPENMP
 #pragma omp parallel for private(i, price, priceDelta)
@@ -333,6 +339,9 @@ int main (int argc, char **argv)
     fptype * buffer;
     int * buffer2;
     int rv;
+	struct timeval start, end, total;
+
+	gettimeofday(&start, NULL);
 
 #ifdef PARSEC_VERSION
 #define __PARSEC_STRING(x) #x
@@ -427,7 +436,7 @@ int main (int argc, char **argv)
         otime[i]      = data[i].t;
     }
 
-    printf("Size of data: %d\n", numOptions * (sizeof(OptionData) + sizeof(int)));
+    printf("Size of data: %ld\n", numOptions * (sizeof(OptionData) + sizeof(int)));
 
 #ifdef ENABLE_PARSEC_HOOKS
     __parsec_roi_begin();
@@ -473,6 +482,16 @@ int main (int argc, char **argv)
     bs_thread(&tid);
 #else //ENABLE_TBB
     //serial version
+
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &total);
+	printf("init time: %ld.%06ld\n", total.tv_sec, total.tv_usec);
+
+	//force_migration_flag(1);
+	//migfun();
+
+	gettimeofday(&start, NULL);
+
     int tid=0;
     bs_thread(&tid);
 #endif //ENABLE_TBB
@@ -482,6 +501,10 @@ int main (int argc, char **argv)
 #ifdef ENABLE_PARSEC_HOOKS
     __parsec_roi_end();
 #endif
+
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &total);
+	printf("compute time: %ld.%06ld\n", total.tv_sec, total.tv_usec);
 
     //Write prices to output file
     file = fopen(outputFile, "w");

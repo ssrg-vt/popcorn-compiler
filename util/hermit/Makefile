@@ -106,7 +106,7 @@ MIGTEST?=0
 RESUME?=0
 DEBUG?=0
 ARM_TARGET_IP?=potato
-ARM_TARGET_HOME := $(shell ssh $(ARM_TARGET_IP) "pwd")
+ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
 # Transfer method can be 'rsync --no-whole-file' or ssh, rsync is faster
 TRANFER_METHOD=rsync --no-whole-file

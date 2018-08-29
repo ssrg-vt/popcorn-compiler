@@ -286,7 +286,6 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
 		__builtin_trap();
       }
 
-      force_migration_flag(1);
       MIGRATE;
 	  fprintf(stderr, "Couldn't migrate!\n");
 	  __builtin_trap();
@@ -330,4 +329,23 @@ void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_
 /* Hook inserted by compiler at the end of a function. */
 void __attribute__((alias("__cyg_profile_func_enter")))
 __cyg_profile_func_exit(void *this_fn, void *call_site);
+
+/* Popcorn - hermit interface, single threaded only */
+
+typedef struct { volatile int32_t counter; } atomic_int32_t;
+extern atomic_int32_t should_migrate;
+
+/* If the flag is set, migrate to remote architecture (i.e. x86 if we are on
+ * arm and arm if we are on x86 */
+void popcorn_check_migrate(void) {
+	if(should_migrate.counter == 1) {
+#ifdef __aarch64__
+		/* Transform stack to x86 format and checkpoint */
+		return migrate(0, NULL, NULL);
+#else
+		/* Transform stack to arm format and migrate */
+		return migrate(1, NULL, NULL);
+#endif
+	}
+}
 

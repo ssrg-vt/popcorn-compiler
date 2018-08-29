@@ -185,20 +185,8 @@ double sx_verify_value = 1;
     t1 = S;
     t2 = an;
 
-	if(k == np/20) {
-//		printf("sx before: %f @%p\n", sx, &sx);
-//		printf("x0 before: %f @%p\n", x[0], &(x[0]));
-//		printf("x1 before: %f @%p\n", x[1], &(x[1]));
-//		printf("x2 before: %f @%p\n", x[2], &(x[2]));
-		migfun();
-//		printf("sx after: %f @%p\n", sx, &sx);
-//		printf("x0 after: %f @%p\n", x[0], &(x[0]));
-//		printf("x1 after: %f @%p\n", x[1], &(x[1]));
-//		printf("x2 after: %f @%p\n", x[2], &(x[2]));
-	}
-	printf("Progress: %d/%d (sx: %f)\n", k, np, sx);
-//	HERMIT_MIGPOINT();
-
+	//printf("Progress: %d/%d (sx: %f)\n", k, np, sx);
+	popcorn_check_migrate();
 
     // Find starting seed t1 for this kk.
 

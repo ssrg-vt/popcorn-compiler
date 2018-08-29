@@ -43,12 +43,13 @@
 
 #include <hermit/migration.h>
 
+#if 0
 #define TARGET_NODE 1
 extern void force_migration_flag(int val);
 int migfun(void) {
 	return migrate(TARGET_NODE, NULL, NULL);
 }
-
+#endif
 
 /* common /global/ */
 int grid_points[3], nx2, ny2, nz2;
@@ -194,14 +195,8 @@ int main(int argc, char *argv[])
 
   for (step = 1; step <= niter; step++) {
 
-	  //HERMIT_MIGPOINT();
-	  printf("progress: %d/%d\n", step, niter);
-
-	  if(step == niter/50) {
-		  printf("rhs0 = %f\n", rhs[0][0][0][0]);
-		  migfun();
-		  printf("rhs0 = %f\n", rhs[0][0][0][0]);
-	  }
+	  //printf("progress: %d/%d\n", step, niter);
+	  popcorn_check_migrate();
 
 	  if ((step % 20) == 0 || step == 1) {
       printf(" Time step %4d\n", step);

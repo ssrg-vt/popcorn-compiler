@@ -46,10 +46,12 @@
 
 #include <hermit/migration.h>
 
+#if 0
 #define TARGET_NODE 0
-void migfun(void) {
+int migfun(void) {
 	return migrate(TARGET_NODE, NULL, NULL);
 }
+#endif
 
 //---------------------------------------------------------------------
 /* common / main_int_mem / */
@@ -291,6 +293,9 @@ int main(int argc, char *argv[])
 
   printf(" Initialization time = %15.3f seconds\n", timer_read(T_init));
 
+  //force_migration_flag(1);
+	//migfun();
+
   timer_start(T_bench);
 
   //---------------------------------------------------------------------
@@ -300,10 +305,8 @@ int main(int argc, char *argv[])
   //---------------------------------------------------------------------
   for (it = 1; it <= NITER; it++) {
 
-	printf("Progress: %d/%d\n", it, NITER);
-	//migrate_if_needed();
-	if(it == NITER/10)
-		migfun();
+	//printf("Progress: %d/%d\n", it, NITER);
+	popcorn_check_migrate();
 
     //---------------------------------------------------------------------
     // The call to the conjugate gradient routine:
