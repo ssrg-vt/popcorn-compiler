@@ -46,8 +46,8 @@
 
 #include <hermit/migration.h>
 
-#define USE_MALLOC 0
-#define TARGET_NODE 1
+#define USE_MALLOC 1
+//#define TARGET_NODE 1
 
 /*****************************************************************/
 /* For serial IS, buckets are not really req'd to solve NPB1 IS  */
@@ -664,7 +664,7 @@ void rank( int iteration )
 
 }      
 
-
+#if 0
 extern void force_migration_flag(int val);
 int migfun(void) {
 	printf("migration function called\n");
@@ -672,6 +672,7 @@ int migfun(void) {
 	migrate(TARGET_NODE, NULL, NULL);
 	return 0;
 }
+#endif
 
 /*****************************************************************/
 /*************             M  A  I  N             ****************/
@@ -769,7 +770,8 @@ int main( int argc, char **argv )
 /*  This is the main iteration */
     for( iteration=1; iteration<=MAX_ITERATIONS; iteration++ )
     {
-        
+		popcorn_check_migrate();
+#if 0
 		if(iteration == (MAX_ITERATIONS/2)) {
 
 			static int ret = 1;
@@ -782,6 +784,7 @@ int main( int argc, char **argv )
 				printf("after migration ret = %d\n", ret);
 			}
 		}
+#endif
 		
 		if( CLASS != 'S' ) printf( "        %d\n", iteration );
         rank( iteration );
