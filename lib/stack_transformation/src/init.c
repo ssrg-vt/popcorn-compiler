@@ -23,7 +23,7 @@ FILE* __log = NULL;
 extern void __st_userspace_ctor(void);
 extern void __st_userspace_dtor(void);
 
-static void __attribute__((constructor))
+void //__attribute__((constructor))
 __st_ctor(void)
 {
 #ifdef _LOG

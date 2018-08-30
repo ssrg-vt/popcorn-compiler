@@ -77,8 +77,9 @@ static int userspace_rewrite_internal(void* sp,
 /*
  * Program name, as invoked by the shell.
  */
-// Pierre: FIXME
-const char *___progname = "prog_x86_64";
+// Pierre: default binary names
+const char *___progname_x86 = "prog_x86-64_aligned";
+const char *___progname_arm = "prog_aarch64_aligned";
 
 /*
  * Binary names.  User-code can define these symbols to override these
@@ -119,13 +120,18 @@ void __st_userspace_ctor(void)
    * 2. Check if application has overridden file name symbols (defined above)
    * 3. Add architecture suffixes to current binary name (defined by libc)
    */
+  /* For now we hardcode the binary name */
+  aarch64_handle = st_init("prog_aarch64_aligned");
+#if 0
   if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
   else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
   else {
-    aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", ___progname);
-    aarch64_handle = st_init(aarch64_fn);
+//    aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+//    snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", ___progname);
+//    aarch64_handle = st_init(aarch64_fn);
+	aarch64_handle = st_init(___progname_arm);
   }
+#endif
   if(aarch64_handle) alloc_aarch64_fn = true;
   else { ST_WARN("could not initialize aarch64 handle\n"); }
 
@@ -142,13 +148,18 @@ void __st_userspace_ctor(void)
   else { ST_WARN("could not initialize powerpc64 handle\n"); }
 #endif
 
+  /* For now we hardcode the binary name */
+  x86_64_handle = st_init("prog_x86-64_aligned");
+#if 0
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
-    x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
-    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", ___progname);
-    x86_64_handle = st_init(x86_64_fn);
+//    x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+//    snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", ___progname);
+//    x86_64_handle = st_init(x86_64_fn);
+    x86_64_handle = st_init(___progname_x86);
   }
+#endif
   if(x86_64_handle) alloc_x86_64_fn = true;
   else { ST_WARN("could not initialize x86-64 handle\n"); }
 }

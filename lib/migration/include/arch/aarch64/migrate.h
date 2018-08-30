@@ -52,6 +52,7 @@
                               dst_arch, &regs_dst)) \
       { \
         fprintf(stderr, "Could not rewrite stack!\n"); \
+        __builtin_trap(); \
         ret = 0; \
       } \
       ret; \

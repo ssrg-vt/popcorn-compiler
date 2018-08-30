@@ -35,8 +35,9 @@ extern int sys_get_node_info(int *origin_nid, struct node_info* ni);
 extern int sys_get_thread_status(struct popcorn_thread_status *status);
 extern void force_migration_flag(int val);
 
-/* Stack tranformation cleanup function */
+/* Stack tranformation init and cleanup functions */
 extern void __st_dtor(void);
+extern void __st_ctor(void);
 
 #if _ENV_SELECT_MIGRATE == 1
 
@@ -237,6 +238,8 @@ static void inline __migrate_shim_internal(int nid, void (*callback)(void *),
   }
   else // Invoke migration
   {
+    /* Init stack transformation library */
+    __st_ctor();
 #if _SIG_MIGRATION == 1
     clear_migrate_flag();
 #endif
