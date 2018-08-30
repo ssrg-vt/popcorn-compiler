@@ -9,9 +9,11 @@ import shutil
 import csv
 import xmlrpclib
 
+
 #CONSTANT
-SCHEDULER_FOLDER="/home/karaoui/popcorn-xen/popcorn-compiler/scheduler/" #TODO: use env, args, or pwd
-PROXY_BIN="/home/karaoui/hermit-popcorn/x86_64-host/bin/proxy"
+SCHEDULER_FOLDER=os.getcwd()
+HERMIT_INSTALL_FOLDER="%s/hermit-popcorn/" % os.path.expanduser("~")
+PROXY_BIN=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
 APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
 RESUME_SCRIPT=os.path.join(SCHEDULER_FOLDER,"resume.sh")
@@ -22,9 +24,16 @@ SERVER_NB_CORES=8
 
 #Global variable
 timer=0
+start=0
 app_id=0
 app_info=[]
 app_list=[]
+
+#Stats variable
+started=0
+migrated=0
+terminated_local=0
+terminated_remote=0
 
 #TODO:use a class
 #format: key=pid; value=(app_name,dest_dir,proc,app_id)
@@ -60,6 +69,21 @@ def is_board_affine(app):
 
 def log_action(action, ddir):
     print(action+" application", ddir)
+def log_migration(pid):
+    migrated+=1
+    log_action("Migrated", migrated_app[pid][1])
+
+#TODO: delete folders of applications in /tmp/ (ddir)
+def __terminated(pid, lst, tp):
+    ddir=lst[pid][1]
+    log_action("Terminated ("+tp+")", ddir)
+    del lst[pid]
+def local_terminated(pid):
+    terminated_local+=1
+    __terminated(pid, running_app, "local")
+def remote_terminated(pid):
+    terminated_remote+=1
+    __terminated(pid, migrated_app, "remote")
 
 def __migrate(pid):
     #start checkpoint: send signal
@@ -85,33 +109,12 @@ def __migrate(pid):
     #remove from running app and add to migrated app
     migrated_app[proc.pid]=(running_app[pid][0],dst_dir,proc,running_app[pid][3])
     del running_app[pid]
-    log_action("Migrated", dst_dir)
+    log_migration(pid)
 
     return 
 
-def update_runnning_app():
-    global running_app
-    for pid, val in running_app.items():
-        app,ddir,proc,aid=val
-        if proc.poll() is not None:
-            del running_app[pid]
-            log_action("Terminated (local)", ddir)
-            #TODO: delete remote folder: ddir
-
-
-def update_migrated_app():
-    global migrated_app
-    for pid, val in migrated_app.items():
-        app,ddir,proc,aid=val
-        if proc.poll() is not None:
-            del migrated_app[pid]
-            log_action("Terminated (remote)", ddir)
-            #TODO: delete remote folder: ddir
 
 def migrate(running_app):
-    #update migrated_app
-    update_migrated_app()
-
     #if no core on remote machine
     if BOARD_NB_CORE <= len(migrated_app):
         return False
@@ -132,17 +135,13 @@ def scheduler_wait():
     if migrate(running_app):
         return
     #else just wait for a core to get freed
-    pid, status=os.wait() #TODO: limit the wait to the remainning time of the workload!
+    pid, status=os.wait() 
     #TODO: check status!
 
     if pid in running_app:
-        ddir=running_app[pid][1]
-        log_action("Terminated (local)", ddir)
-        del running_app[pid]
+        local_terminated(pid)
     else:
-        ddir=migrated_app[pid][1]
-        log_action("Terminated (remote)", ddir)
-        del migrated_app[pid]
+        remote_terminated(pid)
 
 #Start an application on the server
 def run_app(app_list, pos):
@@ -178,28 +177,38 @@ def run_app(app_list, pos):
 
     return True
 
+def print_report():
+    end = time.time()
+    print("Started applications", started)
+    print("Migrated applications", migrated_app)
+    print("Terminated (local) applications", terminated_local)
+    print("Terminated (remote) applications", terminated_remote)
+    print("Ending at time", end)
+    print("Total time is:", end-start)
+
+def terminate(signum, frame):
+    print_report()
+    sys.exit()
+
+def set_timer(timer):
+    # Set the signal handler and a 5-second alarm
+    signal.signal(signal.SIGALRM, terminate)
+    signal.alarm(timer)
 
 ############################# Initializaiton functions #############
 def main():
-    global app_id
-    nb_app=len(app_list)
-    
+    global app_id, start
+    set_timer(timer)
     start = time.time()
-    current = time.time()
+    nb_app=len(app_list)
     print("Starting at time", start)
-    while current-start < timer:
-        print("Remaining timer:", timer-(current-start))
+    while True:
+        scheduler_wait()
+        print("Remaining timer:", timer-(time.time()-start))
         print("Trying to place an application at:", time.time())
         run_app(app_list, app_id%nb_app)
-        scheduler_wait()
         app_id+=1
-        current = time.time()
 
-    update_runnning_app()
-    update_migrated_app()
-    end = time.time()
-    print("Ending at time", end)
-    print("Total time is:", end-start)
 
 ## handle args
 #TODO: use argparse
