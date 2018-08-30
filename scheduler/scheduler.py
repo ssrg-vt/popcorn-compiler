@@ -132,7 +132,7 @@ def scheduler_wait():
     if migrate(running_app):
         return
     #else just wait for a core to get freed
-    pid, status=os.wait()
+    pid, status=os.wait() #TODO: limit the wait to the remainning time of the workload!
     #TODO: check status!
 
     if pid in running_app:
