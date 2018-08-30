@@ -34,6 +34,9 @@ SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
 OBJS_ARM=$(SRCS:.c=.arm.o)
 
+# Binary names, for the final version _aligned will be appended in the end,
+# note that this is HARDCODED for now and stack transformation will not work
+# if the binary names are different from what is below:
 PROG_X86=prog_x86-64
 PROG_ARM=prog_aarch64
 LINKER_SCRIPT_X86=$(PH_PREFIX_X86)/lib/ls.x
