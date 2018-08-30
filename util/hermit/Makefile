@@ -196,7 +196,7 @@ test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
 		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
 
 transfer-checkpoint-to-arm:
-	$(TRANFER_METHOD) *.bin stack.bin.* tls.bin.* $(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+	$(TRANFER_METHOD) bss.bin data.bin fds.bin mdata.bin stack.bin.* tls.bin.* $(ARM_TARGET_IP):$(ARM_TARGET_HOME)
 
 transfer-checkpoint-from-arm:
 	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin .
