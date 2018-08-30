@@ -15,14 +15,9 @@
 extern int32 computeChecksum(ADC_VIEW_CNTL *avp,treeNode *t,uint64 *ordern);
 extern int32 WriteViewToDiskCS(ADC_VIEW_CNTL *avp,treeNode *t,uint64 *ordern);
 
-#define TARGET_NODE 0
-
-extern void force_migration_flag(int val);
+#define TARGET_NODE 1
 int migfun(void) {
-	printf("migration function called\n");
-	force_migration_flag(1);
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
+	return migrate(TARGET_NODE, NULL, NULL);
 }
 
 int32 ReadWholeInputData(ADC_VIEW_CNTL *avp, FILE *inpf){

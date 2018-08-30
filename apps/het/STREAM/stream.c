@@ -47,7 +47,7 @@
 # include <limits.h>
 # include <sys/time.h>
 
-#define TARGET_NODE 1
+#define TARGET_NODE 0
 extern void force_migration_flag(int val);
 int migfun(void) {
 	migrate(TARGET_NODE, NULL, NULL);

@@ -11,7 +11,7 @@ PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
 # CFLAGS (common / x86 only / arm only)
-CFLAGS+=-O1 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
+CFLAGS+=-O0 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common
 CFLAGS_X86=$(CFLAGS) -target x86_64-hermit
@@ -28,7 +28,7 @@ CC=$(PH_PREFIX_HOST)/bin/clang
 LD=$(PH_PREFIX_HOST)/bin/x86_64-hermit-ld.gold
 
 # Options to pass to LLVM opt
-OPT_OPTIONS=-O2 -optimize-regalloc -insert-stackmaps
+OPT_OPTIONS=-optimize-regalloc -insert-stackmaps
 
 SRCS=$(shell ls *.c)
 OBJS_X86=$(SRCS:.c=.x86.o)
@@ -108,7 +108,7 @@ DEBUG?=0
 PORT?=5050
 SERVER?=127.0.0.1
 ARM_TARGET_IP?=potato
-ARM_TARGET_HOME := $(shell ssh $(ARM_TARGET_IP) "pwd")
+ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
 # Transfer method can be 'rsync --no-whole-file' or ssh, rsync is faster
 TRANFER_METHOD=rsync --no-whole-file

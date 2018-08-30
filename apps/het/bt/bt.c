@@ -45,12 +45,8 @@
 #include <hermit/migration.h>
 
 #define TARGET_NODE 0
-extern void force_migration_flag(int val);
 int migfun(void) {
-	printf("migration function called\n");
-	force_migration_flag(1);
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
+	return migrate(TARGET_NODE, NULL, NULL);
 }
 
 /* common /global/ */
@@ -192,7 +188,7 @@ int main(int argc, char *argv[])
 
 	  printf("progress: %d/%d\n", step, niter);
 	//  migrate_if_needed();
-	if(step == niter/3)
+	if(step >= (niter/30)*1)
 		migfun();
 
     if ((step % 20) == 0 || step == 1) {

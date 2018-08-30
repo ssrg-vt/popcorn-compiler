@@ -40,13 +40,11 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE	0
-#define USE_MALLOC 0
+#define TARGET_NODE	1
+#define USE_MALLOC 1
 
-extern void force_migration_flag(int val);
 int migfun(void) {
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
+	return	migrate(TARGET_NODE, NULL, NULL);
 }
 
 // for checksum data
@@ -172,6 +170,8 @@ void appft(int niter, double *total_time, logical *verified)
   verify(NX, NY, NZ, niter, sums, verified);
   if (timers_enabled) timer_stop(14);
   timer_stop(1);
+
+	printf("verif: %d\n", verify);
 
   *total_time = timer_read(1);
   if (!timers_enabled) return;

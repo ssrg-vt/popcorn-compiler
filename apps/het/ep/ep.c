@@ -56,7 +56,12 @@
 
 #include <hermit/migration.h>
 
+uint64_t zero = 0;
+
 #define TARGET_NODE 0
+int migfun(void) {
+	return  migrate(TARGET_NODE, NULL, NULL);
+}
 
 #define MAX(X,Y)  (((X) > (Y)) ? (X) : (Y))
 
@@ -69,30 +74,28 @@
 #define A         1220703125.0
 #define S         271828183.0
 
-static double x[2*NK];
-static double q[NQ]; 
-
-extern void force_migration_flag(int val);
-int migfun(void) {
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
-}
+double x[2*NK];
+static double q[NQ];
 
   double dum[3] = {1.0, 1.0, 1.0};
-
+double sy_verify_value = 1;
+   double sx_err = 1; double sy_err = 1;
   char   size[16];
+    logical verified = 1, timers_enabled = 1;
+
+	double pad[1024][1024] = {1};
+
+//int __attribute__((optnone)) main() 
 int main() 
 {
-    logical verified, timers_enabled;
-  double sx_verify_value = 1; double sy_verify_value = 1; double sx_err = 1; double sy_err = 1;
-  double sx = 1; double sy = 1;
 double Mops, t1, t2, t3, t4, x1, x2;
   double tm, an, tt, gc;
   int    np;
   int    i, ik, kk, l, k, nit;
   int    k_offset, j;
+  double sx = 1; double sy = 1;
 
-
+double sx_verify_value = 1; 
 
   FILE *fp;
 
@@ -182,11 +185,8 @@ double Mops, t1, t2, t3, t4, x1, x2;
     t1 = S;
     t2 = an;
 
-	printf("Progress: %d/%d\n", k, np);
-//	HERMIT_MIGPOINT();
-
-	if(k == np/10)
-		migfun();
+	//printf("Progress: %d/%d (sx: %f)\n", k, np, sx);
+	popcorn_check_migrate();
 
     // Find starting seed t1 for this kk.
 
@@ -216,6 +216,7 @@ double Mops, t1, t2, t3, t4, x1, x2;
       x1 = 2.0 * x[2*i] - 1.0;
       x2 = 2.0 * x[2*i+1] - 1.0;
       t1 = x1 * x1 + x2 * x2;
+	 // printf("%f\n", t1);
       if (t1 <= 1.0) {
         t2   = sqrt(-2.0 * log(t1) / t1);
         t3   = (x1 * t2);
@@ -226,6 +227,7 @@ double Mops, t1, t2, t3, t4, x1, x2;
         sy   = sy + t4;
       }
     }
+
 
     if (timers_enabled) timer_stop(1);
   }
