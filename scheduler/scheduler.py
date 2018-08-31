@@ -40,6 +40,22 @@ terminated_remote=0
 running_app=dict()
 migrated_app=dict()
 
+class RApp:
+    "represent a running application"
+    def __init__(self, name, rid, dst_dir, proc):
+        self.name=name
+        self.rid=rid
+        self.dst_dir=dst_dir
+        self.update_proc(proc)
+    def update_proc(self,proc):
+        self.proc=proc
+        self.pid=proc.pid
+    def __str__(self):
+        attrs = vars(self)
+        return ', '.join("%s: %s" % item for item in attrs.items())
+    def __repr__(self):
+        return self.__str__()
+
 #arguments transforming functions
 def load_app_info(file_name):
     af = load_csv(file_name)
@@ -70,18 +86,21 @@ def is_board_affine(app):
 def log_action(action, ddir):
     print(action+" application", ddir)
 def log_migration(pid):
+    global migrated
     migrated+=1
-    log_action("Migrated", migrated_app[pid][1])
+    log_action("Migrated", migrated_app[pid].dst_dir)
 
 #TODO: delete folders of applications in /tmp/ (ddir)
 def __terminated(pid, lst, tp):
-    ddir=lst[pid][1]
+    ddir=lst[pid].dst_dir
     log_action("Terminated ("+tp+")", ddir)
     del lst[pid]
 def local_terminated(pid):
+    global terminated_local
     terminated_local+=1
     __terminated(pid, running_app, "local")
 def remote_terminated(pid):
+    global terminated_remote
     terminated_remote+=1
     __terminated(pid, migrated_app, "remote")
 
@@ -97,7 +116,7 @@ def __migrate(pid):
     #TODO: check status
     
     #send files: copy the whole repository
-    dst_dir=running_app[pid][1]
+    dst_dir=running_app[pid].dst_dir
     subprocess.call(["ssh", BOARD, "mkdir -p", INSTALL_FOLDER])
     print("rsync: before", dst_dir)
     subprocess.call(["rsync", "-r", dst_dir, BOARD+":"+INSTALL_FOLDER])
@@ -107,9 +126,11 @@ def __migrate(pid):
     proc=subprocess.Popen([RESUME_SCRIPT, dst_dir]) 
 
     #remove from running app and add to migrated app
-    migrated_app[proc.pid]=(running_app[pid][0],dst_dir,proc,running_app[pid][3])
+    rapp=running_app[pid]
+    rapp.update_proc(proc)
+    migrated_app[proc.pid]=rapp
+    log_migration(proc.pid)
     del running_app[pid]
-    log_migration(pid)
 
     return 
 
@@ -119,10 +140,9 @@ def migrate(running_app):
     if BOARD_NB_CORE <= len(migrated_app):
         return False
     #check for an arm affine application
-    for pid, val in running_app.items(): 
-        app,ddir,proc,aid=val
-        if is_board_affine(app):
-            __migrate(pid)
+    for pid, rapp in running_app.items(): 
+        if is_board_affine(rapp.name):
+            __migrate(rapp.pid)
             return True
     return False
             
@@ -145,6 +165,7 @@ def scheduler_wait():
 
 #Start an application on the server
 def run_app(app_list, pos):
+    global started
     if len(running_app) >= SERVER_NB_CORES:
         return False
 
@@ -171,9 +192,10 @@ def run_app(app_list, pos):
     proc=subprocess.Popen([PROXY_BIN, "prog_x86-64_aligned"], env=env) #TODO:check error
 
     #register application
-    running_app[proc.pid]=(app,dst_dir,proc,app_id)
+    running_app[proc.pid]=RApp(app,app_id,dst_dir,proc)
     print("running applications", running_app)
     log_action("Started", dst_dir)
+    started=+1
 
     return True
 
