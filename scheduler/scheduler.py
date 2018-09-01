@@ -20,8 +20,8 @@ INSTALL_FOLDER="/tmp/hermit-scheduler/" #TODO: create a real tmp folder?
 
 ### Machine Configurations
 BOARD_NAME="potato"
-BOARD_NB_CORE=2
-SERVER_NB_CORES=2
+BOARD_NB_CORE=int(os.environ["HERMIT_BOARD_NB_CORE"] or 2)
+SERVER_NB_CORES=int(os.environ["HERMIT_SERVER_NB_CORE"] or 2)
 
 ### Global variables
 #Time of the experiment
