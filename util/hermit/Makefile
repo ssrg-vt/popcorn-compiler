@@ -108,6 +108,8 @@ ARGS?=
 MIGTEST?=0
 RESUME?=0
 DEBUG?=0
+PORT?=5050
+SERVER?=127.0.0.1
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
@@ -182,6 +184,7 @@ test-x86: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		HERMIT_NODE_ID=0 ST_AARCH64_BIN=$(PROG_ARM_ALIGNED) \
 		ST_X86_64_BIN=$(PROG_X86_ALIGNED) \
+		HERMIT_MIGRATE_PORT=$(PORT) HERMIT_MIGRATE_SERVER=$(SERVER) \
 		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
 
 test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
@@ -192,12 +195,30 @@ test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		HERMIT_NODE_ID=1 ST_AARCH64_BIN=$(PROG_ARM_ALIGNED) \
 		ST_X86_64_BIN=$(PROG_X86_ALIGNED) \
+		HERMIT_MIGRATE_PORT=$(PORT) HERMIT_MIGRATE_SERVER=$(SERVER) \
 		$(ARM_TARGET_HOME)/proxy $(ARM_TARGET_HOME)/$(PROG_ARM_ALIGNED) $(ARGS)
 
+# Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-to-arm:
-	$(TRANFER_METHOD) *.bin stack.bin.* tls.bin.* $(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+	$(TRANFER_METHOD) bss.bin data.bin fds.bin mdata.bin stack.bin.* tls.bin.* \
+		$(ARM_TARGET_IP):$(ARM_TARGET_HOME)
 
+# Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-from-arm:
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/bss.bin .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/data.bin .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/fds.bin .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/mdata.bin .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/stack.bin.* .
+	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/tls.bin.* .
+
+# Full checkpoint transfer
+transfer-full-checkpoint-to-arm:
+	$(TRANFER_METHOD) *.bin stack.bin.* tls.bin.* \
+		$(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+
+# Full checkpoint transfer
+transfer-full-checkpoint-from-arm:
 	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin .
 	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/stack.bin.* .
 	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/tls.bin.* .
