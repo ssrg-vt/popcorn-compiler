@@ -1,6 +1,5 @@
 #!/usr/bin/python
 
-#send request to start an application to master.py
 import time
 import subprocess
 import sys, os
@@ -9,40 +8,46 @@ import shutil
 import csv
 import xmlrpclib
 
+DEBUG=False
 
-#Path Configurations
+### Path Configurations
 SCHEDULER_FOLDER=os.getcwd()
 HERMIT_INSTALL_FOLDER="%s/hermit-popcorn/" % os.path.expanduser("~")
 PROXY_BIN=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
 APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
-RESUME_SCRIPT=os.path.join(SCHEDULER_FOLDER,"resume.sh")
-INSTALL_FOLDER="/tmp/test" #TODO: create real tmp folder
+INSTALL_FOLDER="/tmp/hermit-scheduler/" #TODO: create a real tmp folder?
 
-#Machine Configurations
-BOARD="potato"
+### Machine Configurations
+BOARD_NAME="potato"
 BOARD_NB_CORE=2
 SERVER_NB_CORES=2
 
-#Global variables
-timer=0
-start=0
-app_id=0
-app_info=[]
-app_list=[]
+### Global variables
+#Time of the experiment
+timer=int(sys.argv[2])
+#List of applications. Example: "ep ep". All application must be in BIN_FOLDER
+app_list=sys.argv[1].split()
+#Extracted from the CSV file APP_INFO_FILE
+app_info=dict() #load_csv(APP_INFO_FILE)
+#The next two args track running and migrated applications (format: key=pid; value=RApp)
+running_app=dict()
+migrated_app=dict()
 
-#Stat variables
+### Stat variables
+start_time=0
+app_count=0
 started=0
 migrated=0
 terminated_local=0
 terminated_remote=0
 
-#format: key=pid; value=RApp
-running_app=dict()
-migrated_app=dict()
+def log(*args):
+    if DEBUG:
+        print(args)
 
 class RApp:
-    "represent a running application"
+    "Represent a running application"
     def __init__(self, name, rid, dst_dir, proc):
         self.name=name
         self.rid=rid
@@ -57,16 +62,7 @@ class RApp:
     def __repr__(self):
         return self.__str__()
 
-#arguments transforming functions
-def load_app_info(file_name):
-    af = load_csv(file_name)
-    return af
-def get_app_list(app_comp):
-    return app_comp.split()
-def create_taget_dir(dirname):
-    os.makedirs(dirname)
-
-#application information (Migrate: 1/0) is in the CSV file
+#Application information (Migrate: 1/0) is in the CSV file
 def load_csv(fn):
     res=dict()
     header=None
@@ -79,13 +75,14 @@ def load_csv(fn):
         res[row[0]]=dict()
         for feature in header[1:]:
             res[row[0]][feature]=row[1]
-    print res
+    log(res)
     return res
+app_info=load_csv(APP_INFO_FILE)
 def is_board_affine(app):
     return int(app_info[app]["Migrate"])
 
 def log_action(action, ddir):
-    print(action+" application", ddir)
+    log(action+" application", ddir)
 def log_migration(pid):
     global migrated
     migrated+=1
@@ -117,12 +114,23 @@ def __migrate(pid):
     
     ###Send files: copy the whole repository
     dst_dir=running_app[pid].dst_dir
-    subprocess.call(["ssh", BOARD, "mkdir -p", INSTALL_FOLDER], stdout=f, stderr=f)
-    subprocess.call(["rsync", "-r", dst_dir, BOARD+":"+INSTALL_FOLDER], stdout=f, stderr=f)
+    subprocess.call(["ssh", BOARD_NAME, "mkdir -p", INSTALL_FOLDER], stdout=f, stderr=f)
+    subprocess.call(["rsync", "-r", dst_dir, BOARD_NAME+":"+INSTALL_FOLDER], stdout=f, stderr=f)
+    #subprocess.call(["rsync", "--no-whole-file", PROXY_BIN, BOARD_NAME+":~/"])
+
+    ssh_ags="""HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1    \
+        HERMIT_VERBOSE=0 HERMIT_MIGTEST=0                       \
+        HERMIT_MIGRATE_RESUME=1 HERMIT_DEBUG=0                  \
+        HERMIT_NODE_ID=1 ST_AARCH64_BIN=prog_aarch64_aligned    \
+        ST_X86_64_BIN=prog_x86-64_aligned"""+" "
+    ssh_ags+="cd "+dst_dir +"; "
+    ssh_ags+="~/proxy ./prog_aarch64_aligned "
+    #ssh_ags+="echo $!;" #print pid: may be needed if we want to migrate back
+    #ssh_ags+="wait" #wait for the process to finishes
 
     ### Run remotly 
-    #FIXME: don't use the script
-    proc=subprocess.Popen([RESUME_SCRIPT, dst_dir], stdout=f, stderr=f) 
+    proc=subprocess.Popen(["ssh", BOARD_NAME, ssh_ags], stdout=f, stderr=f) 
+    #proc=subprocess.Popen([RESUME_SCRIPT, dst_dir], stdout=f, stderr=f) 
 
     ### Remove from running app and add to migrated app
     rapp=running_app[pid]
@@ -171,7 +179,7 @@ def run_app(app):
 
     ### Copy foder of the application to INSTALL_FOLDER
     src_dir=os.path.join(BIN_FOLDER, app)
-    dst_dir=os.path.join(INSTALL_FOLDER, app+str(app_id))
+    dst_dir=os.path.join(INSTALL_FOLDER, app+str(app_count))
     shutil.copytree(src_dir, dst_dir, symlinks=False, ignore=None)
 
     ### Start application
@@ -191,8 +199,8 @@ def run_app(app):
     proc=subprocess.Popen([PROXY_BIN, "prog_x86-64_aligned"], env=env, stdout=f, stderr=f) #TODO:check error
 
     ### Register application
-    running_app[proc.pid]=RApp(app,app_id,dst_dir,proc)
-    print("running applications", running_app)
+    running_app[proc.pid]=RApp(app,app_count,dst_dir,proc)
+    log("running applications", running_app)
     log_action("Started", dst_dir)
     started+=1
 
@@ -206,7 +214,7 @@ def print_report():
     print("Terminated (local) applications", terminated_local)
     print("Terminated (remote) applications", terminated_remote)
     print("Ending at time", end)
-    print("Total time is:", end-start)
+    print("Total time is:", end-start_time)
 
 def cleanup():
     def __cleanup(lst, trm):
@@ -231,24 +239,24 @@ def set_timer(timer):
 
 ############################# Initializaiton functions #############
 def main():
-    global app_id, start
+    global app_count, start_time
     set_timer(timer)
-    start = time.time()
+    start_time = time.time()
     nb_app=len(app_list)
-    print("Starting at time", start)
+    print("Starting at time", start_time)
     while True:
         scheduler_wait()
-        print("Remaining timer:", timer-(time.time()-start))
-        print("Trying to place an application at:", time.time())
-        run_app(app_list[app_id%nb_app])
-        app_id+=1
+        log("Remaining timer:", timer-(time.time()-start_time))
+        log("Trying to place an application at:", time.time())
+        run_app(app_list[app_count%nb_app])
+        app_count+=1
 
 
-## handle args
-app_list=get_app_list(sys.argv[1]) # application list & number of instances
-timer=int(sys.argv[2]) # timer
-app_info=load_app_info(APP_INFO_FILE)
-create_taget_dir(INSTALL_FOLDER)
+#Handle assumed files/dirs and check them
+#TODO:  
+#   - check that APP_INFO_FILE exist
+#   - check that PROXY_BIN, BIN_FOLDER exist
+os.makedirs(INSTALL_FOLDER)
 
 main()
 
