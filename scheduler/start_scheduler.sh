@@ -2,5 +2,5 @@
 
 timestamp=$(date +%s)
 mkdir -p reports
-rm -r /tmp/test/
-python -u ./scheduler.py "ep" 900 > reports/report.$timestamp.txt
+rm -fr /tmp/hermit-scheduler/
+python -u ./scheduler.py "ep" 500 > reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
