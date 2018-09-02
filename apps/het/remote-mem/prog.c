@@ -5,8 +5,6 @@
 #define HEAP_BUFFER_SZ_MB		30
 #define HEAP_BUFFER_SZ_BYTES	(HEAP_BUFFER_SZ_MB*1024*1204)
 
-#define TARGET_NODE				1 // 0 for x86, 1 for ARM
-
 #define SLEEP					0
 #define MIGRATE					1
 
@@ -24,8 +22,13 @@ int main(int argc, char *argv[])
 		buf[i] = i;
 
 #if MIGRATE
-	printf("Migrating to node %d\n", TARGET_NODE);
-	migrate(TARGET_NODE, NULL, NULL);
+#ifdef __aarch64__
+	printf("Migrating to x86\n");
+	migrate(0, NULL, NULL);
+#else
+	printf("Migrating to arm\n");
+	migrate(1, NULL, NULL);
+#endif
 #endif
 
 	printf("Starting heap consistency verification ...\n");
