@@ -113,7 +113,7 @@ SERVER?=127.0.0.1
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
-# Transfer method can be 'rsync --no-whole-file' or ssh, rsync is faster
+# Transfer method can be 'rsync --no-whole-file' or scp, rsync is faster
 TRANFER_METHOD=rsync --no-whole-file
 
 all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
@@ -205,12 +205,9 @@ transfer-checkpoint-to-arm:
 
 # Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-from-arm:
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/bss.bin .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/data.bin .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/fds.bin .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/mdata.bin .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/stack.bin.* .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/tls.bin.* .
+	$(TRANFER_METHOD) \
+		'$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/bss.bin data.bin fds.bin \
+		mdata.bin stack.bin.* tls.bin.*' .
 
 # Full checkpoint transfer
 transfer-full-checkpoint-to-arm:
@@ -219,9 +216,7 @@ transfer-full-checkpoint-to-arm:
 
 # Full checkpoint transfer
 transfer-full-checkpoint-from-arm:
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/stack.bin.* .
-	$(TRANFER_METHOD) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/tls.bin.* .
+	$(TRANFER_METHOD) '$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin stack.bin.* tls.bin.*' .
 
 objdump-x86:
 	objdump --source $(PROG_X86_ALIGNED) > /tmp/objdump-x86.txt && \
