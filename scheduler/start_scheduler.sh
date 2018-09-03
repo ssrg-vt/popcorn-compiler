@@ -1,8 +1,20 @@
 #!/bin/bash
 
-timestamp=$(date +%s)
-mkdir -p reports
+
+#clean old experiments if any
 rm -fr /tmp/hermit-scheduler/
-export HERMIT_BOARD_NB_CORE=2
-export HERMIT_SERVER_NB_CORE=2
-python -u ./scheduler.py "ep" 900 > reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+ssh potato "rm -fr /tmp/hermit-scheduler/"
+
+#for logging info 
+mkdir -p reports
+
+function startexperiment()
+{
+	timestamp=$(date +%s)
+	export HERMIT_BOARD_NB_CORE=$1
+	export HERMIT_SERVER_NB_CORE=$2
+	python -u ./scheduler.py "ep" $3 > reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+}
+
+
+startexperiment 2 2 800
