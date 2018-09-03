@@ -109,7 +109,7 @@ MIGTEST?=0
 RESUME?=0
 DEBUG?=0
 PORT?=5050
-SERVER?=127.0.0.1
+SERVER?=0
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
@@ -238,8 +238,12 @@ dump-llvm-stackmaps-x86:
 dump-llvm-stackmaps-arm:
 	$(PH_PREFIX_HOST)/bin/dump-llvm-stackmap -f $(PROG_ARM)
 
+clean-status:
+	rm -rf .status
+	ssh $(ARM_TARGET_IP) rm -rf .status
+
 clean:
-	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM) \
-	$(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED) \
-	stack-transform.log bss.bin map* aligned* \
-	data.bin fds.bin heap.bin mdata.bin stack.bin.* tls.bin.*
+	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM)	$(PROG_X86_ALIGNED) \
+	$(PROG_ARM_ALIGNED) stack-transform.log bss.bin map* data.bin fds.bin \
+	heap.bin mdata.bin stack.bin.* tls.bin.* .status .lock aligned*.txt \
+	aligned*.x
