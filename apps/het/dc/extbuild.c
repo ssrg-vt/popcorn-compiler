@@ -15,11 +15,6 @@
 extern int32 computeChecksum(ADC_VIEW_CNTL *avp,treeNode *t,uint64 *ordern);
 extern int32 WriteViewToDiskCS(ADC_VIEW_CNTL *avp,treeNode *t,uint64 *ordern);
 
-#define TARGET_NODE 1
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-
 int32 ReadWholeInputData(ADC_VIEW_CNTL *avp, FILE *inpf){
   uint32 iRec = 0;
   uint32 inpBufferLineSize, inpBufferPace, inpRecSize, ib = 0;
@@ -796,17 +791,40 @@ void AdcCntlLog(ADC_VIEW_CNTL *adccntlp){
   fprintf(adccntlp->logf,"	nViewRows = %20d\n",
     adccntlp->nViewRows);
 }
-int32 ViewSizesVerification(ADC_VIEW_CNTL *adccntlp){
-     char inps[MAX_PARAM_LINE_SIZE];
-     char msg[64];
-     uint32 *viewCounts;
+
+/* emulate fscanf("%s") */
+int fake_fscanf(FILE *f, char *target_buf) {
+	char c;
+	int c_offset = 0;
+	int iterations = 0;
+
+	while(fread(&c, 1, 1, f) == 1) {
+		if(c == ' ' || c == '\t' || c == '\n') {
+			if(!c_offset)
+				continue;
+			target_buf[c_offset] = '\0';
+			return 0;
+		} else
+			target_buf[c_offset++] = c;
+	}
+
+	if(!iterations)
+		return EOF;
+}
+
+int it = 0;
+char inps[MAX_PARAM_LINE_SIZE];
      uint32 selection_viewSize[2];
-     uint32 sz;
+     char msg[64];
      uint32 sel[64];
+     uint32 *viewCounts;
+     uint32 sz;
      uint32 i;
      uint32 k;
      uint64 tx;
      uint32 iTx; 
+int32 ViewSizesVerification(ADC_VIEW_CNTL *adccntlp){
+
    
      viewCounts = (uint32 *) &adccntlp->memPool[0];
      for ( i = 0; i <= adccntlp->nViewLimit; i++) viewCounts[i] = 0;
@@ -818,16 +836,19 @@ int32 ViewSizesVerification(ADC_VIEW_CNTL *adccntlp){
         viewCounts[selection_viewSize[0]] = selection_viewSize[1];
      }
      k = 0;
-     while ( fscanf(adccntlp->adcViewSizesFile, "%s", inps) != EOF ){
+
+     //while ( fscanf(adccntlp->adcViewSizesFile, "%s", inps) != EOF ){
+	 while(fake_fscanf(adccntlp->adcViewSizesFile, inps) != EOF) {
         if ( strcmp(inps, "Selection:") == 0 ) {
-           while ( fscanf(adccntlp->adcViewSizesFile, "%s", inps)) {
+           //while ( fscanf(adccntlp->adcViewSizesFile, "%s", inps)) {
+           while ( fake_fscanf(adccntlp->adcViewSizesFile, inps)) {
              if ( strcmp(inps, "View") == 0 ) break; 
              sel[k++] = atoi(inps);	  
            }
         }
-        
         if ( strcmp(inps, "Size:") == 0 ) {
            fscanf(adccntlp->adcViewSizesFile, "%s", inps);
+           fake_fscanf(adccntlp->adcViewSizesFile, inps);
            sz = atoi(inps);
            CreateBinTuple(&tx, sel, k);
            iTx = (int32)(tx>>(64-adccntlp->nTopDims)); 
@@ -847,7 +868,7 @@ int32 ViewSizesVerification(ADC_VIEW_CNTL *adccntlp){
            }
            k = 0;
         }  
-     } /* of while() */
+	     } /* of while() */
 
      fprintf(adccntlp->logf,
        "\n\nMeaning of the log file colums is as follows:\n");
@@ -879,14 +900,7 @@ int32 ComputeGivenGroupbys(ADC_VIEW_CNTL *adccntlp){
 
    while (fread(&binRepTuple, 8, 1, adccntlp->groupbyFile )){
 
-    /* DC being quite long, that's a good way to use class S and force migration
-	 * in the middle (we cannot use a signal as class is itself is too fast! */
-	static int migret = 1;
-	if(migret) {
-	//	migret = HERMIT_FORCE_MIGRATION();
-	migfun();
-	}
-
+	popcorn_check_migrate();
 
 	for(i = 0; i < adccntlp->nm; i++) adccntlp->checksums[i]=0;
      nViews++;
