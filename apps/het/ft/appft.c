@@ -40,12 +40,10 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE	1
-#define USE_MALLOC 1
-
-int migfun(void) {
-	return	migrate(TARGET_NODE, NULL, NULL);
-}
+/* WARNING: malloc does not work currently with FT because of its assumption on
+ * virtually contiguous multi-dimensional arrays (true for bss but does not
+ * stand for heap */
+#define USE_MALLOC 0
 
 // for checksum data
 /* common /sumcomm/ */
@@ -106,7 +104,6 @@ void appft(int niter, double *total_time, logical *verified)
   }
 #endif /* USE_MALLOC */
 
-
   for (i = 1; i <= 15; i++) {
     timer_clear(i);
   }         
@@ -150,9 +147,7 @@ void appft(int niter, double *total_time, logical *verified)
 
   for (kt = 1; kt <= niter; kt++) {
 
-//	HERMIT_MIGPOINT();
-	if(kt == niter/2)
-		migfun();
+	popcorn_check_migrate();
 
     if (timers_enabled) timer_start(11);
     evolve(NX, NY, NZ, xnt, y, twiddle);
@@ -170,8 +165,6 @@ void appft(int niter, double *total_time, logical *verified)
   verify(NX, NY, NZ, niter, sums, verified);
   if (timers_enabled) timer_stop(14);
   timer_stop(1);
-
-	printf("verif: %d\n", verify);
 
   *total_time = timer_read(1);
   if (!timers_enabled) return;
