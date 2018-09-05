@@ -47,13 +47,6 @@
 # include <limits.h>
 # include <sys/time.h>
 
-#define TARGET_NODE 0
-extern void force_migration_flag(int val);
-int migfun(void) {
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
-}
-
 /*-----------------------------------------------------------------------
  * INSTRUCTIONS:
  *
@@ -315,8 +308,7 @@ main()
 	{
 
 		printf("progress: %d/%d\n", k, NTIMES);
-		if(k == NTIMES/2)
-			migfun();
+		popcorn_check_migrate();
 	times[0][k] = mysecond();
 #ifdef TUNED
         tuned_STREAM_Copy();

@@ -14,13 +14,6 @@
 #include <sys/time.h>
 #include <hermit/migration.h>
 
-#if 0
-#define TARGET_NODE 0
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-#endif
-
 #ifdef ENABLE_PARSEC_HOOKS
 #include <hooks.h>
 #endif
@@ -295,9 +288,6 @@ int bs_thread(void *tid_ptr) {
 //		printf("%d\n", j);
 
 		popcorn_check_migrate();
-
-//		if(j == NUM_RUNS/2)
-//			migfun();
 
 #ifdef ENABLE_OPENMP
 #pragma omp parallel for private(i, price, priceDelta)

@@ -42,11 +42,6 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE 1
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-
 /* common /usrdati/ */
 int fre, niter, nmxh;
 
@@ -340,10 +335,8 @@ int main(int argc, char *argv[])
 
   time = 0.0;
   for (step = 0; step <= niter; step++) {
-//	  HERMIT_MIGPOINT();
 
-		if(step == niter/2)
-			migfun();
+		popcorn_check_migrate();
 
 	  printf("progress: %d/%d\n", step, niter);
     if (step == 1) {

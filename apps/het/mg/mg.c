@@ -46,12 +46,7 @@
 
 #include <hermit/migration.h>
 
-#define USE_MALLOC	1
-
-#define TARGET_NODE	1
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
+#define USE_MALLOC 1
 
 static void setup(int *n1, int *n2, int *n3);
 static void mg3P(double u[], double v[], double r[],
@@ -296,10 +291,7 @@ int main()
 
   for (it = 1; it <= nit; it++) {
 
-//	HERMIT_MIGPOINT();
-
-	if(it == nit/2)
-		migfun();
+	popcorn_check_migrate();
 
 	printf("Progress: %d/%d\n", it, nit);
 

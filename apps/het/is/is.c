@@ -664,16 +664,6 @@ void rank( int iteration )
 
 }      
 
-#if 0
-extern void force_migration_flag(int val);
-int migfun(void) {
-	printf("migration function called\n");
-	force_migration_flag(1);
-	migrate(TARGET_NODE, NULL, NULL);
-	return 0;
-}
-#endif
-
 /*****************************************************************/
 /*************             M  A  I  N             ****************/
 /*****************************************************************/
@@ -771,21 +761,7 @@ int main( int argc, char **argv )
     for( iteration=1; iteration<=MAX_ITERATIONS; iteration++ )
     {
 		popcorn_check_migrate();
-#if 0
-		if(iteration == (MAX_ITERATIONS/2)) {
 
-			static int ret = 1;
-			if(ret) {
-//				ret = HERMIT_FORCE_MIGRATION(NULL);
-				printf("before migration passed_verification: %d\n", passed_verification);
-				printf("before migration ret = %d\n", ret);
-				migfun();
-				printf("after migration passed_verification: %d\n", passed_verification);
-				printf("after migration ret = %d\n", ret);
-			}
-		}
-#endif
-		
 		if( CLASS != 'S' ) printf( "        %d\n", iteration );
         rank( iteration );
     }

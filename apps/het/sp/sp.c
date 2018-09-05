@@ -43,14 +43,6 @@
 
 #include <hermit/migration.h>
 
-#if 0
-#define TARGET_NODE 1
-extern void force_migration_flag(int val);
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-#endif
-
 /* common /global/ */
 int grid_points[3], nx2, ny2, nz2;
 logical timeron;

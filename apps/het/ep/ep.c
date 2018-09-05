@@ -58,11 +58,6 @@
 
 uint64_t zero = 0;
 
-#define TARGET_NODE 0
-int migfun(void) {
-	return  migrate(TARGET_NODE, NULL, NULL);
-}
-
 #define MAX(X,Y)  (((X) > (Y)) ? (X) : (Y))
 
 #define MK        16

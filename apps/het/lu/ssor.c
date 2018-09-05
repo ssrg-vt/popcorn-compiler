@@ -37,12 +37,6 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE 1
-
-extern void force_migration_flag(int val);
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
   double tmp, tv[ISIZ2][ISIZ1][5];
   double delunm[5];
 
@@ -128,9 +122,7 @@ void ssor(int niter)
     //}
 
 	printf("Progress: %d/%d\n", istep, niter);
-//	HERMIT_MIGPOINT();
-	if(istep == niter/50)
-		migfun();
+	popcorn_check_migrate();
 
     if ((istep % 20) == 0 || istep == itmax || istep == 1) {
       if (niter > 1) printf(" Time step %4d\n", istep);
