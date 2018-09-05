@@ -44,11 +44,6 @@
 
 #include <hermit/migration.h>
 
-#define TARGET_NODE 0
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-
 /* common /global/ */
 double elapsed_time;
 int grid_points[3];
@@ -186,10 +181,8 @@ int main(int argc, char *argv[])
 
   for (step = 1; step <= niter; step++) {
 
-	  printf("progress: %d/%d\n", step, niter);
-	//  migrate_if_needed();
-	if(step >= (niter/30)*1)
-		migfun();
+	printf("progress: %d/%d\n", step, niter);
+	popcorn_check_migrate();
 
     if ((step % 20) == 0 || step == 1) {
       printf(" Time step %4d\n", step);
