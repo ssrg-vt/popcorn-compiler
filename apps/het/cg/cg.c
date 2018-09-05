@@ -46,14 +46,10 @@
 
 #include <hermit/migration.h>
 
-#if 0
-#define TARGET_NODE 0
-int migfun(void) {
-	return migrate(TARGET_NODE, NULL, NULL);
-}
-#endif
+#define USE_MALLOC 1
 
 //---------------------------------------------------------------------
+#if USE_MALLOC == 0
 /* common / main_int_mem / */
 static int colidx[NZ];
 static int rowstr[NA+1];
@@ -69,6 +65,23 @@ static double z[NA+2];
 static double p[NA+2];
 static double q[NA+2];
 static double r[NA+2];
+#else
+/* common / main_int_mem / */
+static int *colidx;
+static int *rowstr;
+static int *iv;
+static int *arow;
+static int *acol;
+
+/* common / main_flt_mem / */
+static double *aelt;
+static double *a;
+static double *x;
+static double *z;
+static double *p;
+static double *q;
+static double *r;
+#endif
 
 /* common / partit_size / */
 static int naa;
@@ -85,6 +98,23 @@ static double tran;
 /* common /timers/ */
 static logical timeron;
 //---------------------------------------------------------------------
+
+int allocate_arrays(void) {
+	colidx = malloc(NZ * sizeof(int));
+	rowstr = malloc((NA+1) * sizeof(int));
+	iv = malloc(NA * sizeof(int));
+	arow = malloc(NA * sizeof(int));
+	acol = malloc(NAZ * sizeof(int));
+
+	aelt = malloc(NAZ * sizeof(double));
+	a = malloc(NZ * sizeof(double));
+	x = malloc((NA+2) * sizeof(double));
+	z = malloc((NA+2) * sizeof(double));
+	p = malloc((NA+2) * sizeof(double));
+	q = malloc((NA+2) * sizeof(double));
+	r = malloc((NA+2) * sizeof(double));
+}
+
 
 
 //---------------------------------------------------------------------
@@ -143,6 +173,10 @@ int main(int argc, char *argv[])
   double zeta_verify_value, epsilon, err;
 
   char *t_names[T_last];
+
+#if USE_MALLOC == 1
+	allocate_arrays();
+#endif
 
   for (i = 0; i < T_last; i++) {
     timer_clear(i);
@@ -292,9 +326,6 @@ int main(int argc, char *argv[])
   timer_stop(T_init);
 
   printf(" Initialization time = %15.3f seconds\n", timer_read(T_init));
-
-  //force_migration_flag(1);
-	//migfun();
 
   timer_start(T_bench);
 
