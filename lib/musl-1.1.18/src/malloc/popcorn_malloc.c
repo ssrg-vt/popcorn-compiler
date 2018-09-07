@@ -33,10 +33,10 @@ struct bin {
 struct {
 	volatile uint64_t binmap;
 	struct bin bins[64];
-	volatile int free_lock[2];
+	volatile int free_lock[2], init_lock[2], initialized;
 	char padding[4096 - sizeof(uint64_t)
 			  - (sizeof(struct bin) * 64)
-			  - (sizeof(int) * 2)];
+			  - (sizeof(int) * 5)];
 } __attribute__((aligned(4096))) mal[MAX_POPCORN_NODES];
 
 /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
@@ -344,7 +344,7 @@ void *malloc(size_t);
 void *popcorn_malloc(size_t n, int nid)
 {
 	struct chunk *c;
-	int i, j;
+	int i, j, init_node = 0;
 
 	/* We can either bail & set errno or silently redirect calls with invalid
 	 * node IDs to the regular malloc.  Do the latter as many applications don't
@@ -368,11 +368,26 @@ void *popcorn_malloc(size_t n, int nid)
 	for (;;) {
 		uint64_t mask = mal[nid].binmap & -(1ULL<<i);
 		if (!mask) {
+			/* We don't want to conflate a node not yet being
+			 * initialized with the node's arena running out of
+			 * space (we can't tell the difference from
+			 * expand_heap()).  Explicitly differentiate here. */
+			if(!mal[nid].initialized) {
+				lock(mal[nid].init_lock);
+				if(!mal[nid].initialized) init_node = 1;
+				else {
+					/* Somebody initialized before we
+					 * grabbed the lock, try again. */
+					unlock(mal[nid].init_lock);
+					continue;
+				}
+			}
 			c = expand_heap(n, nid);
 			if (!c) {
-				/* We may have run out of per-node arena space or concurrent
-				 * allocations may have interfered to give the illusion of a full
-				 * arena.  Regardless, forward to normal malloc. */
+				/* We ran out of per-node arena space forward,
+				 * to normal malloc which can better handle
+				 * this situation. */
+				if(init_node) unlock(mal[nid].init_lock);
 				return malloc(n);
 			}
 			if (alloc_rev(c, nid)) {
@@ -396,6 +411,11 @@ void *popcorn_malloc(size_t n, int nid)
 
 	/* Now patch up in case we over-allocated */
 	trim(c, n);
+
+	if(init_node) {
+		mal[nid].initialized = 1;
+		unlock(mal[nid].init_lock);
+	}
 
 	return CHUNK_TO_MEM(c);
 }
