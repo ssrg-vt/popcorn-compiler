@@ -18,6 +18,38 @@
 
 using namespace llvm;
 
+static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
+                                             const VirtRegMap *VRM) {
+  TemporaryValue *Val = nullptr;
+  if(MI->getOperand(0).isReg()) {
+    // Instruction format:  LEA64  rd     rbase  scale# ridx   disp#  rseg
+    // Stack slot reference:              <fi>   1      noreg  off    noreg
+    // TODO check for noreg in ridx & rseg?
+    if(MI->getOperand(1 + X86::AddrBaseReg).isFI() &&
+       MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
+       MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1) {
+      assert(MI->getOperand(1 + X86::AddrDisp).isImm() && "Invalid encoding");
+      Val = new TemporaryValue;
+      Val->Type = TemporaryValue::StackSlotRef;
+      Val->Vreg = MI->getOperand(0).getReg();
+      Val->StackSlot = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
+      Val->Offset = MI->getOperand(1 + X86::AddrDisp).getImm();
+    }
+  }
+  return Val;
+}
+
+TemporaryValuePtr
+X86Values::getTemporaryValue(const MachineInstr *MI,
+                             const VirtRegMap *VRM) const {
+  TemporaryValue *Val = nullptr;
+  switch(MI->getOpcode()) {
+  case X86::LEA64r: Val = getTemporaryReference(MI, VRM); break;
+  default: break;
+  }
+  return TemporaryValuePtr(Val);
+}
+
 typedef ValueGenInst::InstType InstType;
 template <InstType T> using RegInstruction = RegInstruction<T>;
 template <InstType T> using ImmInstruction = ImmInstruction<T>;

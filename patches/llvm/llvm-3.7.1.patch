@@ -1207,7 +1207,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
  /// \brief MI-level patchpoint operands.
  ///
-@@ -142,9 +145,16 @@
+@@ -142,9 +145,20 @@
      unsigned Size;
      unsigned Reg;
      int64_t Offset;
@@ -1217,17 +1217,21 @@ Index: include/llvm/CodeGen/StackMaps.h
 +    bool Ptr;
 +    bool Alloca;
 +    bool Duplicate;
++    bool Temporary;
 +    unsigned AllocaSize;
 +    Location() : Type(Unprocessed), Size(0), Reg(0), Offset(0),
-+                 Ptr(false), Alloca(false), Duplicate(false), AllocaSize(0) {}
++                 Ptr(false), Alloca(false), Duplicate(false),
++                 Temporary(false), AllocaSize(0) {}
 +    Location(LocationType Type, unsigned Size, unsigned Reg, int64_t Offset,
-+             bool Ptr, bool Alloca, bool Duplicate, unsigned AllocaSize)
++             bool Ptr, bool Alloca, bool Duplicate, bool Temporary,
++             unsigned AllocaSize)
 +        : Type(Type), Size(Size), Reg(Reg), Offset(Offset), Ptr(Ptr),
-+          Alloca(Alloca), Duplicate(Duplicate), AllocaSize(AllocaSize) {}
++          Alloca(Alloca), Duplicate(Duplicate), Temporary(Temporary),
++          AllocaSize(AllocaSize) {}
    };
  
    struct LiveOutReg {
-@@ -158,6 +168,20 @@
+@@ -158,10 +172,29 @@
          : Reg(Reg), DwarfRegNum(DwarfRegNum), Size(Size) {}
    };
  
@@ -1248,7 +1252,17 @@ Index: include/llvm/CodeGen/StackMaps.h
    // OpTypes are used to encode information about the following logical
    // operand (which may consist of several MachineOperands) for the
    // OpParser.
-@@ -185,7 +209,7 @@
+-  typedef enum { DirectMemRefOp, IndirectMemRefOp, ConstantOp } OpType;
++  typedef enum {
++    DirectMemRefOp,
++    IndirectMemRefOp,
++    ConstantOp,
++    TemporaryOp
++  } OpType;
+ 
+   StackMaps(AsmPrinter &AP);
+ 
+@@ -185,7 +218,7 @@
    /// If there is any stack map data, create a stack map section and serialize
    /// the map info into it. This clears the stack map data structures
    /// afterwards.
@@ -1257,7 +1271,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
  private:
    static const char *WSMP;
-@@ -193,17 +217,23 @@
+@@ -193,17 +226,23 @@
    typedef SmallVector<LiveOutReg, 8> LiveOutVec;
    typedef MapVector<uint64_t, uint64_t> ConstantPool;
    typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
@@ -1286,7 +1300,7 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +243,22 @@
+@@ -213,10 +252,22 @@
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
  
@@ -1310,7 +1324,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
-@@ -226,6 +268,15 @@
+@@ -226,6 +277,15 @@
    /// registers that need to be recorded in the stackmap.
    LiveOutVec parseRegisterLiveOutMask(const uint32_t *Mask) const;
  
@@ -1326,7 +1340,7 @@ Index: include/llvm/CodeGen/StackMaps.h
    /// This should be called by the MC lowering code _immediately_ before
    /// lowering the MI to an MCInst. It records where the operands for the
    /// instruction are stored, and outputs a label to record the offset of
-@@ -240,7 +291,7 @@
+@@ -240,7 +300,7 @@
    void emitStackmapHeader(MCStreamer &OS);
  
    /// \brief Emit the function frame record for each function.
@@ -2424,7 +2438,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,92 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2444,11 +2458,34 @@ Index: include/llvm/Target/TargetValues.h
 +#ifndef LLVM_TARGET_TARGETVAL_H
 +#define LLVM_TARGET_TARGETVAL_H
 +
++#include <memory>
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/CodeGen/VirtRegMap.h"
 +#include "llvm/IR/Instructions.h"
 +
 +namespace llvm {
++
++/// A value created by the backend to satisfy the stackmap.  Note that this is
++/// not necessarily an error -- some backends may create and save the value
++/// whereas other backends may materialize the value as needed.
++struct TemporaryValue {
++  enum type {
++    StackSlotRef
++  };
++
++  enum type Type;
++
++  /// The virtual register used if the temporary is stored in a register
++  unsigned Vreg;
++
++  /// If the value is of type StackSlotRef, the stack slot and offset into the
++  /// stack slot being referenced
++  int StackSlot;
++  int64_t Offset;
++};
++
++typedef std::unique_ptr<TemporaryValue> TemporaryValuePtr;
 +
 +//===----------------------------------------------------------------------===//
 +// Superclass for ISA-specific values
@@ -2459,6 +2496,13 @@ Index: include/llvm/Target/TargetValues.h
 +  TargetValues(const TargetValues &) = delete;
 +  void operator=(const TargetValues &) = delete;
 +  virtual ~TargetValues() {};
++
++  /// The code generator may have materialized a temporary value solely to
++  /// satisfy the stackmap if the value is materialized as-needed elsewhere.
++  /// Return metadata describing the temporary value in this situation.
++  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
++                                              const VirtRegMap *VRM) const
++  { return nullptr; }
 +
 +  /// Return a machine-specific value generated by a machine instruction.
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const = 0;
@@ -6330,13 +6374,14 @@ Index: lib/CodeGen/StackMaps.cpp
  #include "llvm/Target/TargetMachine.h"
  #include "llvm/Target/TargetOpcodes.h"
  #include "llvm/Target/TargetRegisterInfo.h"
-@@ -29,6 +34,15 @@
+@@ -29,6 +34,16 @@
  
  #define DEBUG_TYPE "stackmaps"
  
-+#define TYPE_AND_FLAGS(type, ptr, alloca, dup) \
-+  ((uint8_t)type) << 4 | ((uint8_t)ptr) << 2 | \
-+  ((uint8_t)alloca) << 1 | ((uint8_t)dup)
++#define TYPE_AND_FLAGS(type, ptr, alloca, dup, temp) \
++  ((uint8_t)type) << 4 | ((uint8_t)ptr) << 3 | \
++  ((uint8_t)alloca) << 2 | ((uint8_t)dup << 1) | \
++  ((uint8_t)temp)
 +
 +#define ARCH_TYPE_AND_FLAGS(type, ptr) ((uint8_t)type) << 4 | ((uint8_t)ptr)
 +
@@ -6346,7 +6391,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +98,144 @@
+@@ -84,32 +99,153 @@
    return (unsigned)RegNum;
  }
  
@@ -6435,7 +6480,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +        getRegLocation(MR.getReg(), DwarfRegNum, Offset);
 +
 +        Locs.emplace_back(Location::Register, Size, DwarfRegNum, Offset,
-+                          Ptr, Alloca, true, AllocaSize);
++                          Ptr, Alloca, true, false, AllocaSize);
 +      }
 +      else if(LL->isStackAddr()) {
 +        MachineLiveStackAddr &MLSA = (MachineLiveStackAddr &)*LL;
@@ -6443,7 +6488,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +
 +        Locs.emplace_back(Location::Indirect, Size,
 +          getDwarfRegNum(DwarfRegNum, TRI),
-+          FrameOff, Ptr, Alloca, true, AllocaSize);
++          FrameOff, Ptr, Alloca, true, false, AllocaSize);
 +      }
 +      else llvm_unreachable("Unknown machine live location type");
 +    }
@@ -6455,31 +6500,40 @@ Index: lib/CodeGen/StackMaps.cpp
                          MachineInstr::const_mop_iterator MOE, LocationVec &Locs,
 -                        LiveOutVec &LiveOuts) const {
 +                        LiveOutVec &LiveOuts, User::const_op_iterator &Op) const {
-+  bool isPtr, isAlloca;
++  bool isPtr, isAlloca, isTemporary = false;
 +  unsigned AllocaSize;
 +  auto &DL = AP.MF->getDataLayout();
    const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
 +  const CallInst *IRSM = cast<CallInst>(Op->getUser());
 +  const Value *IROp = Op->get();
++  int64_t TemporaryOffset = 0;
 +  getPointerInfo(IROp, DL, isPtr, isAlloca, AllocaSize);
 +
    if (MOI->isImm()) {
++    // Peel off temporary value metadata
++    if (MOI->getImm() == StackMaps::TemporaryOp) {
++      isTemporary = true;
++      TemporaryOffset = (++MOI)->getImm();
++      ++MOI;
++    }
++
      switch (MOI->getImm()) {
      default:
        llvm_unreachable("Unrecognized operand type.");
      case StackMaps::DirectMemRefOp: {
 -      unsigned Size = AP.TM.getDataLayout()->getPointerSizeInBits();
-+      assert(isAlloca &&
++      assert((isAlloca || isTemporary) &&
 +             "Did not find alloca value for direct memory reference");
 +      unsigned Size = DL.getPointerSizeInBits();
        assert((Size % 8) == 0 && "Need pointer size in bytes.");
        Size /= 8;
        unsigned Reg = (++MOI)->getReg();
-       int64_t Imm = (++MOI)->getImm();
+-      int64_t Imm = (++MOI)->getImm();
 -      Locs.emplace_back(StackMaps::Location::Direct, Size,
 -                        getDwarfRegNum(Reg, TRI), Imm);
++      int64_t Imm = (++MOI)->getImm() + TemporaryOffset;
 +      Locs.emplace_back(Location::Direct, Size, getDwarfRegNum(Reg, TRI), Imm,
-+                        isPtr, true, false, AllocaSize);
++                        isPtr, true, false, isTemporary, AllocaSize);
        break;
      }
      case StackMaps::IndirectMemRefOp: {
@@ -6493,11 +6547,12 @@ Index: lib/CodeGen/StackMaps.cpp
 +      // Note: getPointerInfo() may have found a suitable alloca for this
 +      // operand, but the backend didn't actually turn it into one.
 +      Locs.emplace_back(Location::Indirect, (unsigned)Size,
-+                        getDwarfRegNum(Reg, TRI), Imm, isPtr, false, false, 0);
++                        getDwarfRegNum(Reg, TRI), Imm, isPtr, false, false,
++                        isTemporary, 0);
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +242,26 @@
+@@ -116,17 +252,26 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6505,7 +6560,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +      // Note: getPointerInfo() may have found a suitable alloca for this
 +      // operand, but the backend didn't actually turn it into one.
 +      Locs.emplace_back(Location::Constant, sizeof(int64_t), 0, Imm,
-+                        isPtr, false, false, 0);
++                        isPtr, false, false, isTemporary, 0);
        break;
      }
      }
@@ -6527,7 +6582,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +269,18 @@
+@@ -134,17 +279,18 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6548,13 +6603,13 @@ Index: lib/CodeGen/StackMaps.cpp
 +    // Note: getPointerInfo() may have found a suitable alloca for this
 +    // operand, but the backend didn't actually turn it into one.
 +    Locs.emplace_back(Location::Register, ValSize, DwarfRegNum, Offset,
-+                      isPtr, false, false, 0);
++                      isPtr, false, false, isTemporary, 0);
 +    addDuplicateLocs(IRSM, IROp, Locs, ValSize, isPtr, false, 0);
 +    ++Op;
      return ++MOI;
    }
  
-@@ -161,6 +297,7 @@
+@@ -161,6 +307,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6562,7 +6617,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +331,7 @@
+@@ -194,7 +341,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6571,17 +6626,18 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +340,15 @@
+@@ -203,8 +350,16 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
 -      OS << "\t[encoding: .byte " << Loc.Type << ", .byte " << Loc.Size
 -         << ", .short " << Loc.Reg << ", .int " << Loc.Offset << "]\n";
 +      OS << ", pointer? " << Loc.Ptr << ", alloca? " << Loc.Alloca
-+         << ", duplicate? " << Loc.Duplicate;
++         << ", duplicate? " << Loc.Duplicate
++         << ", temporary? " << Loc.Temporary;
 +
-+      unsigned TypeAndFlags =
-+        TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca, Loc.Duplicate);
++      unsigned TypeAndFlags = TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca,
++                                             Loc.Duplicate, Loc.Temporary);
 +
 +      OS << "\t[encoding: .byte " << TypeAndFlags << ", .byte " << Loc.Size
 +         << ", .short " << Loc.Reg << ", .int " << Loc.Offset
@@ -6589,7 +6645,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +365,87 @@
+@@ -221,6 +376,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6677,7 +6733,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +502,145 @@
+@@ -277,6 +513,145 @@
    return LiveOuts;
  }
  
@@ -6823,7 +6879,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +649,46 @@
+@@ -285,21 +660,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6872,7 +6928,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +712,21 @@
+@@ -323,12 +723,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6897,7 +6953,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +809,11 @@
+@@ -411,8 +820,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6910,7 +6966,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +821,15 @@
+@@ -420,6 +832,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6926,7 +6982,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +849,20 @@
+@@ -439,14 +860,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -6940,10 +6996,10 @@ Index: lib/CodeGen/StackMaps.cpp
 -///     uint16 : Dwarf RegNum
 -///     int32  : Offset
 +///     uint8 (4 bits) : Register | Direct | Indirect | Constant | ConstantIndex
-+///     uint8 (1 bit)  : Padding
 +///     uint8 (1 bit)  : Is it a pointer?
 +///     uint8 (1 bit)  : Is it an alloca?
 +///     uint8 (1 bit)  : Is it a duplicate record for the same live value?
++///     uint8 (1 bit)  : Is it a temporary value created for the stackmap?
 +///     uint8          : Size in Bytes
 +///     uint16         : Dwarf RegNum
 +///     int32          : Offset
@@ -6951,7 +7007,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +871,25 @@
+@@ -455,6 +882,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -6977,7 +7033,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +905,29 @@
+@@ -470,23 +916,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7008,13 +7064,14 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +935,13 @@
+@@ -494,10 +946,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
 -      OS.EmitIntValue(Loc.Type, 1);
 +      uint8_t TypeAndFlags =
-+        TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca, Loc.Duplicate);
++        TYPE_AND_FLAGS(Loc.Type, Loc.Ptr, Loc.Alloca,
++                       Loc.Duplicate, Loc.Temporary);
 +      OS.EmitIntValue(TypeAndFlags, 1);
        OS.EmitIntValue(Loc.Size, 1);
        OS.EmitIntValue(Loc.Reg, 2);
@@ -7023,7 +7080,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +953,31 @@
+@@ -509,6 +965,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7055,7 +7112,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +984,7 @@
+@@ -515,7 +996,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -7064,7 +7121,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +1008,7 @@
+@@ -539,7 +1020,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -7099,7 +7156,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1339 @@
+@@ -0,0 +1,1383 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7761,6 +7818,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  CopyLocPtr C;
 +  RegCopyLoc *RCL;
 +  StackCopyLoc *SCL;
++  TemporaryValuePtr Tmp;
 +
 +  // Note: anything named or related to "Src" refers to the source of the
 +  // copy operation, i.e., the originating location for the value
@@ -7892,6 +7950,49 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        }
 +
 +        break;
++      }
++    }
++    else if((Tmp = TVG->getTemporaryValue(InB, VRM))) {
++      DEBUG(dbgs() << "  - Temporary for stackmap: "; InB->dump());
++      assert(Tmp->Type == TemporaryValue::StackSlotRef &&
++             "Unhandled temporary value");
++
++      // Replace current vreg with stack slot reference.
++      // Note: stack slots don't have liveness information to fix up
++      Found = false;
++      for(size_t i = 2; i < SM->getNumOperands(); i++) {
++        MachineOperand &MO = SM->getOperand(i);
++        if(MO.isReg() && MO.getReg() == Tmp->Vreg) {
++          // There's not a great way to add new operands, so trash all trailing
++          // operands up to and including the Vreg, add the metadata, and
++          // finally add the trailing operands back.
++          SmallVector<MachineOperand, 4> TrailOps(std::next(&MO),
++                                                  SM->operands_end());
++          while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
++          MachineInstrBuilder Worker(*MF, SM);
++          Worker.addImm(StackMaps::TemporaryOp);
++          Worker.addImm(Tmp->Offset);
++          Worker.addImm(StackMaps::DirectMemRefOp);
++          Worker.addFrameIndex(Tmp->StackSlot);
++          Worker.addImm(0);
++          for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
++          Found = true;
++        }
++      }
++
++      // Update operand -> IR mapping to source stack slot
++      if(Found) {
++        assert(SMRegs[SM].count(Tmp->Vreg) &&
++               "Unhandled register operand in stackmap!");
++        SSIt = SMStackSlots[SM].find(Tmp->StackSlot);
++        VregIt = SMRegs[SM].find(Tmp->Vreg);
++        if(SSIt != SMStackSlots[SM].end()) {
++          for(auto IRVal : *VregIt->second)
++            SSIt->second->push_back(IRVal);
++        }
++        else SMStackSlots[SM].emplace(Tmp->StackSlot, VregIt->second);
++        SMRegs[SM].erase(Tmp->Vreg);
++        Changed = true;
 +      }
 +    }
 +    else DEBUG(dbgs() << "  - Skipping "; InB->dump());
@@ -9238,7 +9339,7 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.cpp	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.cpp	(working copy)
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,251 @@
 +//===- AArch64TargetValues.cpp - AArch64 specific value generator -===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9262,6 +9363,37 @@ Index: lib/Target/AArch64/AArch64Values.cpp
 +#define DEBUG_TYPE "stacktransform"
 +
 +using namespace llvm;
++
++static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
++                                             const VirtRegMap *VRM) {
++  TemporaryValue *Val = nullptr;
++  if(MI->getOperand(0).isReg()) {
++    // Instruction format:    ADDXri  xd    xn    imm#  lsl#
++    // Stack slot reference:                <fi>  0     0
++    if(MI->getOperand(1).isFI() &&
++       MI->getOperand(2).isImm() && MI->getOperand(2).getImm() == 0 &&
++       MI->getOperand(3).isImm() && MI->getOperand(3).getImm() == 0) {
++      Val = new TemporaryValue;
++      Val->Type = TemporaryValue::StackSlotRef;
++      Val->Vreg = MI->getOperand(0).getReg();
++      Val->StackSlot = MI->getOperand(1).getIndex();
++      Val->Offset = 0;
++    }
++  }
++
++  return Val;
++}
++
++TemporaryValuePtr
++AArch64Values::getTemporaryValue(const MachineInstr *MI,
++                                 const VirtRegMap *VRM) const {
++  TemporaryValue *Val = nullptr;
++  switch(MI->getOpcode()) {
++  case AArch64::ADDXri: Val = getTemporaryReference(MI, VRM); break;
++  default: break;
++  }
++  return TemporaryValuePtr(Val);
++}
 +
 +typedef ValueGenInst::InstType InstType;
 +template <InstType T> using RegInstruction = RegInstruction<T>;
@@ -9463,7 +9595,7 @@ Index: lib/Target/AArch64/AArch64Values.h
 ===================================================================
 --- lib/Target/AArch64/AArch64Values.h	(nonexistent)
 +++ lib/Target/AArch64/AArch64Values.h	(working copy)
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +//===----- AArch64TargetValues.cpp - AArch64 specific value generator -----===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9480,6 +9612,8 @@ Index: lib/Target/AArch64/AArch64Values.h
 +class AArch64Values final : public TargetValues {
 +public:
 +  AArch64Values() {}
++  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
++                                              const VirtRegMap *VRM) const;
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 +
 +private:
@@ -10013,7 +10147,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,210 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -10033,6 +10167,38 @@ Index: lib/Target/X86/X86Values.cpp
 +#define DEBUG_TYPE "stacktransform"
 +
 +using namespace llvm;
++
++static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
++                                             const VirtRegMap *VRM) {
++  TemporaryValue *Val = nullptr;
++  if(MI->getOperand(0).isReg()) {
++    // Instruction format:  LEA64  rd     rbase  scale# ridx   disp#  rseg
++    // Stack slot reference:              <fi>   1      noreg  off    noreg
++    // TODO check for noreg in ridx & rseg?
++    if(MI->getOperand(1 + X86::AddrBaseReg).isFI() &&
++       MI->getOperand(1 + X86::AddrScaleAmt).isImm() &&
++       MI->getOperand(1 + X86::AddrScaleAmt).getImm() == 1) {
++      assert(MI->getOperand(1 + X86::AddrDisp).isImm() && "Invalid encoding");
++      Val = new TemporaryValue;
++      Val->Type = TemporaryValue::StackSlotRef;
++      Val->Vreg = MI->getOperand(0).getReg();
++      Val->StackSlot = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
++      Val->Offset = MI->getOperand(1 + X86::AddrDisp).getImm();
++    }
++  }
++  return Val;
++}
++
++TemporaryValuePtr
++X86Values::getTemporaryValue(const MachineInstr *MI,
++                             const VirtRegMap *VRM) const {
++  TemporaryValue *Val = nullptr;
++  switch(MI->getOpcode()) {
++  case X86::LEA64r: Val = getTemporaryReference(MI, VRM); break;
++  default: break;
++  }
++  return TemporaryValuePtr(Val);
++}
 +
 +typedef ValueGenInst::InstType InstType;
 +template <InstType T> using RegInstruction = RegInstruction<T>;
@@ -10196,7 +10362,7 @@ Index: lib/Target/X86/X86Values.h
 ===================================================================
 --- lib/Target/X86/X86Values.h	(nonexistent)
 +++ lib/Target/X86/X86Values.h	(working copy)
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -10213,6 +10379,8 @@ Index: lib/Target/X86/X86Values.h
 +class X86Values final : public TargetValues {
 +public:
 +  X86Values() {}
++  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
++                                              const VirtRegMap *VRM) const;
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 +
 +private:

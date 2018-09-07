@@ -181,6 +181,9 @@ bool print_loc_record(live_value *record)
   if(record->is_alloca)
     printf(", is an alloca of size %u byte(s)", record->alloca_size);
 
+  if(record->is_temporary)
+    printf(", is a stackmap temporary");
+
   printf("\n");
 
   return true;

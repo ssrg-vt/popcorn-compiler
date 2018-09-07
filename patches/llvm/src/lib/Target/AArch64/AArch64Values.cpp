@@ -22,6 +22,37 @@
 
 using namespace llvm;
 
+static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
+                                             const VirtRegMap *VRM) {
+  TemporaryValue *Val = nullptr;
+  if(MI->getOperand(0).isReg()) {
+    // Instruction format:    ADDXri  xd    xn    imm#  lsl#
+    // Stack slot reference:                <fi>  0     0
+    if(MI->getOperand(1).isFI() &&
+       MI->getOperand(2).isImm() && MI->getOperand(2).getImm() == 0 &&
+       MI->getOperand(3).isImm() && MI->getOperand(3).getImm() == 0) {
+      Val = new TemporaryValue;
+      Val->Type = TemporaryValue::StackSlotRef;
+      Val->Vreg = MI->getOperand(0).getReg();
+      Val->StackSlot = MI->getOperand(1).getIndex();
+      Val->Offset = 0;
+    }
+  }
+
+  return Val;
+}
+
+TemporaryValuePtr
+AArch64Values::getTemporaryValue(const MachineInstr *MI,
+                                 const VirtRegMap *VRM) const {
+  TemporaryValue *Val = nullptr;
+  switch(MI->getOpcode()) {
+  case AArch64::ADDXri: Val = getTemporaryReference(MI, VRM); break;
+  default: break;
+  }
+  return TemporaryValuePtr(Val);
+}
+
 typedef ValueGenInst::InstType InstType;
 template <InstType T> using RegInstruction = RegInstruction<T>;
 template <InstType T> using ImmInstruction = ImmInstruction<T>;

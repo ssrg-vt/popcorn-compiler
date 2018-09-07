@@ -429,6 +429,12 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
 
   ASSERT(val_src && val_dest, "invalid values\n");
 
+  if(val_dest->is_temporary)
+  {
+    ST_INFO("Skipping temporary value");
+    return false;
+  }
+
   // TODO hack -- va_list is implemented with different sizes for different
   // architectures.  Need to handle more gracefully.
   //   x86_64:    24

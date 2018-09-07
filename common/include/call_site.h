@@ -77,10 +77,10 @@ enum location_type {
 // most-significant, meaning they *must* be in the following order to adhere to
 // the on-disk layout
 typedef struct __attribute__((__packed__)) live_value {
+  uint8_t is_temporary : 1;
   uint8_t is_duplicate : 1;
   uint8_t is_alloca : 1;
   uint8_t is_ptr : 1;
-  uint8_t bit_pad : 1;
   uint8_t type : 4;
   uint8_t size;
   uint16_t regnum;

@@ -659,6 +659,7 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
   CopyLocPtr C;
   RegCopyLoc *RCL;
   StackCopyLoc *SCL;
+  TemporaryValuePtr Tmp;
 
   // Note: anything named or related to "Src" refers to the source of the
   // copy operation, i.e., the originating location for the value
@@ -790,6 +791,49 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
         }
 
         break;
+      }
+    }
+    else if((Tmp = TVG->getTemporaryValue(InB, VRM))) {
+      DEBUG(dbgs() << "  - Temporary for stackmap: "; InB->dump());
+      assert(Tmp->Type == TemporaryValue::StackSlotRef &&
+             "Unhandled temporary value");
+
+      // Replace current vreg with stack slot reference.
+      // Note: stack slots don't have liveness information to fix up
+      Found = false;
+      for(size_t i = 2; i < SM->getNumOperands(); i++) {
+        MachineOperand &MO = SM->getOperand(i);
+        if(MO.isReg() && MO.getReg() == Tmp->Vreg) {
+          // There's not a great way to add new operands, so trash all trailing
+          // operands up to and including the Vreg, add the metadata, and
+          // finally add the trailing operands back.
+          SmallVector<MachineOperand, 4> TrailOps(std::next(&MO),
+                                                  SM->operands_end());
+          while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
+          MachineInstrBuilder Worker(*MF, SM);
+          Worker.addImm(StackMaps::TemporaryOp);
+          Worker.addImm(Tmp->Offset);
+          Worker.addImm(StackMaps::DirectMemRefOp);
+          Worker.addFrameIndex(Tmp->StackSlot);
+          Worker.addImm(0);
+          for(auto Trailing : TrailOps) Worker.addOperand(Trailing);
+          Found = true;
+        }
+      }
+
+      // Update operand -> IR mapping to source stack slot
+      if(Found) {
+        assert(SMRegs[SM].count(Tmp->Vreg) &&
+               "Unhandled register operand in stackmap!");
+        SSIt = SMStackSlots[SM].find(Tmp->StackSlot);
+        VregIt = SMRegs[SM].find(Tmp->Vreg);
+        if(SSIt != SMStackSlots[SM].end()) {
+          for(auto IRVal : *VregIt->second)
+            SSIt->second->push_back(IRVal);
+        }
+        else SMStackSlots[SM].emplace(Tmp->StackSlot, VregIt->second);
+        SMRegs[SM].erase(Tmp->Vreg);
+        Changed = true;
       }
     }
     else DEBUG(dbgs() << "  - Skipping "; InB->dump());
