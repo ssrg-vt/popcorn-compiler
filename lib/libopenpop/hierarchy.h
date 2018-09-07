@@ -105,9 +105,23 @@ typedef struct {
   };
 } global_info_t;
 
+#define ROUND_UP( val, round ) (((val) + ((round) - 1) & ~round))
+
+/* All data needed to initializa threads on a node for execution. */
+typedef struct {
+  struct gomp_team_state ts;
+  struct gomp_task *task;
+  struct gomp_task_icv *icv;
+  void (*fn)(void *);
+  void *data;
+} node_init_t;
+
 /* Per-node hierarchy information.  This should all be accessed locally
    per-node, meaning nothing needs to be separated onto multiple pages. */
 typedef struct {
+  /* Per-node initialization information */
+  node_init_t ns;
+
   /* Per-node thread information */
   leader_select_t ALIGN_CACHE sync, opt;
 
@@ -131,7 +145,8 @@ typedef struct {
      period we *must* use the difference in fault counts from the same node. */
   unsigned long long page_faults;
 
-  char padding[PAGESZ - (2 * sizeof(leader_select_t))
+  char padding[PAGESZ - ROUND_UP(sizeof(node_init_t), 64)
+                      - (2 * sizeof(leader_select_t))
                       - sizeof(gomp_barrier_t)
                       - (sizeof(aligned_void_ptr) * REDUCTION_ENTRIES)
                       - sizeof(struct gomp_work_share)
@@ -140,12 +155,22 @@ typedef struct {
                       - sizeof(unsigned long long)];
 } node_info_t;
 
+_Static_assert((sizeof(node_info_t) & (PAGESZ - 1)) == 0,
+               "node_info_t is not page-aligned!");
+
 extern global_info_t popcorn_global;
 extern node_info_t popcorn_node[MAX_POPCORN_NODES];
 
 ///////////////////////////////////////////////////////////////////////////////
 // Initialization
 ///////////////////////////////////////////////////////////////////////////////
+
+/*
+ * Return the thread number for the first thread on the node.
+ * @param nid the node
+ * @return thread ID of the node's first thread
+ */
+int hierarchy_node_first_thread(int nid);
 
 /*
  * Initialize global synchronization data structures.
@@ -168,6 +193,48 @@ void hierarchy_init_node(int nid);
  * @return the node on which the thread should execute
  */
 int hierarchy_assign_node(unsigned tnum);
+
+/*
+ * Initialize the per-node team state.
+ * @param nid node ID
+ * @param team team struct
+ * @param ws work share struct
+ * @param last_ws last work share struct
+ * @param start_team_id ID of the first thread on the node
+ * @param level nesting level
+ * @param active level active nesting level
+ * @param place_partition_off TODO unused
+ * @param place_partition_len TODO unused
+ * @param single_count single counter
+ * @param static_trip static trip count
+ * @param task task struct
+ * @param icv task internal control variable
+ * @param fn the function implementing the parallel region
+ * @param data data to pass to the parallel function
+ */
+void hierarchy_init_node_team_state(int nid,
+                                    struct gomp_team *team,
+                                    struct gomp_work_share *ws,
+                                    struct gomp_work_share *last_ws,
+                                    unsigned start_team_id,
+                                    unsigned level,
+                                    unsigned active_level,
+                                    unsigned place_partition_off,
+                                    unsigned place_partition_len,
+#ifdef HAVE_SYNC_BUILTINS
+                                    unsigned long single_count,
+#endif
+                                    unsigned long static_trip,
+                                    struct gomp_task *task,
+                                    struct gomp_task_icv *icv,
+                                    void (*fn)(void *),
+                                    void *data);
+
+/*
+ * Initialize thread state to begin execution of parallel region.
+ * @param nid the node on which to execute
+ */
+void hierarchy_init_thread(int nid);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Barriers

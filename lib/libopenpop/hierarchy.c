@@ -57,43 +57,6 @@ void popcorn_set_het_workshare(bool flag) { popcorn_global.het_workshare = flag;
 // Leader selection
 ///////////////////////////////////////////////////////////////////////////////
 
-void hierarchy_init_global(int nodes)
-{
-  popcorn_global.sync.remaining = popcorn_global.sync.num =
-  popcorn_global.opt.remaining = popcorn_global.opt.num = nodes;
-  /* Note: *must* use reinit_all, otherwise there's a race condition between
-     leaders who have been released are reading generation in the barrier's
-     do-while loop and the main thread resetting barrier's generation */
-  gomp_barrier_reinit_all(&popcorn_global.bar, nodes);
-}
-
-void hierarchy_init_node(int nid)
-{
-  size_t num = popcorn_global.threads_per_node[nid];
-  popcorn_node[nid].sync.remaining = popcorn_node[nid].sync.num =
-  popcorn_node[nid].opt.remaining = popcorn_node[nid].opt.num = num;
-  /* See note in hierarchy_init_global() above */
-  gomp_barrier_reinit_all(&popcorn_node[nid].bar, num);
-}
-
-int hierarchy_assign_node(unsigned tnum)
-{
-  unsigned cur = 0, thr_total = 0;
-  for(cur = 0; cur < MAX_POPCORN_NODES; cur++)
-  {
-    thr_total += popcorn_global.node_places[cur];
-    if(tnum < thr_total)
-    {
-      popcorn_global.threads_per_node[cur]++;
-      return cur;
-    }
-  }
-
-  /* If we've exhausted the specification default to origin */
-  popcorn_global.threads_per_node[0]++;
-  return 0;
-}
-
 /****************************** Internal APIs *******************************/
 
 static bool select_leader_optimistic(leader_select_t *l, size_t *ticket)
@@ -132,6 +95,132 @@ static bool select_leader_synchronous(leader_select_t *l,
 static void hierarchy_leader_cleanup(leader_select_t *l)
 {
   __atomic_store_n(&l->remaining, l->num, MEMMODEL_RELEASE);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Initialization
+///////////////////////////////////////////////////////////////////////////////
+
+int hierarchy_node_first_thread(int nid)
+{
+  int i;
+  unsigned cur = 0;
+  assert(nid >= 0 && nid < MAX_POPCORN_NODES && "Invalid node ID");
+  for(i = 0; i < nid; i++) cur += popcorn_global.node_places[i];
+  return cur;
+}
+
+void hierarchy_init_global(int nodes)
+{
+  popcorn_global.sync.remaining = popcorn_global.sync.num =
+  popcorn_global.opt.remaining = popcorn_global.opt.num = nodes;
+  /* Note: *must* use reinit_all, otherwise there's a race condition between
+     leaders who have been released are reading generation in the barrier's
+     do-while loop and the main thread resetting barrier's generation */
+  gomp_barrier_reinit_all(&popcorn_global.bar, nodes);
+}
+
+void hierarchy_init_node(int nid)
+{
+  size_t num = popcorn_global.threads_per_node[nid];
+  popcorn_node[nid].sync.remaining = popcorn_node[nid].sync.num =
+  popcorn_node[nid].opt.remaining = popcorn_node[nid].opt.num = num;
+  /* See note in hierarchy_init_global() above */
+  gomp_barrier_reinit_all(&popcorn_node[nid].bar, num);
+}
+
+int hierarchy_assign_node(unsigned tnum)
+{
+  unsigned cur = 0, thr_total = 0;
+  for(cur = 0; cur < MAX_POPCORN_NODES; cur++)
+  {
+    thr_total += popcorn_global.node_places[cur];
+    if(tnum < thr_total)
+    {
+      popcorn_global.threads_per_node[cur]++;
+      return cur;
+    }
+  }
+
+  /* If we've exhausted the specification default to origin */
+  popcorn_global.threads_per_node[0]++;
+  return 0;
+}
+
+void hierarchy_init_node_team_state(int nid,
+                                    struct gomp_team *team,
+                                    struct gomp_work_share *ws,
+                                    struct gomp_work_share *last_ws,
+                                    unsigned start_team_id,
+                                    unsigned level,
+                                    unsigned active_level,
+                                    unsigned place_partition_off,
+                                    unsigned place_partition_len,
+#ifdef HAVE_SYNC_BUILTINS
+                                    unsigned long single_count,
+#endif
+                                    unsigned long static_trip,
+                                    struct gomp_task *task,
+                                    struct gomp_task_icv *icv,
+                                    void (*fn)(void *),
+                                    void *data)
+{
+  // TODO how can threads be shuffled between nodes in this situation?
+  popcorn_node[nid].ns.ts.team = team;
+  popcorn_node[nid].ns.ts.work_share = ws;
+  popcorn_node[nid].ns.ts.last_work_share = last_ws;
+  popcorn_node[nid].ns.ts.team_id = start_team_id;
+  popcorn_node[nid].ns.ts.level = level;
+  popcorn_node[nid].ns.ts.active_level = active_level;
+  popcorn_node[nid].ns.ts.place_partition_off = place_partition_off;
+  popcorn_node[nid].ns.ts.place_partition_len = place_partition_len;
+#ifdef HAVE_SYNC_BUILTINS
+  popcorn_node[nid].ns.ts.single_count = single_count;
+#endif
+  popcorn_node[nid].ns.ts.static_trip = static_trip;
+  popcorn_node[nid].ns.task = task;
+  popcorn_node[nid].ns.icv = icv;
+  popcorn_node[nid].ns.fn = fn;
+  popcorn_node[nid].ns.data = data;
+}
+
+/* Note: the main thread should already have initialized this node's
+   synchronization data structures! */
+void hierarchy_init_thread(int nid)
+{
+  size_t i, start = popcorn_node[nid].ns.ts.team_id;
+  bool leader;
+  struct gomp_thread *me = gomp_thread(), *nthr;
+  struct gomp_team *team = popcorn_node[nid].ns.ts.team;
+  struct gomp_task *task = popcorn_node[nid].ns.task;
+  struct gomp_task_icv *icv = popcorn_node[nid].ns.icv;
+  void (*fn)(void *) = popcorn_node[nid].ns.fn;
+  void *data = popcorn_node[nid].ns.data;
+
+  /* If the main thread didn't set this node's function then we aren't
+     participating in the parallel region. */
+  if(!fn) return;
+
+  leader = select_leader_synchronous(&popcorn_node[nid].sync,
+                                     &popcorn_node[nid].bar,
+                                     false, NULL);
+  if(leader)
+  {
+    for(i = 0; i < popcorn_global.threads_per_node[nid]; i++)
+    {
+      nthr = me->thread_pool->threads[i+start];
+      memcpy(&nthr->ts, &popcorn_node[nid].ns.ts, sizeof(nthr->ts));
+      nthr->ts.team_id = i + start;
+      nthr->task = &team->implicit_task[i+start];
+      nthr->place = 0;
+      gomp_init_task(nthr->task, task, icv);
+      nthr->fn = fn;
+      nthr->data = data;
+    }
+    popcorn_node[nid].ns.fn = NULL;
+    hierarchy_leader_cleanup(&popcorn_node[nid].sync);
+  }
+  gomp_team_barrier_wait(&popcorn_node[nid].bar);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -407,19 +496,27 @@ static hash_entry_type get_or_create_entry(const void *ident, bool *new)
 void popcorn_get_page_faults(unsigned long long *sent,
                              unsigned long long *recv)
 {
-  unsigned long long i;
+  struct gomp_thread *thr = gomp_thread();
+  unsigned long long i, read;
+  char *buf, *cur, *end;
   FILE *fp;
+  static const size_t bufsz = 768;
 
   assert(sent && recv && "Invalid arguments to get_page_faults()");
 
   if((fp = fopen("/proc/popcorn_stat", "r")))
   {
-    /* Skip header statistics & irrelevant message types */
-    while(fgetc(fp) != '-');
-    for(i = 0; i < 10; )
-      if(fgetc(fp) == '\n') i++;
-    fscanf(fp, " %llu %llu", sent, recv);
-    fclose(fp);
+    cur = buf = (char *)popcorn_malloc(sizeof(char) * bufsz, thr->popcorn_nid);
+    read = fread(buf, bufsz, 1, fp);
+    while(*cur != '-') cur++;
+    for(i = 0; i < 10; cur++)
+      if(*cur == '\n') i++;
+    while(*cur == ' ') cur++;
+    *sent = strtoul(cur, &end, 10);
+    cur = end;
+    while(*cur == ' ') cur++;
+    *recv = strtoul(cur, NULL, 10);
+    popcorn_free(buf);
   }
   else
   {
