@@ -252,4 +252,4 @@ clean:
 	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM)	$(PROG_X86_ALIGNED) \
 	$(PROG_ARM_ALIGNED) stack-transform.log bss.bin map* data.bin fds.bin \
 	heap.bin mdata.bin stack.bin.* tls.bin.* .status .lock aligned*.txt \
-	aligned*.x
+	aligned*.x .status .memory rmem.log

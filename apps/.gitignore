@@ -21,3 +21,5 @@ prog_x86-64_aligned
 stack-transform.log
 .lock
 .status
+.memory
+rmem.log
