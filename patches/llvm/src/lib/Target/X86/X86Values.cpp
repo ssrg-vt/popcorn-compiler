@@ -19,7 +19,8 @@
 using namespace llvm;
 
 static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
-                                             const VirtRegMap *VRM) {
+                                             const VirtRegMap *VRM,
+                                             unsigned Size) {
   TemporaryValue *Val = nullptr;
   if(MI->getOperand(0).isReg()) {
     // Instruction format:  LEA64  rd     rbase  scale# ridx   disp#  rseg
@@ -31,6 +32,7 @@ static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
       assert(MI->getOperand(1 + X86::AddrDisp).isImm() && "Invalid encoding");
       Val = new TemporaryValue;
       Val->Type = TemporaryValue::StackSlotRef;
+      Val->Size = Size;
       Val->Vreg = MI->getOperand(0).getReg();
       Val->StackSlot = MI->getOperand(1 + X86::AddrBaseReg).getIndex();
       Val->Offset = MI->getOperand(1 + X86::AddrDisp).getImm();
@@ -44,7 +46,7 @@ X86Values::getTemporaryValue(const MachineInstr *MI,
                              const VirtRegMap *VRM) const {
   TemporaryValue *Val = nullptr;
   switch(MI->getOpcode()) {
-  case X86::LEA64r: Val = getTemporaryReference(MI, VRM); break;
+  case X86::LEA64r: Val = getTemporaryReference(MI, VRM, 8); break;
   default: break;
   }
   return TemporaryValuePtr(Val);

@@ -34,6 +34,7 @@ struct TemporaryValue {
   };
 
   enum type Type;
+  unsigned Size;
 
   /// The virtual register used if the temporary is stored in a register
   unsigned Vreg;

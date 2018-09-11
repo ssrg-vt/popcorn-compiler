@@ -23,7 +23,8 @@
 using namespace llvm;
 
 static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
-                                             const VirtRegMap *VRM) {
+                                             const VirtRegMap *VRM,
+                                             unsigned Size) {
   TemporaryValue *Val = nullptr;
   if(MI->getOperand(0).isReg()) {
     // Instruction format:    ADDXri  xd    xn    imm#  lsl#
@@ -33,6 +34,7 @@ static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
        MI->getOperand(3).isImm() && MI->getOperand(3).getImm() == 0) {
       Val = new TemporaryValue;
       Val->Type = TemporaryValue::StackSlotRef;
+      Val->Size = Size;
       Val->Vreg = MI->getOperand(0).getReg();
       Val->StackSlot = MI->getOperand(1).getIndex();
       Val->Offset = 0;
@@ -47,7 +49,7 @@ AArch64Values::getTemporaryValue(const MachineInstr *MI,
                                  const VirtRegMap *VRM) const {
   TemporaryValue *Val = nullptr;
   switch(MI->getOpcode()) {
-  case AArch64::ADDXri: Val = getTemporaryReference(MI, VRM); break;
+  case AArch64::ADDXri: Val = getTemporaryReference(MI, VRM, 8); break;
   default: break;
   }
   return TemporaryValuePtr(Val);

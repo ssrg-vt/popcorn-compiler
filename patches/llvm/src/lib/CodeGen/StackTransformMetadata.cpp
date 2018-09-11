@@ -812,6 +812,7 @@ bool StackTransformMetadata::unwindToCallSite(MachineInstr *SM,
           while(SM->getNumOperands() > (i + 1)) SM->RemoveOperand(i);
           MachineInstrBuilder Worker(*MF, SM);
           Worker.addImm(StackMaps::TemporaryOp);
+          Worker.addImm(Tmp->Size);
           Worker.addImm(Tmp->Offset);
           Worker.addImm(StackMaps::DirectMemRefOp);
           Worker.addFrameIndex(Tmp->StackSlot);

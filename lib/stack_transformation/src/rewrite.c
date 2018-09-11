@@ -466,7 +466,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
          "value does not have same type (%s vs. %s)\n",
          (val_src->is_ptr ? "pointer" : "non-pointer"),
          (val_dest->is_ptr ? "pointer" : "non-pointer"));
-  ASSERT(!(val_src->is_alloca ^ val_dest->is_alloca),
+  ASSERT(!(val_src->is_alloca ^ val_dest->is_alloca) || val_src->is_temporary,
          "value does not have same type (%s vs. %s)\n",
          (val_src->is_alloca ? "alloca" : "non-alloca"),
          (val_dest->is_alloca ? "alloca" : "non-alloca"));
@@ -497,7 +497,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
 
   /* Check if value is pointed to by other values & fix up if so. */
   // Note: can only be pointed to if value is in memory, i.e., allocas
-  if(val_src->is_alloca)
+  if(val_src->is_alloca && !val_src->is_temporary)
   {
     fixup_node = list_begin(fixup, &dest->stack_pointers);
     while(fixup_node)
