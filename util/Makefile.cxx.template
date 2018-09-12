@@ -9,9 +9,7 @@
 # FIXME directory of Popcorn compiler installation
 POPCORN := /usr/local/popcorn
 
-# FIXME directory of libgcc installation for each target
-X86_64_LIBGCC := $(shell dirname \
-                 $(shell x86_64-linux-gnu-gcc -print-libgcc-file-name))
+# FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC  := $(shell dirname \
                  $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
@@ -41,11 +39,12 @@ IR := $(SRC:.$(SUFFIX)=.ll)
 
 # Linker
 LD      := $(POPCORN)/bin/ld.gold
-LDFLAGS := -z relro --hash-style=gnu --build-id -static
+LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/crti.o \
            /lib/libc.a \
            /lib/libstdc++.a \
+           /lib/libopenpop.a \
            /lib/libmigrate.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \
@@ -60,6 +59,7 @@ ALIGN          := $(POPCORN)/bin/pyalign
 
 # Post-processing & checking
 POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
+COMPRESS       := $(POPCORN)/bin/compress
 ALIGN_CHECK    := $(POPCORN)/bin/check-align.py
 STACKMAP_CHECK := $(POPCORN)/bin/check-stackmaps
 
@@ -113,8 +113,9 @@ X86_64_TARGET  := x86_64-linux-gnu
 X86_64_INC     := -cxx-isystem $(X86_64_CXX) \
                   -I$(X86_64_CXX)/x86_64-alpine-linux-musl \
                   -cxx-isystem $(X86_64_POPCORN)/include
-X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib -L$(X86_64_LIBGCC) \
-                  $(addprefix $(X86_64_POPCORN),$(LIBS)) $(LIBGCC)
+X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
+                  $(addprefix $(X86_64_POPCORN),$(LIBS)) \
+                  --start-group --end-group
 
 ###############################################################################
 #                                 Recipes                                     #
@@ -125,8 +126,8 @@ all: post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-#	@echo " [CHECK] Checking stackmaps for $^"
-#	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking stackmaps for $^"
+	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 
@@ -134,6 +135,12 @@ post_process: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(ARM64_ALIGNED)
 	@$(POST_PROCESS) -f $(X86_64_ALIGNED)
+
+compress: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [COMPRESS] $(ARM64_ALIGNED)"
+	@$(COMPRESS) -f $(ARM64_ALIGNED)
+	@echo " [COMPRESS] $(X86_64_ALIGNED)"
+	@$(COMPRESS) -f $(X86_64_ALIGNED)
 
 stack-depth: $(X86_64_SD)
 
@@ -165,13 +172,13 @@ clean:
 	@echo " [IR] $<"
 	@$(CXX) $(HET_CFLAGS) -S -emit-llvm $(ARM64_INC) -o $@ $<
 
-%.o: %.$(SUFFIX)
-	@echo " [CC] $<"
-	@$(CXX) $(HET_CFLAGS) -c $(ARM64_INC) -o $@ $<
-
 ###########
 # AArch64 #
 ###########
+
+%_aarch64.o: %.$(SUFFIX)
+	@echo " [CC] $<"
+	@$(CXX) $(HET_CFLAGS) -c $(ARM64_INC) -o $(<:.$(SUFFIX)=.o) $<
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
@@ -192,6 +199,8 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 ##########
 # x86-64 #
 ##########
+
+%_x86_64.o: %_aarch64.o
 
 $(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"
@@ -214,6 +223,6 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"
 	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
 
-.PHONY: all post_process stack-depth clean \
+.PHONY: all post_process compress stack-depth clean \
         aligned aligned-aarch64 aligned-x86-64 \
         vanilla vanilla-aarch64 vanilla-x86-64
