@@ -121,7 +121,7 @@ void ssor(int niter)
     //  printf(" \n     pseudo-time SSOR iteration no.=%4d\n\n", istep);
     //}
 
-	printf("Progress: %d/%d\n", istep, niter);
+	// printf("Progress: %d/%d\n", istep, niter);
 	popcorn_check_migrate();
 
     if ((istep % 20) == 0 || istep == itmax || istep == 1) {

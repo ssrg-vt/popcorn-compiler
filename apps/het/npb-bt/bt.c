@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
 
   for (step = 1; step <= niter; step++) {
 
-	printf("progress: %d/%d\n", step, niter);
+	//printf("progress: %d/%d\n", step, niter);
 	popcorn_check_migrate();
 
     if ((step % 20) == 0 || step == 1) {

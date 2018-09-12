@@ -338,7 +338,7 @@ int main(int argc, char *argv[])
 
 		popcorn_check_migrate();
 
-	  printf("progress: %d/%d\n", step, niter);
+	  //printf("progress: %d/%d\n", step, niter);
     if (step == 1) {
       // reset the solution and start the timer, keep track of total no elms
       r_init((double *)ta1, ntot, 0.0);
