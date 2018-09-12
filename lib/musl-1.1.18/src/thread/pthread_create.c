@@ -113,6 +113,14 @@ _Noreturn void __pthread_exit(void *result)
 		__unmapself(self->map_base, self->map_size);
 	}
 
+#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+	/* TODO Popcorn: we can't rely on the kernel's process-shared futex operation
+	   to wake threads waiting for us via pthread_join(). Explicitly clear tid, futex
+	   wake any waiters and call exit. */
+	// Note this needs to happen without touching the stack because as soon as we
+	// clear tid the main thread will wake and unmap this thread's stack
+	__cleartid_exit_nostack(&self->tid, 0);
+#endif
 	for (;;) __syscall(SYS_exit, 0);
 }
 
@@ -160,6 +168,7 @@ static int start_c11(void *p)
 }
 
 #define ROUND(x) (((x)+PAGE_SIZE-1)&-PAGE_SIZE)
+#define TLS_ROUND(x) (((x)+libc.tls_align-1)&-libc.tls_align)
 
 /* pthread_key_create.c overrides this */
 static volatile size_t dummy = 0;
@@ -191,7 +200,10 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	unsigned char *map = 0, *stack = 0, *tsd = 0, *stack_limit;
 	unsigned flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
 		| CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
-		| CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | CLONE_DETACHED;
+		| CLONE_PARENT_SETTID | CLONE_DETACHED;
+#if !defined __aarch64__ && !defined __powerpc64__ && !defined __x86_64__
+	flags |= CLONE_CHILD_CLEARTID;
+#endif
 	int do_sched = 0;
 	pthread_attr_t attr = { 0 };
 
@@ -219,7 +231,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	if (__block_new_threads) __wait(&__block_new_threads, 0, 1, 1);
 
 	if (attr._a_stackaddr) {
-		size_t need = libc.tls_size + __pthread_tsd_size;
+		size_t need = TLS_ROUND(libc.tls_size) + __pthread_tsd_size;
 		size = attr._a_stacksize;
 		stack = (void *)(attr._a_stackaddr & -16);
 		stack_limit = (void *)(attr._a_stackaddr - size);
@@ -228,7 +240,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 		 * application's stack space. */
 		if (need < size/8 && need < 2048) {
 			tsd = stack - __pthread_tsd_size;
-			stack = tsd - libc.tls_size;
+			stack = tsd - TLS_ROUND(libc.tls_size);
 			memset(stack, 0, need);
 		} else {
 			size = ROUND(need);
@@ -237,7 +249,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	} else {
 		guard = ROUND(attr._a_guardsize);
 		size = guard + ROUND(attr._a_stacksize
-			+ libc.tls_size +  __pthread_tsd_size);
+			+ TLS_ROUND(libc.tls_size) +  __pthread_tsd_size);
 	}
 
 	if (!tsd) {
@@ -255,12 +267,12 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 		}
 		tsd = map + size - __pthread_tsd_size;
 		if (!stack) {
-			stack = tsd - libc.tls_size;
+			stack = tsd - TLS_ROUND(libc.tls_size);
 			stack_limit = map + guard;
 		}
 	}
 
-	new = __copy_tls(tsd - libc.tls_size);
+	new = __copy_tls(tsd - TLS_ROUND(libc.tls_size));
 	new->map_base = map;
 	new->map_size = size;
 	new->stack = stack;

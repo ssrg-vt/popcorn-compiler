@@ -40,6 +40,8 @@ struct regset_aarch64
 // DWARF register mappings
 ///////////////////////////////////////////////////////////////////////////////
 
+#define AARCH64_NUM_REGS 128
+
 /* General purpose aarch64 registers */
 #define X0 0
 #define X1 1

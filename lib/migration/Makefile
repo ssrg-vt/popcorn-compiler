@@ -18,6 +18,9 @@ ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG=1
 OPT_LEVEL  :=
 endif
+ifneq ($(findstring nocleancrash,$(type)),)
+CFLAGS     += -D_CLEAN_CRASH=0
+endif
 ifneq ($(findstring timing,$(type)),)
 CFLAGS     += -D_TIME_REWRITE=1 -D_TIME_RESPONSE_DELAY=1
 endif

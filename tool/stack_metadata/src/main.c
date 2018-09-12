@@ -97,7 +97,7 @@ int main(int argc, char **argv)
   bin *b;
   stack_map_section *sm;
 
-  parse_args(argc, argv);  
+  parse_args(argc, argv);
   snprintf(unwind_addr_name, 512, "%s.%s", section_name, SECTION_UNWIND_ADDR);
 
   /* Initialize libELF & open ELF descriptors */

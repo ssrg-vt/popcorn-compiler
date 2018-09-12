@@ -4,6 +4,8 @@
 
 int __futex(volatile int *addr, int op, int val, void *ts)
 {
+	// TODO Popcorn: we don't currently support process-shared futexes
+	op |= FUTEX_PRIVATE;
 	return syscall(SYS_futex, addr, op, val, ts);
 }
 

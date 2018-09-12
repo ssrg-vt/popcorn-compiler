@@ -67,18 +67,30 @@ static inline void gomp_barrier_reinit (gomp_barrier_t *bar, unsigned count)
   bar->total = count;
 }
 
+static inline void gomp_barrier_reinit_all (gomp_barrier_t *bar, unsigned count)
+{
+  bar->total = count;
+  bar->awaited = count;
+  bar->awaited_final = count;
+}
+
 static inline void gomp_barrier_destroy (gomp_barrier_t *bar)
 {
 }
 
 extern void gomp_barrier_wait (gomp_barrier_t *);
+extern void gomp_barrier_wait_nospin (gomp_barrier_t *);
 extern void gomp_barrier_wait_last (gomp_barrier_t *);
 extern void gomp_barrier_wait_end (gomp_barrier_t *, gomp_barrier_state_t);
 extern void gomp_team_barrier_wait (gomp_barrier_t *);
+extern void gomp_team_barrier_wait_nospin (gomp_barrier_t *);
 extern void gomp_team_barrier_wait_final (gomp_barrier_t *);
+extern void gomp_team_barrier_wait_final_nospin (gomp_barrier_t *);
+extern void gomp_team_barrier_wait_final_last (gomp_barrier_t *);
 extern void gomp_team_barrier_wait_end (gomp_barrier_t *,
 					gomp_barrier_state_t);
 extern bool gomp_team_barrier_wait_cancel (gomp_barrier_t *);
+extern bool gomp_team_barrier_wait_cancel_nospin (gomp_barrier_t *);
 extern bool gomp_team_barrier_wait_cancel_end (gomp_barrier_t *,
 					       gomp_barrier_state_t);
 extern void gomp_team_barrier_wake (gomp_barrier_t *, int);

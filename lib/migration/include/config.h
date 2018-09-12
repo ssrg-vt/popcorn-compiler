@@ -54,7 +54,7 @@
 #endif
 
 /* Dump verbose migration information to a log file. */
-//#define _LOG 1
+#define _LOG 0
 #define LOG_FILE "/tmp/migrate.log"
 
 /*
@@ -65,6 +65,15 @@
  */
 #ifndef _DEBUG
 #define _DEBUG 0
+#endif
+
+/*
+ * Avoid dying on remote nodes by handling segfaults and migrating those
+ * threads back before crashes.
+ */
+// TODO enable by default after more testing
+#ifndef _CLEAN_CRASH
+#define _CLEAN_CRASH 0
 #endif
 
 #endif /* _CONFIG_H */

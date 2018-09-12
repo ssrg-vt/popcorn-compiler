@@ -1,5 +1,4 @@
-.extern pthread_migrate_args
-.extern __migrate_shim_internal
+.extern pthread_get_migrate_args
 .extern crash_powerpc64
 
 .section .text.__migrate_fixup_powerpc64, "ax"
@@ -24,14 +23,11 @@ __migrate_fixup_powerpc64:
   subi 1, 1, 16
   mflr 0
   std 0, 0(1) /* Don't clobber the link register */
-  bl pthread_migrate_args
+  bl pthread_get_migrate_args
   cmpdi 3, 0
   beq .Lcrash
-  ld 4, 0(3) /* Get struct shim_data pointer */
+  ld 4, 16(3) /* Get regset pointer */
   cmpdi 4, 0
-  beq .Lcrash
-  ld 5, 16(4) /* Get regset pointer */
-  cmpdi 5, 0
   beq .Lcrash
 
   /*
@@ -49,52 +45,52 @@ __migrate_fixup_powerpc64:
    */
 
   /* General purpose registers */
-  ld 2, 40(5)
-  ld 14, 136(5)
-  ld 15, 144(5)
-  ld 16, 152(5)
-  ld 17, 160(5)
-  ld 18, 168(5)
-  ld 19, 176(5)
-  ld 20, 184(5)
-  ld 21, 192(5)
-  ld 22, 200(5)
-  ld 23, 208(5)
-  ld 24, 216(5)
-  ld 25, 224(5)
-  ld 26, 232(5)
-  ld 27, 240(5)
-  ld 28, 248(5)
-  ld 29, 256(5)
-  ld 30, 264(5)
-  ld 31, 272(5)
+  ld 2, 40(4)
+  ld 14, 136(4)
+  ld 15, 144(4)
+  ld 16, 152(4)
+  ld 17, 160(4)
+  ld 18, 168(4)
+  ld 19, 176(4)
+  ld 20, 184(4)
+  ld 21, 192(4)
+  ld 22, 200(4)
+  ld 23, 208(4)
+  ld 24, 216(4)
+  ld 25, 224(4)
+  ld 26, 232(4)
+  ld 27, 240(4)
+  ld 28, 248(4)
+  ld 29, 256(4)
+  ld 30, 264(4)
+  ld 31, 272(4)
 
   /* Floating-point registers */
-  lfd 14, 392(5)
-  lfd 15, 400(5)
-  lfd 16, 408(5)
-  lfd 17, 416(5)
-  lfd 18, 424(5)
-  lfd 19, 432(5)
-  lfd 20, 440(5)
-  lfd 21, 448(5)
-  lfd 22, 456(5)
-  lfd 23, 464(5)
-  lfd 24, 472(5)
-  lfd 25, 480(5)
-  lfd 26, 488(5)
-  lfd 27, 496(5)
-  lfd 28, 504(5)
-  lfd 29, 512(5)
-  lfd 30, 520(5)
-  lfd 31, 528(5)
+  lfd 14, 392(4)
+  lfd 15, 400(4)
+  lfd 16, 408(4)
+  lfd 17, 416(4)
+  lfd 18, 424(4)
+  lfd 19, 432(4)
+  lfd 20, 440(4)
+  lfd 21, 448(4)
+  lfd 22, 456(4)
+  lfd 23, 464(4)
+  lfd 24, 472(4)
+  lfd 25, 480(4)
+  lfd 26, 488(4)
+  lfd 27, 496(4)
+  lfd 28, 504(4)
+  lfd 29, 512(4)
+  lfd 30, 520(4)
+  lfd 31, 528(4)
 
   /* Cleanup & return to C! */
   ld 0, 0(1)
   mtlr 0
   addi 1, 1, 16
+  ld 4, 24(3) /* Load post_syscall target PC */
   xor 3, 3, 3 /* Return successful migration */
-  ld 4, 24(4) /* Load post_syscall target PC */
   mtctr 4
   bctrl
 
@@ -102,12 +98,11 @@ __migrate_fixup_powerpc64:
   /*
    * We got garbage data post-migration, crash with the following information:
    *
-   *  arg 1 (r3): return value from pthread_migrate_args
-   *  arg 2 (r4): struct shim_data pointer
-   *  arg 3 (r5): regset pointer
-   *  arg 4 (r6): return address
+   *  arg 1 (r3): struct shim_data pointer
+   *  arg 2 (r4): regset pointer
+   *  arg 3 (r5): return address
    */
-  ld 6, 0(1)
+  ld 5, 0(1)
   bl crash_powerpc64
 
 .endif

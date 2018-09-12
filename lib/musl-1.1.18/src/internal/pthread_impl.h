@@ -46,11 +46,9 @@ struct pthread {
 	char *dlerror_buf;
 	int dlerror_flag;
 	void *stdio_locks;
+	void *popcorn_migrate_args;
 	uintptr_t canary_at_end;
 	void **dtv_copy;
-
-	/* Migration functionality */
-	void* __args;
 };
 
 struct __timer {
@@ -134,7 +132,8 @@ int __timedwait_cp(volatile int *, int, clockid_t, const struct timespec *, int)
 void __wait(volatile int *, volatile int *, int, int);
 static inline void __wake(volatile void *addr, int cnt, int priv)
 {
-	if (priv) priv = FUTEX_PRIVATE;
+	// TODO Popcorn: we don't currently support process-shared futexes
+	/*if (priv)*/ priv = FUTEX_PRIVATE;
 	if (cnt<0) cnt = INT_MAX;
 	__syscall(SYS_futex, addr, FUTEX_WAKE|priv, cnt) != -ENOSYS ||
 	__syscall(SYS_futex, addr, FUTEX_WAKE, cnt);
@@ -147,6 +146,11 @@ void __inhibit_ptc(void);
 void __block_all_sigs(void *);
 void __block_app_sigs(void *);
 void __restore_sigs(void *);
+
+// TODO Popcorn: clear child's TID, wake any waiters with futex wake & exit
+// child with the given status.  Should be removed if/when the kernel supports
+// process-shared futexes.
+void __cleartid_exit_nostack(int *tid, int status);
 
 #define DEFAULT_STACK_SIZE 8388608 // 8MB, changed from 81920
 #define DEFAULT_GUARD_SIZE 4096

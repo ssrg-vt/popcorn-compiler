@@ -204,13 +204,14 @@ libgomp_plugin_nvptx_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 libopenpop_la_LIBADD =
 @USE_FORTRAN_TRUE@am__objects_1 = openacc.lo
 am_libopenpop_la_OBJECTS = alloc.lo atomic.lo barrier.lo critical.lo \
-	env.lo error.lo icv.lo icv-device.lo iter.lo iter_ull.lo \
-	kmp.lo loop.lo loop_ull.lo ordered.lo parallel.lo sections.lo \
-	single.lo task.lo team.lo work.lo lock.lo mutex.lo proc.lo \
-	sem.lo bar.lo ptrlock.lo time.lo fortran.lo affinity.lo \
-	target.lo splay-tree.lo libgomp-plugin.lo oacc-parallel.lo \
-	oacc-host.lo oacc-init.lo oacc-mem.lo oacc-async.lo \
-	oacc-plugin.lo oacc-cuda.lo priority_queue.lo $(am__objects_1)
+	env.lo error.lo hierarchy.lo icv.lo icv-device.lo iter.lo \
+	iter_ull.lo kmp.lo loop.lo loop_ull.lo ordered.lo parallel.lo \
+	sections.lo single.lo task.lo team.lo work.lo lock.lo mutex.lo \
+	proc.lo sem.lo bar.lo ptrlock.lo time.lo fortran.lo \
+	affinity.lo target.lo splay-tree.lo libgomp-plugin.lo \
+	oacc-parallel.lo oacc-host.lo oacc-init.lo oacc-mem.lo \
+	oacc-async.lo oacc-plugin.lo oacc-cuda.lo priority_queue.lo \
+	$(am__objects_1)
 libopenpop_la_OBJECTS = $(am_libopenpop_la_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -299,8 +300,7 @@ AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
-#CFLAGS = @CFLAGS@
-CFLAGS = @CFLAGS@ -fno-common #MLK
+CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CUDA_DRIVER_INCLUDE = @CUDA_DRIVER_INCLUDE@
@@ -410,8 +410,9 @@ builddir = @builddir@
 # Popcorn note: removing the testsuite from the build process
 ###############################################################################
 #SUBDIRS = testsuite
+
 #config_path = @config_path@
-config_path = linux posix #for popcorn (MLK)
+config_path = linux posix # for Popcorn (MLK)
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
@@ -488,10 +489,10 @@ libopenpop_la_LDFLAGS = $(libopenpop_version_info) $(libopenpop_version_script) 
 libopenpop_la_DEPENDENCIES = $(libopenpop_version_dep)
 libopenpop_la_LINK = $(LINK) $(libopenpop_la_LDFLAGS)
 libopenpop_la_SOURCES = alloc.c atomic.c barrier.c critical.c env.c \
-	error.c icv.c icv-device.c iter.c iter_ull.c kmp.c loop.c \
-	loop_ull.c ordered.c parallel.c sections.c single.c task.c \
-	team.c work.c lock.c mutex.c proc.c sem.c bar.c ptrlock.c \
-	time.c fortran.c affinity.c target.c splay-tree.c \
+	error.c hierarchy.c icv.c icv-device.c iter.c iter_ull.c kmp.c \
+	loop.c loop_ull.c ordered.c parallel.c sections.c single.c \
+	task.c team.c work.c lock.c mutex.c proc.c sem.c bar.c \
+	ptrlock.c time.c fortran.c affinity.c target.c splay-tree.c \
 	libgomp-plugin.c oacc-parallel.c oacc-host.c oacc-init.c \
 	oacc-mem.c oacc-async.c oacc-plugin.c oacc-cuda.c \
 	priority_queue.c $(am__append_3)
@@ -662,6 +663,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/env.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/error.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fortran.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hierarchy.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/icv-device.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/icv.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/iter.Plo@am__quote@

@@ -10,17 +10,6 @@
 #ifndef _REGS_H
 #define _REGS_H
 
-/* The register set class. */
-struct regset_t
-{
-  // Allows the runtime to do sanity checks.  Note: we really just need a field
-  // so the struct is non-empty.
-  bool initialized;
-};
-
-typedef struct regset_t* regset_t;
-typedef const struct regset_t* const_regset_t;
-
 /* The register operations class. */
 struct regops_t
 {
@@ -45,56 +34,56 @@ struct regops_t
   /////////////////////////////////////////////////////////////////////////////
 
   /* Default constructor -- allocate & initialize an empty register set */
-  regset_t (*regset_default)(void);
+  void* (*regset_default)(void);
 
   /* Allocate & initialize a register set from the provided register values */
-  regset_t (*regset_init)(const void* regs);
+  void* (*regset_init)(const void* regs);
 
   /* Free a register set */
-  void (*regset_free)(regset_t regset);
+  void (*regset_free)(void* regset);
 
   /* Copy an existing register set. Note: does not allocate memory. */
-  void (*regset_clone)(const_regset_t src, regset_t dest);
+  void (*regset_clone)(const void* src, void* dest);
 
   /*
-   * Copy outside struct to regset_t.  Similar to regset_init except does not
-   * allocate memory.
+   * Copy outside struct to internal regset.  Similar to regset_init except
+   * does not allocate memory.
    */
-  void (*regset_copyin)(regset_t regset, const void* regs);
+  void (*regset_copyin)(void* in, const void* out);
 
-  /* Copy regset_t data to outside struct.  Note: does not free memory. */
-  void (*regset_copyout)(const_regset_t regset, void* regs);
+  /* Copy internal regset to outside struct.  Note: does not free memory. */
+  void (*regset_copyout)(const void* in, void* out);
 
   /////////////////////////////////////////////////////////////////////////////
   // Special register access
   /////////////////////////////////////////////////////////////////////////////
 
   /* Get the program counter value */
-  void* (*pc)(const_regset_t regset);
+  void* (*pc)(const void* regset);
 
   /* Get the stack pointer value */
-  void* (*sp)(const_regset_t regset);
+  void* (*sp)(const void* regset);
 
   /* Get the frame pointer value */
-  void* (*fbp)(const_regset_t regset);
+  void* (*fbp)(const void* regset);
 
   /* Get the return address-mapped register's value */
-  void* (*ra_reg)(const_regset_t regset);
+  void* (*ra_reg)(const void* regset);
 
   /* Set the program counter */
-  void (*set_pc)(regset_t regset, void* pc);
+  void (*set_pc)(void* regset, void* pc);
 
   /* Set the stack pointer */
-  void (*set_sp)(regset_t regset, void* sp);
+  void (*set_sp)(void* regset, void* sp);
 
   /* Set the frame pointer value */
-  void (*set_fbp)(regset_t regset, void* fp);
+  void (*set_fbp)(void* regset, void* fp);
 
   /* Set the return-address mapped register */
-  void (*set_ra_reg)(regset_t regset, void* ra);
+  void (*set_ra_reg)(void* regset, void* ra);
 
   /* Architecture-specific frame base pointer setup */
-  void (*setup_fbp)(regset_t regset, void* cfa);
+  void (*setup_fbp)(void* regset, void* cfa);
 
   /////////////////////////////////////////////////////////////////////////////
   // General-purpose register access
@@ -109,7 +98,7 @@ struct regops_t
    *
    * Note: this does *NOT* return the register's contents!
    */
-  void* (*reg)(regset_t regset, uint16_t reg);
+  void* (*reg)(void* regset, uint16_t reg);
 };
 
 typedef struct regops_t* regops_t;

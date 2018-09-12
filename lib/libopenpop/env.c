@@ -53,6 +53,7 @@
 #endif
 #include <errno.h>
 #include "thread-stacksize.h"
+#include "hierarchy.h"
 
 #ifndef HAVE_STRTOULL
 # define strtoull(ptr, eptr, base) strtoul (ptr, eptr, base)
@@ -88,9 +89,6 @@ int gomp_debug_var;
 unsigned int gomp_num_teams_var;
 char *goacc_device_type;
 int goacc_device_num;
-bool *popcorn_nodes_list;
-unsigned long popcorn_nodes_list_len;
-unsigned long popcorn_threads_per_node;
 
 #ifndef LIBGOMP_OFFLOADED_ONLY
 
@@ -569,8 +567,8 @@ parse_one_place (char **envp, bool *negatep, unsigned long *lenp,
 static bool
 parse_popcorn_nodes_var (const char *name)
 {
-  char *env = getenv (name), *end;
-  unsigned long count = 0;
+  char *env = getenv (name), *end, *num_end;
+  unsigned long count[MAX_POPCORN_NODES], cur, value;
   if (env == NULL)
     goto invalid;
 
@@ -592,7 +590,7 @@ parse_popcorn_nodes_var (const char *name)
       ++env;
 
     errno = 0;
-    count = strtoul (env, &end, 10);
+    value = strtoul (env, &end, 10);
     if (errno)
       goto invalid;
     env = end;
@@ -606,13 +604,105 @@ parse_popcorn_nodes_var (const char *name)
     if (*env != '\0')
       goto invalid;
 
-    return popcorn_affinity_init_nodes (count, false);
+    return popcorn_affinity_init_nodes_uniform (value, false);
   }
-  else
-  {
-    // TODO mini-language like OpenMP's OMP_PLACE: {start:len:stride}
+
+  /* For now, only accept comma-separated list of the following:
+       {num}: number of threads on a node */
+  cur = 0;
+  memset(count, 0, sizeof(count));
+  end = env;
+  do
+    {
+      if (*end != '{')
+        goto invalid;
+      ++end;
+      while (isspace ((unsigned char) *end))
+        ++end;
+
+      errno = 0;
+      value = strtoul (end, &num_end, 10);
+      if (errno || (long) value < 0 || end == num_end)
+        goto invalid;
+      count[cur++] = value;
+      end = num_end;
+
+      while (isspace ((unsigned char) *end))
+        ++end;
+      if (*end != '}')
+        goto invalid;
+      ++end;
+
+      while (isspace ((unsigned char) *end))
+        ++end;
+      if (*end == '\0')
+        break;
+      else if (*end != ',')
+        goto invalid;
+      ++end;
+      while (isspace ((unsigned char) *end))
+        ++end;
+    }
+  while (cur < MAX_POPCORN_NODES);
+
+  return popcorn_affinity_init_nodes(count, cur, false);
+
+invalid:
+  return false;
+}
+
+static bool
+parse_het_workshare_var (const char *name)
+{
+  char *env = getenv (name), *num_end;
+  unsigned long cur;
+  unsigned long count[MAX_POPCORN_NODES], value;
+  if (env == NULL)
     goto invalid;
-  }
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (env == '\0')
+    goto invalid;
+
+  /* For now, only accept comma-separated list of the following:
+       {rating}: speed rating for a core on the current node */
+  cur = 0;
+  memset(count, 0, sizeof(count));
+  do
+    {
+      if (*env != '{')
+        goto invalid;
+      ++env;
+      while (isspace ((unsigned char) *env))
+        ++env;
+
+      errno = 0;
+      value = strtoul (env, &num_end, 10);
+      if (errno || (long) value < 0 || env == num_end)
+        goto invalid;
+      count[cur++] = value;
+      env = num_end;
+
+      while (isspace ((unsigned char) *env))
+        ++env;
+      if (*env != '}')
+        goto invalid;
+      ++env;
+
+      while (isspace ((unsigned char) *env))
+        ++env;
+      if (*env == '\0')
+        break;
+      else if (*env != ',')
+        goto invalid;
+      ++env;
+      while (isspace ((unsigned char) *env))
+        ++env;
+    }
+  while (cur < MAX_POPCORN_NODES);
+
+  return popcorn_affinity_init_node_ratings(count, cur, false);
 
 invalid:
   return false;
@@ -1209,6 +1299,30 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
     }
   fputs ("'\n", stderr);
 
+  if (popcorn_global.distributed)
+    {
+      fputs ("  POPCORN_PLACES ({node, threads}) =", stderr);
+      for (i = 0; i < MAX_POPCORN_NODES; i++)
+        {
+          if (popcorn_global.threads_per_node[i])
+            fprintf (stderr, " {%u, %lu}", i,
+                     popcorn_global.threads_per_node[i]);
+        }
+      fputs ("\n", stderr);
+      fputs ("  POPCORN_HET_WORKSHARE({node, rating}) =", stderr);
+      for (i = 0; i < MAX_POPCORN_NODES; i++)
+        {
+          if (popcorn_global.core_speed_rating[i] > 0.0)
+            fprintf (stderr, " {%u, %lu}", i,
+                     popcorn_global.core_speed_rating[i]);
+        }
+      fputs ("\n", stderr);
+      fprintf (stderr, "  POPCORN_HYBRID_BARRIER = %s\n",
+               popcorn_global.hybrid_barrier ? "TRUE" : "FALSE");
+      fprintf (stderr, "  POPCORN_HYBRID_REDUCE = %s\n",
+               popcorn_global.hybrid_reduce ? "TRUE" : "FALSE");
+    }
+
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
 
   /* GOMP's default value is actually neither active nor passive.  */
@@ -1333,6 +1447,15 @@ initialize_env (void)
      enable if user specified places, not yet supported. */
   if (!gomp_global_icv.bind_var)
     parse_popcorn_nodes_var ("POPCORN_PLACES");
+
+  /* Users can selectively disable Popcorn optimizations. */
+  if (popcorn_global.distributed)
+    {
+      parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
+      parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
+      popcorn_global.het_workshare =
+        parse_het_workshare_var("POPCORN_HET_WORKSHARE");
+    }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task
      IDs to user-land threads (including OpenMP threads).  If profiling is

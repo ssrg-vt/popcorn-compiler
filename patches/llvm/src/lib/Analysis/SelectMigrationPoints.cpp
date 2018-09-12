@@ -625,6 +625,7 @@ public:
 
   virtual bool doInitialization(Module &M) {
     DL = &M.getDataLayout();
+    addPopcornFnAttributes(M);
     if(MoreMigPoints) parsePerFuncThresholds();
     if(HTMExec) Popcorn::setInstrumentationType(M, Popcorn::HTM);
     else Popcorn::setInstrumentationType(M, Popcorn::Cycles);
@@ -637,7 +638,8 @@ public:
     DEBUG(dbgs() << "\n********** SELECT MIGRATION POINTS **********\n"
                  << "********** Function: " << F.getName() << "\n\n");
 
-    if(NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) return false;
+    if(F.hasFnAttribute("popcorn-noinstr") ||
+       NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) return false;
 
     initializeAnalysis(F);
 
@@ -988,6 +990,25 @@ private:
   //===--------------------------------------------------------------------===//
   // Analysis implementation
   //===--------------------------------------------------------------------===//
+
+  /// Add Popcorn-related function attributes where appropriate.
+  void addPopcornFnAttributes(Module &M) const {
+    auto GlobalAnnos = M.getNamedGlobal("llvm.global.annotations");
+    if(GlobalAnnos) {
+      auto a = cast<ConstantArray>(GlobalAnnos->getOperand(0));
+      for(unsigned int i = 0; i < a->getNumOperands(); i++) {
+        auto e = cast<ConstantStruct>(a->getOperand(i));
+        if(auto fn = dyn_cast<Function>(e->getOperand(0)->getOperand(0))) {
+          auto Anno = cast<ConstantDataArray>(
+                        cast<GlobalVariable>(
+                          e->getOperand(1)->getOperand(0)
+                        )->getOperand(0)
+                      )->getAsCString();
+          fn->addFnAttr(Anno);
+        }
+      }
+    }
+  }
 
   /// Return whether the instruction requires HTM begin instrumentation.
   bool shouldAddHTMBegin(Instruction *I) const {

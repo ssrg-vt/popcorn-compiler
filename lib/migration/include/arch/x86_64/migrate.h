@@ -6,14 +6,19 @@
 #ifndef _MIGRATE_X86_64_H
 #define _MIGRATE_X86_64_H
 
-#define SYSCALL_SCHED_MIGRATE 330
-#define SYSCALL_PROPOSE_MIGRATION 331
-#define SYSCALL_GET_THREAD_STATUS 332
-#define SYSCALL_GET_NODE_INFO 333
+#include <syscall.h>
 
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_X86_64(regset.x86); \
     regset.x86.rip = get_call_site()
+
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("movq %%fs:0x0, %0" : "=r"(self)); \
+    self + MUSL_PTHREAD_DESCRIPTOR_SIZE; \
+  })
 
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
@@ -60,7 +65,7 @@
                       "=g"(err) \
                       : /* Inputs */ \
                       "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "edi", "rsi", "eax"); \
       } \
@@ -78,7 +83,7 @@
                       "=m"(data.post_syscall), "=g"(err) \
                       : /* Inputs */ \
                       "g"(nid), "g"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "edi", "rsi", "eax"); \
       } \

@@ -3845,7 +3845,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 ===================================================================
 --- lib/Analysis/SelectMigrationPoints.cpp	(nonexistent)
 +++ lib/Analysis/SelectMigrationPoints.cpp	(working copy)
-@@ -0,0 +1,1816 @@
+@@ -0,0 +1,1837 @@
 +//===- SelectMigrationPoints.cpp ------------------------------------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -4473,6 +4473,7 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +
 +  virtual bool doInitialization(Module &M) {
 +    DL = &M.getDataLayout();
++    addPopcornFnAttributes(M);
 +    if(MoreMigPoints) parsePerFuncThresholds();
 +    if(HTMExec) Popcorn::setInstrumentationType(M, Popcorn::HTM);
 +    else Popcorn::setInstrumentationType(M, Popcorn::Cycles);
@@ -4485,7 +4486,8 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +    DEBUG(dbgs() << "\n********** SELECT MIGRATION POINTS **********\n"
 +                 << "********** Function: " << F.getName() << "\n\n");
 +
-+    if(NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) return false;
++    if(F.hasFnAttribute("popcorn-noinstr") ||
++       NoInstFuncs.find(F.getName()) != NoInstFuncs.end()) return false;
 +
 +    initializeAnalysis(F);
 +
@@ -4836,6 +4838,25 @@ Index: lib/Analysis/SelectMigrationPoints.cpp
 +  //===--------------------------------------------------------------------===//
 +  // Analysis implementation
 +  //===--------------------------------------------------------------------===//
++
++  /// Add Popcorn-related function attributes where appropriate.
++  void addPopcornFnAttributes(Module &M) const {
++    auto GlobalAnnos = M.getNamedGlobal("llvm.global.annotations");
++    if(GlobalAnnos) {
++      auto a = cast<ConstantArray>(GlobalAnnos->getOperand(0));
++      for(unsigned int i = 0; i < a->getNumOperands(); i++) {
++        auto e = cast<ConstantStruct>(a->getOperand(i));
++        if(auto fn = dyn_cast<Function>(e->getOperand(0)->getOperand(0))) {
++          auto Anno = cast<ConstantDataArray>(
++                        cast<GlobalVariable>(
++                          e->getOperand(1)->getOperand(0)
++                        )->getOperand(0)
++                      )->getAsCString();
++          fn->addFnAttr(Anno);
++        }
++      }
++    }
++  }
 +
 +  /// Return whether the instruction requires HTM begin instrumentation.
 +  bool shouldAddHTMBegin(Instruction *I) const {
@@ -9482,6 +9503,25 @@ Index: lib/Target/AArch64/CMakeLists.txt
  )
  
  add_dependencies(LLVMAArch64CodeGen intrinsics_gen)
+Index: lib/Target/AArch64/MCTargetDesc/AArch64MCCodeEmitter.cpp
+===================================================================
+--- lib/Target/AArch64/MCTargetDesc/AArch64MCCodeEmitter.cpp	(revision 320332)
++++ lib/Target/AArch64/MCTargetDesc/AArch64MCCodeEmitter.cpp	(working copy)
+@@ -281,7 +281,13 @@
+ 
+   ++MCNumFixups;
+ 
+-  return 0;
++  // Set the shift bit of the add instruction for relocation types
++  // R_AARCH64_TLSLE_ADD_TPREL_HI12 and R_AARCH64_TLSLD_ADD_DTPREL_HI12.
++  AArch64MCExpr::VariantKind RefKind = cast<AArch64MCExpr>(Expr)->getKind();
++  if (RefKind == AArch64MCExpr::VK_TPREL_HI12 ||
++      RefKind == AArch64MCExpr::VK_DTPREL_HI12)
++    ShiftVal = 12;
++  return ShiftVal == 0 ? 0 : (1 << ShiftVal);
+ }
+ 
+ /// getCondBranchTargetOpValue - Return the encoded value for a conditional
 Index: lib/Target/CMakeLists.txt
 ===================================================================
 --- lib/Target/CMakeLists.txt	(revision 320332)

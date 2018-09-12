@@ -70,7 +70,6 @@ __DATA__		/* maker for data section insertion */
   .data1          : { *(.data1) }
   _edata = .; PROVIDE (edata = .);
   /*. = ALIGN(0x100); . = .;*/
- .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
  
  __bss_start = .;
 
@@ -173,6 +172,7 @@ __TBSS__		/* marker for TBSS section insertion */
   .got            : { *(.got) *(.igot) }
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
+  .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
   . = ALIGN(64 / 8);
   _end = .; PROVIDE (end = .);
   . = DATA_SEGMENT_END (.);

@@ -6,14 +6,19 @@
 #ifndef _MIGRATE_powerpc64_H
 #define _MIGRATE_powerpc64_H
 
-#define SYSCALL_SCHED_MIGRATE 379
-#define SYSCALL_PROPOSE_MIGRATION 380
-#define SYSCALL_GET_THREAD_STATUS 381
-#define SYSCALL_GET_NODE_INFO 382
+#include <syscall.h>
 
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_POWERPC64(regset.powerpc); \
     regset.powerpc.pc = get_call_site()
+
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("mr %0, 13" : "=r"(self)); \
+    self - 0x7000; \
+  })
 
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
@@ -60,7 +65,7 @@
                       "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "r3", "r4", "r0"); \
       } \
@@ -79,7 +84,7 @@
                       "=m"(data.post_syscall), "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "r3", "r4", "r0"); \
       } \

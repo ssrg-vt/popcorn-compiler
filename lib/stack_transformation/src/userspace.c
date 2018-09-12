@@ -16,8 +16,6 @@
 #include "stack_transform.h"
 #include "definitions.h"
 #include "util.h"
-#include "arch/x86_64/regs.h"
-#include "arch/aarch64/regs.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
@@ -117,7 +115,7 @@ void __st_userspace_ctor(void)
   if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
   else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
   else {
-    aarch64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    aarch64_fn = (char*)MALLOC(sizeof(char) * BUF_SIZE);
     snprintf(aarch64_fn, BUF_SIZE, "%s_aarch64", __progname);
   }
   aarch64_handle = st_init(aarch64_fn);
@@ -128,7 +126,7 @@ void __st_userspace_ctor(void)
     powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
   else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
   else {
-    powerpc64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    powerpc64_fn = (char*)MALLOC(sizeof(char) * BUF_SIZE);
     snprintf(powerpc64_fn, BUF_SIZE, "%s_powerpc64", __progname);
   }
   powerpc64_handle = st_init(powerpc64_fn);
@@ -138,7 +136,7 @@ void __st_userspace_ctor(void)
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
-    x86_64_fn = (char*)malloc(sizeof(char) * BUF_SIZE);
+    x86_64_fn = (char*)MALLOC(sizeof(char) * BUF_SIZE);
     snprintf(x86_64_fn, BUF_SIZE, "%s_x86-64", __progname);
   }
   x86_64_handle = st_init(x86_64_fn);
@@ -175,7 +173,6 @@ void __st_userspace_dtor(void)
  */
 stack_bounds get_stack_bounds()
 {
-  int retval;
   void* cur_stack;
   stack_bounds cur_bounds = {NULL, NULL};
 
@@ -188,9 +185,9 @@ stack_bounds get_stack_bounds()
   stack_bounds* bounds_ptr;
   if(!(bounds_ptr = pthread_getspecific(stack_bounds_key)))
   {
-    bounds_ptr = (stack_bounds*)malloc(sizeof(stack_bounds));
+    bounds_ptr = (stack_bounds*)MALLOC(sizeof(stack_bounds));
     ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-    retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
+    int retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
     if(retval) {
       ASSERT(!retval, "could not set TLS data for thread\n");
       return cur_bounds;
@@ -210,7 +207,7 @@ stack_bounds get_stack_bounds()
 #endif
   if(cur_stack >= cur_bounds.low + B_STACK_OFFSET)
     cur_bounds.low += B_STACK_OFFSET;
-  else cur_bounds.high = cur_bounds.low += B_STACK_OFFSET;
+  else cur_bounds.high = cur_bounds.low + B_STACK_OFFSET;
 
   return cur_bounds;
 }
@@ -276,7 +273,7 @@ static bool prep_stack(void)
   stack_bounds bounds;
   stack_bounds* bounds_ptr;
 
-  bounds_ptr = (stack_bounds*)malloc(sizeof(stack_bounds));
+  bounds_ptr = (stack_bounds*)MALLOC(sizeof(stack_bounds));
   ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
   ret = pthread_key_create(&stack_bounds_key, free);
   ret |= pthread_setspecific(stack_bounds_key, bounds_ptr);
@@ -352,7 +349,7 @@ static bool get_main_stack(stack_bounds* bounds)
 
   if(snprintf(proc_fn, BUF_SIZE, "/proc/%d/maps", getpid()) < 0) return false;
   if(!(proc_fp = fopen(proc_fn, "r"))) return false;
-  if(!(lineptr = (char*)malloc(BUF_SIZE * sizeof(char)))) return false;
+  if(!(lineptr = (char*)MALLOC(BUF_SIZE * sizeof(char)))) return false;
   while(getline(&lineptr, &linesz, proc_fp) >= 0)
   {
     fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
@@ -440,7 +437,7 @@ static int userspace_rewrite_internal(void* sp,
 #else /* PTHREAD_TLS */
   if(!(bounds_ptr = pthread_getspecific(stack_bounds_key)))
   {
-    bounds_ptr = (stack_bounds*)malloc(sizeof(stack_bounds));
+    bounds_ptr = (stack_bounds*)MALLOC(sizeof(stack_bounds));
     ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
     retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
     ASSERT(!retval, "could not set TLS data for thread\n");

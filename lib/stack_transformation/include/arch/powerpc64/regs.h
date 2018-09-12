@@ -54,6 +54,8 @@ struct regset_powerpc64
 // DWARF register mappings
 ///////////////////////////////////////////////////////////////////////////////
 
+#define POWERPC64_NUM_REGS 116
+
 /* General purpose powerpc64 registers */
 #define R0 0
 #define R1 1

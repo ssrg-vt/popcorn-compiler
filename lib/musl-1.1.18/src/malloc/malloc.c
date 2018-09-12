@@ -18,6 +18,11 @@ int __munmap(void *, size_t);
 void *__mremap(void *, size_t, size_t, int, ...);
 int __madvise(void *, size_t, int);
 
+/* Provide ability to intermix Popcorn's per-node arena APIs and normal memory
+ * management APIs, e.g., pass per-node allocation to normal free. */
+void popcorn_free(void *);
+int popcorn_get_arena(void *);
+
 struct chunk {
 	size_t psize, csize;
 	struct chunk *next, *prev;
@@ -33,7 +38,11 @@ static struct {
 	volatile uint64_t binmap;
 	struct bin bins[64];
 	volatile int free_lock[2];
-} mal;
+} __attribute__((aligned(4096))) mal;
+
+/* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
+static void __attribute__((constructor)) __init_malloc()
+{ memset(&mal, 0, sizeof(mal)); }
 
 
 #define SIZE_ALIGN (4*sizeof(size_t))
@@ -43,8 +52,8 @@ static struct {
 #define DONTCARE 16
 #define RECLAIM 163840
 
-#define CHUNK_SIZE(c) ((c)->csize & -2)
-#define CHUNK_PSIZE(c) ((c)->psize & -2)
+#define CHUNK_SIZE(c) ((c)->csize & -4)
+#define CHUNK_PSIZE(c) ((c)->psize & -4)
 #define PREV_CHUNK(c) ((struct chunk *)((char *)(c) - CHUNK_PSIZE(c)))
 #define NEXT_CHUNK(c) ((struct chunk *)((char *)(c) + CHUNK_SIZE(c)))
 #define MEM_TO_CHUNK(p) (struct chunk *)((char *)(p) - OVERHEAD)
@@ -52,8 +61,11 @@ static struct {
 #define BIN_TO_CHUNK(i) (MEM_TO_CHUNK(&mal.bins[i].head))
 
 #define C_INUSE  ((size_t)1)
+#define C_POPCORN ((size_t)2)
 
 #define IS_MMAPPED(c) !((c)->csize & (C_INUSE))
+#define IS_POPCORN_ARENA(c) \
+	(((c)->csize & (C_POPCORN)) && (popcorn_get_arena(c) != -1))
 
 
 /* Synchronization tools */
@@ -412,6 +424,16 @@ void *realloc(void *p, size_t n)
 		return CHUNK_TO_MEM(self);
 	}
 
+	/* Check if moving from Popcorn's per-node arenas to global heap */
+	if (IS_POPCORN_ARENA(self)) {
+		new = malloc(n);
+		if (!new) return 0;
+		n0 -= OVERHEAD;
+		memcpy(new, p, n < n0 ? n : n0);
+		popcorn_free(p);
+		return new;
+	}
+
 	next = NEXT_CHUNK(self);
 
 	/* Crash on corrupted footer (likely from buffer overflow) */
@@ -466,6 +488,12 @@ void free(void *p)
 		/* Crash on double free */
 		if (extra & 1) a_crash();
 		__munmap(base, len);
+		return;
+	}
+
+	/* Forward per-node allocations to Popcorn's per-node free implementation */
+	if (IS_POPCORN_ARENA(self)) {
+		popcorn_free(p);
 		return;
 	}
 

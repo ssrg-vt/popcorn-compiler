@@ -7,7 +7,6 @@
 
 #include <libelf/gelf.h>
 
-#include "stack_transform.h"
 #include "definitions.h"
 #include "arch_regs.h"
 #include "util.h"

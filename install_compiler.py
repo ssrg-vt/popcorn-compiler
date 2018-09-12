@@ -33,6 +33,7 @@ llvm_targets = {
 
 # LLVM 3.7.1 SVN URL
 llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
+llvm_revision = '320332'
 # Clang SVN URL
 clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 # Binutils 2.27 URL
@@ -282,14 +283,14 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     # DOWNLOAD LLVM
     #=====================================================
     print('Downloading LLVM source...')
-    args = ['svn', 'co', llvm_url, llvm_download_path]
+    args = ['svn', 'co', llvm_url, llvm_download_path, '-r', llvm_revision]
     run_cmd('download LLVM source', args)
 
     #=====================================================
     # DOWNLOAD CLANG
     #=====================================================
     print('Downloading Clang source...')
-    args = ['svn', 'co', clang_url, clang_download_path]
+    args = ['svn', 'co', clang_url, clang_download_path, '-r', llvm_revision]
     run_cmd('download Clang source', args)
 
     #=====================================================
@@ -481,7 +482,7 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
     lib_dir = os.path.join(target_install_path, 'lib')
 
     args = ' '.join(['CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-linux-gnu -O2 -g -Wall ' \
+                     'CFLAGS="-target {}-linux-gnu -O2 -g -Wall -fno-common ' \
                              '-nostdinc -isystem {} ' \
                              '-popcorn-metadata ' \
                              '-popcorn-target={}-linux-gnu"' \
@@ -493,8 +494,7 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
                      '--target={}-linux-gnu'.format(target),
                      '--host={}-linux-gnu'.format(target),
                      '--enable-static',
-                     '--disable-shared',
-                     '--disable-tls'])
+                     '--disable-shared'])
     run_cmd('configure libopenpop ({})'.format(target), args, use_shell=True)
 
     print('Making libopenpop ({})...'.format(target))
@@ -512,10 +512,11 @@ def install_stack_transformation(base_path, install_path, num_threads, st_debug)
     # CONFIGURE & INSTALL STACK TRANSFORMATION LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'stack_transformation'))
+    run_cmd('clean libstack-transform', ['make', 'clean'])
 
     print('Making stack_transformation...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
-    if st_debug: args += ['-type=debug']
+    if st_debug: args += ['type=debug']
     run_cmd('make libstack-transform', args)
     args += ['install']
     run_cmd('install libstack-transform', args)
@@ -530,6 +531,7 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
     # CONFIGURE & INSTALL MIGRATION LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'migration'))
+    run_cmd('clean libmigration', ['make', 'clean'])
 
     print('Making libmigration...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -555,6 +557,7 @@ def install_stackdepth(base_path, install_path, num_threads):
     # INSTALL STACK DEPTH LIBRARY
     #=====================================================
     os.chdir(os.path.join(base_path, 'lib', 'stack_depth'))
+    run_cmd('clean libstack-depth', ['make', 'clean'])
 
     print('Making stack depth library...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -571,6 +574,7 @@ def install_tools(base_path, install_path, num_threads):
     # INSTALL ALIGNMENT TOOL
     #=====================================================
     os.chdir(os.path.join(base_path, 'tool', 'alignment'))
+    run_cmd('clean pyalign', ['make', 'clean'])
 
     print('Making pyalign...')
     args = ['make', '-j', str(num_threads), 'install',
@@ -583,6 +587,7 @@ def install_tools(base_path, install_path, num_threads):
     # INSTALL STACK METADATA TOOL
     #=====================================================
     os.chdir(os.path.join(base_path, 'tool', 'stack_metadata'))
+    run_cmd('clean stack metadata tool', ['make', 'clean'])
 
     print('Making stack metadata tool...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
@@ -685,10 +690,6 @@ def main(args):
             install_libelf(args.base_path, args.install_path, target,
                            args.threads)
 
-        if args.libopenpop_install:
-            install_libopenpop(args.base_path, args.install_path, target,
-                               args.install_targets[0], args.threads)
-
     if args.stacktransform_install:
         install_stack_transformation(args.base_path, args.install_path,
                                      args.threads,
@@ -698,6 +699,11 @@ def main(args):
         install_migration(args.base_path, args.install_path, args.threads,
                           args.libmigration_type,
                           args.enable_libmigration_timing)
+
+    if args.libopenpop_install:
+        for target in args.install_targets:
+            install_libopenpop(args.base_path, args.install_path, target,
+                               args.install_targets[0], args.threads)
 
     if args.stackdepth_install:
         install_stackdepth(args.base_path, args.install_path, args.threads)

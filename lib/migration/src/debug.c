@@ -8,10 +8,18 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
-#include "config.h"
-#include "debug.h"
+#include <signal.h>
+#include <pthread.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 
+#include "config.h"
+#include "platform.h"
+#include "migrate.h"
+#include "debug.h"
 
 /*
  * Helpers for dumping register contents.
@@ -174,4 +182,98 @@ void dump_regs(const void *regset, const char *log)
   dump_regs_x86_64(regset, log);
 #endif
 }
+
+/* Per-node debugging structures */
+typedef struct {
+  size_t threads;
+  int fd;
+  pthread_mutex_t lock;
+  char padding[PAGESZ - (2 * sizeof(size_t)) - sizeof(pthread_mutex_t)];
+} remote_debug_t;
+
+static __attribute__((aligned(PAGESZ))) remote_debug_t
+debug_info[MAX_POPCORN_NODES];
+
+static void segfault_handler(int sig, siginfo_t *info, void *ctx)
+{
+#if _LOG == 1
+#define BUFSIZE 512
+#define LOG_WRITE( format, ... ) \
+  do { \
+    char buf[BUFSIZE]; \
+    int sz = snprintf(buf, BUFSIZE, format, __VA_ARGS__) + 1; \
+    write(debug_info[nid].fd, buf, sz); \
+  } while(0);
+
+  // Note: *must* use trylock to ensure we don't block in signal handler
+  int nid = popcorn_getnid();
+  if(!pthread_mutex_trylock(&debug_info[nid].lock) && debug_info[nid].fd)
+  {
+    LOG_WRITE("%d: segfault @ %p\n", info->si_pid, info->si_addr);
+    pthread_mutex_unlock(&debug_info[nid].lock);
+  }
+#undef LOG_WRITE
+#endif
+
+  // TODO do we need to migrate back to the origin before exiting?
+  kill(getpid(), SIGSEGV);
+  _Exit(SIGSEGV);
+}
+
+/*
+ * If first thread to arrive on a node, open files and register signal handlers
+ * for resilient remote crashes.
+ */
+void remote_debug_init(int nid)
+{
+  struct sigaction act;
+
+  if(nid < 0 || nid >= MAX_POPCORN_NODES) return;
+
+  pthread_mutex_lock(&debug_info[nid].lock);
+  if(!debug_info[nid].threads) // First thread to arrive on node
+  {
+#if _LOG == 1
+    char fn[32];
+    snprintf(fn, 128, "/tmp/node-%d.log", nid);
+    debug_info[nid].fd = open(fn, O_CREAT | O_APPEND);
+#endif
+    act.sa_sigaction = segfault_handler;
+    sigfillset(&act.sa_mask);
+    act.sa_flags = SA_SIGINFO;
+    act.sa_restorer = NULL;
+    sigaction(SIGSEGV, &act, NULL);
+  }
+  debug_info[nid].threads += 1;
+  pthread_mutex_unlock(&debug_info[nid].lock);
+}
+
+/*
+ * If the last thread to leave a node, close files.
+ */
+void remote_debug_cleanup(int nid)
+{
+  if(nid < 0 || nid >= MAX_POPCORN_NODES) return;
+
+  pthread_mutex_lock(&debug_info[nid].lock);
+  debug_info[nid].threads -= 1;
+  if(!debug_info[nid].threads)
+  {
+#if _LOG == 1
+    close(debug_info[nid].fd);
+    debug_info[nid].fd = 0;
+#endif
+    // TODO do we want to clean up signal handler?
+  }
+  pthread_mutex_unlock(&debug_info[nid].lock);
+}
+
+#if _CLEAN_CRASH == 1
+static void __attribute__((constructor)) __init_debug_info()
+{
+  size_t i;
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+    pthread_mutex_init(&debug_info[i].lock, NULL);
+}
+#endif
 

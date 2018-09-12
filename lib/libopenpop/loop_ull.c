@@ -80,6 +80,23 @@ gomp_loop_ull_init (struct gomp_work_share *ws, bool up, gomp_ull start,
     ws->mode |= 2;
 }
 
+/* The Intel OpenMP runtime doesn't grab the first batch of iterations during
+   initialization.  Expose an API for the shim layer to solely initialize the
+   dynamic work-sharing region. */
+
+static void
+gomp_loop_ull_dynamic_init (gomp_ull start, gomp_ull end,
+			     gomp_ull incr, gomp_ull chunk_size)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  if (gomp_work_share_start (false))
+    {
+      gomp_loop_ull_init (thr->ts.work_share, true, start, end, incr,
+			  GFS_DYNAMIC, chunk_size);
+      gomp_work_share_init_done ();
+    }
+}
+
 /* The *_start routines are called when first encountering a loop construct
    that is not bound directly to a parallel construct.  The first thread
    that arrives will create the work-share construct; subsequent threads
@@ -560,6 +577,9 @@ GOMP_loop_ull_ordered_runtime_next (gomp_ull *istart, gomp_ull *iend)
    a wrapper function otherwise.  */
 
 #ifdef HAVE_ATTRIBUTE_ALIAS
+extern __typeof(gomp_loop_ull_dynamic_init) GOMP_loop_ull_dynamic_init
+	__attribute__((alias ("gomp_loop_ull_dynamic_init")));
+
 extern __typeof(gomp_loop_ull_static_start) GOMP_loop_ull_static_start
 	__attribute__((alias ("gomp_loop_ull_static_start")));
 extern __typeof(gomp_loop_ull_dynamic_start) GOMP_loop_ull_dynamic_start
@@ -603,6 +623,13 @@ extern __typeof(gomp_loop_ull_ordered_dynamic_next) GOMP_loop_ull_ordered_dynami
 extern __typeof(gomp_loop_ull_ordered_guided_next) GOMP_loop_ull_ordered_guided_next
 	__attribute__((alias ("gomp_loop_ull_ordered_guided_next")));
 #else
+void
+GOMP_loop_ull_dynamic_init (gomp_ull start, gomp_ull end,
+          gomp_ull inc, gomp_ull chunk_size)
+{
+  gomp_loop_ull_dynamic_init (start, end, inc, chunk_size);
+}
+
 bool
 GOMP_loop_ull_static_start (bool up, gomp_ull start, gomp_ull end,
 			    gomp_ull incr, gomp_ull chunk_size,

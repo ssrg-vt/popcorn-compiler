@@ -246,9 +246,9 @@ omp_get_thread_num (void)
   return gomp_thread ()->ts.team_id;
 }
 
-int omp_get_popcorn_tid (void)
+int omp_get_popcorn_created_tid (void)
 {
-  return gomp_thread ()->popcorn_tid;
+  return gomp_thread ()->popcorn_created_tid;
 }
 
 /* This wasn't right for OpenMP 2.5.  Active region used to be non-zero

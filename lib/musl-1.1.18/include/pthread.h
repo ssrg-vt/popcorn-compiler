@@ -220,9 +220,8 @@ int pthread_setattr_default_np(const pthread_attr_t *);
 int pthread_tryjoin_np(pthread_t, void **);
 int pthread_timedjoin_np(pthread_t, void **, const struct timespec *);
 
-/* POPCORN MIGRATE APIs */
-void** pthread_migrate_args();
-/* END POPCORN MIGRATE APIs */
+void pthread_set_migrate_args(void *);
+void *pthread_get_migrate_args();
 
 #endif
 

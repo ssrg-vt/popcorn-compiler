@@ -1510,7 +1510,7 @@ Index: lib/CodeGen/CGStmt.cpp
    // Evaluate the first part before the loop.
    if (S.getInit())
      EmitStmt(S.getInit());
-@@ -2147,6 +2161,69 @@
+@@ -2147,14 +2161,103 @@
    }
  }
  
@@ -1530,22 +1530,26 @@ Index: lib/CodeGen/CGStmt.cpp
 +  return it->second;
 +}
 +
-+VarDecl *CodeGenFunction::CreateOffloadedGlobal(const Stmt &S, const Expr *I) {
++VarDecl *CodeGenFunction::CreateOffloadedGlobal(const Stmt &S,
++                                                QualType Ty,
++                                                std::string &Name) {
 +  ASTContext &AST = getContext();
 +  DeclContext *TUC = AST.getTranslationUnitDecl();
 +  SourceRange SR = S.getSourceRange();
 +  IdentifierInfo *II = &AST.Idents.get("distr_omp_" +
-+      std::string(CurFn->getName()) + "_" +
-+      cast<DeclRefExpr>(I)->getDecl()->getNameAsString());
-+  QualType Ty = I->getType();
++      std::string(CurFn->getName()) + "_" + Name);
 +  if(Ty.isLocalConstQualified()) Ty.removeLocalConst();
 +  TypeSourceInfo *TSI = AST.getTrivialTypeSourceInfo(Ty, SR.getBegin());
 +  return VarDecl::Create(AST, TUC, SR.getBegin(), SR.getEnd(),
 +                         II, Ty, TSI, clang::SC_Static);
 +}
 +
-+LValue CodeGenFunction::GetVarDeclLValue(const Expr *I, VarDecl *VD) {
-+  QualType SrcType = I->getType();
++VarDecl *CodeGenFunction::CreateOffloadedGlobal(const Stmt &S, const Expr *I) {
++  std::string name(cast<DeclRefExpr>(I)->getDecl()->getNameAsString());
++  return CreateOffloadedGlobal(S, I->getType(), name);
++}
++
++LValue CodeGenFunction::GetVarDeclLValue(QualType SrcType, VarDecl *VD) {
 +  if(SrcType.isLocalConstQualified()) SrcType.removeLocalConst();
 +  llvm::Type *Ty = CGM.getTypes().ConvertType(SrcType);
 +  llvm::Constant *GV = CGM.GetAddrOfGlobalVar(VD, Ty);
@@ -1553,6 +1557,10 @@ Index: lib/CodeGen/CGStmt.cpp
 +  CastGV->setInitializer(llvm::Constant::getNullValue(Ty));
 +  CastGV->setLinkage(llvm::GlobalValue::InternalLinkage);
 +  return MakeNaturalAlignAddrLValue(GV, SrcType);
++}
++
++LValue CodeGenFunction::GetVarDeclLValue(const Expr *I, VarDecl *VD) {
++  return GetVarDeclLValue(I->getType(), VD);
 +}
 +
 +DeclRefExpr *CodeGenFunction::GetDeclRefForOffload(ValueDecl *VD) {
@@ -1580,8 +1588,26 @@ Index: lib/CodeGen/CGStmt.cpp
  LValue CodeGenFunction::InitCapturedStruct(const CapturedStmt &S) {
    const RecordDecl *RD = S.getCapturedRecordDecl();
    QualType RecordTy = getContext().getRecordType(RD);
-@@ -2155,6 +2232,8 @@
-   LValue SlotLV = MakeNaturalAlignAddrLValue(
+ 
++  // We have to manually track the context number to avoid naming collisions
++  // for files with multiple captured regions
++  static int CtxNum = 0;
++
+   // Initialize the captured struct.
+-  LValue SlotLV = MakeNaturalAlignAddrLValue(
++  LValue SlotLV;
++  if(S.offloadShared()) {
++    // Name the captured context corresponding to the generated anonymous
++    // structure type for the context
++    std::string Name("agg.captured");
++    if(CtxNum) Name += "." + std::to_string(CtxNum - 1);
++    CtxNum++;
++
++    VarDecl *GlobalCtx = CreateOffloadedGlobal(S, RecordTy, Name);
++    SlotLV = GetVarDeclLValue(RecordTy, GlobalCtx);
++  }
++  else
++    SlotLV = MakeNaturalAlignAddrLValue(
        CreateMemTemp(RecordTy, "agg.captured"), RecordTy);
  
 +  if(S.offloadShared()) OffloadedLocals[&S] = OffloadList();
@@ -1589,15 +1615,14 @@ Index: lib/CodeGen/CGStmt.cpp
    RecordDecl::field_iterator CurField = RD->field_begin();
    for (CapturedStmt::capture_init_iterator I = S.capture_init_begin(),
                                             E = S.capture_init_end();
-@@ -2164,7 +2243,18 @@
+@@ -2164,7 +2267,17 @@
        auto VAT = CurField->getCapturedVLAType();
        EmitStoreThroughLValue(RValue::get(VLASizeMap[VAT->getSizeExpr()]), LV);
      } else {
 -      EmitInitializerForField(*CurField, LV, *I, None);
-+      if(S.offloadShared()) {
++      if(S.offloadShared() && isa<DeclRefExpr>(*I)) {
 +        // If distributed, create global variable, emit initializer & place
 +        // address of new global into capture struct
-+        assert(isa<DeclRefExpr>(*I) && "Invalid capture type");
 +        VarDecl *GLD = CreateOffloadedGlobal(S, *I);
 +        LValue GLV = GetVarDeclLValue(*I, GLD);
 +        EmitAnyExprToMem(*I, GLV.getAddress(), GLV.getQuals(), false);
@@ -2259,7 +2284,7 @@ Index: lib/CodeGen/CodeGenFunction.h
  public:
    /// Increment the profiler's counter for the given statement.
    void incrementProfileCounter(const Stmt *S) {
-@@ -2084,6 +2093,15 @@
+@@ -2084,6 +2093,17 @@
    void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                             ArrayRef<const Attr *> Attrs = None);
  
@@ -2267,7 +2292,9 @@ Index: lib/CodeGen/CodeGenFunction.h
 +  /// capture statements.
 +  void addOffloaded(const CapturedStmt *S, ValueDecl *L, ValueDecl *G);
 +  const OffloadList &getOffloaded(const CapturedStmt *S) const;
++  VarDecl *CreateOffloadedGlobal(const Stmt &S, QualType Ty, std::string &Name);
 +  VarDecl *CreateOffloadedGlobal(const Stmt &S, const Expr *I);
++  LValue GetVarDeclLValue(QualType SrcType, VarDecl *VD);
 +  LValue GetVarDeclLValue(const Expr *I, VarDecl *VD);
 +  DeclRefExpr *GetDeclRefForOffload(ValueDecl *VD);
 +  void RestoreOffloadedLocals(const CapturedStmt *S);
@@ -2275,7 +2302,7 @@ Index: lib/CodeGen/CodeGenFunction.h
    LValue InitCapturedStruct(const CapturedStmt &S);
    llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
    void GenerateCapturedStmtFunctionProlog(const CapturedStmt &S);
-@@ -2191,6 +2209,10 @@
+@@ -2191,6 +2211,10 @@
    ///
    /// \param D Directive (possibly) with the 'linear' clause.
    void EmitOMPLinearClauseInit(const OMPLoopDirective &D);
@@ -2713,7 +2740,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  #include "clang/AST/StmtOpenMP.h"
  #include "clang/Parse/ParseDiagnostic.h"
  #include "clang/Parse/Parser.h"
-@@ -25,6 +26,82 @@
+@@ -25,6 +26,89 @@
  // OpenMP declarative directives.
  //===----------------------------------------------------------------------===//
  
@@ -2722,6 +2749,14 @@ Index: lib/Parse/ParseOpenMP.cpp
 +class VarFinder : public RecursiveASTVisitor<VarFinder> {
 +public:
 +  void reset() { Variables.clear(); }
++
++  bool VisitDeclStmt(DeclStmt *D) {
++    for(auto &Child : D->getDeclGroup()) {
++      if(isa<VarDecl>(Child))
++        Variables.insert(cast<VarDecl>(Child));
++    }
++    return true;
++  }
 +
 +  bool VisitDeclRefExpr(DeclRefExpr *D) {
 +    ValueDecl *VD = D->getDecl();
@@ -2756,13 +2791,12 @@ Index: lib/Parse/ParseOpenMP.cpp
 +    // iteration variable.
 +    CapturedStmt *Captured = cast<CapturedStmt>(D->getAssociatedStmt());
 +    ForStmt *For = cast<ForStmt>(Captured->getCapturedStmt());
-+    BinaryOperator *InitExpr = cast<BinaryOperator>(For->getInit());
 +
 +    // Find captured & loop iteration variables
 +    CapturedVarFinder.TraverseStmt(Captured);
 +    const llvm::SmallPtrSet<const VarDecl *, 2> &CapturedVars =
 +      CapturedVarFinder.getDeclaredOrReferencedVars();
-+    LoopVarFinder.TraverseStmt(InitExpr);
++    LoopVarFinder.TraverseStmt(For->getInit());
 +    const llvm::SmallPtrSet<const VarDecl *, 2> &LoopVars =
 +      LoopVarFinder.getDeclaredOrReferencedVars();
 +
@@ -2796,7 +2830,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
    // Array of foldings: F[i][0] F[i][1] ===> F[i][2].
    // E.g.: OMPD_for OMPD_simd ===> OMPD_for_simd
-@@ -294,6 +371,21 @@
+@@ -294,6 +378,21 @@
            DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
            EndLoc);
  
@@ -2818,7 +2852,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      // Exit scope.
      Actions.EndOpenMPDSABlock(Directive.get());
      OMPDirectiveScope.Exit();
-@@ -385,7 +477,7 @@
+@@ -385,7 +484,7 @@
  ///       lastprivate-clause | reduction-clause | proc_bind-clause |
  ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
  ///       mergeable-clause | flush-clause | read-clause | write-clause |
@@ -2827,7 +2861,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  ///
  OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                       OpenMPClauseKind CKind, bool FirstClause) {
-@@ -479,6 +571,7 @@
+@@ -479,6 +578,7 @@
    case OMPC_copyprivate:
    case OMPC_flush:
    case OMPC_depend:
@@ -2835,7 +2869,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      Clause = ParseOpenMPVarListClause(CKind);
      break;
    case OMPC_unknown:
-@@ -702,17 +795,20 @@
+@@ -702,17 +802,20 @@
  ///       'flush' '(' list ')'
  ///    depend-clause:
  ///       'depend' '(' in | out | inout : list ')'
@@ -2858,7 +2892,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  
    // Parse '('.
    BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
-@@ -755,6 +851,20 @@
+@@ -755,6 +858,20 @@
      } else {
        Diag(Tok, diag::warn_pragma_expected_colon) << "dependency type";
      }
@@ -2879,7 +2913,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    }
  
    SmallVector<Expr *, 5> Vars;
-@@ -761,7 +871,8 @@
+@@ -761,7 +878,8 @@
    bool IsComma = ((Kind != OMPC_reduction) && (Kind != OMPC_depend)) ||
                   ((Kind == OMPC_reduction) && !InvalidReductionId) ||
                   ((Kind == OMPC_depend) && DepKind != OMPC_DEPEND_unknown);
@@ -2889,7 +2923,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    while (IsComma || (Tok.isNot(tok::r_paren) && Tok.isNot(tok::colon) &&
                       Tok.isNot(tok::annot_pragma_openmp_end))) {
      ColonProtectionRAIIObject ColonRAII(*this, MayHaveTail);
-@@ -787,9 +898,9 @@
+@@ -787,9 +905,9 @@
            << (Kind == OMPC_flush);
    }
  
@@ -2901,7 +2935,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    if (MustHaveTail) {
      ColonLoc = Tok.getLocation();
      ConsumeToken();
-@@ -802,6 +913,20 @@
+@@ -802,6 +920,20 @@
                  StopBeforeMatch);
    }
  
@@ -2922,7 +2956,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    // Parse ')'.
    T.consumeClose();
    if ((Kind == OMPC_depend && DepKind != OMPC_DEPEND_unknown && Vars.empty()) ||
-@@ -810,10 +935,10 @@
+@@ -810,10 +942,10 @@
      return nullptr;
  
    return Actions.ActOnOpenMPVarListClause(

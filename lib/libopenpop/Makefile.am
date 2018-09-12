@@ -7,7 +7,8 @@ ACLOCAL_AMFLAGS = -I . -I ./config
 ###############################################################################
 #SUBDIRS = testsuite
 
-config_path = @config_path@
+#config_path = @config_path@
+config_path = linux posix # for Popcorn (MLK)
 search_path = $(addprefix $(top_srcdir)/config/, $(config_path)) $(top_srcdir)
 
 fincludedir = $(includedir)/libopenpop
@@ -59,9 +60,9 @@ libopenpop_la_DEPENDENCIES = $(libopenpop_version_dep)
 libopenpop_la_LINK = $(LINK) $(libopenpop_la_LDFLAGS)
 
 libopenpop_la_SOURCES = alloc.c atomic.c barrier.c critical.c env.c error.c \
-	icv.c icv-device.c iter.c iter_ull.c kmp.c loop.c loop_ull.c ordered.c \
-	parallel.c sections.c single.c task.c team.c work.c lock.c mutex.c \
-	proc.c sem.c bar.c ptrlock.c time.c fortran.c affinity.c target.c \
+	hierarchy.c icv.c icv-device.c iter.c iter_ull.c kmp.c loop.c loop_ull.c \
+	ordered.c parallel.c sections.c single.c task.c team.c work.c lock.c \
+	mutex.c proc.c sem.c bar.c ptrlock.c time.c fortran.c affinity.c target.c \
 	splay-tree.c libgomp-plugin.c oacc-parallel.c oacc-host.c oacc-init.c \
 	oacc-mem.c oacc-async.c oacc-plugin.c oacc-cuda.c priority_queue.c
 

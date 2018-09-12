@@ -3,10 +3,13 @@
 #include <pthread.h>
 #include "libc.h"
 
-/* Popcorn migration data access */
-void** pthread_migrate_args()
+void pthread_set_migrate_args(void *args)
 {
-	struct pthread *self = __pthread_self();
-	return &(self->__args);
+  __pthread_self()->popcorn_migrate_args = args;
+}
+
+void *pthread_get_migrate_args()
+{
+  return __pthread_self()->popcorn_migrate_args;
 }
 

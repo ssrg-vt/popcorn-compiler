@@ -138,7 +138,7 @@ static inline node_t(type)* list_add_##type(list_t(type)* list, type data) \
 { \
   node_t(type)* node; \
   ASSERT(list, "invalid arguments to list_add()\n"); \
-  node = (node_t(type)*)malloc(sizeof(node_t(type))); \
+  node = (node_t(type)*)MALLOC(sizeof(node_t(type))); \
   node->data = data; \
   node->next = NULL; \
 \

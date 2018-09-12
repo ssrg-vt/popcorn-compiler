@@ -370,11 +370,6 @@ extern int gomp_debug_var;
 extern int goacc_device_num;
 extern char *goacc_device_type;
 
-/* Popcorn thread placement machinery. */
-extern bool *popcorn_nodes_list;
-extern unsigned long popcorn_nodes_list_len;
-extern unsigned long popcorn_threads_per_node;
-
 /* Popcorn profiling machinery. */
 extern bool popcorn_profiling;
 extern const char *popcorn_prof_fn;
@@ -628,10 +623,13 @@ struct gomp_thread
 
   /* Popcorn's TID, basically this thread's number out of the total number of
      threads created by the runtime over the lifetime of the application. */
-  int popcorn_tid;
+  int popcorn_created_tid;
 
   /* Node ID on which this thread is executing in Popcorn. */
   int popcorn_nid;
+
+  /* Reduction method for variables currently being reduced. */
+  int reduction_method;
 };
 
 
@@ -728,9 +726,16 @@ extern bool gomp_affinity_finalize_place_list (bool);
 extern bool gomp_affinity_init_level (int, unsigned long, bool);
 extern void gomp_affinity_print_place (void *);
 extern void gomp_get_place_proc_ids_8 (int, int64_t *);
-extern bool popcorn_affinity_init_nodes (unsigned long, bool);
+
+extern bool popcorn_affinity_init_nodes (unsigned long *, unsigned long, bool);
+extern bool popcorn_affinity_init_nodes_uniform (unsigned long, bool);
+extern bool popcorn_affinity_init_node_ratings (unsigned long *, unsigned long,
+                                                bool);
 
 /* iter.c */
+
+extern bool gomp_iter_is_last (long);
+extern bool gomp_iter_is_last_ull (unsigned long long);
 
 extern int gomp_iter_static_next (long *, long *);
 extern bool gomp_iter_dynamic_next_locked (long *, long *);

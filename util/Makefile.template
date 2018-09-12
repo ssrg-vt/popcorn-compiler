@@ -55,6 +55,7 @@ ALIGN          := $(POPCORN)/bin/pyalign
 
 # Post-processing & checking
 POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
+COMPRESS       := $(POPCORN)/bin/compress
 ALIGN_CHECK    := $(POPCORN)/bin/check-align.py
 STACKMAP_CHECK := $(POPCORN)/bin/check-stackmaps
 
@@ -115,8 +116,8 @@ all: post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
-#	@echo " [CHECK] Checking stackmaps for $^"
-#	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking stackmaps for $^"
+	@$(STACKMAP_CHECK) -a $(ARM64_ALIGNED) -x $(X86_64_ALIGNED)
 	@echo " [CHECK] Checking alignment for $^"
 	@$(ALIGN_CHECK) $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 
@@ -124,6 +125,12 @@ post_process: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(ARM64_ALIGNED)
 	@$(POST_PROCESS) -f $(X86_64_ALIGNED)
+
+compress: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [COMPRESS] $(ARM64_ALIGNED)"
+	@$(COMPRESS) -f $(ARM64_ALIGNED)
+	@echo " [COMPRESS] $(X86_64_ALIGNED)"
+	@$(COMPRESS) -f $(X86_64_ALIGNED)
 
 stack-depth: $(X86_64_SD)
 
@@ -206,6 +213,6 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"
 	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
 
-.PHONY: all post_process stack-depth clean \
+.PHONY: all post_process compress stack-depth clean \
         aligned aligned-aarch64 aligned-x86-64 \
         vanilla vanilla-aarch64 vanilla-x86-64

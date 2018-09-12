@@ -13,18 +13,25 @@
 // TODO for function which take a kmp_critical_name: lock using the name
 // instead of falling back on GOMP_critical_start/end (may cause false waiting)
 
-// TODO GOMP_ordered_start/end are empty...shouldn't these be setting ordering
-// thread execution?
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include "config.h"
-#include "omp.h"
+#include "libgomp.h"
 #include "libgomp_g.h"
+#include "hierarchy.h"
 #include "kmp.h"
+
+/* Enable timing parallel sections */
+#define _TIME_PARALLEL 1
+
+#ifdef _TIME_PARALLEL
+# include <time.h>
+# include <debug/log.h>
+# define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
+#endif
 
 /* Enable debugging information */
 //#define _KMP_DEBUG 1
@@ -38,15 +45,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Parallel region
 ///////////////////////////////////////////////////////////////////////////////
-
-/* Source location information for OpenMP parallel construct. */
-typedef struct ident {
-  int32_t reserved_1;
-  int32_t flags;
-  int32_t reserved_2;
-  int32_t reserved_3;
-  char const *psource;
-} ident_t;
 
 /*
  * Converts calls to GNU OpenMP runtime outlined regions to Intel OpenMP
@@ -70,48 +68,174 @@ void __kmp_wrapper_fn(void *data)
  * @param microtask the outlined OpenMP code
  * @param ... pointers to shared variables
  */
-void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
+// TODO Technically this is supposed to be a variable argument function, but it
+// seems like we're not using va_lists properly on aarch64 (this function,
+// OpenMP code generation or LLVM's va_list codegen) -- we're getting weird
+// offsets and wrong context values.  However in clang/LLVM OpenMP 3.7.1,
+// parallel sections are implemented as captures, meaning argc should always be
+// 1 and we should only ever be passing in a context struct pointer.
+void
+__kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
 {
-  int32_t i, mtid, ltid;
-  va_list vl;
-  void *shared_data;
+  int32_t mtid = 0, ltid = 0;
+#ifdef _TIME_PARALLEL
+  struct timespec start, end;
+#endif
   __kmp_data_t *wrapper_data = (__kmp_data_t *)malloc(sizeof(__kmp_data_t));
 
   DEBUG("__kmp_fork_call: %s calling %p\n", loc->psource, microtask);
 
-  /* Marshal data for spawned microtask */
-  va_start(vl, microtask);
-  if(argc > 1)
-  {
-    void **args = (void **)malloc(sizeof(void*) * argc);
-    for(i = 0; i < argc; i++)
-      args[i] = va_arg(vl, void *);
-    shared_data = (void *)args;
-  }
-  else shared_data = va_arg(vl, void *);
-  va_end(vl);
+  // TODO this should be uncommented when moving to va_list implementation
+  //void *shared_data;
+  //int32_t i;
+  //va_list ap;
+  ///* Marshal data for spawned microtask */
+  //va_start(ap, microtask);
+  //if(argc > 1)
+  //{
+  //  void **args = (void **)malloc(sizeof(void*) * argc);
+  //  for(i = 0; i < argc; i++)
+  //    args[i] = va_arg(ap, void *);
+  //  shared_data = (void *)args;
+  //}
+  //else shared_data = va_arg(ap, void *);
+  //va_end(ap);
+  assert(argc == 1 && ctx && "Unsupported __kmpc_fork_call");
 
   wrapper_data->task = microtask;
   wrapper_data->mtid = &mtid;
-  wrapper_data->data = shared_data;
+  wrapper_data->data = ctx;
 
   /* Start workers & run the task */
+#ifdef _TIME_PARALLEL
+  clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
   GOMP_parallel_start(__kmp_wrapper_fn, wrapper_data, 0);
   DEBUG("%s: finished GOMP_parallel_start!\n",__func__);
-  mtid = 0; // TODO CodeGen on AArch64 seemed to clobber these values before
-  ltid = 0; // calling microtask -- need to debug
-  microtask(&mtid, &ltid, shared_data);
+  microtask(&mtid, &ltid, ctx);
   DEBUG("%s: finished microtask!\n",__func__);
   GOMP_parallel_end();
   DEBUG("%s: finished GOMP_parallel_end!\n",__func__);
+#ifdef _TIME_PARALLEL
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  popcorn_log("%s\t%p\t%lu\n", loc->psource, microtask, NS(end) - NS(start));
+#endif
 
-  if(argc > 1) free(shared_data);
+  if(argc > 1) free(ctx);
   free(wrapper_data);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Work-sharing
 ///////////////////////////////////////////////////////////////////////////////
+
+/*
+ * Get the logical starting point & its range skewed based on the core rating
+ * supplied by the user.
+ * @param gtid global thread ID of this thread
+ * @param start start of logical range for assigning loop iterations
+ * @param range size of logical range for assigning loop iterations
+ */
+static void
+get_scaled_range(int32_t gtid, unsigned long *start, unsigned long *range)
+{
+  int i, tcount = 0, diff;
+  unsigned long cur_range = 0;
+  *start = UINT64_MAX;
+  *range = UINT64_MAX;
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(gtid < (int)(tcount + popcorn_global.threads_per_node[i]))
+    {
+      diff = gtid - tcount;
+      *start = cur_range + diff * popcorn_global.core_speed_rating[i];
+      *range = popcorn_global.core_speed_rating[i];
+      break;
+    }
+    else
+    {
+      tcount += popcorn_global.threads_per_node[i];
+      cur_range += popcorn_global.threads_per_node[i] *
+                   popcorn_global.core_speed_rating[i];
+    }
+  }
+}
+
+/*
+ * Compute the upper and lower bounds and stride to be used for the set of
+ * iterations to be executed by the current thread from the statically
+ * scheduled loop that is described by the initial values of the bounds,
+ * stride, increment and chunk size.  Skew the iterations assigned according to
+ * user-supplied per-node values.
+ * @param nthreads number of threads in the team
+ * @param gtid global thread ID of this thread
+ * @param schedtype scheduling type
+ * @param plastiter pointer to the "last iteration" flag
+ * @param plower pointer to the lower bound
+ * @param pupper pointer to the upper bound
+ * @param pstride pointer to the stride
+ * @param incr loop increment
+ * @param chunk the chunk size
+ * @param total_trips total number of loop iterations to be scheduled
+ */
+#define MIN( a, b ) ((a) < (b) ? (a) : (b))
+#define for_static_skewed_init(NAME, TYPE)                                    \
+static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
+                                          int32_t gtid,                       \
+                                          int32_t schedtype,                  \
+                                          int32_t *plastiter,                 \
+                                          TYPE *plower,                       \
+                                          TYPE *pupper,                       \
+                                          TYPE *pstride,                      \
+                                          TYPE incr,                          \
+                                          TYPE chunk,                         \
+                                          TYPE total_trips)                   \
+{                                                                             \
+  unsigned long start, range, scaled_thr = popcorn_global.scaled_thread_range;\
+                                                                              \
+  get_scaled_range(gtid, &start, &range);                                     \
+  assert(start != UINT64_MAX && "Invalid core speed rating");                 \
+  switch(schedtype)                                                           \
+  {                                                                           \
+  case kmp_sch_static: {                                                      \
+    if(total_trips < scaled_thr)                                              \
+    {                                                                         \
+      if(start < total_trips)                                                 \
+      {                                                                       \
+        *plower += incr * start;                                              \
+        *pupper = *plower + incr * MIN(range - 1, total_trips - 1 - start);   \
+      }                                                                       \
+      else *plower = *pupper + incr;                                          \
+      if(plastiter != NULL) *plastiter = (start + range >= total_trips - 1);  \
+    }                                                                         \
+    else                                                                      \
+    {                                                                         \
+      TYPE chunk = total_trips / scaled_thr;                                  \
+      TYPE extras = total_trips % scaled_thr;                                 \
+      TYPE my_extras = 0;                                                     \
+      if(extras && start < extras) my_extras = MIN(range, extras - start);    \
+      *plower += incr * (start * chunk + (start < extras ? start : extras));  \
+      *pupper = *plower + incr * (chunk * range + my_extras - 1);             \
+      if(plastiter != NULL) *plastiter = (gtid == nthreads - 1);              \
+    }                                                                         \
+    break;                                                                    \
+  }                                                                           \
+  case kmp_sch_static_chunked: {                                              \
+    assert(false && "TODO!");                                                 \
+    *plower = *pupper + incr;                                                 \
+    break;                                                                    \
+  }                                                                           \
+  default:                                                                    \
+    assert(false && "Unknown scheduling algorithm");                          \
+  }                                                                           \
+}                                                                             \
+
+/* Generate the above function for int32_t, uint32_t, int64_t, && uint64_t. */
+for_static_skewed_init(4, int32_t)
+for_static_skewed_init(4u, uint32_t)
+for_static_skewed_init(8, int64_t)
+for_static_skewed_init(8u, uint64_t)
 
 /*
  * Compute the upper and lower bounds and stride to be used for the set of
@@ -128,7 +252,7 @@ void __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, ...)
  * @param incr loop increment
  * @param chunk the chunk size
  */
-#define __kmpc_for_static_init(NAME, TYPE)                                    \
+#define __kmpc_for_static_init(NAME, TYPE, SPEC)                              \
 void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
                                    int32_t gtid,                              \
                                    int32_t schedtype,                         \
@@ -142,7 +266,8 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   int nthreads = omp_get_num_threads();                                       \
   TYPE total_trips;                                                           \
                                                                               \
-  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d %ld %ld %ld %ld %ld\n",  \
+  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d "                        \
+        SPEC SPEC SPEC SPEC SPEC "\n",                                        \
         loc->psource, gtid, schedtype, *plastiter, (int64_t)*plower,          \
         (int64_t)*pupper, (int64_t)*pstride, (int64_t)incr, (int64_t)chunk);  \
                                                                               \
@@ -150,6 +275,14 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   else if(incr == -1) total_trips = (*plower - *pupper) + 1;                  \
   else if(incr > 1) total_trips = ((*pupper - *plower) / incr) + 1;           \
   else total_trips = ((*plower - *pupper) / (-incr)) + 1;                     \
+                                                                              \
+  if(popcorn_global.het_workshare)                                            \
+  {                                                                           \
+    for_static_skewed_init_##NAME(nthreads, gtid, schedtype, plastiter,       \
+                                  plower, pupper, pstride, incr, chunk,       \
+                                  total_trips);                               \
+    return;                                                                   \
+  }                                                                           \
                                                                               \
   switch(schedtype)                                                           \
   {                                                                           \
@@ -183,14 +316,16 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   }                                                                           \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
+    *plower = *pupper + incr;                                                 \
+    break;                                                                    \
   }                                                                           \
 }
 
 /* Generate the above function for int32_t, uint32_t, int64_t, && uint64_t. */
-__kmpc_for_static_init(4, int32_t)
-__kmpc_for_static_init(4u, uint32_t)
-__kmpc_for_static_init(8, int64_t)
-__kmpc_for_static_init(8u, uint64_t)
+__kmpc_for_static_init(4, int32_t, "%d")
+__kmpc_for_static_init(4u, uint32_t, "%u")
+__kmpc_for_static_init(8, int64_t, "%ld")
+__kmpc_for_static_init(8u, uint64_t, "%lu")
 
 /*
  * Mark the end of a statically scheduled loop.
@@ -202,35 +337,114 @@ void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
 }
 
-void __kmpc_dispatch_init_4(ident_t *loc,
-                            int32_t gtid,
-                            enum sched_type schedule,
-                            int32_t lb,
-                            int32_t ub,
-                            int32_t st,
-                            int32_t chunk)
-{
-  //TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
+// Note: libgomp's APIs expect the end iteration to be non-inclusive while
+// libiomp's APIs expect it to be inclusive.  There are +1/-1 values scattered
+// across these functions to translate between the two.
+
+/*
+ * Initialize a dynamic work-sharing construct using a given lower bound, upper
+ * bound, stride and chunk.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ * @param schedtype scheduling type
+ * @param lb the loop iteration range's lower bound
+ * @param ub the loop iteration range's upper bound
+ * @param st the stride
+ * @param chunk the chunk size
+ */
+#define __kmpc_dispatch_init(NAME, TYPE, SPEC, INIT_FUNC)                     \
+void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
+                            int32_t gtid,                                     \
+                            enum sched_type schedule,                         \
+                            TYPE lb,                                          \
+                            TYPE ub,                                          \
+                            TYPE st,                                          \
+                            TYPE chunk)                                       \
+{                                                                             \
+  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d "SPEC SPEC SPEC SPEC"\n",     \
+        loc->psource, gtid, schedule, (int64_t)lb, (int64_t)ub,               \
+        (int64_t)st, (int64_t)chunk);                                         \
+                                                                              \
+  assert(schedule == kmp_sch_dynamic_chunked && "Invalid dynamic schedule");  \
+  if(omp_get_num_threads() == 1) {                                            \
+    st = 1;                                                                   \
+    chunk = (ub + 1) - lb;                                                    \
+  }                                                                           \
+  INIT_FUNC(lb, ub + 1, st, chunk);                                           \
 }
 
-int __kmpc_dispatch_next_4(ident_t *loc,
-                           int32_t gtid,
-                           int32_t *p_last,
-                           int32_t *p_lb,
-                           int32_t *p_ub,
-                           int32_t *p_st)
-{
-  // TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
-  return -1;
+__kmpc_dispatch_init(4, int32_t, "%d", GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_init)
+__kmpc_dispatch_init(8, int64_t, "%ld", GOMP_loop_dynamic_init)
+__kmpc_dispatch_init(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_init)
+
+/*
+ * Mark the end of a dynamically scheduled loop.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ */
+#define __kmpc_dispatch_fini(NAME) \
+void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
+{                                                                             \
+  DEBUG("__kmpc_dispatch_fini_"#NAME": %s %d\n", loc->psource, gtid);         \
+  GOMP_loop_end();                                                            \
 }
 
-void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
-{
-  // TODO
-  assert(false && "Dynamically-scheduled loops not implemented");
+__kmpc_dispatch_fini(4)
+__kmpc_dispatch_fini(4u)
+__kmpc_dispatch_fini(8)
+__kmpc_dispatch_fini(8u)
+
+/*
+ * Grab the next batch of iterations according to the previously initialized
+ * work-sharing construct.
+ * @param loc source code location
+ * @param gtid global thread ID of this thread
+ * @param p_last pointer to a flag set to 1 if this is the last chunk or 0
+ *               otherwise
+ * @param p_lb pointer to the lower bound
+ * @param p_ub pointer to the upper bound
+ * @param p_st (unused)
+ */
+#define __kmpc_dispatch_next(NAME, TYPE, SPEC, NEXT_FUNC, ISLAST_FUNC, GTYPE) \
+int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
+                                int32_t gtid,                                 \
+                                int32_t *p_last,                              \
+                                TYPE *p_lb,                                   \
+                                TYPE *p_ub,                                   \
+                                TYPE *p_st)                                   \
+{                                                                             \
+  bool ret;                                                                   \
+  GTYPE istart, iend;                                                         \
+                                                                              \
+  ret = NEXT_FUNC(&istart, &iend);                                            \
+  *p_lb = istart;                                                             \
+  *p_ub = iend - 1;                                                           \
+  *p_last = ISLAST_FUNC(iend);                                                \
+                                                                              \
+  if(!ret)                                                                    \
+  {                                                                           \
+    *p_lb = 0;                                                                \
+    *p_ub = 0;                                                                \
+    *p_st = 0;                                                                \
+    __kmpc_dispatch_fini_##NAME(loc, gtid);                                   \
+  }                                                                           \
+                                                                              \
+  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d "SPEC SPEC SPEC"\n",       \
+        loc->psource, gtid, ret, *p_last, *p_lb, *p_ub, *p_st);               \
+                                                                              \
+  return ret;                                                                 \
 }
+
+__kmpc_dispatch_next(4, int32_t, "%d", GOMP_loop_dynamic_next,
+                     gomp_iter_is_last, long)
+__kmpc_dispatch_next(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_next,
+                     gomp_iter_is_last_ull, unsigned long long)
+__kmpc_dispatch_next(8, int64_t, "%ld", GOMP_loop_dynamic_next,
+                     gomp_iter_is_last, long)
+__kmpc_dispatch_next(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_next,
+                     gomp_iter_is_last_ull, unsigned long long)
+
 /*
  * Start execution of an ordered construct.
  * @param loc source location information
@@ -238,7 +452,7 @@ void __kmpc_dispatch_fini_4(ident_t *loc, int32_t gtid)
  */
 void __kmpc_ordered(ident_t *loc, int32_t gtid)
 {
-  DEBUG("__kmpc_ordered: %s \n", loc->psource, gtid);
+  DEBUG("__kmpc_ordered: %s %d\n", loc->psource, gtid);
 
   GOMP_ordered_start();
 }
@@ -314,22 +528,23 @@ void __kmpc_end_master(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_end_master: %s %d\n", loc->psource, global_tid);
 }
 
-int32_t __kmpc_single(ident_t *loc,
-                         int32_t global_tid)
+int32_t __kmpc_single(ident_t *loc, int32_t global_tid)
 {
-	return (int32_t)GOMP_single_start();
+  DEBUG("__kmpc_single: %s %d\n", loc->psource, global_tid);
 
+  return (int32_t)GOMP_single_start();
 }
 
-void __kmpc_end_single(ident_t *loc,
-                         int32_t global_tid)
+void __kmpc_end_single(ident_t *loc, int32_t global_tid)
 {
-	return;//FIXME:nothing to do?
+  DEBUG("__kmpc_end_single: %s %d\n", loc->psource, global_tid);
 }
 
 void __kmpc_flush(ident_t *loc)
 {
-	__sync_synchronize();
+  DEBUG("__kmpc_flush: %s\n", loc->psource);
+
+  __sync_synchronize();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -349,8 +564,10 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
 {
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
-  // Note: needed for OpenMP 4.0 cancellation points (not required for us)
-  return GOMP_barrier_cancel();
+  if(popcorn_global.hybrid_barrier)
+    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid,
+                                           loc->psource);
+  else return GOMP_barrier_cancel();
 }
 
 /*
@@ -362,7 +579,9 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 {
   DEBUG("__kmpc_barrier: %s %d\n", loc->psource, global_tid);
 
-  GOMP_barrier();
+  if(popcorn_global.hybrid_barrier)
+    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid, loc->psource);
+  else GOMP_barrier();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -370,6 +589,40 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 ///////////////////////////////////////////////////////////////////////////////
 
 typedef void (*reduce_func)(void *lhs_data, void *rhs_data);
+
+/*
+ * Return the reduction method based on what the compiler generated.
+ * @param loc source location information, including codegen flags
+ * @param data argument data passed to reduce func (if available)
+ * @param func function that implements reduction functionality (if available)
+ * @return type of reduction to employ
+ */
+static inline enum reduction_method get_reduce_method(ident_t *loc,
+                                                      void *data,
+                                                      reduce_func func)
+{
+  enum reduction_method retval = critical_reduce_block;
+  int teamsize_cutoff = 4, teamsize = omp_get_num_threads();
+  bool atomic_available = FAST_REDUCTION_ATOMIC_METHOD_GENERATED(loc),
+       tree_available = FAST_REDUCTION_TREE_METHOD_GENERATED(data, func) &&
+                        popcorn_global.hybrid_reduce;
+
+  // Note: adapted from the logic in __kmp_determine_reduction_method for
+  // AArch64/PPC64/x86_64 on Linux
+  if(teamsize == 1) retval = empty_reduce_block;
+  else
+  {
+    if(tree_available) {
+      if(teamsize <= teamsize_cutoff) {
+        if(atomic_available) retval = atomic_reduce_block;
+      }
+      else retval = tree_reduce_block;
+    }
+    else if(atomic_available) retval = atomic_reduce_block;
+  }
+
+  return retval;
+}
 
 /*
  * A blocking reduce that includes an implicit barrier.
@@ -392,14 +645,21 @@ int32_t __kmpc_reduce(ident_t *loc,
                       reduce_func func,
                       kmp_critical_name *lck)
 {
+  struct gomp_thread *thr;
+
   DEBUG("__kmpc_reduce: %s %d %d %lu %p %p %p\n", loc->psource,
         global_tid, num_vars, reduce_size, reduce_data, func, lck);
 
-  // Note: Intel's runtime does some smart selection of reduction algorithms,
-  // but we'll do just a basic "every thread reduces their own value" by
-  // entering a critical section.
-  GOMP_critical_start();
-  return 1;
+  thr = gomp_thread();
+  thr->reduction_method = get_reduce_method(loc, reduce_data, func);
+  switch(thr->reduction_method)
+  {
+  case critical_reduce_block: GOMP_critical_start(); return 1;
+  case atomic_reduce_block: return 2;
+  case tree_reduce_block:
+    return hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+  default: return 1;
+  }
 }
 
 /*
@@ -412,9 +672,14 @@ void __kmpc_end_reduce(ident_t *loc,
                        int32_t global_tid,
                        kmp_critical_name *lck)
 {
-  DEBUG("__kmpc_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+  struct gomp_thread *thr;
 
-  GOMP_critical_end();
+  DEBUG("__kmpc_end_reduce: %s %d %p\n", loc->psource, global_tid, lck);
+
+  thr = gomp_thread();
+  assert(thr->reduction_method != reduction_method_not_defined);
+  if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
+  thr->reduction_method = reduction_method_not_defined;
   GOMP_barrier();
 }
 
@@ -439,14 +704,21 @@ int32_t __kmpc_reduce_nowait(ident_t *loc,
                              reduce_func func,
                              kmp_critical_name *lck)
 {
+  struct gomp_thread *thr;
+
   DEBUG("__kmpc_reduce_nowait: %s %d %d %lu %p %p %p\n", loc->psource,
         global_tid, num_vars, reduce_size, reduce_data, func, lck);
 
-  // Note: Intel's runtime does some smart selection of reduction algorithms,
-  // but we'll do just a basic "every thread reduces their own value" by
-  // entering a critical section.
-  GOMP_critical_start();
-  return 1;
+  thr = gomp_thread();
+  thr->reduction_method = get_reduce_method(loc, reduce_data, func);
+  switch(thr->reduction_method)
+  {
+  case critical_reduce_block: GOMP_critical_start(); return 1;
+  case atomic_reduce_block: return 2;
+  case tree_reduce_block:
+    return hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+  default: return 1;
+  }
 }
 
 /*
@@ -459,9 +731,14 @@ void __kmpc_end_reduce_nowait(ident_t *loc,
                               int32_t global_tid,
                               kmp_critical_name *lck)
 {
-  DEBUG("__kmpc_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+  struct gomp_thread *thr;
 
-  GOMP_critical_end();
+  DEBUG("__kmpc_end_reduce_nowait: %s %d %p\n", loc->psource, global_tid, lck);
+
+  thr = gomp_thread();
+  assert(thr->reduction_method != reduction_method_not_defined);
+  if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
+  thr->reduction_method = reduction_method_not_defined;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -509,10 +786,17 @@ void *__kmpc_threadprivate_cached(ident_t *loc,
     GOMP_critical_end();
   }
 
+  // TODO if we migrated the thread to a new node, move TLS heap data to new
+  // node's heap
+
   /* Allocate (if necessary) & initialize this thread's data. */
   if((ret = (*cache)[global_tid]) == 0)
   {
-    ret = malloc(size);
+    if(popcorn_global.distributed)
+      ret = popcorn_malloc(size, gomp_thread()->popcorn_nid);
+    else ret = malloc(size);
+
+    assert(ret && "Could not allocate thread private data");
     memcpy(ret, data, size);
     (*cache)[global_tid] = ret;
   }

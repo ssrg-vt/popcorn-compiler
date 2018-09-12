@@ -149,7 +149,7 @@ typedef struct activation
 {
   call_site site; /* call site information */
   void* cfa; /* canonical frame address */
-  regset_t regs; /* register values */
+  void* regs; /* register values */
   bitmap callee_saved; /* callee-saved registers stored in prologue */
 } activation;
 
@@ -228,7 +228,7 @@ struct rewrite_context
 
   /* Pools for constant-time allocation of per-frame/runtime-dependent data */
   void* regset_pool; /* Register sets */
-  STORAGE_TYPE* callee_saved_pool; /* Callee-saved registers (bitmaps) */
+  void* callee_saved_pool; /* Callee-saved registers (bitmaps) */
 };
 
 typedef struct rewrite_context* rewrite_context;

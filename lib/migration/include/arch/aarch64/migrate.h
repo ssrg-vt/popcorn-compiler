@@ -6,14 +6,19 @@
 #ifndef _MIGRATE_AARCH64_H
 #define _MIGRATE_AARCH64_H
 
-#define SYSCALL_SCHED_MIGRATE 285
-#define SYSCALL_PROPOSE_MIGRATION 286
-#define SYSCALL_GET_THREAD_STATUS 287
-#define SYSCALL_GET_NODE_INFO 288
+#include <syscall.h>
 
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_AARCH64(regset.aarch); \
     regset.aarch.pc = get_call_site()
+
+/* Get pointer to start of thread local storage region */
+#define GET_TLS_POINTER \
+  ({ \
+    void *self; \
+    asm volatile ("mrs %0, tpidr_el0" : "=r"(self)); \
+    self + 16; \
+  })
 
 #if _NATIVE == 1 /* Safe for native execution/debugging */
 
@@ -59,7 +64,7 @@
                       "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "w0", "x1", "x8"); \
       } \
@@ -78,7 +83,7 @@
                       "=m"(data.post_syscall), "=r"(err) \
                       : /* Inputs */ \
                       "r"(nid), "r"(&regs_dst), "r"(sp), "r"(bp), \
-                      "i"(SYSCALL_SCHED_MIGRATE) \
+                      "i"(SYS_sched_migrate) \
                       : /* Clobbered */ \
                       FIXUP_CLOBBERS, "x0", "x1", "x8"); \
       } \

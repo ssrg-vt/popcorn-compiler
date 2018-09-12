@@ -26,6 +26,7 @@
 /* This is a generic stub implementation of a CPU affinity setting.  */
 
 #include "libgomp.h"
+#include "hierarchy.h"
 #include <assert.h>
 #include "migrate.h"
 #include "platform.h"
@@ -147,42 +148,99 @@ ialias(omp_get_place_proc_ids)
 /* Defined libmigrate.a (but not exposed in headers) */
 extern void __init_nodes_info(void);
 
-bool
-popcorn_affinity_init_nodes (unsigned long count, bool quiet)
+bool popcorn_affinity_init_nodes (unsigned long *counts,
+                                  unsigned long n,
+                                  bool quiet)
 {
   int i;
-  bool nodes_online = false;
+  unsigned long cur = 0;
 
   /* Make sure the migration library has populated node information */
   __init_nodes_info();
 
-  popcorn_threads_per_node = count;
-  popcorn_nodes_list_len = MAX_POPCORN_NODES;
-  popcorn_nodes_list = calloc(sizeof(bool), MAX_POPCORN_NODES);
-  if(!popcorn_nodes_list)
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
-    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
-    return false;
+    if(node_available(i) && cur < n)
+    {
+      popcorn_global.nodes++;
+      popcorn_global.threads_per_node[i] = counts[cur];
+      gomp_barrier_init(&popcorn_node[i].bar, counts[cur++]);
+    }
   }
+
+  if(popcorn_global.nodes)
+  {
+    popcorn_global.distributed = true;
+    popcorn_global.hybrid_barrier = true;
+    popcorn_global.hybrid_reduce = true;
+    gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
+  }
+  else if(!quiet)
+    gomp_error("No Popcorn nodes available");
+
+  return popcorn_global.nodes;
+}
+
+bool
+popcorn_affinity_init_nodes_uniform (unsigned long count, bool quiet)
+{
+  int i;
+
+  /* Make sure the migration library has populated node information */
+  __init_nodes_info();
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
     if(node_available(i))
     {
-      popcorn_nodes_list[i] = true;
-      nodes_online = true;
+      popcorn_global.nodes++;
+      popcorn_global.threads_per_node[i] = count;
+      gomp_barrier_init(&popcorn_node[i].bar, count);
     }
-    else popcorn_nodes_list[i] = false;
   }
 
-  if(!nodes_online)
+  if(popcorn_global.nodes)
   {
-    popcorn_threads_per_node = popcorn_nodes_list_len = 0;
-    free(popcorn_nodes_list);
-    popcorn_nodes_list = NULL;
-    if(!quiet)
-      gomp_error ("No Popcorn nodes available");
+    popcorn_global.distributed = true;
+    popcorn_global.hybrid_barrier = true;
+    popcorn_global.hybrid_reduce = true;
+    gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
+  }
+  else if(!quiet)
+    gomp_error("No Popcorn nodes available");
+
+  return popcorn_global.nodes;
+}
+
+/* This *must* be called after initializing node/thread placement data */
+bool popcorn_affinity_init_node_ratings (unsigned long *ratings,
+                                         unsigned long n,
+                                         bool quiet)
+{
+  int i;
+  unsigned long cur = 0;
+
+  for(i = 0; i < MAX_POPCORN_NODES; i++)
+  {
+    if(popcorn_global.threads_per_node[i])
+    {
+      if(cur < n)
+      {
+        popcorn_global.scaled_thread_range +=
+          popcorn_global.threads_per_node[i] * ratings[cur];
+        popcorn_global.core_speed_rating[i] = ratings[cur++];
+      }
+      else
+      {
+        popcorn_global.scaled_thread_range +=
+          popcorn_global.threads_per_node[i];
+        popcorn_global.core_speed_rating[i] = 1;
+      }
+    }
   }
 
-  return nodes_online;
+  if(!cur && !quiet)
+    gomp_error("No Popcorn nodes available");
+
+  return cur > 0;
 }

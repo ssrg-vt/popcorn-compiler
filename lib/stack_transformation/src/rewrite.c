@@ -16,11 +16,19 @@
 
 #if _TLS_IMPL == COMPILER_TLS
 
+#include "arch_regs.h"
+
+#define REGSET_POOL (MAX_REGSET_SIZE * MAX_FRAMES)
+#define CALLEE_POOL (MAX_CALLEE_SIZE * MAX_FRAMES)
+
 /*
- * Per-thread rewriting context.  We can declare these at compile-time,
- * because we know each thread will only ever use a pair of these at a time.
+ * Declare all rewriting space at compile time to avoid malloc whenever
+ * possible.  We only need to declare a pair of each as each thread will only
+ * ever use 2 at a time.
  */
 static __thread struct rewrite_context src_ctx, dest_ctx;
+static __thread char src_regs[REGSET_POOL], dest_regs[REGSET_POOL];
+static __thread char src_callee[CALLEE_POOL], dest_callee[CALLEE_POOL];
 
 #endif
 
@@ -216,8 +224,10 @@ static rewrite_context init_src_context(st_handle handle,
 
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &src_ctx;
+  ctx->regset_pool = src_regs;
+  ctx->callee_saved_pool = src_callee;
 #else
-  ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
+  ctx = (rewrite_context)MALLOC(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
   ctx->num_acts = 1;
@@ -225,7 +235,9 @@ static rewrite_context init_src_context(st_handle handle,
   ctx->regs = regset;
   ctx->stack_base = sp_base;
 
+#if _TLS_IMPL != COMPILER_TLS
   init_data_pools(ctx);
+#endif
   list_init(fixup, &ctx->stack_pointers);
   bootstrap_first_frame(ctx, regset); // Sets up initial register set
   ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
@@ -260,8 +272,10 @@ static rewrite_context init_dest_context(st_handle handle,
 
 #if _TLS_IMPL == COMPILER_TLS
   ctx = &dest_ctx;
+  ctx->regset_pool = dest_regs;
+  ctx->callee_saved_pool = dest_callee;
 #else
-  ctx = (rewrite_context)malloc(sizeof(struct rewrite_context));
+  ctx = (rewrite_context)MALLOC(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
   ctx->num_acts = 1;
@@ -269,7 +283,9 @@ static rewrite_context init_dest_context(st_handle handle,
   ctx->regs = regset;
   ctx->stack_base = sp_base;
 
+#if _TLS_IMPL != COMPILER_TLS
   init_data_pools(ctx);
+#endif
   list_init(fixup, &ctx->stack_pointers);
 
   // Note: cannot setup frame information because CFA will be invalid, need to
@@ -285,8 +301,8 @@ static rewrite_context init_dest_context(st_handle handle,
 static void init_data_pools(rewrite_context ctx)
 {
   size_t num_regs = REGOPS(ctx)->num_regs;
-  ctx->callee_saved_pool = malloc(bitmap_size(num_regs) * MAX_FRAMES);
-  ctx->regset_pool = malloc(REGOPS(ctx)->regset_size * MAX_FRAMES);
+  ctx->regset_pool = MALLOC(REGOPS(ctx)->regset_size * MAX_FRAMES);
+  ctx->callee_saved_pool = MALLOC(bitmap_size(num_regs) * MAX_FRAMES);
   ASSERT(ctx->callee_saved_pool && ctx->regset_pool,
          "could not initialize data pools");
 }
@@ -313,8 +329,8 @@ static void free_context(rewrite_context ctx)
   for(i = 0; i < ctx->num_acts; i++)
     clear_activation(ctx->handle, &ctx->acts[i]);
 #endif
-  free_data_pools(ctx);
 #if _TLS_IMPL != COMPILER_TLS
+  free_data_pools(ctx);
   free(ctx);
 #endif
 
@@ -326,11 +342,11 @@ static void free_context(rewrite_context ctx)
  */
 static void free_data_pools(rewrite_context ctx)
 {
-  free(ctx->callee_saved_pool);
   free(ctx->regset_pool);
+  free(ctx->callee_saved_pool);
 #ifdef _DEBUG
-  ctx->callee_saved_pool = NULL;
   ctx->regset_pool = NULL;
+  ctx->callee_saved_pool = NULL;
 #endif
 }
 

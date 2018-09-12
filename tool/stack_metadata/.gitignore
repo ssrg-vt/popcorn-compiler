@@ -4,5 +4,6 @@ check-stackmaps
 dump-llvm-stackmap
 dump-stackinfo
 gen-stackinfo
+compress
 *.o
 *.swp

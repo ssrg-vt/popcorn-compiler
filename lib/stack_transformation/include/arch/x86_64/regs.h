@@ -53,6 +53,8 @@ struct regset_x86_64
 // DWARF register mappings
 ///////////////////////////////////////////////////////////////////////////////
 
+#define X86_64_NUM_REGS 67
+
 /* General purpose x86-64 registers */
 #define RAX 0
 #define RDX 1

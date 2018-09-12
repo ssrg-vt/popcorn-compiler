@@ -14,7 +14,8 @@ int __timedwait_cp(volatile int *addr, int val,
 	int r;
 	struct timespec to, *top=0;
 
-	if (priv) priv = FUTEX_PRIVATE;
+	// TODO Popcorn: we don't currently support process-shared futexes
+	/*if (priv)*/ priv = FUTEX_PRIVATE;
 
 	if (at) {
 		if (at->tv_nsec >= 1000000000UL) return EINVAL;
