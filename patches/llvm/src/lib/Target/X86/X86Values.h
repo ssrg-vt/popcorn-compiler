@@ -14,6 +14,8 @@ namespace llvm {
 class X86Values final : public TargetValues {
 public:
   X86Values() {}
+  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
+                                              const VirtRegMap *VRM) const;
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 
 private:
