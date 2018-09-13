@@ -704,31 +704,36 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		nthr = pool->threads[i];
 	      place = p + 1;
 	    }
-          else if(popcorn_place)
-            {
-              /* Initialize per-node team state and have node leader initialize
-                 threads to avoid global copies. */
-              // TODO Note: currently not compatible with OMP_PLACES!
-              nid = hierarchy_assign_node(i);
-              if(nid != 0 && i == hierarchy_node_first_thread (nid))
-                {
-                  hierarchy_init_node_team_state(nid, team,
-                                                 &team->work_shares[0], NULL,
-                                                 i, team->prev_ts.level + 1,
-                                                 thr->ts.active_level,
-                                                 place_partition_off,
-                                                 place_partition_len,
+	  else if(popcorn_place)
+	    {
+	      /* Initialize per-node team state and have node leader initialize
+		 threads to avoid global copies. */
+	      // TODO Note: currently not compatible with OMP_PLACES!
+	      nid = hierarchy_assign_node(i);
+	      if(nid != 0)
+		{
+		  if(i == hierarchy_node_first_thread (nid))
+		    {
+		      hierarchy_init_node_team_state(nid, team,
+						     &team->work_shares[0],
+						     NULL,
+						     i,
+						     team->prev_ts.level + 1,
+						     thr->ts.active_level,
+						     place_partition_off,
+						     place_partition_len,
 #ifdef HAVE_SYNC_BUILTINS
-                                                 0,
+						     0,
 #endif
-                                                 0, task, icv, fn, data);
-                  team->implicit_task[i].icv.nthreads_var = nthreads_var;
-                  team->implicit_task[i].icv.bind_var = bind_var;
-                  team->ordered_release[i] = &nthr->release;
-                  continue;
-                }
-              nthr = pool->threads[i];
-            }
+						     0, task, icv, fn, data);
+		      team->implicit_task[i].icv.nthreads_var = nthreads_var;
+		      team->implicit_task[i].icv.bind_var = bind_var;
+		      team->ordered_release[i] = &nthr->release;
+		    }
+		  continue;
+		}
+	      nthr = pool->threads[i];
+	    }
 	  else
 	    nthr = pool->threads[i];
 	  nthr->ts.team = team;
