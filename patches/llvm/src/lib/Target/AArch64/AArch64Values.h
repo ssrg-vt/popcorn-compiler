@@ -14,6 +14,8 @@ namespace llvm {
 class AArch64Values final : public TargetValues {
 public:
   AArch64Values() {}
+  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
+                                              const VirtRegMap *VRM) const;
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
 
 private:

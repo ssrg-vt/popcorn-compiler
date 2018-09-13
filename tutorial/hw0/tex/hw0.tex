@@ -156,7 +156,7 @@
 
 \section{Introduction}
 
-The purpose of this assignment is to install the Popcorn compiler toolchain to build applications for Popcorn Linux.  The Popcorn compiler toolchain is distributed as part of Popcorn Linux, and is responsible for building multi-ISA binaries suitable for migration between heterogeneous-ISA machines.  The toolchain is built on top of several pieces of open-source software, most notably clang/LLVM (see \hyperref[s:licenses]{\textbf{Licenses}} for a complete list).  The compiler supports POSIX-compliant standard C/C++ applications, and is being extended to support full-blown OpenMP~\cite{openmp} applications.  For a more detailed description of the toolchain and what it supports, see~\cite{lyerly2016popcorn,Barbalace:2017:BBH:3037697.3037738}
+The purpose of this assignment is to install the Popcorn compiler toolchain to build applications for Popcorn Linux.  The Popcorn compiler toolchain is distributed as part of Popcorn Linux, and is responsible for building multi-ISA binaries suitable for migration between heterogeneous-ISA machines.  The toolchain is built on top of several pieces of open-source software, most notably clang/LLVM (see \hyperref[s:licenses]{\textbf{Licenses}} for a complete list).  The compiler supports POSIX-compliant standard C/C++ applications and includes an OpenMP~\cite{openmp} runtime suitable to enable multithreaded cross-node execution.  For a more detailed description of the toolchain and what it supports, see~\cite{lyerly2016popcorn,Barbalace:2017:BBH:3037697.3037738}
 
 \subsection{Disclaimer}
 
@@ -193,10 +193,11 @@ After completing the assignment, you should have accomplished the following:
 Onto the boring but necessary stuff.  The Popcorn compiler toolchain is built on top of the following free and open-source software:
 
 \begin{itemize}
-	\item clang/LLVM version 3.7.1~\cite{1281665}, released under the \href{http://releases.llvm.org/4.0.0/LICENSE.TXT}{University of Illinois Open Source License}
+	\item clang/LLVM version 3.7.1~\cite{1281665}, released under the \href{http://llvm.org/docs/DeveloperPolicy.html#license}{University of Illinois/NCSA Open Source License}
 	\item GNU gold version 2.27~\cite{binutils}, released under the \href{https://www.gnu.org/licenses/gpl.html}{GNU General Public License}
 	\item musl-libc version 1.1.18~\cite{musl-libc}, released under the \href{http://git.musl-libc.org/cgit/musl/tree/COPYRIGHT}{MIT License}
 	\item libelf version 0.8.13~\cite{libelf}, released under the \href{http://www.mr511.de/software/COPYING.LIB-2.0}{GNU Library General Public License}
+	\item libgomp packaged with gcc version 7.2.0~\cite{libgomp}, released under the \href{https://www.gnu.org/licenses/gpl.html}{GNU General Public License}
 \end{itemize}
 
 %----------------------------------------------------------------------------------------
@@ -205,11 +206,7 @@ Onto the boring but necessary stuff.  The Popcorn compiler toolchain is built on
 
 \begin{homeworkProblem}{Installing the compiler toolchain}
 
-\begin{comment}
-TODO -- when we open up the repository to the public, this needs to be changed to clone the repo using anonymous read-only access.
-\end{comment}
-
-The Popcorn compiler repository is hosted on SSRG's organization GitHub page, located at \url{https://github.com/ssrg-vt/}.  \textbf{For now, access to the repository is private.  In order to get access, you'll either need to be a part of the compiler team in the SSRG GitHub, or have an SSRG administrator add you as an outside collaborator}.  Contact \href{mailto:rlyerly@vt.edu}{Rob Lyerly} with your name and GitHub username to be added as an outside collaborator.
+The Popcorn compiler repository is hosted on SSRG's organization GitHub page, located at \url{https://github.com/ssrg-vt/popcorn-compiler}.  The repository is publicly-accessible with anonymous read-only access.  \textbf{In order to get write access, you'll either need to be a part of the compiler team in the SSRG GitHub, or have an SSRG administrator add you as an outside collaborator}.  Contact \href{mailto:rlyerly@vt.edu}{Rob Lyerly} with your name and GitHub username to be added as an outside collaborator.
 
 \begin{enumerate}
 
@@ -227,7 +224,7 @@ Remove gcc prerequisites when we get libelf compiling with clang.
 \end{comment}
 
 \begin{itemize}
-	\item The toolchain requires \prog{gcc} for each ISA to be targeted by multi-ISA binaries.  Currently, compiling \texttt{libelf} requires \prog{gcc}, although in the future it will be compiled with \prog{clang}.  For now, each new supported ISA requires installing \prog{gcc-<ISA>-linux-gnu}, e.g., \prog{gcc-powerpc64le-linux-gnu} for little-endian POWER8.
+	\item The toolchain requires \prog{gcc} for each ISA to be targeted by multi-ISA binaries, as \prog{gcc} provides supporting libraries needed to build complete applications.  For now, each new supported ISA requires installing \prog{gcc-<ISA>-linux-gnu}, e.g., \prog{gcc-powerpc64le-linux-gnu} for little-endian POWER8.
 	
 	\item \prog{build-essential} provides \prog{gcc}, \prog{g++}, \prog{make} and several development libraries.  \prog{g++} is needed to compile clang/LLVM, and build systems for many of the components in the toolchain are driven using \prog{make}.
 	
@@ -245,8 +242,8 @@ Cloning into 'popcorn-compiler'...
 ...(git processing)...
 
 $ cd popcorn-compiler && ls
-APPLICATIONS  INSTALL              ISSUES  patches  tool      util
-common        install_compiler.py  lib     README   tutorial
+APPLICATIONS   common   install_compiler.py  lib      README  TODO  tutorial
+BUG_REPORTING  INSTALL  ISSUES   lib         patches  test    tool  util
 \end{lstlisting}
 
 	\item Finally, install the toolchain using the \prog{install\_compiler.py} script in the root of the repository.  To start, list all available options with \texttt{-h}.
@@ -255,11 +252,13 @@ common        install_compiler.py  lib     README   tutorial
 $ ./install_compiler.py -h
 usage: install_compiler.py [-h] [--base-path BASE_PATH]
                            [--install-path INSTALL_PATH] [--threads THREADS]
-                           [--skip-prereq-check] [--skip-llvm-clang-install]
-                           [--skip-binutils-install]
-                           [--skip-libraries-install] [--skip-tools-install]
-                           [--skip-utils-install] [--skip-namespace]
-                           [--install-call-info-library] [--targets TARGETS]
+                           [--skip-prereq-check] [--install-all]
+                           [--install-llvm-clang] [--install-binutils]
+                           [--install-musl] [--install-libelf]
+                           [--install-libopenpop] [--install-stack-transform]
+                           [--install-migration] [--install-stack-depth]
+                           [--install-tools] [--install-utils]
+                           [--install-namespace] [--targets TARGETS]
                            [--debug-stack-transformation]
                            [--libmigration-type {env_select,native,debug}]
                            [--enable-libmigration-timing]
@@ -267,10 +266,10 @@ usage: install_compiler.py [-h] [--base-path BASE_PATH]
 ...(explanation of options)...
 \end{lstlisting}
 
-There are a large number of options for configuration, many of which are used to select which components of the toolchain are installed.  If in the future you need to reinstall a subset of components you can selectively disable installing certain parts of the toolchain using these options\footnote{Many of the libraries and tools are driven using simple Makefiles.  The user can modify/reinstall a library or tool from directly inside its source folder in the Popcorn compiler source tree.}.  For now, we need to install all parts of the compiler so we only need to specify where to install the toolchain and that the stack transformation library should be built to enable debugging output.
+There are a large number of options for configuration, many of which are used to select which components of the toolchain are installed.  If in the future you need to reinstall a subset of components you can selectively enable installing certain parts of the toolchain using these options\footnote{Many of the libraries and tools are driven using simple Makefiles.  The user can modify/reinstall a library or tool from directly inside its source folder in the Popcorn compiler source tree.}.  For now, we need to install all parts of the compiler so we specify where to install the toolchain and that the stack transformation library should be built to enable debugging output.
 
 \begin{lstlisting}
-$ ./install_compiler.py --install-path <install folder> \
+$ ./install_compiler.py --install-path <install folder> --install-all \
 						--debug-stack-transformation
 ...(lots of output)...
 \end{lstlisting}
