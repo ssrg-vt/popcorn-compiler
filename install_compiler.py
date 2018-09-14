@@ -738,7 +738,12 @@ def install_hermit(base_path, install_path, threads):
     try:
         rv = subprocess.check_call(['cmake', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
-            '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
+            '/x86_64-host/bin',
+			'-DCMAKE_AR=%s' % install_path +
+				'/x86_64-host/bin/x86_64-hermit-ar',
+			'-DCMAKE_OBJCOPY=%s' % install_path +
+				'/x86_64-host/bin/x86_64-hermit-objcopy',
+			'-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options or make it optional at some point
             '..'])
     except Exception as e:
@@ -761,7 +766,12 @@ def install_hermit(base_path, install_path, threads):
         rv = subprocess.check_call(['cmake', '-DHERMIT_ARCH=aarch64',
             '-DTARGET_ARCH=aarch64-hermit', '-DCMAKE_INSTALL_PREFIX=%s' %
             install_path, '-DCOMPILER_BIN_DIR=%s' % install_path +
-            '/x86_64-host/bin', '-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
+            '/x86_64-host/bin',
+			'-DCMAKE_AR=%s' % install_path +
+				'/x86_64-host/bin/aarch64-hermit-ar',
+			'-DCMAKE_OBJCOPY=%s' % install_path +
+				'/x86_64-host/bin/aarch64-hermit-objcopy',
+			'-DHERMIT_PREFIX=%s' % install_path + '/x86_64-host',
             '-DMIGRATION_LOG=1', '-DKERNEL_DEBUG=1', #TODO remove debug options or make it optional at some point
             '..'])
     except Exception as e:
