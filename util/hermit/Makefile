@@ -206,14 +206,14 @@ test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
 
 # Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-to-arm:
-	$(TRANFER_METHOD) bss.bin data.bin fds.bin mdata.bin stack.bin.* tls.bin.* \
+	$(TRANFER_METHOD) fds.bin mdata.bin stack.bin.* tls.bin.* \
 		$(ARM_TARGET_IP):$(ARM_TARGET_HOME)
 
 # Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-from-arm:
 	$(TRANFER_METHOD) \
-		'$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/bss.bin data.bin fds.bin \
-		mdata.bin stack.bin.* tls.bin.*' .
+		'$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/fds.bin mdata.bin \
+			stack.bin.* tls.bin.*' .
 
 # Full checkpoint transfer
 transfer-full-checkpoint-to-arm:

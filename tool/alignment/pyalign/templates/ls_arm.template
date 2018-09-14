@@ -120,7 +120,7 @@ __RODATA__              /* marker for the RODATA section insertion */
   }
   .jcr  : { KEEP (*(.jcr)) }
   .got.plt : { *(.got.plt)  *(.igot.plt) }
-.data : ALIGN(0x100000) {
+.data : ALIGN(0x200000) {
    __data_start = .;
 __DATA__                /* marker for the DATA section insertion */
 	__data_end = .;
@@ -128,7 +128,7 @@ __DATA__                /* marker for the DATA section insertion */
 	_edata = .; PROVIDE (edata = .);
 }
 
-.tdata : ALIGN(0x100000) {
+.tdata : ALIGN(0x200000) {
 tls_start = .;
 __TDATA__                /* marker for the TDATA section insertion */
 tdata_end = .;
