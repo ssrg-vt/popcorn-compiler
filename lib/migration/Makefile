@@ -167,9 +167,11 @@ install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
 	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
 	@cp include/migrate.h $(POPCORN_ARM)/include
+	@cp include/sync.h $(POPCORN_ARM)/include
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
 	@cp $(LIB_X86) $(POPCORN_X86)/lib
 	@cp include/migrate.h $(POPCORN_X86)/include
+	@cp include/sync.h $(POPCORN_X86)/include
 
 clean:
 	@echo " [RM] $(BUILD)"

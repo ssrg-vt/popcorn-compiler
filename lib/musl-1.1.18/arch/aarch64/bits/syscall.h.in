@@ -277,4 +277,9 @@
 #define __NR_propose_migration 286
 #define __NR_get_thread_status 287
 #define __NR_get_node_info 288
-
+#define __NR_popcorn_tso_begin 300
+#define __NR_popcorn_tso_fence 301
+#define __NR_popcorn_tso_end 302
+#define __NR_popcorn_tso_begin_manual 305
+#define __NR_popcorn_tso_fence_manual 306
+#define __NR_popcorn_tso_end_manual 307

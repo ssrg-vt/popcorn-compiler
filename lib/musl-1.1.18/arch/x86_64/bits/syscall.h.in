@@ -334,4 +334,10 @@
 #define __NR_propose_migration				331
 #define __NR_get_thread_status				332
 #define __NR_get_node_info				333
+#define __NR_popcorn_tso_begin				340
+#define __NR_popcorn_tso_fence				341
+#define __NR_popcorn_tso_end				342
+#define __NR_popcorn_tso_begin_manual		345
+#define __NR_popcorn_tso_fence_manual		346
+#define __NR_popcorn_tso_end_manual			347
 
