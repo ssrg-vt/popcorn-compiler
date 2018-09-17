@@ -115,7 +115,7 @@ FULL_CHKPT_RESTORE?=0
 ARM_TARGET_IP?=potato
 ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
-# Transfer method can be 'rsync --no-whole-file' or scp, rsync is faster
+# Transfer method can be 'rsync --no-whole-file' or scp -C
 TRANFER_METHOD=rsync --no-whole-file
 
 all: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
