@@ -2,23 +2,37 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
-#define HEAP_BUFFER_SZ_MB		30
-#define HEAP_BUFFER_SZ_BYTES	(HEAP_BUFFER_SZ_MB*1024*1204)
+/* 1 == heap, 0 == bss */
+#define USE_HEAP	0
 
+#define BUFFER_SZ_MB		30
+#define BUFFER_SZ_BYTES	(BUFFER_SZ_MB*1024*1204)
+
+#if USE_HEAP == 0
+int buf[BUFFER_SZ_BYTES/sizeof(int)];
+char *type_str = "bss";
+#else
+char *type_str = "heap";
+#endif
+
+/* Regularly sleep during verification to test background pulling thread */
 #define SLEEP					0
+/* Migrate before verification */
 #define MIGRATE					1
 
 extern void migrate(int, void *, void *);
 int main(int argc, char *argv[])
 {
 	struct timeval start, stop, total;
-	int elements_num = HEAP_BUFFER_SZ_BYTES/sizeof(int);
+	int elements_num = BUFFER_SZ_BYTES/sizeof(int);
 
+#if USE_HEAP == 1
 	printf("Allocating buffer ...\n");
-	int *buf = malloc(HEAP_BUFFER_SZ_BYTES);
+	int *buf = malloc(BUFFER_SZ_BYTES);
+#endif
 
 	printf("Initializing buffer ...\n");
-	for(int i=0; i<(HEAP_BUFFER_SZ_BYTES/sizeof(int)); i++)
+	for(int i=0; i<(BUFFER_SZ_BYTES/sizeof(int)); i++)
 		buf[i] = i;
 
 #if MIGRATE
@@ -31,7 +45,7 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
-	printf("Starting heap consistency verification ...\n");
+	printf("Starting %s consistency verification ...\n", type_str);
 	gettimeofday(&start, NULL);
 	for(int i=0; i<elements_num; i++) {
 
@@ -51,11 +65,17 @@ int main(int argc, char *argv[])
 	gettimeofday(&stop, NULL);
 
 	printf("Test succeeded!\n");
+
+#if USE_HEAP == 1
 	free(buf);
+#endif
 
 	timersub(&stop, &start, &total);
 	printf("Verification took: %ld.%06ld seconds\n", total.tv_sec,
 			total.tv_usec);
+
+
+	sys_msleep(3000);
 
 	return 0;
 }
