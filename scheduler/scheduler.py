@@ -8,7 +8,7 @@ import shutil
 import csv
 import xmlrpclib
 
-DEBUG=False
+DEBUG=True
 
 ### Path Configurations
 SCHEDULER_FOLDER=os.getcwd()
@@ -16,12 +16,14 @@ HERMIT_INSTALL_FOLDER="%s/hermit-popcorn/" % os.path.expanduser("~")
 PROXY_BIN=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
 APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
-INSTALL_FOLDER="/tmp/hermit-scheduler/" #TODO: create a real tmp folder?
+
+### Where to run the experiments
+EXPERIMENTS_DIR=os.environ["HERMIT_EXPERIMENTS_DIR"] or "/tmp/hermit-scheduler/"
 
 ### Machine Configurations
-BOARD_NAME="potato"
-BOARD_NB_CORE=int(os.environ["HERMIT_BOARD_NB_CORE"] or 2)
-SERVER_NB_CORES=int(os.environ["HERMIT_SERVER_NB_CORE"] or 2)
+BOARD_NAME=os.environ["HERMIT_BOARD_NAME"] or "potato"
+BOARD_NB_CORES=int(os.environ["HERMIT_BOARD_NB_CORE"] or 4)
+SERVER_NB_CORES=int(os.environ["HERMIT_SERVER_NB_CORE"] or 4)
 
 ### Global variables
 #Time of the experiment
@@ -44,7 +46,7 @@ terminated_remote=0
 
 def log(*args):
     if DEBUG:
-        print(args)
+        print(time.time(),":", args)
 
 class RApp:
     "Represent a running application"
@@ -114,8 +116,8 @@ def __migrate(pid):
     
     ###Send files: copy the whole repository
     dst_dir=running_app[pid].dst_dir
-    subprocess.call(["ssh", BOARD_NAME, "mkdir -p", INSTALL_FOLDER], stdout=f, stderr=f)
-    subprocess.call(["rsync", "-r", dst_dir, BOARD_NAME+":"+INSTALL_FOLDER], stdout=f, stderr=f)
+    subprocess.call(["ssh", BOARD_NAME, "mkdir -p", EXPERIMENTS_DIR], stdout=f, stderr=f)
+    subprocess.call(["rsync", "-r", dst_dir, BOARD_NAME+":"+EXPERIMENTS_DIR], stdout=f, stderr=f)
     #subprocess.call(["rsync", "--no-whole-file", PROXY_BIN, BOARD_NAME+":~/"])
 
     ssh_ags="""HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1    \
@@ -144,7 +146,7 @@ def __migrate(pid):
 
 def migrate(running_app):
     #if no core on remote machine
-    if BOARD_NB_CORE <= len(migrated_app):
+    if BOARD_NB_CORES <= len(migrated_app):
         return False
     #check for an arm affine application
     for pid, rapp in running_app.items(): 
@@ -156,6 +158,7 @@ def migrate(running_app):
 
 def scheduler_wait():
     #if there still a core on Xeon: continue
+    log("number of running apps:", len(running_app))
     if len(running_app) < SERVER_NB_CORES:
         return
     #else try to free a core by migrating
@@ -177,9 +180,9 @@ def run_app(app):
     if len(running_app) >= SERVER_NB_CORES:
         return False
 
-    ### Copy foder of the application to INSTALL_FOLDER
+    ### Copy foder of the application to EXPERIMENTS_DIR
     src_dir=os.path.join(BIN_FOLDER, app)
-    dst_dir=os.path.join(INSTALL_FOLDER, app+str(app_count))
+    dst_dir=os.path.join(EXPERIMENTS_DIR, app+str(app_count))
     shutil.copytree(src_dir, dst_dir, symlinks=False, ignore=None)
 
     ### Start application
@@ -228,6 +231,7 @@ def cleanup():
     __cleanup(migrated_app, local_terminated)
 
 def terminate(signum, frame):
+    log("Terminating: singnal received is", signum)
     cleanup()
     print_report()
     sys.exit()
@@ -256,7 +260,9 @@ def main():
 #TODO:  
 #   - check that APP_INFO_FILE exist
 #   - check that PROXY_BIN, BIN_FOLDER exist
-os.makedirs(INSTALL_FOLDER)
+os.makedirs(EXPERIMENTS_DIR)
+log("NB_CORE_BOARD",BOARD_NB_CORES)
+log("NB_CORE_SERVER",SERVER_NB_CORES)
 
 main()
 

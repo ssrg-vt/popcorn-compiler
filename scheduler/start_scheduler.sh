@@ -1,20 +1,41 @@
 #!/bin/bash
 
+#System Configuration(s)
+export HERMIT_BOARD_NAME=potato0
 
-#clean old experiments if any
-rm -fr /tmp/hermit-scheduler/
-ssh potato "rm -fr /tmp/hermit-scheduler/"
+#Experiments configuration
+export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
+
 
 #for logging info 
 mkdir -p reports
 
+#clean old experiments if any
+function clean()
+{
+	rm -fr $HERMIT_EXPERIMENTS_DIR
+	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR"
+}
+
+#Run the experiments using scheduler.py script
+#Arguments are:
+#1) number of core on the board
+#2) number of core on the server
+#3) application list
+#4) duration of the experiments
 function startexperiment()
 {
+	clean
 	timestamp=$(date +%s)
 	export HERMIT_BOARD_NB_CORE=$1
 	export HERMIT_SERVER_NB_CORE=$2
-	python -u ./scheduler.py "ep" $3 > reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+	echo NB_CORE_BOARD: $HERMIT_BOARD_NB_CORE > reports/report.$timestamp.txt
+	echo NB_CORE_SERVER: $HERMIT_SERVER_NB_CORE >> reports/report.$timestamp.txt
+	echo APPLICATIONS: $3 >> reports/report.$timestamp.txt
+	echo DURATION: $4 >> reports/report.$timestamp.txt
+	python -u ./scheduler.py "$3" $4 >> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
 }
 
 
-startexperiment 2 2 800
+#example
+startexperiment 4 4 "ep" 120
