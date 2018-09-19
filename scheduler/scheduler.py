@@ -24,6 +24,7 @@ EXPERIMENTS_DIR=os.environ["HERMIT_EXPERIMENTS_DIR"] or "/tmp/hermit-scheduler/"
 BOARD_NAME=os.environ["HERMIT_BOARD_NAME"] or "potato"
 BOARD_NB_CORES=int(os.environ["HERMIT_BOARD_NB_CORE"] or 4)
 SERVER_NB_CORES=int(os.environ["HERMIT_SERVER_NB_CORE"] or 4)
+BOARD_MEMORY=os.environ["HERMIT_BOARD_MEMORY"] or (2*(2**30)) # 2GB
 
 ### Global variables
 #Time of the experiment
@@ -50,14 +51,51 @@ def log(*args):
 
 class RApp:
     "Represent a running application"
+    SCHED_STATUS_FILE=".status"
+    MEMORY_USAGE_FILE=".memory"
+    HW_COUNTER_FILE=".counter"
     def __init__(self, name, rid, dst_dir, proc):
         self.name=name
         self.rid=rid
         self.dst_dir=dst_dir
-        self.update_proc(proc)
-    def update_proc(self,proc):
+        self._update_proc(proc)
+        self._start_hw_counter()
+        self._start_memory_usage()
+        self._start_sched_status()
+    def _update_proc(self,proc):
         self.proc=proc
         self.pid=proc.pid
+    def _start_hw_counter():
+        self.hw_counter_file_path = path = os.path.join(dst_dir,HW_COUNTER_FILE)
+        f = open(path, "w")
+        HW_COUNTER_PERIOD=1000 #in ms
+        subprocess.call(["perf", "stat", "-x|" "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p"+str(self.pid), stdout=f, stderr=f)
+    def _start_memory_usage():
+        self.memory_usage_file_path = path = os.path.join(dst_dir,MEMORY_USAGE_FILE)
+    def _start_sched_status():
+        self.sched_status_file_path = path = os.path.join(dst_dir,SCHED_STATUS_FILE)
+
+    def _get_dir_usage():
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(self.dst_dir):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                total_size += os.path.getsize(fp)
+        return total_size
+
+    #TODO
+    def _get_hw_counter_usage():
+        pass#line=get_last_line(self.sched_status_file_path)
+    def _get_memory_usage():
+        pass #line=get_last_line(self.sched_status_file_path)
+    def _get_sched_status():
+        pass#line=get_last_line(self.sched_status_file_path)
+    def get_migration_score():
+        "Return a migration score between 0 (don't migrate) and 100 (migrate)"
+        pass
+
+    def migrated(self, proc):
+        _update_proc(proc)
     def __str__(self):
         attrs = vars(self)
         return ', '.join("%s: %s" % item for item in attrs.items())
@@ -124,6 +162,7 @@ def __migrate(pid):
         HERMIT_VERBOSE=0 HERMIT_MIGTEST=0                       \
         HERMIT_MIGRATE_RESUME=1 HERMIT_DEBUG=0                  \
         HERMIT_NODE_ID=1 ST_AARCH64_BIN=prog_aarch64_aligned    \
+        HERMIT_FULL_CHKPT_RESTORE=1 HERMIT_FULL_CHKPT_SAVE=1
         ST_X86_64_BIN=prog_x86-64_aligned"""+" "
     ssh_ags+="cd "+dst_dir +"; "
     ssh_ags+="~/proxy ./prog_aarch64_aligned "
@@ -196,6 +235,7 @@ def run_app(app):
     env["HERMIT_MIGRATE_RESUME"]="0"
     env["HERMIT_DEBUG"]="0"
     env["HERMIT_NODE_ID"]="0"
+    env["HERMIT_FULL_CHKPT_SAVE"]="1"
     env["ST_AARCH64_BIN"]="prog_aarch64_aligned"
     env["ST_X86_64_BIN"]="prog_x86-64_aligned"
     f = open("output.txt", "w")
