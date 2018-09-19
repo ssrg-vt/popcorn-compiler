@@ -17,14 +17,22 @@ PROXY_BIN=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
 APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
 
+def get_env(var, default):
+    try:
+        return os.environ[var]
+    except:
+        return default
+
 ### Where to run the experiments
-EXPERIMENTS_DIR=os.environ["HERMIT_EXPERIMENTS_DIR"] or "/tmp/hermit-scheduler/"
+EXPERIMENTS_DIR=get_env("HERMIT_EXPERIMENTS_DIR", "/tmp/hermit-scheduler/")
 
 ### Machine Configurations
-BOARD_NAME=os.environ["HERMIT_BOARD_NAME"] or "potato"
-BOARD_NB_CORES=int(os.environ["HERMIT_BOARD_NB_CORE"] or 4)
-SERVER_NB_CORES=int(os.environ["HERMIT_SERVER_NB_CORE"] or 4)
-BOARD_MEMORY=os.environ["HERMIT_BOARD_MEMORY"] or (2*(2**30)) # 2GB
+BOARD_NAME=get_env("HERMIT_BOARD_NAME", "potato")
+BOARD_NB_CORES=int(get_env("HERMIT_BOARD_NB_CORE", 4))
+SERVER_NB_CORES=int(get_env("HERMIT_SERVER_NB_CORE", 4))
+BOARD_MEMORY=int(get_env("HERMIT_BOARD_MEMORY", (2*(2**30)))) # 2GB
+
+
 
 ### Global variables
 #Time of the experiment
@@ -65,17 +73,17 @@ class RApp:
     def _update_proc(self,proc):
         self.proc=proc
         self.pid=proc.pid
-    def _start_hw_counter():
-        self.hw_counter_file_path = path = os.path.join(dst_dir,HW_COUNTER_FILE)
+    def _start_hw_counter(self):
+        self.hw_counter_file_path = path = os.path.join(self.dst_dir,self.HW_COUNTER_FILE)
         f = open(path, "w")
         HW_COUNTER_PERIOD=1000 #in ms
-        subprocess.call(["perf", "stat", "-x|" "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p"+str(self.pid), stdout=f, stderr=f)
-    def _start_memory_usage():
-        self.memory_usage_file_path = path = os.path.join(dst_dir,MEMORY_USAGE_FILE)
-    def _start_sched_status():
-        self.sched_status_file_path = path = os.path.join(dst_dir,SCHED_STATUS_FILE)
+        self.monitor=subprocess.Popen(["perf", "stat", "-x|" "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p", str(self.pid)], stdout=f, stderr=f)
+    def _start_memory_usage(self):
+        self.memory_usage_file_path = path = os.path.join(self.dst_dir,self.MEMORY_USAGE_FILE)
+    def _start_sched_status(self):
+        self.sched_status_file_path = path = os.path.join(self.dst_dir,self.SCHED_STATUS_FILE)
 
-    def _get_dir_usage():
+    def _get_dir_usage(self):
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(self.dst_dir):
             for f in filenames:
@@ -84,18 +92,18 @@ class RApp:
         return total_size
 
     #TODO
-    def _get_hw_counter_usage():
+    def _get_hw_counter_usage(self):
         pass#line=get_last_line(self.sched_status_file_path)
-    def _get_memory_usage():
+    def _get_memory_usage(self):
         pass #line=get_last_line(self.sched_status_file_path)
-    def _get_sched_status():
+    def _get_sched_status(self):
         pass#line=get_last_line(self.sched_status_file_path)
-    def get_migration_score():
+    def get_migration_score(self):
         "Return a migration score between 0 (don't migrate) and 100 (migrate)"
         pass
 
     def migrated(self, proc):
-        _update_proc(proc)
+        self._update_proc(proc)
     def __str__(self):
         attrs = vars(self)
         return ', '.join("%s: %s" % item for item in attrs.items())
@@ -175,7 +183,7 @@ def __migrate(pid):
 
     ### Remove from running app and add to migrated app
     rapp=running_app[pid]
-    rapp.update_proc(proc)
+    rapp.migrated(proc)
     migrated_app[proc.pid]=rapp
     log_migration(proc.pid)
     del running_app[pid]
@@ -209,8 +217,10 @@ def scheduler_wait():
 
     if pid in running_app:
         local_terminated(pid)
-    else:
+    elif pid in migrated_app:
         remote_terminated(pid)
+    else:
+        log("Process", pid, "terminated!")
 
 def run_app(app):
     """ Start an application on the server """
