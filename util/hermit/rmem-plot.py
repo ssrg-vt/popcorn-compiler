@@ -13,7 +13,9 @@ if __name__ == "__main__":
 
     timestamps = data[:,0]
     addresses = data[:,1]
-    sizeleft = 100 - data[:,4]
+    served_heap = 100 - data[:,4]
+    served_bss = 100 - data[:,6]
+    served_data = 100 - data[:,8]
 
     fig, ax1 = plt.subplots()
 
@@ -22,11 +24,15 @@ if __name__ == "__main__":
     plt.ylabel("Virtual address requested", color="blue")
     ax1.tick_params('y', colors="blue")
 
-    ax1.plot(timestamps, addresses, linestyle="", marker="x", color="blue")
+    ax1.plot(timestamps, addresses, linestyle="", marker="x", color="blue", label="address")
 
     ax2 = ax1.twinx()
-    ax2.plot(timestamps, sizeleft, linestyle="", marker="+", color="green")
-    ax2.set_ylabel('Percentage of memory served', color='green')
-    ax2.tick_params('y', colors='green')
+    ax2.plot(timestamps, served_heap, linestyle="", marker="+", color="lightcoral", label = "% heap served")
+    ax2.plot(timestamps, served_bss, linestyle="", marker="+", color="palegreen", label = "% bss served")
+    ax2.plot(timestamps, served_data, linestyle="", marker="+", color="lightgray", label = "% data served")
+    ax2.set_ylabel('Percentage of memory served')
 
+    ax1.legend(loc=8)
+    ax2.legend()
+    
     plt.show()
