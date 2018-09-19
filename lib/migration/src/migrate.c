@@ -324,9 +324,7 @@ void register_migrate_callback(void (*callback)(void*), void *callback_data)
 /* Hook inserted by compiler at the beginning of a function. */
 void __cyg_profile_func_enter(void *this_fn, void __attribute__((unused)) *call_site)
 {
-  int nid = do_migrate(this_fn);
-  if (nid >= 0)
-    __migrate_shim_internal(nid, migrate_callback, migrate_callback_data);
+	popcorn_check_migrate();
 }
 
 /* Hook inserted by compiler at the end of a function. */

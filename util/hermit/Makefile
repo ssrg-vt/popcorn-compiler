@@ -10,7 +10,8 @@ PH_PREFIX_HOST=$(POPHERMIT_PREFIX)/x86_64-host/
 PH_PREFIX_X86=$(POPHERMIT_PREFIX)/x86_64-hermit/
 PH_PREFIX_ARM=$(POPHERMIT_PREFIX)/aarch64-hermit/
 
-# CFLAGS (common / x86 only / arm only)
+# CFLAGS (common / x86 only / arm only) - add -finstrument-functions for
+# automatic migration points insertion
 CFLAGS+=-O0 -Wall -Wno-unused-variable -g -nostdlib -D_GNU_SOURCE \
 	    -DPOSIX -mllvm -optimize-regalloc -mllvm -fast-isel=false -static \
 		-popcorn-alignment -ffunction-sections -fdata-sections -fno-common
