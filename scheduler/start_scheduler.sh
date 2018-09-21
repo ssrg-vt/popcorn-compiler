@@ -13,8 +13,8 @@ mkdir -p reports
 #clean old experiments if any
 function clean()
 {
-	rm -fr $HERMIT_EXPERIMENTS_DIR
-	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR"
+	rm -fr $HERMIT_EXPERIMENTS_DIR/*
+	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR/*"
 }
 
 #Run the experiments using scheduler.py script
@@ -33,9 +33,9 @@ function startexperiment()
 	echo NB_CORE_SERVER: $HERMIT_SERVER_NB_CORE >> reports/report.$timestamp.txt
 	echo APPLICATIONS: $3 >> reports/report.$timestamp.txt
 	echo DURATION: $4 >> reports/report.$timestamp.txt
-	python -u ./scheduler.py "$3" $4 >> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+	python -u ./scheduler.py "$3" $4 #>> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
 }
 
 
 #example
-startexperiment 4 4 "ep" 120
+startexperiment 3 3 "ep" 60

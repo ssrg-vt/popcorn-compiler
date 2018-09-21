@@ -1,0 +1,15 @@
+NPB_APP=bt  cg  dc  ep  ft  is  lu  mg  sp  ua
+SCHEDULER_FOLDER?=$(shell pwd)
+BINS_DIRECTORY=$(SCHEDULER_FOLDER)/bins/
+__BINS=$(addprefix $(NPB_DIRECTORY)/, $(NPB_APP))
+BINS=$(addsuffix prog_x86-64_aligned $(__BINS)/, $(NPB_APP))
+
+all: prepare
+
+$(BINS_DIRECTORY): 
+	mkdir -p $(BINS_DIRECTORY)
+
+$(NPB_DIRECTORY)/pro: 
+
+
+prepare: $(BINS_DIRECTORY) $(BINS)

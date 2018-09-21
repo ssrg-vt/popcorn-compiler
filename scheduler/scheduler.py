@@ -3,6 +3,7 @@
 import time
 import subprocess
 import sys, os
+import errno
 import signal
 import shutil
 import csv
@@ -13,7 +14,8 @@ DEBUG=True
 ### Path Configurations
 SCHEDULER_FOLDER=os.getcwd()
 HERMIT_INSTALL_FOLDER="%s/hermit-popcorn/" % os.path.expanduser("~")
-PROXY_BIN=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
+PROXY_BIN_X86=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
+PROXY_BIN_ARM=os.path.join(HERMIT_INSTALL_FOLDER,"aarch64-hermit/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
 APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
 
@@ -74,10 +76,14 @@ class RApp:
         self.proc=proc
         self.pid=proc.pid
     def _start_hw_counter(self):
-        self.hw_counter_file_path = path = os.path.join(self.dst_dir,self.HW_COUNTER_FILE)
+        path = os.path.join(self.dst_dir, self.HW_COUNTER_FILE)
+        self.hw_counter_file_path = path
         f = open(path, "w")
         HW_COUNTER_PERIOD=1000 #in ms
-        self.monitor=subprocess.Popen(["perf", "stat", "-x|" "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p", str(self.pid)], stdout=f, stderr=f)
+        log("starting perf on", self.dst_dir, self.pid)
+        self.monitor=subprocess.Popen(["perf", "stat", "-x|", "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p", str(self.pid)], stdout=f, stderr=f)
+    def _stop_hw_counter(self):
+        self.monitor.kill()
     def _start_memory_usage(self):
         self.memory_usage_file_path = path = os.path.join(self.dst_dir,self.MEMORY_USAGE_FILE)
     def _start_sched_status(self):
@@ -91,16 +97,56 @@ class RApp:
                 total_size += os.path.getsize(fp)
         return total_size
 
-    #TODO
+    def _get_last_line(self, fn, average_line=1024):
+        log("file name is", fn)
+        last=None
+        try:
+            fh=open(fn, 'r')
+            lines=fh.readlines()
+            if len(lines)> 0:
+                last = lines[-1]
+        except:
+            pass
+        return last
+
+    def _get_int(self, elem):
+        try:
+            return int(elem)
+        except:
+            return -1
     def _get_hw_counter_usage(self):
-        pass#line=get_last_line(self.sched_status_file_path)
+        print("hwf", self.hw_counter_file_path)
+        line=self._get_last_line(self.hw_counter_file_path)
+        if not line:
+            return -1;
+        log("perf line is", line)
+        elms=line.split('|')
+        return self._get_int(elms[1])
     def _get_memory_usage(self):
-        pass #line=get_last_line(self.sched_status_file_path)
+        line=self._get_last_line(self.memory_usage_file_path)
+        if not line:
+            return -1;
+        return self._get_int(line)
     def _get_sched_status(self):
-        pass#line=get_last_line(self.sched_status_file_path)
+        line=_get_last_line(self.sched_status_file_path)
+        if not line:
+            return -1;
+        elms=line.split(':')
+        return self._get_int(elms[1])
     def get_migration_score(self):
-        "Return a migration score between 0 (don't migrate) and 100 (migrate)"
-        pass
+        "Return a migration positive integer score (less is better) or -1 (cannot (yet) be migrated) "
+        processor_usage=self._get_hw_counter_usage()
+        memory_usage=self._get_memory_usage()
+        log("perf results", processor_usage);
+        log("memory usage", memory_usage);
+        if processor_usage==-1 or memory_usage==-1 or  \
+                memory_usage>BOARD_MEMORY/BOARD_NB_CORES:
+            return -1
+        return processor_usage*memory_usage
+        
+
+    def stop(self):
+        self._stop_hw_counter()
 
     def migrated(self, proc):
         self._update_proc(proc)
@@ -126,8 +172,11 @@ def load_csv(fn):
     log(res)
     return res
 app_info=load_csv(APP_INFO_FILE)
-def is_board_affine(app):
-    return int(app_info[app]["Migrate"])
+def is_board_affine(rapp):
+    ms=rapp.get_migration_score()
+    if ms == -1:
+        return 0
+    return int(app_info[rapp.name]["Migrate"])
 
 def log_action(action, ddir):
     log(action+" application", ddir)
@@ -139,6 +188,7 @@ def log_migration(pid):
 def __terminated(pid, lst, tp):
     ddir=lst[pid].dst_dir
     log_action("Terminated ("+tp+")", ddir)
+    lst[pid].stop()
     del lst[pid]
 def local_terminated(pid):
     global terminated_local
@@ -153,18 +203,21 @@ def __migrate(pid):
     f = open("mig.output.txt", "w")
 
     ### Start checkpoint: send signal
-    os.kill(pid, signal.SIGUSR1)
+    os.kill(pid, signal.SIGUSR1)#TODO: catch exception
 
     ### Wait for checkpoituing to finish
     #w/o on-demande: wait for uhyve to finish
     rpid, status=os.waitpid(pid, 0)
-    #TODO: check status?
+    log(rpid, "checkpointing done with status", status, "return code", running_app[pid].proc.returncode)
+    log(rpid, "WIFEXITED", os.WIFEXITED(status), "exit code", os.WEXITSTATUS(status))
+    log(rpid, "WIFSIGNALED", os.WIFSIGNALED(status))
+    log(rpid, "WIFSTOPPED", os.WIFSTOPPED(status))
     
     ###Send files: copy the whole repository
     dst_dir=running_app[pid].dst_dir
     subprocess.call(["ssh", BOARD_NAME, "mkdir -p", EXPERIMENTS_DIR], stdout=f, stderr=f)
     subprocess.call(["rsync", "-r", dst_dir, BOARD_NAME+":"+EXPERIMENTS_DIR], stdout=f, stderr=f)
-    #subprocess.call(["rsync", "--no-whole-file", PROXY_BIN, BOARD_NAME+":~/"])
+    #subprocess.call(["rsync", "--no-whole-file", PROXY_BIN_ARM, BOARD_NAME+":~/"])
 
     ssh_ags="""HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1    \
         HERMIT_VERBOSE=0 HERMIT_MIGTEST=0                       \
@@ -197,11 +250,26 @@ def migrate(running_app):
         return False
     #check for an arm affine application
     for pid, rapp in running_app.items(): 
-        if is_board_affine(rapp.name):
+        if is_board_affine(rapp):
             __migrate(rapp.pid)
             return True
     return False
             
+def _procs_wait(apps):
+    for pid, rapp in apps.items():
+        ret=rapp.proc.poll()
+        if ret:
+            return pid, ret
+    return None
+def procs_wait(quantum=1):
+    ret=_procs_wait(running_app)
+    if ret:
+        return ret
+    ret=_procs_wait(migrated_app)
+    if ret:
+        return ret
+    time.sleep(quantum)
+    return None, None
 
 def scheduler_wait():
     #if there still a core on Xeon: continue
@@ -212,8 +280,12 @@ def scheduler_wait():
     if migrate(running_app):
         return
     #else: just wait for a core to get freed
-    pid, status=os.wait() 
-    #TODO: check status!
+    pid, ret_code=procs_wait() 
+    if not pid:
+        log("Quantum finished with no process finished");
+        return
+    log("Appplication", pid, "finished with ret code", returncode);
+
 
     if pid in running_app:
         local_terminated(pid)
@@ -249,7 +321,7 @@ def run_app(app):
     env["ST_AARCH64_BIN"]="prog_aarch64_aligned"
     env["ST_X86_64_BIN"]="prog_x86-64_aligned"
     f = open("output.txt", "w")
-    proc=subprocess.Popen([PROXY_BIN, "prog_x86-64_aligned"], env=env, stdout=f, stderr=f) #TODO:check error
+    proc=subprocess.Popen([PROXY_BIN_X86, "prog_x86-64_aligned"], env=env, stdout=f, stderr=f) #TODO:check error
 
     ### Register application
     running_app[proc.pid]=RApp(app,app_count,dst_dir,proc)
@@ -309,8 +381,12 @@ def main():
 #Handle assumed files/dirs and check them
 #TODO:  
 #   - check that APP_INFO_FILE exist
-#   - check that PROXY_BIN, BIN_FOLDER exist
-os.makedirs(EXPERIMENTS_DIR)
+#   - check that PROXY_BIN_ARM, BIN_FOLDER exist
+try:
+    os.makedirs(EXPERIMENTS_DIR)
+except OSError as e:
+    if e.errno != errno.EEXIST:
+        raise
 log("NB_CORE_BOARD",BOARD_NB_CORES)
 log("NB_CORE_SERVER",SERVER_NB_CORES)
 
