@@ -42,7 +42,7 @@ function mount_tmpfs()
 	mkdir -p $HERMIT_EXPERIMENTS_DIR	
 	sudo mount -t tmpfs tmpfs /tmp/hermit-scheduler
 	ssh $HERMIT_BOARD_NAME mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	ssh $HERMIT_BOARD_NAME "sudo mount -t tmpfs tmpfs /tmp/hermit-scheduler"
+	ssh $HERMIT_BOARD_NAME "sudo mount -t tmpfs tmpfs /tmp/hermit-scheduler" #FIXME: sudo pasword
 }
 		
 function install_tools()

@@ -258,15 +258,16 @@ def migrate(running_app):
 def _procs_wait(apps):
     for pid, rapp in apps.items():
         ret=rapp.proc.poll()
-        if ret:
+	log("proc_wait, pid", pid, "ret code", ret)
+        if ret!= None:
             return pid, ret
     return None
 def procs_wait(quantum=1):
     ret=_procs_wait(running_app)
-    if ret:
+    if ret != None:
         return ret
     ret=_procs_wait(migrated_app)
-    if ret:
+    if ret!=None:
         return ret
     time.sleep(quantum)
     return None, None
@@ -281,10 +282,10 @@ def scheduler_wait():
         return
     #else: just wait for a core to get freed
     pid, ret_code=procs_wait() 
-    if not pid:
-        log("Quantum finished with no process finished");
+    if pid == None:
+        log("Quantum finished with no process finished, pid", pid);
         return
-    log("Appplication", pid, "finished with ret code", returncode);
+    log("Appplication", pid, "finished with ret code", ret_code);
 
 
     if pid in running_app:
@@ -350,7 +351,7 @@ def cleanup():
             else:
                 proc.kill()
     __cleanup(running_app, local_terminated)
-    __cleanup(migrated_app, local_terminated)
+    __cleanup(migrated_app, remote_terminated)
 
 def terminate(signum, frame):
     log("Terminating: singnal received is", signum)

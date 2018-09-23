@@ -33,9 +33,10 @@ function startexperiment()
 	echo NB_CORE_SERVER: $HERMIT_SERVER_NB_CORE >> reports/report.$timestamp.txt
 	echo APPLICATIONS: $3 >> reports/report.$timestamp.txt
 	echo DURATION: $4 >> reports/report.$timestamp.txt
-	python -u ./scheduler.py "$3" $4 #>> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+	python -u ./scheduler.py "$3" $4 >> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
 }
 
 
 #example
-startexperiment 3 3 "ep" 60
+startexperiment 2 2 "ep" 600
+startexperiment 3 3 "ep" 600
