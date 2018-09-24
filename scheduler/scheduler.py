@@ -239,7 +239,7 @@ def migrate(running_app):
 def _procs_wait(apps):
     for pid, rapp in apps.items():
         ret=rapp.proc.poll()
-	    log("proc_wait, pid", pid, "ret code", ret)
+        log("proc_wait, pid", pid, "ret code", ret)
         if ret!= None:
             return pid, ret
     return None
