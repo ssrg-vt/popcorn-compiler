@@ -11,14 +11,26 @@ APP_FOLDER="../apps/het/"
 
 function prepare_applications()
 {
-	#npb_app="bt  cg  dc  ep  ft  is  lu  mg  sp  ua"
-	npb_app="ep"
-
 	mkdir -p bins
-
+	npb_app="bt  cg  dc  ep  ft  is  lu  mg  sp  ua"
 	for d in $npb_app 
 	do
 		dir=$APP_FOLDER/npb-$d
+		#compile
+		cd $dir
+		ln -fs npbparams-B.h npbparams.h
+		make >compile.out 2>compile.err
+		cd -
+
+		#copy
+		mkdir -p bins/$d
+		cp $dir/prog_*aligned bins/$d/
+	done
+	other_app="blackscholes  dhrystone linpack whetstone livermore"
+	for d in $other_app 
+	do
+		dir=$APP_FOLDER/$d
+
 		#compile
 		cd $dir
 		ln -fs npbparams-B.h npbparams.h
