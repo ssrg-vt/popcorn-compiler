@@ -6,10 +6,9 @@ import sys, os
 import errno
 import signal
 import shutil
-import csv
 import xmlrpclib
 
-DEBUG=True
+DEBUG= False#True
 
 ### Path Configurations
 SCHEDULER_FOLDER=os.getcwd()
@@ -17,7 +16,6 @@ HERMIT_INSTALL_FOLDER="%s/hermit-popcorn/" % os.path.expanduser("~")
 PROXY_BIN_X86=os.path.join(HERMIT_INSTALL_FOLDER,"x86_64-host/bin/proxy")
 PROXY_BIN_ARM=os.path.join(HERMIT_INSTALL_FOLDER,"aarch64-hermit/bin/proxy")
 BIN_FOLDER=os.path.join(SCHEDULER_FOLDER,"bins")
-APP_INFO_FILE=os.path.join(SCHEDULER_FOLDER,"info.csv")
 
 def get_env(var, default):
     try:
@@ -41,8 +39,6 @@ BOARD_MEMORY=int(get_env("HERMIT_BOARD_MEMORY", (2*(2**30)))) # 2GB
 timer=int(sys.argv[2])
 #List of applications. Example: "ep ep". All application must be in BIN_FOLDER
 app_list=sys.argv[1].split()
-#Extracted from the CSV file APP_INFO_FILE
-app_info=dict() #load_csv(APP_INFO_FILE)
 #The next two args track running and migrated applications (format: key=pid; value=RApp)
 running_app=dict()
 migrated_app=dict()
@@ -143,40 +139,16 @@ class RApp:
                 memory_usage>BOARD_MEMORY/BOARD_NB_CORES:
             return -1
         return processor_usage*memory_usage
-        
-
     def stop(self):
         self._stop_hw_counter()
-
     def migrated(self, proc):
         self._update_proc(proc)
+        self.stop()
     def __str__(self):
         attrs = vars(self)
         return ', '.join("%s: %s" % item for item in attrs.items())
     def __repr__(self):
         return self.__str__()
-
-#Application information (Migrate: 1/0) is in the CSV file
-def load_csv(fn):
-    res=dict()
-    header=None
-    csvfile0=open(fn)
-    reader = csv.reader(csvfile0, delimiter=',', quotechar='|')
-    for row in reader:
-        if header == None:
-            header=row
-            continue
-        res[row[0]]=dict()
-        for feature in header[1:]:
-            res[row[0]][feature]=row[1]
-    log(res)
-    return res
-app_info=load_csv(APP_INFO_FILE)
-def is_board_affine(rapp):
-    ms=rapp.get_migration_score()
-    if ms == -1:
-        return 0
-    return int(app_info[rapp.name]["Migrate"])
 
 def log_action(action, ddir):
     log(action+" application", ddir)
@@ -243,22 +215,31 @@ def __migrate(pid):
 
     return 
 
+def migrate_sort(kv):
+    pid, rapp=kv
+    score=rapp.get_migration_score()
+    if score == -1:
+        score=sys.maxint
+    return score
 
 def migrate(running_app):
     #if no core on remote machine
     if BOARD_NB_CORES <= len(migrated_app):
         return False
-    #check for an arm affine application
-    for pid, rapp in running_app.items(): 
-        if is_board_affine(rapp):
-            __migrate(rapp.pid)
-            return True
-    return False
+    #check-for/get an arm affine application
+    best, bproc=sorted(running_app.items(), key=migrate_sort)[0]
+    log("Best application to migrate is", bproc)
+    if best==sys.maxint:
+        log("Cannot migrate any application", running_app)
+        return False
+    else:
+        __migrate(best)
+        return True
             
 def _procs_wait(apps):
     for pid, rapp in apps.items():
         ret=rapp.proc.poll()
-	log("proc_wait, pid", pid, "ret code", ret)
+	    log("proc_wait, pid", pid, "ret code", ret)
         if ret!= None:
             return pid, ret
     return None
@@ -349,7 +330,7 @@ def cleanup():
             if proc.poll() is not None:
                 trm(pid)
             else:
-                proc.kill()
+                proc.kill() #just kill it
     __cleanup(running_app, local_terminated)
     __cleanup(migrated_app, remote_terminated)
 

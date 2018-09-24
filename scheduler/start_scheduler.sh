@@ -13,6 +13,7 @@ mkdir -p reports
 #clean old experiments if any
 function clean()
 {
+	killall perf # TODO:should be cleaned by the scheduler.py
 	rm -fr $HERMIT_EXPERIMENTS_DIR/*
 	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR/*"
 }
@@ -38,5 +39,5 @@ function startexperiment()
 
 
 #example
-startexperiment 2 2 "ep" 600
+#startexperiment 2 2 "ep" 600
 startexperiment 3 3 "ep" 600
