@@ -332,6 +332,9 @@ public:
   const llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses() const
   { return ArrayAccesses; }
 
+  llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses()
+  { return ArrayAccesses; }
+
 private:
   /// Which sub-tree of a binary operator we're traversing.  This determines
   /// whether we're reading or writing the array.
@@ -350,11 +353,26 @@ private:
   llvm::SmallVector<ArrayAccess *, 8> CurAccess;
 };
 
-void PrefetchAnalysis::mergeArrayAccesses() {
+void PrefetchAnalysis::pruneArrayAccesses() {
+  llvm::SmallVector<ArrayAccess, 8> &Accesses = ArrAccesses->getArrayAccesses();
+  llvm::SmallVector<ArrayAccess, 8>::iterator Cur, Next;
+  for(Cur = Accesses.begin(); Cur != Accesses.end(); Cur++) {
+    if(!Cur->isValid()) continue;
+    for(Next = Cur + 1; Next != Accesses.end(); Next++) {
+      if(!Next->isValid()) continue;
+      if(Cur->getBase() == Next->getBase() &&
+         PrefetchExprEquality::exprEqual(Cur->getIndex(), Next->getIndex()))
+        Next->setInvalid();
+    }
+  }
+}
+
+void PrefetchAnalysis::mergePrefetchRanges() {
   // TODO!
 }
 
-void PrefetchAnalysis::pruneArrayAccesses() {
+void PrefetchAnalysis::prunePrefetchRanges()
+{
   // TODO we could prevent a bunch of copying if we used a linked list instead
   // of a vector for ToPrefetch
   llvm::SmallVector<PrefetchRange, 8>::iterator Cur, Next;
@@ -789,8 +807,34 @@ typedef PrefetchDataflow::VarSet VarSet;
 /// Search a for-loop statement for array access patterns based on loop
 /// induction variables that can be prefetched at runtime.
 void PrefetchAnalysis::analyzeForStmt() {
-  LoopNestTraversal Loops(Ctx);
-  ArrayAccessPattern ArrAccesses(Ignore);
+  // Gather loop nest information, including induction variables
+  Loops->InitTraversal();
+  Loops->TraverseStmt(S);
+  Loops->PruneInductionVars();
+
+  // Find array/pointer accesses.
+  ArrAccesses->InitTraversal();
+  ArrAccesses->TraverseStmt(S);
+  ArrAccesses->PruneInvalidOrIgnoredAccesses();
+}
+
+//===----------------------------------------------------------------------===//
+// Prefetch analysis API
+//
+
+void PrefetchAnalysis::analyzeStmt() {
+  if(!Ctx || !S) return;
+
+  Loops = std::make_shared<LoopNestTraversal>(Ctx);
+  ArrAccesses = std::make_shared<ArrayAccessPattern>(Ignore);
+
+  // TODO other types of statements
+  if(isa<ForStmt>(S)) analyzeForStmt();
+
+  pruneArrayAccesses();
+}
+
+void PrefetchAnalysis::calculatePrefetchRanges() {
   PrefetchDataflow Dataflow(Ctx);
   IVMap AllIVs;
   IVMap::const_iterator IVIt;
@@ -801,15 +845,7 @@ void PrefetchAnalysis::analyzeForStmt() {
   PrefetchExprBuilder::BuildInfo LowerBuild(Ctx, LowerBounds, true),
                                  UpperBuild(Ctx, UpperBounds, true);
 
-  // Gather loop nest information, including induction variables
-  Loops.InitTraversal();
-  Loops.TraverseStmt(S);
-  Loops.PruneInductionVars();
-
-  // Find array/pointer accesses.
-  ArrAccesses.InitTraversal();
-  ArrAccesses.TraverseStmt(S);
-  ArrAccesses.PruneInvalidOrIgnoredAccesses();
+  if(!Ctx || !S || !Loops || !ArrAccesses) return;
 
   // TODO the following could probably be optimized to reduce re-computing
   // induction variable sets.
@@ -817,9 +853,9 @@ void PrefetchAnalysis::analyzeForStmt() {
   // Run the dataflow analysis.  Collect all non-induction variables used to
   // construct array indices to see if induction variables are used in any
   // assignment expressions.
-  for(auto &Access : ArrAccesses.getArrayAccesses()) {
+  for(auto &Access : ArrAccesses->getArrayAccesses()) {
     AllIVs.clear();
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
+    ForLoopInfoPtr Scope = Loops->getEnclosingLoop(Access);
     getAllInductionVars(Scope, AllIVs);
     for(auto &Var : Access.getVarsInIdx()) {
       if(!AllIVs.count(Var)) VarsToTrack.insert(Var);
@@ -831,7 +867,7 @@ void PrefetchAnalysis::analyzeForStmt() {
   // Reconstruct array subscript expressions with induction variable references
   // replaced by their bounds.  This includes variables defined using
   // expressions containing induction variables.
-  for(auto &Access : ArrAccesses.getArrayAccesses()) {
+  for(auto &Access : ArrAccesses->getArrayAccesses()) {
     LowerBuild.reset();
     UpperBuild.reset();
     AllIVs.clear();
@@ -850,7 +886,7 @@ void PrefetchAnalysis::analyzeForStmt() {
     // In this example, 'i' is not directly used in addressing but the dataflow
     // analysis determines that 'j' is defined based on 'i', and hence we need
     // to replace 'j' with induction variable bounds expressions.
-    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
+    ForLoopInfoPtr Scope = Loops->getEnclosingLoop(Access);
     getAllInductionVars(Scope, AllIVs);
     for(auto &Pair : AllIVs) {
       const InductionVariablePtr &IV = Pair.second;
@@ -883,20 +919,9 @@ void PrefetchAnalysis::analyzeForStmt() {
       ToPrefetch.emplace_back(Access.getAccessType(), Access.getBase(),
                               LowerBound, UpperBound);
   }
-}
 
-//===----------------------------------------------------------------------===//
-// Prefetch analysis API
-//
-
-void PrefetchAnalysis::analyzeStmt() {
-  if(!Ctx || !S) return;
-
-  // TODO other types of statements
-  if(isa<ForStmt>(S)) analyzeForStmt();
-
-  mergeArrayAccesses();
-  pruneArrayAccesses();
+  mergePrefetchRanges();
+  prunePrefetchRanges();
 }
 
 void PrefetchAnalysis::print(llvm::raw_ostream &O) const {

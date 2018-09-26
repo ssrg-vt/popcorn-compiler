@@ -25,6 +25,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 
+class LoopNestTraversal;
+class ArrayAccessPattern;
+
 namespace clang {
 
 class ASTContext;
@@ -84,8 +87,11 @@ public:
   void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
   { this->Ignore = Ignore; }
 
-  /// Analyze the statement.
+  /// Analyze the statement to capture loop information & array accesses.
   void analyzeStmt();
+
+  /// Construct prefetch ranges from array accesses & induction variables.
+  void calculatePrefetchRanges();
 
   /// Get prefetch ranges discovered by analysis.
   const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
@@ -110,6 +116,10 @@ private:
   ASTContext *Ctx;
   Stmt *S;
 
+  /// Analysis information.
+  std::shared_ptr<LoopNestTraversal> Loops;
+  std::shared_ptr<ArrayAccessPattern> ArrAccesses;
+
   /// Variables (i.e., arrays) to ignore during analysis
   llvm::SmallPtrSet<VarDecl *, 4> Ignore;
 
@@ -119,11 +129,14 @@ private:
   /// Analyze individual types of statements.
   void analyzeForStmt();
 
-  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
-  void mergeArrayAccesses();
+  /// Merge overlapping or contiguous prefetch ranges.
+  void mergePrefetchRanges();
 
-  /// Remove trivial or redundant array accesses.
+  /// Remove trivial or redundant array accesses.  This is split into two as
+  /// some array accesses may only become redundant after expansion into a
+  /// prefetch range.
   void pruneArrayAccesses();
+  void prunePrefetchRanges();
 };
 
 } // end namespace clang
