@@ -8,7 +8,7 @@ import signal
 import shutil
 import xmlrpclib
 
-DEBUG= False#True
+DEBUG=True
 
 ### Path Configurations
 SCHEDULER_FOLDER=os.getcwd()
@@ -22,6 +22,7 @@ def get_env(var, default):
         return os.environ[var]
     except:
         return default
+
 
 ### Where to run the experiments
 EXPERIMENTS_DIR=get_env("HERMIT_EXPERIMENTS_DIR", "/tmp/hermit-scheduler/")
@@ -68,6 +69,9 @@ class RApp:
         self._start_hw_counter()
         self._start_memory_usage()
         self._start_sched_status()
+        self.start_time=time.time()
+        self.migrate_time=-1;
+        self.migration_score=sys.maxint
     def _update_proc(self,proc):
         self.proc=proc
         self.pid=proc.pid
@@ -75,9 +79,10 @@ class RApp:
         path = os.path.join(self.dst_dir, self.HW_COUNTER_FILE)
         self.hw_counter_file_path = path
         f = open(path, "w")
-        HW_COUNTER_PERIOD=1000 #in ms
+        HW_COUNTER_PERIOD=2000 #in ms
         log("starting perf on", self.dst_dir, self.pid)
-        self.monitor=subprocess.Popen(["perf", "stat", "-x|", "-e cache-references", "-I"+str(HW_COUNTER_PERIOD), "-p", str(self.pid)], stdout=f, stderr=f)
+        self.monitor=subprocess.Popen(["perf", "kvm", "stat", "-x|", "-e cache-references", "-D"+str(HW_COUNTER_PERIOD), 
+						"-I"+str(HW_COUNTER_PERIOD), "-p", str(self.pid)], stdout=f, stderr=f)
     def _stop_hw_counter(self):
         self.monitor.kill()
     def _start_memory_usage(self):
@@ -111,13 +116,21 @@ class RApp:
         except:
             return -1
     def _get_hw_counter_usage(self):
-        print("hwf", self.hw_counter_file_path)
-        line=self._get_last_line(self.hw_counter_file_path)
-        if not line:
+        log("hwf", self.hw_counter_file_path)
+        samples=[]
+        try:
+            fh=open(self.hw_counter_file_path, 'r')
+            lines=fh.readlines()
+            for line in lines:        		
+                smp=self._get_int(line.split('|')[1])
+                if smp>0:
+                    samples.append(smp)
+        except:
+            pass
+        log("perf samples are", samples)
+        if len(samples)<2:
             return -1;
-        log("perf line is", line)
-        elms=line.split('|')
-        return self._get_int(elms[1])
+        return min(samples)
     def _get_memory_usage(self):
         line=self._get_last_line(self.memory_usage_file_path)
         if not line:
@@ -129,7 +142,7 @@ class RApp:
             return -1;
         elms=line.split(':')
         return self._get_int(elms[1])
-    def get_migration_score(self):
+    def _update_migration_score(self):
         "Return a migration positive integer score (less is better) or -1 (cannot (yet) be migrated) "
         processor_usage=self._get_hw_counter_usage()
         memory_usage=self._get_memory_usage()
@@ -137,13 +150,24 @@ class RApp:
         log("memory usage", memory_usage);
         if processor_usage==-1 or memory_usage==-1 or  \
                 memory_usage>BOARD_MEMORY/BOARD_NB_CORES:
-            return -1
-        return processor_usage*memory_usage
-    def stop(self):
+            return sys.maxint
+        return processor_usage+(memory_usage/2**20) #memory usage in MB
+    def get_migration_score(self, update=True):
+	if update:
+		self.migration_score=self._update_migration_score() 
+	return self.migration_score
+    def _stop(self):
         self._stop_hw_counter()
     def migrated(self, proc):
         self._update_proc(proc)
-        self.stop()
+        self._stop()
+	self.migrate_time=time.time()
+    def terminate(self):
+        self._stop()
+	end_time=time.time()
+	log(self.dst_dir, "Total time", end_time - self.start_time)
+	if self.migrate_time != -1:
+		log(self.dst_dir, "Total time", end_time - self.migrate_time)
     def __str__(self):
         attrs = vars(self)
         return ', '.join("%s: %s" % item for item in attrs.items())
@@ -160,7 +184,7 @@ def log_migration(pid):
 def __terminated(pid, lst, tp):
     ddir=lst[pid].dst_dir
     log_action("Terminated ("+tp+")", ddir)
-    lst[pid].stop()
+    lst[pid].terminate()
     del lst[pid]
 def local_terminated(pid):
     global terminated_local
@@ -218,8 +242,9 @@ def __migrate(pid):
 def migrate_sort(kv):
     pid, rapp=kv
     score=rapp.get_migration_score()
-    if score == -1:
-        score=sys.maxint
+    log("Score", pid, score)
+    if(score ==sys.maxint):
+    	raise ValueError('A very specific bad thing happened')
     return score
 
 def migrate(running_app):
@@ -227,12 +252,16 @@ def migrate(running_app):
     if BOARD_NB_CORES <= len(migrated_app):
         return False
     #check-for/get an arm affine application
-    best, bproc=sorted(running_app.items(), key=migrate_sort)[0]
-    log("Best application to migrate is", bproc)
-    if best==sys.maxint:
-        log("Cannot migrate any application", running_app)
+    try:
+    	best, bproc=sorted(running_app.items(), key=migrate_sort)[0]
+   	bscore=bproc.get_migration_score(update=False)
+    except:
+	bscore=sys.maxint
+    if bscore==sys.maxint:
+        log("Cannot (yet) migrate any application", running_app)
         return False
     else:
+    	log("Best application to migrate is", bscore, best, bproc)
         __migrate(best)
         return True
             
@@ -278,7 +307,7 @@ def scheduler_wait():
 
 def run_app(app):
     """ Start an application on the server """
-    global started
+    global started, app_count
 
     if len(running_app) >= SERVER_NB_CORES:
         return False
@@ -310,6 +339,7 @@ def run_app(app):
     log("running applications", running_app)
     log_action("Started", dst_dir)
     started+=1
+    app_count+=1
 
     return True
 
@@ -347,7 +377,7 @@ def set_timer(timer):
 
 ############################# Initializaiton functions #############
 def main():
-    global app_count, start_time
+    global start_time
     set_timer(timer)
     start_time = time.time()
     nb_app=len(app_list)
@@ -357,7 +387,6 @@ def main():
         log("Remaining timer:", timer-(time.time()-start_time))
         log("Trying to place an application at:", time.time())
         run_app(app_list[app_count%nb_app])
-        app_count+=1
 
 
 #Handle assumed files/dirs and check them

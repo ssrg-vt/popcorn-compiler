@@ -16,6 +16,7 @@ function clean()
 	killall perf # TODO:should be cleaned by the scheduler.py
 	rm -fr $HERMIT_EXPERIMENTS_DIR/*
 	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR/*"
+	ssh $HERMIT_BOARD_NAME "killall proxy"
 }
 
 #Run the experiments using scheduler.py script
@@ -40,4 +41,5 @@ function startexperiment()
 
 #example
 #startexperiment 2 2 "ep" 600
-startexperiment 3 3 "ep" 600
+#startexperiment 3 3 "ep" 600
+startexperiment 3 3 "ep cg" 4000

@@ -12,7 +12,7 @@ APP_FOLDER="../apps/het/"
 function prepare_applications()
 {
 	mkdir -p bins
-	npb_app="bt  cg  dc  ep  ft  is  lu  mg  sp  ua"
+	npb_app="bt  cg  dc  ep  is  lu  mg  sp  ua"
 	for d in $npb_app 
 	do
 		dir=$APP_FOLDER/npb-$d
@@ -26,7 +26,7 @@ function prepare_applications()
 		mkdir -p bins/$d
 		cp $dir/prog_*aligned bins/$d/
 	done
-	other_app="blackscholes  dhrystone linpack whetstone livermore"
+	other_app="blackscholes  dhrystone linpack whetstone phoenix-kmeans phoenix-pca"
 	for d in $other_app 
 	do
 		dir=$APP_FOLDER/$d
@@ -40,6 +40,10 @@ function prepare_applications()
 		#copy
 		mkdir -p bins/$d
 		cp $dir/prog_*aligned bins/$d/
+		if [ -f $dir/args.sh ]
+		then
+			cp $dir/args.sh bins/$d/ 
+		fi
 	done
 }
 
