@@ -2,7 +2,7 @@
 
 #Useful functions and env variables
 
-export HERMIT_BOARD_NAMES="potato0" # potato1 potato2"
+export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
 export HERMIT_INSTALL_FOLDER="$HOME/hermit-popcorn/"
 export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
 export PROXY_BIN_ARM="$HERMIT_INSTALL_FOLDER/aarch64-hermit/bin/proxy"
@@ -61,7 +61,7 @@ local_mnt_cmd="if mount | grep "$HERMIT_EXPERIMENTS_DIR" >/dev/null; then sudo m
 function __mount_tmpfs()
 {
 	mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	ssh localhost $mnt_cmd
+	ssh localhost $local_mnt_cmd
 }
 		
 function __install_tools()
@@ -85,7 +85,7 @@ function __copy_proxy()
 function __mount_tmpfs_remote()
 {
 	ssh libre@$board mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	ssh -t libre@$board "$mnt_cmd"
+	ssh -t libre@$board "$remote_mnt_cmd"
 }
 
 function prepare_board()
