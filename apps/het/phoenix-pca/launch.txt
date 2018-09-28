@@ -1,1 +1,1 @@
-ARGS="-c 2000 -r 2000" make test-x86
+ARGS="-c 4000 -r 4000" make test-x86

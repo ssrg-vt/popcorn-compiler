@@ -2,7 +2,7 @@
 
 #Useful functions and env variables
 
-export HERMIT_BOARD_NAME="potato0"
+export HERMIT_BOARD_NAMES="potato0" # potato1 potato2"
 export HERMIT_INSTALL_FOLDER="$HOME/hermit-popcorn/"
 export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
 export PROXY_BIN_ARM="$HERMIT_INSTALL_FOLDER/aarch64-hermit/bin/proxy"
@@ -10,6 +10,7 @@ export PROXY_BIN_ARM="$HERMIT_INSTALL_FOLDER/aarch64-hermit/bin/proxy"
 APP_FOLDER="../apps/het/"
 
 function prepare_applications()
+#startexperiment 2 2 "ep" 600
 {
 	mkdir -p bins
 	npb_app="bt  cg  dc  ep  is  lu  mg  sp  ua"
@@ -19,7 +20,8 @@ function prepare_applications()
 		#compile
 		cd $dir
 		ln -fs npbparams-B.h npbparams.h
-		make >compile.out 2>compile.err
+		make $clean  >compile.out 2>compile.err
+		make   >compile.out 2>compile.err
 		cd -
 
 		#copy
@@ -34,6 +36,7 @@ function prepare_applications()
 		#compile
 		cd $dir
 		ln -fs npbparams-B.h npbparams.h
+		make $clean  >compile.out 2>compile.err
 		make >compile.out 2>compile.err
 		cd -
 
@@ -48,20 +51,49 @@ function prepare_applications()
 }
 
 
-function copy_proxy()
-{
-    rsync --no-whole-file $PROXY_BIN_ARM $HERMIT_BOARD_NAME:~/
-}
 
-function mount_tmpfs()
+tmpfs_size="2G"
+remote_mnt_cmd="if mount | grep "$HERMIT_EXPERIMENTS_DIR" >/dev/null; then sudo mount -o size=$remote_tmpfs_size,noatime -t tmpfs tmpfs /tmp/hermit-scheduler; fi"
+
+tmpfs_size="32G"
+local_mnt_cmd="if mount | grep "$HERMIT_EXPERIMENTS_DIR" >/dev/null; then sudo mount -o size=$tmpfs_size,noatime -t tmpfs tmpfs /tmp/hermit-scheduler; fi"
+
+function __mount_tmpfs()
 {
 	mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	sudo mount -t tmpfs tmpfs /tmp/hermit-scheduler
-	ssh $HERMIT_BOARD_NAME mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	ssh $HERMIT_BOARD_NAME "sudo mount -t tmpfs tmpfs /tmp/hermit-scheduler" #FIXME: sudo pasword
+	ssh localhost $mnt_cmd
 }
 		
-function install_tools()
+function __install_tools()
 {
 	sudo apt install linux-tools-$(uname -r)
+}
+
+function prepare_server()
+{
+	__install_tools
+	__mount_tmpfs
+	clean="" 
+	prepare_applications
+}
+
+function __copy_proxy()
+{
+    rsync --no-whole-file $PROXY_BIN_ARM $board:~/
+}
+
+function __mount_tmpfs_remote()
+{
+	ssh libre@$board mkdir -p $HERMIT_EXPERIMENTS_DIR	
+	ssh -t libre@$board "$mnt_cmd"
+}
+
+function prepare_board()
+{
+	for board in $HERMIT_BOARD_NAMES
+	do
+		echo $board
+		__copy_proxy
+		__mount_tmpfs_remote
+	done
 }

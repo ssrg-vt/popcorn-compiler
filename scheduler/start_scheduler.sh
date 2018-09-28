@@ -1,7 +1,11 @@
 #!/bin/bash
 
 #System Configuration(s)
-export HERMIT_BOARD_NAME=potato0
+#export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
+export HERMIT_BOARD_NAMES="potato0"
+#export HERMIT_BOARD_NAMES=""
+export HERMIT_NB_BOARD=1
+export HERMIT_ON_DEMANDE_MIGRATION=0
 
 #Experiments configuration
 export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
@@ -15,8 +19,12 @@ function clean()
 {
 	killall perf # TODO:should be cleaned by the scheduler.py
 	rm -fr $HERMIT_EXPERIMENTS_DIR/*
-	ssh $HERMIT_BOARD_NAME "rm -fr $HERMIT_EXPERIMENTS_DIR/*"
-	ssh $HERMIT_BOARD_NAME "killall proxy"
+	for board in $HERMIT_BOARD_NAMES
+	do
+		echo $board
+		ssh $board "rm -fr $HERMIT_EXPERIMENTS_DIR/*"
+		ssh $board "killall proxy"
+	done
 }
 
 #Run the experiments using scheduler.py script
@@ -40,6 +48,6 @@ function startexperiment()
 
 
 #example
-#startexperiment 2 2 "ep" 600
 #startexperiment 3 3 "ep" 600
-startexperiment 3 3 "ep cg" 4000
+startexperiment 3 3 "cg" 4000
+#startexperiment 3 3 "ep cg" 4000
