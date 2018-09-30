@@ -53,20 +53,26 @@ function startexperiment()
 	python -u ./scheduler.py "$3" $4 >> $RDIR/report.$timestamp.txt 2>$RDIR/err.$timestamp.txt
 }
 
-export HERMIT_BOARD_NAMES=""
-#startexperiment 3 3 "$mix" 4600
-#startexperiment 3 3 "ep" 3600
-#startexperiment 3 3 "cg" 4400
+export HERMIT_ON_DEMANDE_MIGRATION=0
+export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
 startexperiment 3 3 "ep cg" 4500
 
+export HERMIT_BOARD_NAMES=""
+#startexperiment 3 3 "$mix" 4600
+#startexperiment 3 3 "ep" 600
+#startexperiment 3 3 "cg" 4400
+#startexperiment 3 3 "ep cg" 4500
+
+export HERMIT_ON_DEMANDE_MIGRATION=1
+
 export HERMIT_BOARD_NAMES="potato0"
-#startexperiment 3 3 "ep" 3600
+startexperiment 3 3 "ep" 600
 #startexperiment 3 3 "cg" 4400
 #startexperiment 3 3 "ep cg" 4300
 startexperiment 3 3 "ep cg" 4500
 
 export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
-#startexperiment 3 3 "ep" 900
+startexperiment 3 3 "ep" 600
 #startexperiment 3 3 "cg" 4500
 startexperiment 3 3 "ep cg" 4500
 #startexperiment 3 3 "ep cg" 4000
@@ -78,7 +84,7 @@ export HERMIT_BOARD_NAMES=""
 #startexperiment 3 3 "$mix" 7200
 
 export HERMIT_BOARD_NAMES="potato0"
-#startexperiment 3 3 "$mix" 7200
+startexperiment 3 3 "$mix" 7200
 
 export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
-#startexperiment 3 3 "$mix" 7200
+startexperiment 3 3 "$mix" 7200

@@ -63,6 +63,16 @@ def log(*args):
     if DEBUG:
         print(time.time(), ":", args)
 
+def verbose_wait_pid(pid, status=0):
+    rpid, status = os.waitpid(pid, status)
+    log(rpid, "checkpointing done with status",
+            status, "return pid", rpid)
+    log(rpid, "WIFEXITED", os.WIFEXITED(status),
+        "exit code", os.WEXITSTATUS(status))
+    log(rpid, "WIFSIGNALED", os.WIFSIGNALED(status))
+    log(rpid, "WIFSTOPPED", os.WIFSTOPPED(status))
+
+    return rpid, status
 
 
 class Machine:
@@ -252,7 +262,30 @@ class RApp:
         if not line:
             return -1
         elms = line.split(':')
-        return self._get_int(elms[1])
+        if len(elms)<2:
+            #last line maybe "---"
+            assert("---" in line)
+            return "STATUS_EXITED"
+        return elms[1].rstrip()
+
+    def wait_checkpointing_end(self):
+        #FIXME: "---" should not be consedired a state. In other
+        #words: take into account the case where the application exited
+        #without checkpointing. We should then return -1.
+        #verbose_wait_pid(self.pid) #old way
+        while True:
+            #wait for the application to exit or becomes a server
+            status=self._get_sched_status()
+            if status == "STATUS_EXITED":
+                assert(self.proc.poll)
+                return 0
+            if status == "STATUS_SERVING_REMOTE_PAGES":
+                assert(ONDEMAND_MIGRATION)
+                return 0
+            else:
+                time.sleep(0.05) #FIXME: better way to wait? select/poll file? 
+
+        
 
     def _update_migration_score(self):
         "Return a migration positive integer score (less is better) or -1 (cannot (yet) be migrated) "
@@ -284,6 +317,7 @@ class RApp:
         log(self.dst_dir, "Total time", end_time - self.start_time)
         if self.migrate_time != -1:
             log(self.dst_dir, "Total time (remote)", end_time - self.migrate_time)
+
 
     def __str__(self):
         attrs = vars(self)
@@ -347,6 +381,7 @@ def get_extra_env_str(resume):
         env_str += k + '=' + v + ' '
     return env_str
 
+    
 
 def __migrate(pid, board):
     proc = running_app[pid]
@@ -361,15 +396,11 @@ def __migrate(pid, board):
 
     # Wait for checkpoituing to finish
     # w/o on-demande: wait for uhyve to finish
-    # FIXME: get info from status FILE!!!!
     log("Waiting for checkpoint")
-    rpid, status = os.waitpid(pid, 0)
-    log(rpid, "checkpointing done with status",
-            status, "return pid", rpid)
-    log(rpid, "WIFEXITED", os.WIFEXITED(status),
-        "exit code", os.WEXITSTATUS(status))
-    log(rpid, "WIFSIGNALED", os.WIFSIGNALED(status))
-    log(rpid, "WIFSTOPPED", os.WIFSTOPPED(status))
+    if proc.wait_checkpointing_end():
+        # The application finished without checkpointing
+        return False
+    
 
     log("RSync...")
     # create cmds log file
