@@ -2,7 +2,6 @@
 
 #System Configuration(s)
 #export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
-export HERMIT_BOARD_NAMES="potato0"
 #export HERMIT_BOARD_NAMES=""
 export HERMIT_NB_BOARD=1
 export HERMIT_ON_DEMANDE_MIGRATION=0
@@ -10,9 +9,17 @@ export HERMIT_ON_DEMANDE_MIGRATION=0
 #Experiments configuration
 export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
 
+mix="ep cg kmeans lu ua"
+
 
 #for logging info 
-mkdir -p reports
+timestamp=$(date +%s)
+RDIR=reports/$timestamp/
+mkdir -p $RDIR
+
+#copy used scripts
+cp $0 $RDIR
+cp scheduler.py $RDIR
 
 #clean old experiments if any
 function clean()
@@ -39,15 +46,39 @@ function startexperiment()
 	timestamp=$(date +%s)
 	export HERMIT_BOARD_NB_CORE=$1
 	export HERMIT_SERVER_NB_CORE=$2
-	echo NB_CORE_BOARD: $HERMIT_BOARD_NB_CORE > reports/report.$timestamp.txt
-	echo NB_CORE_SERVER: $HERMIT_SERVER_NB_CORE >> reports/report.$timestamp.txt
-	echo APPLICATIONS: $3 >> reports/report.$timestamp.txt
-	echo DURATION: $4 >> reports/report.$timestamp.txt
-	python -u ./scheduler.py "$3" $4 >> reports/report.$timestamp.txt 2>reports/err.$timestamp.txt
+	echo NB_CORE_BOARD: $HERMIT_BOARD_NB_CORE > $RDIR/report.$timestamp.txt
+	echo NB_CORE_SERVER: $HERMIT_SERVER_NB_CORE >> $RDIR/report.$timestamp.txt
+	echo APPLICATIONS: $3 >> $RDIR/report.$timestamp.txt
+	echo DURATION: $4 >> $RDIR/report.$timestamp.txt
+	python -u ./scheduler.py "$3" $4 >> $RDIR/report.$timestamp.txt 2>$RDIR/err.$timestamp.txt
 }
 
+export HERMIT_BOARD_NAMES=""
+#startexperiment 3 3 "$mix" 4600
+#startexperiment 3 3 "ep" 3600
+#startexperiment 3 3 "cg" 4400
+startexperiment 3 3 "ep cg" 4500
 
-#example
-#startexperiment 3 3 "ep" 600
-startexperiment 3 3 "cg" 4000
+export HERMIT_BOARD_NAMES="potato0"
+#startexperiment 3 3 "ep" 3600
+#startexperiment 3 3 "cg" 4400
+#startexperiment 3 3 "ep cg" 4300
+startexperiment 3 3 "ep cg" 4500
+
+export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
+#startexperiment 3 3 "ep" 900
+#startexperiment 3 3 "cg" 4500
+startexperiment 3 3 "ep cg" 4500
 #startexperiment 3 3 "ep cg" 4000
+
+
+
+
+export HERMIT_BOARD_NAMES=""
+#startexperiment 3 3 "$mix" 7200
+
+export HERMIT_BOARD_NAMES="potato0"
+#startexperiment 3 3 "$mix" 7200
+
+export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
+#startexperiment 3 3 "$mix" 7200

@@ -377,7 +377,7 @@ def __migrate(pid, board):
 
     # Send files: copy the whole repository
     dst_dir = proc.dst_dir
-    ret=subprocess.call(["rsync", "-r", dst_dir, board.name +
+    ret=subprocess.call(["rsync", "-zr", dst_dir, board.name +
                      ":" + EXPERIMENTS_DIR], stdout=f, stderr=f)
 
     log("rsync done with retcore", ret)
