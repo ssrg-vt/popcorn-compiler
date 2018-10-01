@@ -8,6 +8,18 @@
  * Date: 5/25/2016
  */
 
+/*
+ * NOTE: PLEASE READ ME FIRST!
+ *
+ * If you change the format of any of the structs below you *must* recompile &
+ * reinstall any libraries that require stackmaps including (but not limited
+ * to):
+ *
+ *   libc (musl-libc)
+ *   libmigrate (migration)
+ *   libopenpop
+ */
+
 #ifndef _STACKMAP_H
 #define _STACKMAP_H
 
