@@ -5,6 +5,18 @@
  * Date: 6/6/2016
  */
 
+/*
+ * NOTE: PLEASE READ ME FIRST!
+ *
+ * If you change the format of any of the structs below (or any of the raw
+ * stackmaps emitted by LLVM) you *must* recompile & reinstall any libraries
+ * that require stackmaps including (but not limited to):
+ *
+ *   libc (musl-libc)
+ *   libmigrate (migration)
+ *   libopenpop
+ */
+
 #ifndef _CALL_SITE_H
 #define _CALL_SITE_H
 
