@@ -112,7 +112,7 @@ PORT?=5050
 SERVER?=0
 FULL_CHKPT_SAVE?=0
 FULL_CHKPT_RESTORE?=0
-ARM_TARGET_IP?=potato
+ARM_TARGET_IP?=potato0
 ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
 
 # Transfer method can be 'rsync --no-whole-file' or scp -C

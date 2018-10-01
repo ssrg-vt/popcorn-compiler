@@ -8,6 +8,8 @@ import errno
 import signal
 import shutil
 import xmlrpclib
+import socket
+import idpool
 
 DEBUG = True
 
@@ -31,10 +33,12 @@ EXPERIMENTS_DIR = get_env("HERMIT_EXPERIMENTS_DIR", "/tmp/hermit-scheduler/")
 
 # Machine Configurations
 BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "potato")
-BOARD_MEMORY = int(get_env("HERMIT_BOARD_MEMORY", (2 * (2**30))))  # 2GB
+BOARD_MEMORY = int(get_env("HERMIT_BOARD_MEMORY", (1 * (2**30))))  # 1GB (not 2GB due the double copy...)
 BOARD_NB_CORES = int(get_env("HERMIT_BOARD_NB_CORE", 4))
 SERVER_NB_CORES = int(get_env("HERMIT_SERVER_NB_CORE", 4))
 ONDEMAND_MIGRATION = int(get_env("HERMIT_ON_DEMANDE_MIGRATION", 0))
+SERVER_IP= get_env("HERMIT_SERVER_IP", socket.getfqdn())
+SERVER_PORT_BASE= int(get_env("HERMIT_SERVER_PORT_BASE", 5050))
 
 # Stat variables
 start_time = 0
@@ -57,6 +61,10 @@ boards = None
 # (format: key = pid; value = RApp)
 running_app = dict()
 migrated_app = dict()
+
+
+#Port allocater
+port_allocator = idpool.IDPool(SERVER_PORT_BASE)
 
 
 def log(*args):
@@ -139,8 +147,7 @@ class Boards:
         self.total_available_cores += 1
         brd.available_cores += 1
         brd.free_memory += proc.get_memory_usage(update=False)
-        ret = subprocess.call(
-                    ["ssh", brd.name, "rm -fr " + proc.dst_dir])
+        ret = subprocess.call( ["ssh", brd.name, "rm -fr " + proc.dst_dir])
         log("remove remote directory done with retcore", ret)
 
 
@@ -150,7 +157,7 @@ class RApp:
     MEMORY_USAGE_FILE = ".memory"
     HW_COUNTER_FILE = ".counter"
 
-    def __init__(self, name, rid, dst_dir, proc):
+    def __init__(self, name, rid, dst_dir, proc, port):
         self.name = name
         self.rid = rid
         self.dst_dir = dst_dir
@@ -162,6 +169,7 @@ class RApp:
         self.migrate_time = -1
         self.migration_score = -1
         self.machine=None
+        self.port=port #server_port
 
     def _update_proc(self, proc):
         self.proc = proc
@@ -337,9 +345,11 @@ def log_migration(pid):
 
 
 def __terminated(pid, lst, tp):
-    ddir = lst[pid].dst_dir
+    proc = lst[pid]
+    ddir = proc.dst_dir
     log_action("Terminated (" + tp + ")", ddir)
-    lst[pid].terminate()
+    proc.terminate()
+    port_allocator.release_id(proc.port) #release port
     del lst[pid]
 
 
@@ -356,7 +366,7 @@ def remote_terminated(pid):
     __terminated(pid, migrated_app, "remote")
 
 
-def get_extra_env(resume):
+def get_extra_env(resume, port):
     env = dict()
     env["HERMIT_ISLE"] = "uhyve"
     env["HERMIT_MEM"] = "2G"
@@ -366,6 +376,8 @@ def get_extra_env(resume):
     env["HERMIT_MIGRATE_RESUME"] = str(int(resume))
     env["HERMIT_DEBUG"] = "0"
     env["HERMIT_NODE_ID"] = "0"
+    env["HERMIT_MIGRATE_SERVER"] = SERVER_IP
+    env["HERMIT_MIGRATE_PORT"] = str(port)
     full_checkpoint = str(int(not ONDEMAND_MIGRATION))
     env["HERMIT_FULL_CHKPT_SAVE"] = full_checkpoint
     env["HERMIT_FULL_CHKPT_RESTORE"] = full_checkpoint
@@ -374,8 +386,8 @@ def get_extra_env(resume):
     return env
 
 
-def get_extra_env_str(resume):
-    env = get_extra_env(resume)
+def get_extra_env_str(resume, port):
+    env = get_extra_env(resume, port)
     env_str = ""
     for k, v in env.items():
         env_str += k + '=' + v + ' '
@@ -408,6 +420,7 @@ def __migrate(pid, board):
 
     # Send files: copy the whole repository
     dst_dir = proc.dst_dir
+    port = proc.port
     ret=subprocess.call(["rsync", "-zr", dst_dir, board.name +
                      ":" + EXPERIMENTS_DIR], stdout=f, stderr=f)
 
@@ -416,7 +429,7 @@ def __migrate(pid, board):
     # Run remotly
     ssh_args = ""
     ssh_args += "cd " + dst_dir + "; "
-    ssh_args += get_extra_env_str(True) + " ~/proxy ./prog_aarch64_aligned"
+    ssh_args += get_extra_env_str(True, port) + " ~/proxy ./prog_aarch64_aligned"
     # ssh_args+="echo $!;" #print pid: may be needed if we want to migrate back
     # ssh_args+="wait" #wait for the process to finishes
     new_proc = subprocess.Popen(
@@ -526,9 +539,10 @@ def run_app(app):
     shutil.copytree(src_dir, dst_dir, symlinks=False, ignore=None)
 
     ### Start application
+    port=port_allocator.get_id()
     os.chdir(dst_dir)
     ori_env = os.environ
-    extra_env = get_extra_env(False)
+    extra_env = get_extra_env(False, port)
     args=""
     try:
         args=subprocess.check_output(['sh', 'args.sh']).rstrip()
@@ -541,7 +555,7 @@ def run_app(app):
                             stdout=f,
                             stderr=f)  # TODO:check error
     # Register application
-    running_app[proc.pid] = RApp(app, app_count, dst_dir, proc)
+    running_app[proc.pid] = RApp(app, app_count, dst_dir, proc, port)
     log("running applications", running_app)
     log_action("Started", dst_dir)
     started += 1
@@ -611,7 +625,7 @@ def init():
     #   - check that EXPERIMENTS_DIR exist in all machines (tmpfs)
     log("NB_CORE_BOARD", BOARD_NB_CORES)
     log("NB_CORE_SERVER", SERVER_NB_CORES)
-    log("Default Environ", get_extra_env_str(False))
+    log("Default Environ", get_extra_env_str(False, SERVER_PORT_BASE))
     # Time of the experiment
     timer = int(sys.argv[2])
     # list of applications. example: "ep ep". all application must be in
