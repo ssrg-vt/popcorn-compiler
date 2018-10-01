@@ -21,6 +21,8 @@ typedef struct __attribute__((__packed__)) function_record {
   uint64_t stack_size;
   uint32_t num_unwind;
   uint32_t unwind_offset;
+  uint32_t num_stack_slot;
+  uint32_t stack_slot_offset;
 } function_record;
 
 /* A live register across the stack map call. */

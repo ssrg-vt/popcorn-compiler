@@ -687,7 +687,7 @@ Index: include/clang/Driver/Options.td
  def pedantic_Group        : OptionGroup<"<pedantic group>">,
    Group<CompileOnly_Group>;
  def reserved_lib_Group   : OptionGroup<"<reserved libs group>">;
-@@ -1538,6 +1540,12 @@
+@@ -1538,6 +1540,13 @@
  def pg : Flag<["-"], "pg">, HelpText<"Enable mcount instrumentation">, Flags<[CC1Option]>;
  def pipe : Flag<["-", "--"], "pipe">,
    HelpText<"Use pipes between commands, when possible">;
@@ -697,6 +697,7 @@ Index: include/clang/Driver/Options.td
 +def popcorn_alignment : Flag<["-"], "popcorn-alignment">, HelpText<"Run Popcorn passes to prepare for link-time symbol alignment">, Flags<[CC1Option]>;
 +def popcorn_target : Joined<["-"], "popcorn-target=">, HelpText<"Targets for which to generate object files (requires -popcorn-migratable)">, Group<Popcorn_Target_Group>, Flags<[CC1Option]>, MetaVarName<"<target>">;
 +def distributed_omp : Flag<["-"], "distributed-omp">, HelpText<"Optimize OpenMP code generation for distributed execution on Popcorn Linux">, Flags<[CC1Option]>;
++def secure_popcorn : Flag<["-"], "secure-popcorn">, HelpText<"Emit metadata used for runtime randomization and isolation for Secure Popcorn Linux">, Flags<[CC1Option]>;
  def prebind__all__twolevel__modules : Flag<["-"], "prebind_all_twolevel_modules">;
  def prebind : Flag<["-"], "prebind">;
  def preload : Flag<["-"], "preload">;
@@ -2584,7 +2585,7 @@ Index: lib/Driver/Tools.cpp
 ===================================================================
 --- lib/Driver/Tools.cpp	(revision 320332)
 +++ lib/Driver/Tools.cpp	(working copy)
-@@ -4934,6 +4934,49 @@
+@@ -4934,6 +4934,54 @@
        A->render(Args, CmdArgs);
    }
  
@@ -2630,6 +2631,11 @@ Index: lib/Driver/Tools.cpp
 +
 +  if(Args.hasArg(options::OPT_distributed_omp))
 +    CmdArgs.push_back("-distributed-omp");
++
++  if(Args.hasArg(options::OPT_secure_popcorn)) {
++    CmdArgs.push_back("-mllvm");
++    CmdArgs.push_back("-act-metadata");
++  }
 +
    // With -save-temps, we want to save the unoptimized bitcode output from the
    // CompileJobAction, so disable optimizations if they are not already

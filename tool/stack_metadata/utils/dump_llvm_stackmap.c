@@ -205,11 +205,14 @@ static inline bool dump_stackmaps(stack_map_section *sm, size_t num_sm)
 
     for(j = 0; j < sm[i].num_functions; j++)
       printf("  Function %u: address=%lx, stack size=%lu, number of unwinding "
-        "entries: %u, offset into unwinding section: %u\n",
+        "entries: %u, offset into unwinding section: %u, number of stack "
+        "slots: %u, offset into stack slot section: %u\n",
         j, sm[i].function_records[j].func_addr,
         sm[i].function_records[j].stack_size,
         sm[i].function_records[j].num_unwind,
-        sm[i].function_records[j].unwind_offset);
+        sm[i].function_records[j].unwind_offset,
+        sm[i].function_records[j].num_stack_slot,
+        sm[i].function_records[j].stack_slot_offset);
 
     for(j = 0; j < sm[i].num_constants; j++)
       printf("  Constant %u: %lu / %ld / %lx\n", j, sm[i].constants[j],
