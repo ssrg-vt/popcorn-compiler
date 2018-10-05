@@ -207,11 +207,11 @@ uint64_t add_section_name(Elf *e, const char *name)
 }
 
 #define IN_RANGE( idx, _addr ) \
-  (addrs[idx].addr <= _addr && _addr < addrs[idx + 1].addr)
+  (records[idx].addr <= _addr && _addr < records[idx + 1].addr)
 
-const unwind_addr *get_func_unwind_data(uint64_t addr,
-                                        size_t num,
-                                        const unwind_addr *addrs)
+const function_record *get_func_metadata(uint64_t addr,
+                                         size_t num,
+                                         const function_record *records)
 {
   long min = 0;
   long max = num - 1;
@@ -224,13 +224,13 @@ const unwind_addr *get_func_unwind_data(uint64_t addr,
     // Corner case: mid == last record, this is always a stopping condition
     if(mid == num - 1)
     {
-      if(addrs[mid].addr <= addr)
-        return &addrs[mid];
+      if(records[mid].addr <= addr)
+        return &records[mid];
       else break;
     }
 
-    if(IN_RANGE(mid, addr)) return &addrs[mid];
-    else if(addr > addrs[mid].addr) min = mid + 1;
+    if(IN_RANGE(mid, addr)) return &records[mid];
+    else if(addr > records[mid].addr) min = mid + 1;
     else max = mid - 1;
   }
 

@@ -15,64 +15,71 @@
  *   libc (musl-libc)
  *   libmigrate (migration)
  *   libopenpop
+ *
+ * NOTE 2: the metadata sections emitted by LLVM are set up to be 4-byte
+ * aligned.  Make sure the sizes of following metadata structures are a
+ * multiple of 4:
+ *
+ *   function_record
+ *   stack_slot
+ *   unwind_loc
  */
 
-#ifndef _CALL_SITE_H
-#define _CALL_SITE_H
+#ifndef _REWRITE_METADATA_H
+#define _REWRITE_METADATA_H
 
 #include <stdint.h>
 
+#define POPCORN_PACKED __attribute__((__packed__))
+
+/* Reference to another section */
+typedef struct POPCORN_PACKED section_ref {
+  uint16_t num; /* Number of contiguous entries */
+  uint64_t offset; /* Offset into section */
+} section_ref;
+
 /*
- * Function address & starting offset in unwind information section.  Used for
- * finding unwinding information for PCs which do not directly correspond to a
- * call site.
+ * Function address, code size, on-stack size and references to function
+ * activation metadata contained in other sections.
  */
-typedef struct __attribute__((__packed__)) unwind_addr {
+typedef struct POPCORN_PACKED function_record {
   uint64_t addr; /* function address */
-  uint32_t num_unwind;
-  uint32_t unwind_offset; /* offset into unwind info section */
-} unwind_addr;
+  uint32_t code_size; /* size of function's code */
+  uint32_t frame_size; /* size of the stack frame */
+  section_ref unwind; /* reference to unwinding entries */
+  section_ref stack_slot; /* reference to stack slots */
+} function_record;
+
+/* A stack slot's location, size and alignment. */
+typedef struct POPCORN_PACKED stack_slot {
+  uint16_t base_reg; /* base register from which to offset */
+  int16_t offset; /* offset from base register */
+  uint32_t size;
+  uint32_t alignment;
+} stack_slot;
 
 /* Stack location for callee-saved register. Encodes offset from FBP. */
-// Note: these records are referenced both by unwind_addr and call_site
-// structures
-typedef struct __attribute__((__packed__)) unwind_loc {
+typedef struct POPCORN_PACKED unwind_loc {
   uint16_t reg; /* which register is saved onto the stack */
   int16_t offset; /* offset from FBP where register contents were spilled */
 } unwind_loc;
 
-// TODO currently we encode some function-specific information into the call
-// site record (e.g., fbp_offset).  This information is duplicated when there
-// are multiple stack maps in a given function.  Should we offload fbp_offset,
-// num_unwind & unwind_offset into a separate section and store an index into
-// that section here?  It may adversely affect cache behavior in terms of
-// pointer chasing but will reduce the size of these records.
-
 #define EMPTY_CALL_SITE \
   ((call_site){ \
     .id = 0, \
+    .func = 0, \
     .addr = 0, \
-    .frame_size = 0, \
-    .num_unwind = 0, \
-    .unwind_offset = 0, \
-    .num_live = 0, \
-    .live_offset = 0, \
-    .num_arch_live = 0, \
-    .arch_live_offset = 0, \
-    .padding = UINT16_MAX \
+    .live_vals = {0, 0} \
+    .arch_live_vals = {0, 0} \
   })
 
-typedef struct __attribute__((__packed__)) call_site {
+/* Transformation metadata for a particular call site. */
+typedef struct POPCORN_PACKED call_site {
   uint64_t id; /* call site ID -- maps sites across binaries */
+  uint32_t func; /* index of function record */
   uint64_t addr; /* call site return address */
-  uint32_t frame_size; /* size of the stack frame */
-  uint16_t num_unwind; /* number of registers saved by the function */
-  uint64_t unwind_offset; /* beginning of unwinding info records in unwind info section */
-  uint16_t num_live; /* number of live values at site */
-  uint64_t live_offset; /* beginning of live value location records in live value section */
-  uint16_t num_arch_live; /* number of arch-specific live values at site */
-  uint64_t arch_live_offset; /* beginning of arch-specific live value records in section */
-  uint16_t padding; /* Make 4-byte aligned */
+  section_ref live; /* reference to live values */
+  section_ref arch_live; /* reference to arch-specific live values */
 } call_site;
 
 /* Type of location where live value lives. */
@@ -88,7 +95,7 @@ enum location_type {
 // Note: the compiler lays out the bit fields from least-significant to
 // most-significant, meaning they *must* be in the following order to adhere to
 // the on-disk layout
-typedef struct __attribute__((__packed__)) live_value {
+typedef struct POPCORN_PACKED live_value {
   uint8_t is_temporary : 1;
   uint8_t is_duplicate : 1;
   uint8_t is_alloca : 1;
@@ -113,7 +120,7 @@ VALUE_GEN_INST
  * Similar to a call_site_value, but also contains instructions for populating
  * the location.
  */
-typedef struct __attribute__((__packed__)) arch_live_value {
+typedef struct POPCORN_PACKED arch_live_value {
   /* Location */
   uint8_t is_ptr : 1;
   uint8_t bit_pad : 3;
@@ -131,5 +138,5 @@ typedef struct __attribute__((__packed__)) arch_live_value {
   int64_t operand_offset_or_constant;
 } arch_live_value;
 
-#endif /* _CALL_SITE_H */
+#endif /* _REWRITE_METADATA_H */
 

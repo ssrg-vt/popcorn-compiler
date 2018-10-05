@@ -11,11 +11,14 @@
 /* Section name prefix for all call site metadata. */
 #define SECTION_PREFIX ".stack_transform"
 
+/* Section name postfix for function metadata information. */
+#define SECTION_FUNCTIONS "functions"
+
+/* Section name postfix for stack slot metadata. */
+#define SECTION_STACK_SLOTS "stack_slots"
+
 /* Section name postfix for unwinding information. */
 #define SECTION_UNWIND "unwind"
-
-/* Section name postfix for unwinding address range information. */
-#define SECTION_UNWIND_ADDR "unwind_arange"
 
 /*
  * Section name postfix for call site sections -- sorted by ID & address,

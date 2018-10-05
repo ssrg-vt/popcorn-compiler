@@ -994,7 +994,7 @@ Index: include/llvm/CodeGen/ActivationMetadata.h
 ===================================================================
 --- include/llvm/CodeGen/ActivationMetadata.h	(nonexistent)
 +++ include/llvm/CodeGen/ActivationMetadata.h	(working copy)
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,152 @@
 +//===--------- ActivationMetadata.h - ActivationMetadata --------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1014,27 +1014,22 @@ Index: include/llvm/CodeGen/ActivationMetadata.h
 +
 +#include "llvm/CodeGen/AsmPrinter.h"
 +#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/MC/MCContext.h"
 +#include "llvm/MC/MCStreamer.h"
 +#include "llvm/Support/Debug.h"
 +#include <map>
 +
 +namespace llvm {
 +
++class MachineFrameInfo;
++class TargetFrameLowering;
++class TargetRegisterInfo;
++class MCSymbol;
++class MCExpr;
++
 +class ActivationMetadata {
 +public:
-+  struct FuncActivationMetadata {
-+    // TODO other types of metadata, e.g., register liveness information?
-+    uint32_t StackSlotOffset; // Offset into stack slot section
-+    uint32_t NumStackSlot; // Number of stack slots
-+
-+    FuncActivationMetadata() : StackSlotOffset(UINT32_MAX), NumStackSlot(0) {}
-+    FuncActivationMetadata(uint32_t StackSlotOffset, uint32_t NumStackSlot)
-+      : StackSlotOffset(StackSlotOffset), NumStackSlot(NumStackSlot) {}
-+  };
-+
-+  typedef std::pair<const MCSymbol *, FuncActivationMetadata> FuncActivationPair;
-+  typedef std::map<const MCSymbol *, FuncActivationMetadata> FuncActivationMap;
-+
++  /// Stack slots
 +  struct StackSlot {
 +    int64_t Offset; // Offset from frame register
 +    unsigned BaseReg; // Frame register used for offset (DWARF encoding)
@@ -1046,37 +1041,105 @@ Index: include/llvm/CodeGen/ActivationMetadata.h
 +  typedef std::pair<const MCSymbol *, StackSlots> FuncStackSlotPair;
 +  typedef std::map<const MCSymbol *, StackSlots> FuncStackSlotMap;
 +
++  /// Callee-saved registers
++  struct CalleeSavedReg {
++    uint32_t DwarfReg; // Register saved on the stack
++    int32_t Offset; // Offset at which register was saved
++    CalleeSavedReg() : DwarfReg(UINT32_MAX), Offset(INT32_MAX) {}
++    CalleeSavedReg(uint32_t DwarfReg, int32_t Offset)
++      : DwarfReg(DwarfReg), Offset(Offset) {}
++  };
++
++  typedef SmallVector<CalleeSavedReg, 16> CalleeSavedRegs;
++  typedef std::pair<const MCSymbol *, CalleeSavedRegs> FuncCalleePair;
++  typedef std::map<const MCSymbol *, CalleeSavedRegs> FuncCalleeMap;
++
++  /// Information for referencing a block of contiguous entries contained in
++  /// another section.
++  struct ExternalEntriesInfo {
++    uint32_t SecOffset; // Offset into the external section
++    uint32_t NumEntries; // Number of entries
++    ExternalEntriesInfo() : SecOffset(UINT32_MAX), NumEntries(0) {}
++    ExternalEntriesInfo(uint32_t SecOffset, uint32_t NumEntries)
++      : SecOffset(SecOffset), NumEntries(NumEntries) {}
++  };
++
++  /// References to other sections for all emitted metadata.
++  struct FunctionMetadata {
++    const MCExpr *FuncSize;
++    uint64_t StackSize;
++    ExternalEntriesInfo StackSlotInfo;
++    ExternalEntriesInfo CalleeSavedInfo;
++    FunctionMetadata() : StackSize(UINT64_MAX) {}
++  };
++
++  typedef std::pair<const MCSymbol *, FunctionMetadata> FuncMetaPair;
++  typedef std::map<const MCSymbol *, FunctionMetadata> FuncMetaMap;
++
 +  ActivationMetadata() = delete;
 +  ActivationMetadata(AsmPrinter &AP)
 +    : AP(AP), OutContext(AP.OutStreamer->getContext()), Emitted(false) {};
 +
 +  void reset() {
-+    Emitted = false;
-+    StackSlotInfo.clear();
++    FuncStackSlotInfo.clear();
++    FuncCalleeSavedInfo.clear();
 +    FuncMetadata.clear();
++    Emitted = false;
 +  }
 +
-+  /// Record stack slot locations, sizes and alignments.
++  /// Return whether or not we should record metadata for the given function.
++  static bool needToRecordMetadata(const MachineFunction &MF);
++
++  /// Record all activation metadata.
 +  void recordActivationMetadata(const MachineFunction &MF);
++
++  /// Add a register restore offset for a function.  MachineReg will get
++  /// converted to a DWARF register internally.
++  void addRegisterUnwindInfo(const MachineFunction &MF,
++                             uint32_t MachineReg,
++                             int32_t Offset);
++
++  /// Add an expression that calculates a function's size to the metadata.
++  void addFunctionSize(const MachineFunction &MF, const MCExpr *FuncSize);
 +
 +  /// Emit activation metadata.
 +  void serializeToActivationMetadataSection();
 +
 +  /// Get activation metadata for a function
-+  const FuncActivationMetadata &
-+  getActivationMetadata(const MCSymbol *Func) const;
++  const FunctionMetadata &getMetadata(const MCSymbol *Func) const;
++  const ExternalEntriesInfo &getStackSlotInfo(const MCSymbol *Func) const;
++  const ExternalEntriesInfo &getCalleeSavedInfo(const MCSymbol *Func) const;
 +
 +private:
 +  AsmPrinter &AP;
 +  MCContext &OutContext;
-+  FuncStackSlotMap StackSlotInfo;
-+  FuncActivationMap FuncMetadata;
++  FuncStackSlotMap FuncStackSlotInfo;
++  FuncCalleeMap FuncCalleeSavedInfo;
++  FuncMetaMap FuncMetadata;
 +  bool Emitted;
 +
-+  static FuncActivationMetadata EmptyMD;
++  /// Information-providing objects used for generating metadata -- only valid
++  /// inside call to recordActivationMetadata()
++  const MachineFrameInfo *MFI;
++  const TargetFrameLowering *TFL;
++  const TargetRegisterInfo *TRI;
++  const MCSymbol *FuncSym;
 +
-+  /// \brief Emit the unwind info for each function.
++  const static FunctionMetadata EmptyMD;
++  const static ExternalEntriesInfo EmptySSI;
++
++  /// Record each type of metadata
++  void recordCalleeSavedRegs(const MachineFunction &MF);
++  void recordStackSlots(const MachineFunction &MF);
++
++  /// Emit the stack slot info for all functions.
 +  void emitStackSlotInfo(MCStreamer &OS);
++
++  /// Emit the callee-saved register locations for all functions.
++  void emitCalleeSavedLocInfo(MCStreamer &OS);
++
++  /// Emit the top-level function metadata for all functions.
++  void emitFunctionMetadata(MCStreamer &OS);
 +
 +  void print(raw_ostream &OS);
 +  void debug() { print(dbgs()); }
@@ -1129,6 +1192,17 @@ Index: include/llvm/CodeGen/AsmPrinter.h
    //===------------------------------------------------------------------===//
    // Dwarf Emission Helper Routines
    //===------------------------------------------------------------------===//
+@@ -495,6 +511,10 @@
+   virtual void emitInlineAsmEnd(const MCSubtargetInfo &StartInfo,
+                                 const MCSubtargetInfo *EndInfo) const;
+ 
++protected:
++  /// Record function size for any metadata generators.
++  virtual void RecordFunctionSizeExpr(const MCExpr *Size) {}
++
+ private:
+   /// Private state for PrintSpecial()
+   // Assign a unique ID to this machine instruction.
 Index: include/llvm/CodeGen/MachineFunction.h
 ===================================================================
 --- include/llvm/CodeGen/MachineFunction.h	(revision 320332)
@@ -1293,16 +1367,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  #include "llvm/Support/Debug.h"
  #include <map>
  #include <vector>
-@@ -22,6 +24,8 @@
- class AsmPrinter;
- class MCExpr;
- class MCStreamer;
-+class ActivationMetadata;
-+class UnwindInfo;
- 
- /// \brief MI-level patchpoint operands.
- ///
-@@ -142,9 +146,20 @@
+@@ -142,9 +144,20 @@
      unsigned Size;
      unsigned Reg;
      int64_t Offset;
@@ -1326,7 +1391,7 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    struct LiveOutReg {
-@@ -158,10 +173,29 @@
+@@ -158,10 +171,29 @@
          : Reg(Reg), DwarfRegNum(DwarfRegNum), Size(Size) {}
    };
  
@@ -1357,17 +1422,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    StackMaps(AsmPrinter &AP);
  
-@@ -185,7 +219,8 @@
-   /// If there is any stack map data, create a stack map section and serialize
-   /// the map info into it. This clears the stack map data structures
-   /// afterwards.
--  void serializeToStackMapSection();
-+  void serializeToStackMapSection(const UnwindInfo *UI = nullptr,
-+                                  const ActivationMetadata *AM = nullptr);
- 
- private:
-   static const char *WSMP;
-@@ -193,17 +228,23 @@
+@@ -193,17 +225,23 @@
    typedef SmallVector<LiveOutReg, 8> LiveOutVec;
    typedef MapVector<uint64_t, uint64_t> ConstantPool;
    typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
@@ -1396,7 +1451,7 @@ Index: include/llvm/CodeGen/StackMaps.h
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +254,22 @@
+@@ -213,10 +251,22 @@
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
  
@@ -1420,7 +1475,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
-@@ -226,6 +279,15 @@
+@@ -226,6 +276,15 @@
    /// registers that need to be recorded in the stackmap.
    LiveOutVec parseRegisterLiveOutMask(const uint32_t *Mask) const;
  
@@ -1436,17 +1491,6 @@ Index: include/llvm/CodeGen/StackMaps.h
    /// This should be called by the MC lowering code _immediately_ before
    /// lowering the MI to an MCInst. It records where the operands for the
    /// instruction are stored, and outputs a label to record the offset of
-@@ -240,7 +302,9 @@
-   void emitStackmapHeader(MCStreamer &OS);
- 
-   /// \brief Emit the function frame record for each function.
--  void emitFunctionFrameRecords(MCStreamer &OS);
-+  void emitFunctionFrameRecords(MCStreamer &OS,
-+                                const UnwindInfo *UI,
-+                                const ActivationMetadata *AM);
- 
-   /// \brief Emit the constant pool.
-   void emitConstantPoolEntries(MCStreamer &OS);
 Index: include/llvm/CodeGen/StackTransformTypes.def
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.def	(nonexistent)
@@ -2070,123 +2114,6 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +
 +#endif
 +
-Index: include/llvm/CodeGen/UnwindInfo.h
-===================================================================
---- include/llvm/CodeGen/UnwindInfo.h	(nonexistent)
-+++ include/llvm/CodeGen/UnwindInfo.h	(working copy)
-@@ -0,0 +1,112 @@
-+//===----------------- UnwindInfo.h - UnwindInfo ---------------*- C++ -*-===//
-+//
-+//                     The LLVM Compiler Infrastructure
-+//
-+// This file is distributed under the University of Illinois Open Source
-+// License. See LICENSE.TXT for details.
-+//
-+//===----------------------------------------------------------------------===//
-+//
-+// Generate unwinding information for stack transformation runtime.  Note that
-+// this is implemented assuming the function uses a frame base pointer (FBP).
-+// This requirement is guaranteed to be satisfied if the function has a
-+// stackmap, which are the only functions for which we want to generate
-+// unwinding information.
-+//
-+//===---------------------------------------------------------------------===//
-+
-+#ifndef LLVM_CODEGEN_UNWINDINFO_H
-+#define LLVM_CODEGEN_UNWINDINFO_H
-+
-+#include "llvm/CodeGen/AsmPrinter.h"
-+#include "llvm/CodeGen/MachineFrameInfo.h"
-+#include "llvm/CodeGen/MachineFunction.h"
-+#include "llvm/MC/MCContext.h"
-+#include "llvm/MC/MCStreamer.h"
-+#include "llvm/Support/Debug.h"
-+#include <map>
-+
-+namespace llvm {
-+
-+class UnwindInfo {
-+public:
-+  /// Per-function unwinding metadata classes & typedefs
-+  class FuncUnwindInfo {
-+  public:
-+    uint32_t SecOffset; // Offset into unwinding record section
-+    uint32_t NumUnwindRecord; // Number of unwinding records
-+
-+    FuncUnwindInfo() : SecOffset(UINT32_MAX), NumUnwindRecord(0) {}
-+    FuncUnwindInfo(uint32_t SecOffset, uint32_t NumUnwindRecord)
-+      : SecOffset(SecOffset), NumUnwindRecord(NumUnwindRecord) {}
-+  };
-+
-+  typedef std::pair<const MCSymbol *, FuncUnwindInfo> FuncUnwindPair;
-+  typedef std::map<const MCSymbol *, FuncUnwindInfo> FuncUnwindMap;
-+
-+  /// Unwinding record classes & typedefs
-+  class RegOffset {
-+  public:
-+    uint32_t DwarfReg;
-+    int32_t Offset;
-+
-+    RegOffset() : DwarfReg(0), Offset(0) {}
-+    RegOffset(uint32_t DwarfReg, int32_t Offset) :
-+      DwarfReg(DwarfReg), Offset(Offset) {}
-+  };
-+
-+  typedef SmallVector<RegOffset, 32> CalleeSavedRegisters;
-+  typedef std::pair<const MCSymbol *, CalleeSavedRegisters> FuncCalleePair;
-+  typedef std::map<const MCSymbol *, CalleeSavedRegisters> FuncCalleeMap;
-+
-+  /// \brief Constructors
-+  UnwindInfo() = delete;
-+  UnwindInfo(AsmPrinter &AP)
-+    : AP(AP), OutContext(AP.OutStreamer->getContext()), Emitted(false) {};
-+
-+  /// \bried Clear all saved unwinding information
-+  void reset() {
-+    Emitted = false;
-+    FuncCalleeSaved.clear();
-+    FuncUnwindMetadata.clear();
-+  }
-+
-+  /// \brief Store unwinding information for a function
-+  void recordUnwindInfo(const MachineFunction &MF);
-+
-+  /// \brief Add a register restore offset for a function.  MachineReg will get
-+  /// converted to a DWARF register internally.
-+  void addRegisterUnwindInfo(const MachineFunction &MF,
-+                             uint32_t MachineReg,
-+                             int32_t Offset);
-+
-+  /// Create an unwinding information section and serialize the map info into
-+  /// it.
-+  ///
-+  /// Note: unlike StackMaps::serializeToStackMapSection, this function *does
-+  /// not* clear out the data structures.  This is so that the stack map
-+  /// machinery can access per-function unwinding information.
-+  void serializeToUnwindInfoSection();
-+
-+  /// Get unwinding section metadata for a function
-+  const FuncUnwindInfo &getUnwindInfo(const MCSymbol *Func) const;
-+
-+private:
-+  AsmPrinter &AP;
-+  MCContext &OutContext;
-+  FuncCalleeMap FuncCalleeSaved;
-+  FuncUnwindMap FuncUnwindMetadata;
-+  bool Emitted;
-+
-+  /// \brief Emit the unwind info for each function.
-+  void emitUnwindInfo(MCStreamer &OS);
-+
-+  /// \brief Emit the address range info for each function.
-+  void emitAddrRangeInfo(MCStreamer &OS);
-+
-+  void print(raw_ostream &OS);
-+  void debug() { print(dbgs()); }
-+};
-+}
-+
-+#endif
 Index: include/llvm/IR/DiagnosticInfo.h
 ===================================================================
 --- include/llvm/IR/DiagnosticInfo.h	(revision 320332)
@@ -2427,27 +2354,29 @@ Index: include/llvm/MC/MCObjectFileInfo.h
 ===================================================================
 --- include/llvm/MC/MCObjectFileInfo.h	(revision 320332)
 +++ include/llvm/MC/MCObjectFileInfo.h	(working copy)
-@@ -135,6 +135,13 @@
+@@ -135,6 +135,15 @@
    /// Null if this target doesn't support a BSS section. ELF and MachO only.
    MCSection *TLSBSSSection; // Defaults to ".tbss".
  
-+  /// Activation metadata sections.
++  /// Function metadata section to bootstrap all other metadata.
++  MCSection *FuncMetadataSection;
++
++  /// Activation metadata section.
 +  MCSection *ActStackSlotSection;
 +
-+  /// Unwinding address ranges & register location sections.
-+  MCSection *UnwindAddrRangeSection;
++  /// Unwinding register location section.
 +  MCSection *UnwindInfoSection;
 +
    /// StackMap section.
    MCSection *StackMapSection;
  
-@@ -267,6 +274,9 @@
+@@ -267,6 +276,9 @@
    const MCSection *getTLSDataSection() const { return TLSDataSection; }
    MCSection *getTLSBSSSection() const { return TLSBSSSection; }
  
++  MCSection *getFuncMetadataSection() const { return FuncMetadataSection; }
 +  MCSection *getActStackSlotSection() const { return ActStackSlotSection; }
 +  MCSection *getUnwindInfoSection() const { return UnwindInfoSection; }
-+  MCSection *getUnwindAddrRangeSection() const { return UnwindAddrRangeSection; }
    MCSection *getStackMapSection() const { return StackMapSection; }
    MCSection *getFaultMapSection() const { return FaultMapSection; }
  
@@ -5834,7 +5763,7 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 ===================================================================
 --- lib/CodeGen/ActivationMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/ActivationMetadata.cpp	(working copy)
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,408 @@
 +//===----------------------- ActivationMetadata.cpp -----------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5846,10 +5775,8 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +
 +#include "llvm/CodeGen/ActivationMetadata.h"
 +#include "llvm/CodeGen/MachineFrameInfo.h"
-+#include "llvm/MC/MCSectionELF.h"
 +#include "llvm/MC/MCSymbol.h"
 +#include "llvm/MC/MCObjectFileInfo.h"
-+#include "llvm/MC/MCContext.h"
 +#include "llvm/Support/CommandLine.h"
 +#include "llvm/Target/TargetFrameLowering.h"
 +#include "llvm/Target/TargetRegisterInfo.h"
@@ -5861,55 +5788,103 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +
 +static cl::opt<bool> EmitMetadata(
 +  "act-metadata", cl::init(false),
-+  cl::desc("Emit activation metadata for single-ISA transformations"));
++  cl::desc("Emit metadata describing function activation layouts"));
 +
 +static const char *AMDbg = "Activation metadata: ";
 +
-+void ActivationMetadata::recordActivationMetadata(const MachineFunction &MF) {
-+  if(!EmitMetadata) return;
++bool ActivationMetadata::needToRecordMetadata(const MachineFunction &MF) {
++  return EmitMetadata || MF.getFrameInfo()->hasStackMap();
++}
 +
++void ActivationMetadata::recordCalleeSavedRegs(const MachineFunction &MF) {
 +  bool Emit = true;
-+  const MachineFrameInfo *MFI = MF.getFrameInfo();
-+  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
-+  StackSlots SlotInfo;
-+  StackSlot Slot;
++  unsigned FrameReg;
++  CalleeSavedRegs CSRegInfo;
++  CalleeSavedReg CSReg;
 +
-+  DEBUG(dbgs() << "**** " << AMDbg << "Analyzing " << MF.getName() << " ****\n");
++  DEBUG(dbgs() << AMDbg << "recording callee-saved register information\n");
 +
-+  if(MFI->hasVarSizedObjects()) {
-+    DEBUG(dbgs() << AMDbg
-+                 << "frames with variable-sized objects not supported\n");
-+    Emit = false;
-+  }
-+  if(MFI->getStackProtectorIndex() != -1) {
-+    DEBUG(dbgs() << AMDbg << "frames with stack protectors not supported\n");
-+    Emit = false;
-+  }
-+  if(MFI->hasOpaqueSPAdjustment()) {
-+    DEBUG(dbgs() << AMDbg << "frame-adjusting code not supported\n");
++  if(!MFI->isCalleeSavedInfoValid()) {
++    DEBUG(dbgs() << AMDbg << "cannot emit callee-saved register information - "
++                             "callee-saved information isn't valid");
 +    Emit = false;
 +  }
 +
 +  if(Emit) {
-+    // Get this function's stack slots
-+    unsigned FrameReg;
-+    const TargetFrameLowering *TFL = MF.getSubtarget().getFrameLowering();
-+    const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
++    const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
++
++    DEBUG(dbgs() << AMDbg << CSI.size() << " saved register(s)\n");
++
++    // Get DWARF register number and FBP offset for a callee-saved register
++    // using callee saved information
++    CSRegInfo.reserve(CSI.size());
++    for(unsigned i = 0; i < CSI.size(); i++) {
++      CSReg.DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
++      CSReg.Offset =
++        TFL->getFrameIndexReferenceFromFP(MF, CSI[i].getFrameIdx(), FrameReg);
++
++      // TODO need to modify this to not assume FBP -- larger frame sizes may
++      // force backend to *always* return offset using SP
++      DEBUG(dbgs() << AMDbg << "Register " << PrintReg(CSI[i].getReg(), TRI)
++                   << " (DWARF=" << CSReg.DwarfReg << ") at register "
++                   << PrintReg(FrameReg, TRI) << " + " << CSReg.Offset << "\n");
++      assert(FrameReg == TRI->getFrameRegister(MF) &&
++             "Invalid register used as offset for unwinding information");
++
++      CSRegInfo.push_back(std::move(CSReg));
++    }
++  }
++
++  FuncCalleeSavedInfo.emplace(FuncSym, std::move(CSRegInfo));
++}
++
++void ActivationMetadata::recordStackSlots(const MachineFunction &MF) {
++  bool Emit = true;
++  unsigned FrameReg;
++  int LastFI;
++  StackSlots SlotInfo;
++  StackSlot Slot;
++
++  DEBUG(dbgs() << AMDbg << "recording stack slot information\n");
++
++  if(MFI->hasVarSizedObjects()) {
++    DEBUG(dbgs() << AMDbg << "cannot emit stack slot metadata - frames with "
++                             "variable-sized objects not supported\n");
++    Emit = false;
++  }
++  if(MFI->getStackProtectorIndex() != -1) {
++    DEBUG(dbgs() << AMDbg << "cannot emit stack slot metadata - frames with "
++                             "stack protectors not supported\n");
++    Emit = false;
++  }
++  if(MFI->hasOpaqueSPAdjustment()) {
++    DEBUG(dbgs() << AMDbg << "cannot emit stack slot metadata - "
++                             "frame-adjusting code not supported\n");
++    Emit = false;
++  }
++
++  if(Emit) {
++    LastFI = MFI->getObjectIndexEnd();
++
++    DEBUG(dbgs() << AMDbg << LastFI
++                 << " stack slot(s) (not all may be alive)\n");
 +
 +    // Walk through all stack slots we can adjust at runtime (i.e., index >= 0)
 +    // to record their metadata
-+    int LastFI = MFI->getObjectIndexEnd();
 +    SlotInfo.reserve(LastFI);
 +    for(int FI = 0; FI < LastFI; FI++) {
-+      if(MFI->isDeadObjectIndex(FI)) continue;
-+      Slot.Offset = TFL->getFrameIndexReference(MF, FI, FrameReg);
++      if(MFI->isDeadObjectIndex(FI)) {
++        DEBUG(dbgs() << AMDbg << "Skipping slot " << FI << ", is dead\n");
++        continue;
++      }
++      Slot.Offset = TFL->getFrameIndexReferenceFromFP(MF, FI, FrameReg);
 +      Slot.BaseReg = TRI->getDwarfRegNum(FrameReg, false);
 +      Slot.Size = MFI->getObjectSize(FI);
 +      Slot.Alignment = MFI->getObjectAlignment(FI);
 +
 +      DEBUG(
 +        dbgs() << AMDbg << "Slot " << FI << ": "
-+               << Slot.BaseReg << " + " << Slot.Offset
++               << PrintReg(FrameReg, TRI) << " + " << Slot.Offset
 +               << ", size = " << Slot.Size
 +               << ", align = " << Slot.Alignment << "\n";
 +      );
@@ -5918,73 +5893,241 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +    }
 +  }
 +
-+  // Save the information for when we emit the section
-+  assert(FuncSym && "Could not find function symbol");
-+  StackSlotInfo.insert(FuncStackSlotPair(FuncSym, std::move(SlotInfo)));
++  FuncStackSlotInfo.emplace(FuncSym, std::move(SlotInfo));
 +}
 +
++void ActivationMetadata::recordActivationMetadata(const MachineFunction &MF) {
++  MFI = MF.getFrameInfo();
++  if(!needToRecordMetadata(MF)) return;
++
++  DEBUG(dbgs() << "*** " << AMDbg << "Analyzing " << MF.getName() << " ***\n");
++
++  const llvm::TargetSubtargetInfo &SubTarget = MF.getSubtarget();
++  TFL = SubTarget.getFrameLowering();
++  TRI = SubTarget.getRegisterInfo();
++  FuncSym = OutContext.lookupSymbol(MF.getName());
++  assert(TFL && TRI && FuncSym && "Could not get function/target information");
++
++  recordCalleeSavedRegs(MF);
++  recordStackSlots(MF);
++  // TODO add callee-saved slots for architectures that don't include
++  // callee-saved registers in stack slot metadata
++
++  // Record the stack frame size
++  // TODO we don't support dynamically-sized frames
++  bool HasDynamicFrameSize = MF.getFrameInfo()->hasVarSizedObjects() ||
++                             TRI->needsStackRealignment(MF);
++  FuncMetadata[FuncSym].StackSize =
++    HasDynamicFrameSize ? UINT64_MAX : MFI->getStackSize();
++}
++
++void ActivationMetadata::addRegisterUnwindInfo(const MachineFunction &MF,
++                                               uint32_t MachineReg,
++                                               int32_t Offset) {
++  if(!needToRecordMetadata(MF)) return;
++
++  DEBUG(dbgs() << AMDbg << "adding callee-saved register "
++               << PrintReg(MachineReg, TRI) << " at offset " << Offset
++               << " for " << MF.getName() << "\n");
++
++  const MCSymbol *Sym = OutContext.lookupSymbol(MF.getName());
++  assert(Sym && "Could not find symbol for machine function");
++  assert(FuncCalleeSavedInfo.find(Sym) != FuncCalleeSavedInfo.end() &&
++         "Cannot add register restore information -- function not found");
++  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
++  FuncCalleeSavedInfo[Sym].push_back(
++    CalleeSavedReg(TRI->getDwarfRegNum(MachineReg, false), Offset));
++}
++
++void ActivationMetadata::addFunctionSize(const MachineFunction &MF,
++                                         const MCExpr *FuncSize) {
++  if(!needToRecordMetadata(MF)) return;
++
++  assert(FuncSize && "Invalid size expression");
++  const MCSymbol *Sym = OutContext.lookupSymbol(MF.getName());
++  assert(Sym && "Could not find symbol for machine function");
++  FuncMetadata[Sym].FuncSize = FuncSize;
++}
++
++/// Emit the stack slot information.
++///
++/// StackSlotRecords[NumRecords] {
++///   uint16 : DWARF-encoded base register
++///   int16  : Offset from base register
++///   uint32 : Size of stack slot
++///   uint32 : Alignment of stack slot
++/// }
 +void ActivationMetadata::emitStackSlotInfo(MCStreamer &OS) {
 +  unsigned CurIdx = 0;
-+  for(auto SSI : StackSlotInfo) {
-+    const MCSymbol *Func = SSI.first;
++
++  DEBUG(dbgs() << "********** Stack Slot Output **********\n");
++
++  for(auto SSI : FuncStackSlotInfo) {
++    const MCSymbol *Sym = SSI.first;
 +    const StackSlots &Slots = SSI.second;
 +
-+    assert(Func && "Invalid machine function");
-+    DEBUG(dbgs() << "Function " << Func->getName()
++    DEBUG(dbgs() << AMDbg << "Function " << Sym->getName()
 +                 << " (offset = " << CurIdx << ", "
-+                 << Slots.size() << " entries)\n");
++                 << Slots.size() << " entries):\n");
 +
 +    for(auto Slot : Slots) {
 +      assert(INT32_MIN <= Slot.Offset && Slot.Offset <= INT32_MAX &&
 +             "Out-of-range offset");
 +      assert(Slot.BaseReg <= UINT16_MAX && "Out-of-range base register");
-+
-+      DEBUG(dbgs() << "  Stack slot at " << Slot.BaseReg
++      DEBUG(dbgs() << AMDbg << "  Stack slot at register " << Slot.BaseReg
 +                   << " + " << Slot.Offset
 +                   << ", size = " << Slot.Size
 +                   << ", align = " << Slot.Alignment << "\n");
-+      OS.EmitIntValue(Slot.Offset, 4);
-+      OS.EmitIntValue(Slot.BaseReg, 4);
++
++      OS.EmitIntValue(Slot.BaseReg, 2);
++      OS.EmitIntValue(Slot.Offset, 2);
 +      OS.EmitIntValue(Slot.Size, 4);
 +      OS.EmitIntValue(Slot.Alignment, 4);
 +    }
-+    FuncActivationMetadata FAM(CurIdx, Slots.size());
-+    FuncMetadata.insert(FuncActivationPair(Func, std::move(FAM)));
++
++    FunctionMetadata &MD = FuncMetadata[Sym];
++    MD.StackSlotInfo.SecOffset = CurIdx;
++    MD.StackSlotInfo.NumEntries = Slots.size();
 +    CurIdx += Slots.size();
++  }
++}
++
++/// Emit the callee-saved register location information.
++///
++/// CalleeSavedRegisterLoc[NumRecords] {
++///   uint16 : DWARF-encoded callee-saved register
++///   int16  : Offset from base register
++/// }
++void ActivationMetadata::emitCalleeSavedLocInfo(MCStreamer &OS) {
++  unsigned CurIdx = 0;
++
++  DEBUG(dbgs() << "********** Callee Saved Register Output **********\n");
++
++  for(auto CSRI : FuncCalleeSavedInfo) {
++    const MCSymbol *Sym = CSRI.first;
++    const CalleeSavedRegs &CSRegs = CSRI.second;
++
++    if(CSRegs.size() < 2)
++      DEBUG(dbgs() << "WARNING: should have at least 2 registers to restore "
++                      "(return address & saved FBP");
++
++    DEBUG(dbgs() << AMDbg << "Function " << Sym->getName()
++                 << " (offset " << CurIdx << ", "
++                 << CSRegs.size() << " entries):\n");
++
++    for(auto CSReg : CSRegs) {
++      assert(CSReg.DwarfReg < UINT16_MAX &&
++             "Register number too large for resolution");
++      assert(INT16_MIN < CSReg.Offset && CSReg.Offset < INT16_MAX &&
++             "Register save offset too large for resolution");
++
++      DEBUG(dbgs() << AMDbg << "  Register " << CSReg.DwarfReg
++                   << " saved at FBP + " << CSReg.Offset << "\n");
++
++      OS.EmitIntValue(CSReg.DwarfReg, 2);
++      OS.EmitIntValue(CSReg.Offset, 2);
++    }
++
++    FunctionMetadata &MD = FuncMetadata[Sym];
++    MD.CalleeSavedInfo.SecOffset = CurIdx;
++    MD.CalleeSavedInfo.NumEntries = CSRegs.size();
++    CurIdx += CSRegs.size();
++  }
++}
++
++/// Emit the function metadata.
++///
++/// FunctionRecord[NumRecords] {
++///   uint64 : Function address
++///   uint32 : Size of function's code
++///   uint32 : Size of function's stack frame
++///   uint16 : Number of callee-saved register locations
++///   uint64 : Offset in callee-saved register location section
++///   uint16 : Number of stack slot records
++///   uint64 : Offset in stack slot record section
++/// }
++void ActivationMetadata::emitFunctionMetadata(MCStreamer &OS) {
++  DEBUG(dbgs() << "********** Function Metadata Output **********\n");
++
++  for(auto FM : FuncMetadata) {
++    const MCSymbol *Func = FM.first;
++    const FunctionMetadata &Refs = FM.second;
++
++    DEBUG(dbgs() << AMDbg << "Function " << Func->getName()
++                 << ": stack size = " << Refs.StackSize << ", "
++                 << Refs.CalleeSavedInfo.NumEntries
++                 << " callee-saved register(s) (offset="
++                 << Refs.CalleeSavedInfo.SecOffset << "), "
++                 << Refs.StackSlotInfo.NumEntries
++                 << " stack slot(s) (offset="
++                 << Refs.StackSlotInfo.SecOffset << ")\n");
++
++    OS.EmitSymbolValue(Func, 8);
++    OS.EmitValue(Refs.FuncSize, 4);
++    OS.EmitIntValue(Refs.StackSize, 4);
++    OS.EmitIntValue(Refs.CalleeSavedInfo.NumEntries, 2);
++    OS.EmitIntValue(Refs.CalleeSavedInfo.SecOffset, 8);
++    OS.EmitIntValue(Refs.StackSlotInfo.NumEntries, 2);
++    OS.EmitIntValue(Refs.StackSlotInfo.SecOffset, 8);
 +  }
 +}
 +
 +/// Serialize the unwinding information.
 +void ActivationMetadata::serializeToActivationMetadataSection() {
-+  if(!StackSlotInfo.empty()) {
-+    // Emit unwinding record information.
-+    // FIXME: we only support ELF object files for now
++  // FIXME: we only support ELF object files for now
++  MCStreamer &OS = *AP.OutStreamer;
 +
-+    // Switch to the unwind info section
-+    MCStreamer &OS = *AP.OutStreamer;
++  DEBUG(dbgs() << "********** Activation Metadata Info Output **********\n");
++
++  // Emit stack slot records
++  if(!FuncStackSlotInfo.empty()) {
++    // Switch to the correct output section.
 +    MCSection *ActStackSlots =
-+        OutContext.getObjectFileInfo()->getActStackSlotSection();
++      OutContext.getObjectFileInfo()->getActStackSlotSection();
 +    OS.SwitchSection(ActStackSlots);
 +
 +    // Emit a dummy symbol to force section inclusion.
-+    OS.EmitLabel(OutContext.getOrCreateSymbol(Twine("__StackTransform_StackSlotInfo")));
++    OS.EmitLabel(
++      OutContext.getOrCreateSymbol(Twine("__StackTransform_StackSlotInfo")));
 +
 +    // Serialize data.
-+    DEBUG(dbgs() << "********** Activation Metadata Info Output **********\n");
 +    emitStackSlotInfo(OS);
++    OS.AddBlankLine();
++  }
++
++  // Emit callee saved register locations
++  if(!FuncCalleeSavedInfo.empty()) {
++    MCSection *UnwindInfoSection =
++      OutContext.getObjectFileInfo()->getUnwindInfoSection();
++    OS.SwitchSection(UnwindInfoSection);
++    OS.EmitLabel(
++      OutContext.getOrCreateSymbol(Twine("__StackTransform_UnwindInfo")));
++    emitCalleeSavedLocInfo(OS);
++    OS.AddBlankLine();
++  }
++
++  // Emit function metadata to reference the above metadata in other sections
++  if(!FuncMetadata.empty()) {
++    MCSection *FuncMetadataSection =
++      OutContext.getObjectFileInfo()->getFuncMetadataSection();
++    OS.SwitchSection(FuncMetadataSection);
++    OS.EmitLabel(
++      OutContext.getOrCreateSymbol(Twine("__StackTransform_FuncMetadata")));
++    emitFunctionMetadata(OS);
 +    OS.AddBlankLine();
 +  }
 +
 +  Emitted = true;
 +}
 +
-+ActivationMetadata::FuncActivationMetadata ActivationMetadata::EmptyMD;
++const ActivationMetadata::FunctionMetadata ActivationMetadata::EmptyMD;
++const ActivationMetadata::ExternalEntriesInfo ActivationMetadata::EmptySSI;
 +
-+const ActivationMetadata::FuncActivationMetadata &
-+ActivationMetadata::getActivationMetadata(const MCSymbol *Func) const {
++const ActivationMetadata::FunctionMetadata &
++ActivationMetadata::getMetadata(const MCSymbol *Func) const {
 +  assert(Emitted && "Have not yet emitted per-function activation metadata");
 +
-+  FuncActivationMap::const_iterator it = FuncMetadata.find(Func);
++  FuncMetaMap::const_iterator it = FuncMetadata.find(Func);
 +  if(it == FuncMetadata.end()) {
 +    DEBUG(dbgs() << "WARNING: could not find metadata for "
 +                 << Func->getName() << "\n");
@@ -5993,15 +6136,38 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +  else return it->second;
 +}
 +
++const ActivationMetadata::ExternalEntriesInfo &
++ActivationMetadata::getStackSlotInfo(const MCSymbol *Func) const {
++  const FunctionMetadata &MD = getMetadata(Func);
++  if(MD.StackSize == UINT64_MAX) return EmptySSI;
++  else return MD.StackSlotInfo;
++}
++
++const ActivationMetadata::ExternalEntriesInfo &
++ActivationMetadata::getCalleeSavedInfo(const MCSymbol *Func) const {
++  const FunctionMetadata &MD = getMetadata(Func);
++  if(MD.StackSize == UINT64_MAX) return EmptySSI;
++  else return MD.CalleeSavedInfo;
++}
++
 +void ActivationMetadata::print(raw_ostream &OS) {
-+  OS << "Stack slot information\n";
-+  for(auto Slots : StackSlotInfo) {
-+    OS << "Function - " << Slots.first->getName() << "\n";
-+    for(auto Slot : Slots.second) {
-+      OS << "  Stack slot at register " << Slot.BaseReg
-+         << " + " << Slot.Offset
-+         << ", size = " << Slot.Size
-+         << ", alignment = " << Slot.Alignment << "\n";
++  OS << AMDbg << "Stack slot information\n";
++  for(auto const Slots : FuncStackSlotInfo) {
++    OS << AMDbg << "Function - " << Slots.first->getName() << "\n";
++    for(auto const Slot : Slots.second) {
++      OS << AMDbg << "  Stack slot at register " << Slot.BaseReg
++                  << " + " << Slot.Offset
++                  << ", size = " << Slot.Size
++                  << ", alignment = " << Slot.Alignment << "\n";
++    }
++  }
++
++  OS << AMDbg << "Callee-saved register location information\n";
++  for(auto const CSRegs : FuncCalleeSavedInfo) {
++    OS << AMDbg << "Function - " << CSRegs.first->getName() << "\n";
++    for(auto const CSReg : CSRegs.second) {
++      OS << AMDbg << "Register " << CSReg.DwarfReg
++                  << " at offset " << CSReg.Offset << "\n";
 +    }
 +  }
 +}
@@ -6010,7 +6176,19 @@ Index: lib/CodeGen/AsmPrinter/AsmPrinter.cpp
 ===================================================================
 --- lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(revision 320332)
 +++ lib/CodeGen/AsmPrinter/AsmPrinter.cpp	(working copy)
-@@ -1160,6 +1160,41 @@
+@@ -902,8 +902,10 @@
+     const MCExpr *SizeExp = MCBinaryExpr::createSub(
+         MCSymbolRefExpr::create(CurrentFnEnd, OutContext),
+         MCSymbolRefExpr::create(CurrentFnSymForSize, OutContext), OutContext);
+-    if (auto Sym = dyn_cast<MCSymbolELF>(CurrentFnSym))
++    if (auto Sym = dyn_cast<MCSymbolELF>(CurrentFnSym)) {
+       OutStreamer->emitELFSize(Sym, SizeExp);
++      RecordFunctionSizeExpr(SizeExp);
++    }
+   }
+ 
+   for (const HandlerInfo &HI : Handlers) {
+@@ -1160,6 +1162,41 @@
    return CurExceptionSym;
  }
  
@@ -6071,14 +6249,6 @@ Index: lib/CodeGen/CMakeLists.txt
    StatepointExampleGC.cpp
    TailDuplication.cpp
    TargetFrameLoweringImpl.cpp
-@@ -122,6 +125,7 @@
-   TargetSchedule.cpp
-   TwoAddressInstructionPass.cpp
-   UnreachableBlockElim.cpp
-+  UnwindInfo.cpp
-   VirtRegMap.cpp
-   WinEHPrepare.cpp
- 
 Index: lib/CodeGen/CodeGen.cpp
 ===================================================================
 --- lib/CodeGen/CodeGen.cpp	(revision 320332)
@@ -6640,7 +6810,7 @@ Index: lib/CodeGen/StackMaps.cpp
 ===================================================================
 --- lib/CodeGen/StackMaps.cpp	(revision 320332)
 +++ lib/CodeGen/StackMaps.cpp	(working copy)
-@@ -8,17 +8,23 @@
+@@ -8,17 +8,22 @@
  //===----------------------------------------------------------------------===//
  
  #include "llvm/CodeGen/StackMaps.h"
@@ -6649,7 +6819,6 @@ Index: lib/CodeGen/StackMaps.cpp
  #include "llvm/CodeGen/MachineFrameInfo.h"
  #include "llvm/CodeGen/MachineFunction.h"
  #include "llvm/CodeGen/MachineInstr.h"
-+#include "llvm/CodeGen/UnwindInfo.h"
  #include "llvm/IR/DataLayout.h"
 +#include "llvm/IR/DiagnosticInfo.h"
 +#include "llvm/IR/IntrinsicInst.h"
@@ -6664,7 +6833,7 @@ Index: lib/CodeGen/StackMaps.cpp
  #include "llvm/Target/TargetMachine.h"
  #include "llvm/Target/TargetOpcodes.h"
  #include "llvm/Target/TargetRegisterInfo.h"
-@@ -29,6 +35,16 @@
+@@ -29,9 +34,21 @@
  
  #define DEBUG_TYPE "stackmaps"
  
@@ -6678,10 +6847,26 @@ Index: lib/CodeGen/StackMaps.cpp
 +#define ARCH_OP_TYPE(inst, gen, op) \
 +  ((uint8_t)inst) << 4 | ((uint8_t)gen) << 3 | (uint8_t)op
 +
++#define SECURE_POPCORN (1 << 7)
++
  static cl::opt<int> StackMapVersion(
-     "stackmap-version", cl::init(1),
-     cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +100,154 @@
+-    "stackmap-version", cl::init(1),
+-    cl::desc("Specify the stackmap encoding version (default = 1)"));
++    "stackmap-version", cl::init(1 | SECURE_POPCORN),
++    cl::desc("Specify the stackmap encoding version (default = 2)"));
+ 
+ const char *StackMaps::WSMP = "Stack Maps: ";
+ 
+@@ -70,7 +87,7 @@
+ }
+ 
+ StackMaps::StackMaps(AsmPrinter &AP) : AP(AP) {
+-  if (StackMapVersion != 1)
++  if (StackMapVersion != 1 && StackMapVersion != (1 | SECURE_POPCORN))
+     llvm_unreachable("Unsupported stackmap version!");
+ }
+ 
+@@ -84,32 +101,154 @@
    return (unsigned)RegNum;
  }
  
@@ -6843,7 +7028,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +254,26 @@
+@@ -116,17 +255,26 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6873,7 +7058,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +281,18 @@
+@@ -134,17 +282,18 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6900,7 +7085,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +309,7 @@
+@@ -161,6 +310,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6908,7 +7093,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +343,7 @@
+@@ -194,7 +344,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6917,7 +7102,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +352,16 @@
+@@ -203,8 +353,16 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -6936,7 +7121,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +378,87 @@
+@@ -221,6 +379,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -7024,7 +7209,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +515,145 @@
+@@ -277,6 +516,145 @@
    return LiveOuts;
  }
  
@@ -7170,7 +7355,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +662,46 @@
+@@ -285,21 +663,46 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -7219,7 +7404,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +725,21 @@
+@@ -323,12 +726,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -7244,51 +7429,25 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +822,14 @@
- /// StkSizeRecord[NumFunctions] {
- ///   uint64 : Function Address
- ///   uint64 : Stack Size
-+///   uint32 : Number of Unwinding Entries
-+///   uint32 : Offset into Unwinding Section
-+///   uint32 : Number of Stack Slot Info Entries
-+///   uint32 : Offset into Stack Slot Info Section
+@@ -382,7 +794,7 @@
+ /// Emit the stackmap header.
+ ///
+ /// Header {
+-///   uint8  : Stack Map Version (currently 1)
++///   uint8  : Stack Map Version
+ ///   uint8  : Reserved (expected to be 0)
+ ///   uint16 : Reserved (expected to be 0)
  /// }
--void StackMaps::emitFunctionFrameRecords(MCStreamer &OS) {
-+void StackMaps::emitFunctionFrameRecords(MCStreamer &OS,
-+                                         const UnwindInfo *UI,
-+                                         const ActivationMetadata *AM) {
-   // Function Frame records.
+@@ -417,7 +829,7 @@
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +837,27 @@
-                  << " frame size: " << FR.second);
+     DEBUG(dbgs() << WSMP << "function addr: " << FR.first
+-                 << " frame size: " << FR.second);
++                 << " frame size: " << FR.second << "\n");
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
-+
-+    if(UI) {
-+      const UnwindInfo::FuncUnwindInfo &FUI = UI->getUnwindInfo(FR.first);
-+      DEBUG(dbgs() << " unwind info start: " << FUI.SecOffset
-+                   << " (" << FUI.NumUnwindRecord << " entries)");
-+      OS.EmitIntValue(FUI.NumUnwindRecord, 4);
-+      OS.EmitIntValue(FUI.SecOffset, 4);
-+    }
-+    else OS.EmitIntValue(0, 8);
-+
-+    if(AM) {
-+      const ActivationMetadata::FuncActivationMetadata &FSS =
-+        AM->getActivationMetadata(FR.first);
-+      DEBUG(dbgs() << " activation info start: " << FSS.StackSlotOffset
-+                   << " (" << FSS.NumStackSlot << " entries)");
-+      OS.EmitIntValue(FSS.NumStackSlot, 4);
-+      OS.EmitIntValue(FSS.StackSlotOffset, 4);
-+    }
-+    else OS.EmitIntValue(0, 8);
-+
-+    DEBUG(dbgs() << "\n");
    }
- }
- 
-@@ -439,14 +877,20 @@
+@@ -439,14 +851,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -7313,7 +7472,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +899,25 @@
+@@ -455,6 +873,26 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -7330,7 +7489,8 @@ Index: lib/CodeGen/StackMaps.cpp
 +///     }
 +///     Value {
 +///       uint8_t (4 bits) : Instruction
-+///       uint8_t (4 bits) : Register | Direct | Constant
++///       uint8_t (1 bit)  : Is it a generated value?
++///       uint8_t (3 bits) : Register | Direct | Constant
 +///       uint8_t          : Size
 +///       uint16_t         : Dwarf RegNum
 +///       int64_t          : Offset or Constant
@@ -7339,7 +7499,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +933,29 @@
+@@ -470,23 +908,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7370,7 +7530,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +963,14 @@
+@@ -494,10 +938,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -7386,7 +7546,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +982,31 @@
+@@ -509,6 +957,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7418,25 +7578,6 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +1013,8 @@
- }
- 
- /// Serialize the stackmap data.
--void StackMaps::serializeToStackMapSection() {
-+void StackMaps::serializeToStackMapSection(const UnwindInfo *UI,
-+                                           const ActivationMetadata *AM) {
-   (void)WSMP;
-   // Bail out if there's no stack map data.
-   assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +1038,7 @@
-   // Serialize data.
-   DEBUG(dbgs() << "********** Stack Map Output **********\n");
-   emitStackmapHeader(OS);
--  emitFunctionFrameRecords(OS);
-+  emitFunctionFrameRecords(OS, UI, AM);
-   emitConstantPoolEntries(OS);
-   emitCallsiteEntries(OS);
-   OS.AddBlankLine();
 Index: lib/CodeGen/StackSlotColoring.cpp
 ===================================================================
 --- lib/CodeGen/StackSlotColoring.cpp	(revision 320332)
@@ -9156,197 +9297,6 @@ Index: lib/CodeGen/StackTransformTypes.cpp
 +  return Size;
 +}
 +
-Index: lib/CodeGen/UnwindInfo.cpp
-===================================================================
---- lib/CodeGen/UnwindInfo.cpp	(nonexistent)
-+++ lib/CodeGen/UnwindInfo.cpp	(working copy)
-@@ -0,0 +1,186 @@
-+//===--------------------------- UnwindInfo.cpp ---------------------------===//
-+//
-+//                     The LLVM Compiler Infrastructure
-+//
-+// This file is distributed under the University of Illinois Open Source
-+// License. See LICENSE.TXT for details.
-+//
-+//===----------------------------------------------------------------------===//
-+
-+#include "llvm/CodeGen/UnwindInfo.h"
-+#include "llvm/MC/MCSectionELF.h"
-+#include "llvm/MC/MCSymbol.h"
-+#include "llvm/MC/MCObjectFileInfo.h"
-+#include "llvm/Target/TargetFrameLowering.h"
-+#include "llvm/Target/TargetRegisterInfo.h"
-+#include "llvm/Target/TargetSubtargetInfo.h"
-+
-+using namespace llvm;
-+
-+#define DEBUG_TYPE "unwindinfo"
-+
-+static const char *UIDbg = "Unwind Info: ";
-+
-+void UnwindInfo::recordUnwindInfo(const MachineFunction &MF) {
-+  // We *only* need this information for functions which have a stackmap, as
-+  // only those function activations can be unwound during stack
-+  // transformation.  This may also be a correctness criterion since we record
-+  // offsets from the FBP, and not all functions may have one (stackmaps are
-+  // implemented using FBPs, and thus prevent the FP-elimination optimization).
-+  if(!MF.getFrameInfo()->hasStackMap()) return;
-+
-+  DEBUG(dbgs() << "**** UnwindInfo: Analyzing " << MF.getName() << "****\n");
-+
-+  const MachineFrameInfo *MFI = MF.getFrameInfo();
-+  assert(MFI->isCalleeSavedInfoValid() && "No callee-saved information!");
-+
-+  // Get this function's saved registers
-+  unsigned FrameReg;
-+  const TargetFrameLowering *TFL = MF.getSubtarget().getFrameLowering();
-+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
-+  const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
-+
-+  DEBUG(dbgs() << CSI.size() << " saved registers\n");
-+
-+  // Get DWARF register number and FBP offset using callee saved information
-+  CalleeSavedRegisters SavedRegs(CSI.size());
-+  for(unsigned i = 0; i < CSI.size(); i++) {
-+    SavedRegs[i].DwarfReg = TRI->getDwarfRegNum(CSI[i].getReg(), false);
-+    SavedRegs[i].Offset =
-+      TFL->getFrameIndexReferenceFromFP(MF, CSI[i].getFrameIdx(), FrameReg);
-+
-+    DEBUG(dbgs() << "Register " << SavedRegs[i].DwarfReg << " at register "
-+                 << PrintReg(FrameReg, TRI) << " + " << SavedRegs[i].Offset
-+                 << "\n");
-+    assert(FrameReg == TRI->getFrameRegister(MF) &&
-+           "Invalid register used as offset for unwinding information");
-+  }
-+
-+  // Save the information for when we emit the section
-+  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
-+  assert(FuncSym && "Could not find function symbol");
-+  FuncCalleeSaved.insert(FuncCalleePair(FuncSym, std::move(SavedRegs)));
-+}
-+
-+void UnwindInfo::addRegisterUnwindInfo(const MachineFunction &MF,
-+                                       uint32_t MachineReg,
-+                                       int32_t Offset) {
-+  if(!MF.getFrameInfo()->hasStackMap()) return;
-+
-+  const MCSymbol *FuncSym = OutContext.lookupSymbol(MF.getName());
-+  assert(FuncSym && "Could not find function symbol");
-+  assert(FuncCalleeSaved.find(FuncSym) != FuncCalleeSaved.end() &&
-+         "Cannot add register restore information -- function not found");
-+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
-+  FuncCalleeSaved[FuncSym].push_back(
-+    RegOffset(TRI->getDwarfRegNum(MachineReg, false), Offset));
-+}
-+
-+void UnwindInfo::emitUnwindInfo(MCStreamer &OS) {
-+  unsigned curIdx = 0;
-+  unsigned startIdx;
-+  FuncCalleeMap::const_iterator f, e;
-+  for(f = FuncCalleeSaved.begin(), e = FuncCalleeSaved.end(); f != e; f++) {
-+    const MCSymbol *FuncSym = f->first;
-+    const CalleeSavedRegisters &CSR = f->second;
-+
-+    assert(FuncSym && "Invalid machine function");
-+    if(CSR.size() < 2)
-+      DEBUG(dbgs() << "WARNING: should have at least 2 registers to restore "
-+                               "(return address & saved FBP");
-+
-+    DEBUG(dbgs() << UIDbg << "Function " << FuncSym->getName()
-+                 << " (offset " << curIdx << ", "
-+                 << CSR.size() << " entries):\n");
-+
-+    startIdx = curIdx;
-+    CalleeSavedRegisters::const_iterator cs, cse;
-+    for(cs = CSR.begin(), cse = CSR.end(); cs != cse; cs++) {
-+      assert(cs->DwarfReg < UINT16_MAX &&
-+             "Register number too large for resolution");
-+      assert(INT16_MIN < cs->Offset && cs->Offset < INT16_MAX &&
-+             "Register save offset too large for resolution");
-+
-+      DEBUG(dbgs() << UIDbg << "  Register " << cs->DwarfReg
-+                   << " saved at " << cs->Offset << "\n";);
-+
-+      OS.EmitIntValue(cs->DwarfReg, 2);
-+      OS.EmitIntValue(cs->Offset, 2);
-+      curIdx++;
-+    }
-+    FuncUnwindInfo FUI(startIdx, curIdx - startIdx);
-+    FuncUnwindMetadata.insert(FuncUnwindPair(FuncSym, std::move(FUI)));
-+  }
-+}
-+
-+void UnwindInfo::emitAddrRangeInfo(MCStreamer &OS) {
-+  FuncUnwindMap::const_iterator f, e;
-+  for(f = FuncUnwindMetadata.begin(), e = FuncUnwindMetadata.end();
-+      f != e;
-+      f++) {
-+    const MCSymbol *Func = f->first;
-+    const FuncUnwindInfo &FUI = f->second;
-+    OS.EmitSymbolValue(Func, 8);
-+    OS.EmitIntValue(FUI.NumUnwindRecord, 4);
-+    OS.EmitIntValue(FUI.SecOffset, 4);
-+  }
-+}
-+
-+/// Serialize the unwinding information.
-+void UnwindInfo::serializeToUnwindInfoSection() {
-+  // Bail out if there's no unwind info.
-+  if(FuncCalleeSaved.empty()) return;
-+
-+  // Emit unwinding record information.
-+  // FIXME: we only support ELF object files for now
-+
-+  // Switch to the unwind info section
-+  MCStreamer &OS = *AP.OutStreamer;
-+  MCSection *UnwindInfoSection =
-+      OutContext.getObjectFileInfo()->getUnwindInfoSection();
-+  OS.SwitchSection(UnwindInfoSection);
-+
-+  // Emit a dummy symbol to force section inclusion.
-+  OS.EmitLabel(OutContext.getOrCreateSymbol(Twine("__StackTransform_UnwindInfo")));
-+
-+  // Serialize data.
-+  DEBUG(dbgs() << "********** Unwind Info Output **********\n");
-+  emitUnwindInfo(OS);
-+  OS.AddBlankLine();
-+
-+  // Switch to the unwind address range section & emit section
-+  MCSection *UnwindAddrRangeSection =
-+      OutContext.getObjectFileInfo()->getUnwindAddrRangeSection();
-+  OS.SwitchSection(UnwindAddrRangeSection);
-+  OS.EmitLabel(OutContext.getOrCreateSymbol(Twine("__StackTransform_UnwindAddrRange")));
-+  emitAddrRangeInfo(OS);
-+  OS.AddBlankLine();
-+
-+  Emitted = true;
-+}
-+
-+const UnwindInfo::FuncUnwindInfo &
-+UnwindInfo::getUnwindInfo(const MCSymbol *Func) const {
-+  assert(Emitted && "Have not yet calculated per-function unwinding metadata");
-+
-+  FuncUnwindMap::const_iterator it = FuncUnwindMetadata.find(Func);
-+  assert(it != FuncUnwindMetadata.end() && "Invalid function");
-+  return it->second;
-+}
-+
-+void UnwindInfo::print(raw_ostream &OS) {
-+  OS << UIDbg << "Function unwinding information\n";
-+  FuncCalleeMap::const_iterator b, e;
-+  for(b = FuncCalleeSaved.begin(), e = FuncCalleeSaved.end();
-+      b != e;
-+      b++) {
-+    OS << UIDbg << "Function - " << b->first->getName() << "\n";
-+    const CalleeSavedRegisters &CSR = b->second;
-+    CalleeSavedRegisters::const_iterator br, be;
-+    for(br = CSR.begin(), be = CSR.end(); br != be; br++) {
-+      OS << UIDbg << "Register " << br->DwarfReg
-+                  << " at offset " << br->Offset << "\n";
-+    }
-+  }
-+}
-+
 Index: lib/IR/AsmWriter.cpp
 ===================================================================
 --- lib/IR/AsmWriter.cpp	(revision 320332)
@@ -9393,22 +9343,20 @@ Index: lib/MC/MCObjectFileInfo.cpp
 ===================================================================
 --- lib/MC/MCObjectFileInfo.cpp	(revision 320332)
 +++ lib/MC/MCObjectFileInfo.cpp	(working copy)
-@@ -519,6 +519,19 @@
+@@ -519,6 +519,17 @@
    DwarfAddrSection =
        Ctx->getELFSection(".debug_addr", ELF::SHT_PROGBITS, 0, "addr_sec");
  
++  // Stack transformation metadata sections
++  FuncMetadataSection =
++      Ctx->getELFSection(".stack_transform.functions", ELF::SHT_PROGBITS, 0);
++  FuncMetadataSection->setAlignment(sizeof(uint32_t));
 +  ActStackSlotSection =
 +      Ctx->getELFSection(".stack_transform.stack_slots", ELF::SHT_PROGBITS, 0);
 +  ActStackSlotSection->setAlignment(sizeof(uint32_t));
-+
-+  UnwindAddrRangeSection =
-+      Ctx->getELFSection(".stack_transform.unwind_arange", ELF::SHT_PROGBITS,
-+                         0, sizeof(uint64_t) + sizeof(uint64_t), "");
 +  UnwindInfoSection =
-+      Ctx->getELFSection(".stack_transform.unwind", ELF::SHT_PROGBITS, 0,
-+                         sizeof(uint16_t) + sizeof(int16_t), "");
-+  UnwindAddrRangeSection->setAlignment(sizeof(uint64_t));
-+  UnwindInfoSection->setAlignment(sizeof(uint16_t) + sizeof(int16_t));
++      Ctx->getELFSection(".stack_transform.unwind", ELF::SHT_PROGBITS, 0);
++  UnwindInfoSection->setAlignment(sizeof(uint32_t));
 +
    StackMapSection =
        Ctx->getELFSection(".llvm_stackmaps", ELF::SHT_PROGBITS, ELF::SHF_ALLOC);
@@ -9417,7 +9365,7 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
 ===================================================================
 --- lib/Target/AArch64/AArch64AsmPrinter.cpp	(revision 320332)
 +++ lib/Target/AArch64/AArch64AsmPrinter.cpp	(working copy)
-@@ -23,11 +23,13 @@
+@@ -23,6 +23,7 @@
  #include "llvm/ADT/SmallString.h"
  #include "llvm/ADT/StringSwitch.h"
  #include "llvm/ADT/Twine.h"
@@ -9425,50 +9373,51 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  #include "llvm/CodeGen/AsmPrinter.h"
  #include "llvm/CodeGen/MachineInstr.h"
  #include "llvm/CodeGen/MachineModuleInfoImpls.h"
- #include "llvm/CodeGen/StackMaps.h"
- #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
-+#include "llvm/CodeGen/UnwindInfo.h"
- #include "llvm/IR/DataLayout.h"
- #include "llvm/IR/DebugInfo.h"
- #include "llvm/MC/MCAsmInfo.h"
-@@ -48,12 +50,14 @@
+@@ -48,12 +49,13 @@
  
  class AArch64AsmPrinter : public AsmPrinter {
    AArch64MCInstLower MCInstLowering;
 +  ActivationMetadata AM;
    StackMaps SM;
-+  UnwindInfo UI;
  
  public:
    AArch64AsmPrinter(TargetMachine &TM, std::unique_ptr<MCStreamer> Streamer)
        : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(OutContext, *this),
 -        SM(*this), AArch64FI(nullptr) {}
-+        AM(*this), SM(*this), UI(*this), AArch64FI(nullptr) {}
++        AM(*this), SM(*this), AArch64FI(nullptr) {}
  
    const char *getPassName() const override {
      return "AArch64 Assembly Printer";
-@@ -83,7 +87,10 @@
+@@ -83,7 +85,9 @@
  
    bool runOnMachineFunction(MachineFunction &F) override {
      AArch64FI = F.getInfo<AArch64FunctionInfo>();
 -    return AsmPrinter::runOnMachineFunction(F);
 +    bool retval = AsmPrinter::runOnMachineFunction(F);
 +    AM.recordActivationMetadata(F);
-+    UI.recordUnwindInfo(F);
 +    return retval;
    }
  
  private:
-@@ -129,8 +136,11 @@
+@@ -114,6 +118,10 @@
+ 
+   typedef std::map<const MachineInstr *, MCSymbol *> MInstToMCSymbol;
+   MInstToMCSymbol LOHInstToLabel;
++
++protected:
++  void RecordFunctionSizeExpr(const MCExpr *Expr) final
++  { AM.addFunctionSize(*MF, Expr); }
+ };
+ 
+ } // end of anonymous namespace
+@@ -129,8 +137,9 @@
      // linker can safely perform dead code stripping.  Since LLVM never
      // generates code that does this, it is always safe to set.
      OutStreamer->EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
 -    SM.serializeToStackMapSection();
    }
-+  UI.serializeToUnwindInfoSection();
 +  AM.serializeToActivationMetadataSection();
-+  SM.serializeToStackMapSection(&UI, &AM);
-+  UI.reset(); // Must reset after SM serialization to clear metadata
++  SM.serializeToStackMapSection();
  }
  
  MachineLocation
@@ -10016,30 +9965,21 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
  #include "llvm/CodeGen/AsmPrinter.h"
  #include "llvm/CodeGen/MachineConstantPool.h"
  #include "llvm/CodeGen/MachineFunctionPass.h"
-@@ -36,6 +37,7 @@
- #include "llvm/CodeGen/MachineRegisterInfo.h"
- #include "llvm/CodeGen/StackMaps.h"
- #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
-+#include "llvm/CodeGen/UnwindInfo.h"
- #include "llvm/IR/Constants.h"
- #include "llvm/IR/DebugInfo.h"
- #include "llvm/IR/DerivedTypes.h"
-@@ -69,11 +71,13 @@
+@@ -69,11 +70,12 @@
    protected:
      MapVector<MCSymbol*, MCSymbol*> TOC;
      const PPCSubtarget *Subtarget;
 +    ActivationMetadata AM;
      StackMaps SM;
-+    UnwindInfo UI;
    public:
      explicit PPCAsmPrinter(TargetMachine &TM,
                             std::unique_ptr<MCStreamer> Streamer)
 -        : AsmPrinter(TM, std::move(Streamer)), SM(*this) {}
-+        : AsmPrinter(TM, std::move(Streamer)), AM(*this), SM(*this), UI(*this) {}
++        : AsmPrinter(TM, std::move(Streamer)), AM(*this), SM(*this) {}
  
      const char *getPassName() const override {
        return "PowerPC Assembly Printer";
-@@ -99,9 +103,34 @@
+@@ -99,10 +101,38 @@
      void LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
                           const MachineInstr &MI);
      void EmitTlsCall(const MachineInstr *MI, MCSymbolRefExpr::VariantKind VK);
@@ -10051,12 +9991,11 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 -      return AsmPrinter::runOnMachineFunction(MF);
 +      bool retval = AsmPrinter::runOnMachineFunction(MF);
 +
-+      AM.recordActivationMetadata(MF);
-+      // Add this function's register unwind info.  The PowerPC backend doesn't
++      // Add this function's activation metadata.  The PowerPC backend doesn't
 +      // maintain the saved FBP (old r31) and link register as callee-saved
 +      // registers, so manually add where they're saved.
-+      if(MF.getFrameInfo()->hasStackMap()) {
-+        UI.recordUnwindInfo(MF);
++      if(AM.needToRecordMetadata(MF)) {
++        AM.recordActivationMetadata(MF);
 +
 +        // Add the LR & FP save slots
 +        const TargetFrameLowering *TFL = Subtarget->getFrameLowering();
@@ -10065,29 +10004,30 @@ Index: lib/Target/PowerPC/PPCAsmPrinter.cpp
 +        unsigned BaseReg;
 +
 +        Offset = MF.getFrameInfo()->getStackSize() + 16;
-+        UI.addRegisterUnwindInfo(MF, PPC::LR8, Offset);
++        AM.addRegisterUnwindInfo(MF, PPC::LR8, Offset);
 +
 +        Index = FI->getFramePointerSaveIndex();
 +        Offset = TFL->getFrameIndexReferenceFromFP(MF, Index, BaseReg);
-+        UI.addRegisterUnwindInfo(MF, PPC::X31, Offset);
++        AM.addRegisterUnwindInfo(MF, PPC::X31, Offset);
 +      }
 +      return retval;
      }
++
++  protected:
++    void RecordFunctionSizeExpr(const MCExpr *Expr) final
++    { AM.addFunctionSize(*MF, Expr); }
    };
  
-@@ -327,7 +356,10 @@
+   /// PPCLinuxAsmPrinter - PowerPC assembly printer, customized for Linux
+@@ -327,6 +357,7 @@
  }
  
  void PPCAsmPrinter::EmitEndOfAsmFile(Module &M) {
--  SM.serializeToStackMapSection();
-+  UI.serializeToUnwindInfoSection();
 +  AM.serializeToActivationMetadataSection();
-+  SM.serializeToStackMapSection(&UI, &AM);
-+  UI.reset(); // Must reset after SM serialization to clear metadata
+   SM.serializeToStackMapSection();
  }
  
- void PPCAsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
-@@ -490,6 +522,19 @@
+@@ -490,6 +521,19 @@
                   .addExpr(SymVar));
  }
  
@@ -10329,20 +10269,19 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
    SMShadowTracker.startFunction(MF);
  
    SetupMachineFunction(MF);
-@@ -66,8 +69,18 @@
+@@ -66,8 +69,17 @@
    // Emit the rest of the function body.
    EmitFunctionBody();
  
 -  // We didn't modify anything.
 -  return false;
-+  AM.recordActivationMetadata(MF);
-+  // Add this function's register unwind info.  The x86 backend doesn't
-+  // maintain the saved FBP (old RBP) and return address (RIP) as callee-saved
++  // Add this function's activation metadata.  The x86 backend doesn't maintain
++  // the saved FBP (old RBP) and return address (RIP) as callee-saved
 +  // registers, so manually add where they're saved.
-+  if(MF.getFrameInfo()->hasStackMap()) {
-+    UI.recordUnwindInfo(MF);
-+    UI.addRegisterUnwindInfo(MF, X86::RIP, 8);
-+    UI.addRegisterUnwindInfo(MF, X86::RBP, 0);
++  if(AM.needToRecordMetadata(MF)) {
++    AM.recordActivationMetadata(MF);
++    AM.addRegisterUnwindInfo(MF, X86::RIP, 8);
++    AM.addRegisterUnwindInfo(MF, X86::RBP, 0);
 +  }
 +
 +  // We may have modified where stack map intrinsics are located.
@@ -10350,55 +10289,54 @@ Index: lib/Target/X86/X86AsmPrinter.cpp
  }
  
  /// printSymbolOperand - Print a raw symbol reference operand.  This handles
-@@ -689,8 +702,11 @@
+@@ -689,6 +701,7 @@
    }
  
    if (TT.isOSBinFormatELF()) {
--    SM.serializeToStackMapSection();
-+    UI.serializeToUnwindInfoSection();
 +    AM.serializeToActivationMetadataSection();
-+    SM.serializeToStackMapSection(&UI, &AM);
+     SM.serializeToStackMapSection();
      FM.serializeToFaultMapSection();
-+    UI.reset(); // Must reset after SM serialization to clear metadata
    }
- }
- 
 Index: lib/Target/X86/X86AsmPrinter.h
 ===================================================================
 --- lib/Target/X86/X86AsmPrinter.h	(revision 320332)
 +++ lib/Target/X86/X86AsmPrinter.h	(working copy)
-@@ -12,8 +12,10 @@
+@@ -12,6 +12,7 @@
  
  #include "X86Subtarget.h"
  #include "llvm/CodeGen/AsmPrinter.h"
 +#include "llvm/CodeGen/ActivationMetadata.h"
  #include "llvm/CodeGen/FaultMaps.h"
  #include "llvm/CodeGen/StackMaps.h"
-+#include "llvm/CodeGen/UnwindInfo.h"
  #include "llvm/Target/TargetMachine.h"
- 
- // Implemented in X86MCInstLower.cpp
-@@ -27,7 +29,9 @@
+@@ -27,6 +28,7 @@
  
  class LLVM_LIBRARY_VISIBILITY X86AsmPrinter : public AsmPrinter {
    const X86Subtarget *Subtarget;
 +  ActivationMetadata AM;
    StackMaps SM;
-+  UnwindInfo UI;
    FaultMaps FM;
  
-   // This utility class tracks the length of a stackmap instruction's 'shadow'.
-@@ -90,8 +94,8 @@
+@@ -90,7 +92,7 @@
   public:
     explicit X86AsmPrinter(TargetMachine &TM,
                            std::unique_ptr<MCStreamer> Streamer)
 -       : AsmPrinter(TM, std::move(Streamer)), SM(*this), FM(*this),
--         SMShadowTracker(TM) {}
-+       : AsmPrinter(TM, std::move(Streamer)), AM(*this), SM(*this), UI(*this),
-+         FM(*this), SMShadowTracker(TM) {}
++       : AsmPrinter(TM, std::move(Streamer)), AM(*this), SM(*this), FM(*this),
+          SMShadowTracker(TM) {}
  
    const char *getPassName() const override {
-     return "X86 Assembly / Object Emitter";
+@@ -126,6 +128,10 @@
+   }
+ 
+   bool runOnMachineFunction(MachineFunction &F) override;
++
++protected:
++  void RecordFunctionSizeExpr(const MCExpr *Expr) final
++  { AM.addFunctionSize(*MF, Expr); }
+ };
+ 
+ } // end namespace llvm
 Index: lib/Target/X86/X86ISelLowering.cpp
 ===================================================================
 --- lib/Target/X86/X86ISelLowering.cpp	(revision 320332)

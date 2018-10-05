@@ -15,7 +15,6 @@
 
 /**
  * Generate the call-site metadata section.
- * @param b a binary descriptor
  * @param start_id beginning ID number for site tags
  * @param sm stack map section
  * @param num_sm number of stack map sections pointed to by sm
@@ -25,27 +24,27 @@
  * @param live live variable location information
  * @param num_arch_live number of arch-specific live value records copied to arch_live
  * @param arch_live architecture-specific live value information
- * @param unwind_addr function unwinding information address ranges
- * @param num_addrs number of function unwinding information entries
+ * @param num_func number of function metadata entries
+ * @param records function metadata
  * @return true if the data was created, false otherwise (*cs & *locs will be
  *         NULL if creation failed)
  */
 static bool
-create_call_site_metadata(bin *b, uint64_t start_id,
+create_call_site_metadata(uint64_t start_id,
                           stack_map_section *sm, size_t num_sm,
                           size_t *num_sites, call_site **cs,
                           size_t *num_live, live_value **live,
                           size_t *num_arch_live, arch_live_value **arch_live,
-                          size_t num_addrs, const unwind_addr *addrs);
+                          size_t num_func, const function_record *records);
 
 /**
- * Comparison function to sort unwind address ranges by address.  Called by
+ * Comparison function to sort function metadata entries by address.  Called by
  * qsort().
- * @param a first unwind address range
- * @param b second unwind address range
+ * @param a first function metadata entry
+ * @param b second function metadata entry
  * @return -1 if a < b, 0 if a == b or 1 if a > b
  */
-static int sort_unwind_addr(const void *a, const void *b);
+static int sort_func_by_addr(const void *a, const void *b);
 
 /**
  * Comparison function to sort sites by ID.  Called by qsort().
@@ -67,21 +66,35 @@ static int sort_addr(const void *a, const void *b);
 // Public API
 ///////////////////////////////////////////////////////////////////////////////
 
-ret_t update_function_addr(bin *b, const char *sec)
+// Note: assumptions for updating function records
+//
+//  1. Within a single file, LLVM emits function records and their associated
+//     metadata (unwind locations, stack slots) into their respective sections
+//     in the same order.  In other words, we do *not* see function 0's unwind
+//     records and stack slots after function 1's metadata.  Everything should
+//     be in the same order in all the metadata sections.
+//
+//  2. When linking, the linker generates the combined metadata sections in
+//     file order.  In other words, we do *not* see file 0's metadata sections
+//     after file 1's metadata sections.
+
+ret_t update_function_records(bin *b, const char *sec)
 {
-  size_t num_records, i, cur_offset = 0, record_size;
+  size_t num_records, i, unwind_offset = 0, stack_slot_offset = 0, record_size;
+  char sec_name[BUF_SIZE];
   Elf_Scn *scn;
   Elf64_Shdr *shdr;
-  unwind_addr *ua;
+  function_record *fr;
 
-  if(!(scn = get_section_by_name(b->e, sec))) return FIND_SECTION_FAILED;
+  snprintf(sec_name, BUF_SIZE, "%s.%s", sec, SECTION_FUNCTIONS);
+  if(!(scn = get_section_by_name(b->e, sec_name))) return FIND_SECTION_FAILED;
   if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
-  if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
-  if(!(ua = get_section_data(scn))) return READ_ELF_FAILED;
+  if(!shdr->sh_size) return INVALID_METADATA;
+  if(!(fr = get_section_data(scn))) return READ_ELF_FAILED;
 
-  num_records = shdr->sh_size / shdr->sh_entsize;
-  record_size = shdr->sh_entsize;
-  if(verbose) printf("Found %lu records in the unwind address range section\n",
+  record_size = sizeof(function_record);
+  num_records = shdr->sh_size / record_size;
+  if(verbose) printf("Found %lu record(s) in the function metadata section\n",
                      num_records);
 
   /*
@@ -90,24 +103,36 @@ ret_t update_function_addr(bin *b, const char *sec)
    */
   for(i = 0; i < num_records; i++)
   {
-    ua[i].unwind_offset = cur_offset;
-    cur_offset += ua[i].num_unwind;
+    // TODO if the function's address isn't resolved until runtime (dynamic
+    // linker), we need to update relocation entries for the function records
+    // (REL, function sym) so the linker updates the rewriting metadata with
+    // the correct function addresses at runtime
+    fr[i].frame_size = cfa_correction(b->arch, fr[i].frame_size);
+    fr[i].unwind.offset = unwind_offset;
+    unwind_offset += fr[i].unwind.num;
+    fr[i].stack_slot.offset = stack_slot_offset;
+    stack_slot_offset += fr[i].stack_slot.num;
+
+    if(verbose)
+      printf("  Function %lu: 0x%lx, code size=%u, frame size=%u, "
+             "%u unwinding records, %u stack slots\n",
+             i, fr[i].addr, fr[i].code_size, fr[i].frame_size,
+             fr[i].unwind.num, fr[i].stack_slot.num);
   }
 
   /* Sort by address & update the section */
-  qsort(ua, num_records, record_size, sort_unwind_addr);
-  return update_section(b->e, scn, num_records, record_size, ua);
+  qsort(fr, num_records, record_size, sort_func_by_addr);
+  return update_section(b->e, scn, num_records, record_size, fr);
 }
 
 ret_t add_sections(bin *b,
                    stack_map_section *sm,
                    size_t num_sm,
                    const char *sec,
-                   uint64_t start_id,
-                   const char *unwind_sec)
+                   uint64_t start_id)
 {
   size_t num_shdr, i, added = 0, cur_offset, num_sites,
-         num_live, num_arch_live, num_unwind;
+         num_live, num_arch_live, num_funcs;
   char sec_name[BUF_SIZE];
   call_site *id_sites, *addr_sites;
   live_value *live_vals;
@@ -115,20 +140,21 @@ ret_t add_sections(bin *b,
   Elf64_Ehdr *ehdr;
   Elf64_Shdr *shdr;
   Elf_Scn *scn;
-  const unwind_addr *unwind;
+  const function_record *funcs;
   ret_t ret;
 
   /* Generate the section's data (not yet sorted by anything) */
-  if(!(scn = get_section_by_name(b->e, unwind_sec))) return FIND_SECTION_FAILED;
+  snprintf(sec_name, BUF_SIZE, "%s.%s", sec, SECTION_FUNCTIONS);
+  if(!(scn = get_section_by_name(b->e, sec_name))) return FIND_SECTION_FAILED;
   if(!(shdr = elf64_getshdr(scn))) return READ_ELF_FAILED;
-  if(!shdr->sh_size || !shdr->sh_entsize) return INVALID_METADATA;
-  num_unwind = shdr->sh_size / shdr->sh_entsize;
-  if(!(unwind = get_section_data(scn))) return READ_ELF_FAILED;
-  if(!create_call_site_metadata(b, start_id, sm, num_sm,
+  if(!shdr->sh_size) return INVALID_METADATA;
+  num_funcs = shdr->sh_size / sizeof(function_record);
+  if(!(funcs = get_section_data(scn))) return READ_ELF_FAILED;
+  if(!create_call_site_metadata(start_id, sm, num_sm,
                                 &num_sites, &id_sites,
                                 &num_live, &live_vals,
                                 &num_arch_live, &archlive,
-                                num_unwind, unwind))
+                                num_funcs, funcs))
     return CREATE_METADATA_FAILED;
 
   /* Add call site section sorted by ID */
@@ -202,23 +228,23 @@ ret_t add_sections(bin *b,
 ///////////////////////////////////////////////////////////////////////////////
 
 static bool
-create_call_site_metadata(bin *b, uint64_t start_id,
+create_call_site_metadata(uint64_t start_id,
                           stack_map_section *sm, size_t num_sm,
                           size_t *num_sites, call_site **cs,
                           size_t *num_live, live_value **live,
                           size_t *num_arch_live, arch_live_value **arch_live,
-                          size_t num_addrs, const unwind_addr *addrs)
+                          size_t num_func, const function_record *records)
 {
   size_t i, j, sites_num = 0, loc_num = 0, arch_num = 0, cur;
-  const function_record *fr;
+  const stackmap_function *sm_func;
+  const function_record *full_fr;
   call_site_record *site_record;
   call_site *sites;
   live_value *locs;
-  const unwind_addr *ua;
   arch_live_value *archlive;
 
   if(!num_sites || !cs || !num_live || !live || !num_arch_live ||
-     !arch_live || !addrs)
+     !arch_live || !records)
     return false;
 
   /* Calculate number of call site & location records */
@@ -245,8 +271,14 @@ create_call_site_metadata(bin *b, uint64_t start_id,
   {
     for(j = 0; j < sm[i].num_records; j++, cur++)
     {
+      /*
+       * Find full function metadata entry.  We won't use the stackmap function
+       * records as they don't have all the information we need.
+       */
       site_record = &sm[i].call_sites[j];
-      fr = &sm[i].function_records[site_record->func_idx];
+      sm_func = &sm[i].function_records[site_record->func_idx];
+      full_fr = get_func_metadata(sm_func->addr, num_func, records);
+      if(!full_fr) return false;
 
       /* Populate call site record */
       if(site_record->id == UINT64_MAX ||
@@ -255,28 +287,26 @@ create_call_site_metadata(bin *b, uint64_t start_id,
         sites[cur].id = site_record->id;
       else
         sites[cur].id = start_id++;
-      sites[cur].addr = fr->func_addr + site_record->offset;
-      sites[cur].frame_size = cfa_correction(b->arch, fr->stack_size);
-      sites[cur].num_unwind = fr->num_unwind;
-      sites[cur].num_live = site_record->num_locations;
-      sites[cur].live_offset = loc_num;
-      sites[cur].num_arch_live = site_record->num_arch_live;
-      sites[cur].arch_live_offset = arch_num;
-
-      /* Find unwinding information offset */
-      ua = get_func_unwind_data(sites[cur].addr, num_addrs, addrs);
-      if(!ua) return false;
-      sites[cur].unwind_offset = ua->unwind_offset;
+      sites[cur].func = full_fr - records;
+      // TODO if the function's address isn't resolved until runtime (dynamic
+      // linker), we need to add a relocation entry for the call site (RELA,
+      // function sym + offset) so the linker updates the rewriting metadata
+      // with the correct information
+      sites[cur].addr = full_fr->addr + site_record->offset;
+      sites[cur].live.num = site_record->num_locations;
+      sites[cur].live.offset = loc_num;
+      sites[cur].arch_live.num = site_record->num_arch_live;
+      sites[cur].arch_live.offset = arch_num;
 
       /* Copy live value location records to new section */
       memcpy(&locs[loc_num], site_record->locations,
-             sizeof(live_value) * sites[cur].num_live);
-      loc_num += sites[cur].num_live;
+             sizeof(live_value) * sites[cur].live.num);
+      loc_num += sites[cur].live.num;
 
       /* Copy arch-specific live value records to new section */
       memcpy(&archlive[arch_num], site_record->arch_live,
-             sizeof(arch_live_value) * sites[cur].num_arch_live);
-      arch_num += sites[cur].num_arch_live;
+             sizeof(arch_live_value) * sites[cur].arch_live.num);
+      arch_num += sites[cur].arch_live.num;
     }
   }
 
@@ -290,10 +320,10 @@ create_call_site_metadata(bin *b, uint64_t start_id,
   return true;
 }
 
-static int sort_unwind_addr(const void *a, const void *b)
+static int sort_func_by_addr(const void *a, const void *b)
 {
-  const unwind_addr *ua_a = (const unwind_addr*)a;
-  const unwind_addr *ua_b = (const unwind_addr*)b;
+  const function_record *ua_a = (const function_record*)a;
+  const function_record *ua_b = (const function_record*)b;
 
   if(ua_a->addr < ua_b->addr) return -1;
   else if(ua_a->addr == ua_b->addr) return 0;

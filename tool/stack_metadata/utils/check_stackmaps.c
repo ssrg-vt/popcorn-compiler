@@ -145,15 +145,15 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
     num_records = MIN(sm_a[i].num_records, sm_b[i].num_records);
     for(j = 0; j < num_records; j++)
     {
-      const function_record *fr;
+      const stackmap_function *fr;
 
       fr = &sm_a[i].function_records[sm_a[i].call_sites[j].func_idx];
-      func_a = fr->func_addr;
+      func_a = fr->addr;
       sym_a = get_sym_by_addr(a->e, func_a, STT_FUNC);
       sym_a_name = get_sym_name(a->e, sym_a);
 
       fr = &sm_b[i].function_records[sm_b[i].call_sites[j].func_idx];
-      func_b = fr->func_addr;
+      func_b = fr->addr;
       sym_b = get_sym_by_addr(b->e, func_b, STT_FUNC);
       sym_b_name = get_sym_name(b->e, sym_b);
 

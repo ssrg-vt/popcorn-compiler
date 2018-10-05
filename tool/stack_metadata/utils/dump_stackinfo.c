@@ -75,23 +75,47 @@ static void parse_args(int argc, char **argv)
 // Printing metadata
 ///////////////////////////////////////////////////////////////////////////////
 
-bool dump_unwind_funcs(Elf_Scn *scn)
+bool dump_funcs(Elf_Scn *scn)
 {
   uint64_t num_funcs, i;
   Elf_Data *data = NULL;
   GElf_Shdr shdr;
-  unwind_addr *funcs;
+  function_record *funcs;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
-  num_funcs = shdr.sh_size / shdr.sh_entsize;
-  funcs = (unwind_addr *)data->d_buf;
+  num_funcs = shdr.sh_size / sizeof(function_record);
+  funcs = (function_record *)data->d_buf;
   printf("found %lu entries\n", num_funcs);
   for(i = 0; i < num_funcs; i++)
-    printf("0x%lx: %u records (offset=%u)\n", funcs[i].addr,
-           funcs[i].num_unwind, funcs[i].unwind_offset);
+    printf("0x%lx: code size=%u, stack size=%u, %u callee-saved registers "
+           "(offset=%lu), %u stack slots (offset=%lu)\n",
+           funcs[i].addr, funcs[i].code_size, funcs[i].frame_size,
+           funcs[i].unwind.num, funcs[i].unwind.offset,
+           funcs[i].stack_slot.num, funcs[i].stack_slot.offset);
+  printf("\n");
+
+  return true;
+}
+
+bool dump_stack_slots(Elf_Scn *scn)
+{
+  uint64_t num_slots, i;
+  Elf_Data *data = NULL;
+  GElf_Shdr shdr;
+  stack_slot *slots;
+
+  if(gelf_getshdr(scn, &shdr) != &shdr) return false;
+  if(!(data = elf_getdata(scn, data))) return false;
+
+  num_slots = shdr.sh_size / sizeof(stack_slot);
+  slots = (stack_slot *)data->d_buf;
+  printf("found %lu entries\n", num_slots);
+  for(i = 0; i < num_slots; i++)
+    printf("Slot %lu: register %u + %d, size=%u, alignment=%u\n",
+           i, slots[i].base_reg, slots[i].offset,
+           slots[i].size, slots[i].alignment);
   printf("\n");
 
   return true;
@@ -105,10 +129,9 @@ bool dump_unwind_locs(Elf_Scn *scn)
   unwind_loc *locs;
 
   if(gelf_getshdr(scn, &shdr) != &shdr) return false;
-  if(shdr.sh_size != 0 && shdr.sh_entsize == 0) return false;
   if(!(data = elf_getdata(scn, data))) return false;
 
-  num_locs = shdr.sh_size / shdr.sh_entsize;
+  num_locs = shdr.sh_size / sizeof(unwind_loc);
   locs = (unwind_loc *)data->d_buf;
   printf("found %lu entries\n", num_locs);
   for(i = 0; i < num_locs; i++)
@@ -134,13 +157,11 @@ bool dump_callsite_section(Elf_Scn *scn)
   sites = (call_site *)data->d_buf;
   printf("found %lu entries\n", num_sites);
   for(i = 0; i < num_sites; i++)
-    printf("%lu: 0x%lx, %u, %u unwind entries (offset=%lu), "
-           "%u live value(s) (offset=%lu), "
+    printf("%lu: 0x%lx, function %u, %u live value(s) (offset=%lu), "
            "%u arch-specific live value(s) (offset=%lu)\n",
-      sites[i].id, sites[i].addr, sites[i].frame_size,
-      sites[i].num_unwind, sites[i].unwind_offset,
-      sites[i].num_live, sites[i].live_offset,
-      sites[i].num_arch_live, sites[i].arch_live_offset);
+      sites[i].id, sites[i].addr, sites[i].func,
+      sites[i].live.num, sites[i].live.offset,
+      sites[i].arch_live.num, sites[i].arch_live.offset);
   printf("\n");
 
   return true;
@@ -290,12 +311,12 @@ ret_t dump_metadata(bin *thebin)
   char sec_name[BUF_SIZE];
   Elf_Scn *scn;
 
-  /* Function unwinding metadata */
-  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_UNWIND_ADDR);
+  /* Function metadata */
+  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_FUNCTIONS);
   if((scn = get_section_by_name(thebin->e, sec_name)))
   {
     printf("Reading section %s: ", sec_name);
-    if(!dump_unwind_funcs(scn))
+    if(!dump_funcs(scn))
     {
       printf("failed.\n");
       return READ_ELF_FAILED;
@@ -309,6 +330,18 @@ ret_t dump_metadata(bin *thebin)
   {
     printf("Reading section %s: ", sec_name);
     if(!dump_unwind_locs(scn))
+    {
+      printf("failed.\n");
+      return READ_ELF_FAILED;
+    }
+  }
+  else return FIND_SECTION_FAILED;
+
+  snprintf(sec_name, BUF_SIZE, "%s.%s", st_section_name, SECTION_STACK_SLOTS);
+  if((scn = get_section_by_name(thebin->e, sec_name)))
+  {
+    printf("Reading section %s: ", sec_name);
+    if(!dump_stack_slots(scn))
     {
       printf("failed.\n");
       return READ_ELF_FAILED;

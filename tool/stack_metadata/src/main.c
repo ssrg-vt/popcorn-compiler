@@ -35,7 +35,6 @@ Options:\n\
 Note: this tool *must* be run after symbol alignment!";
 
 static const char *file = NULL;
-static char unwind_addr_name[512];
 static const char *section_name = SECTION_PREFIX;
 static uint64_t start_id = 0;
 bool verbose = false;
@@ -98,7 +97,6 @@ int main(int argc, char **argv)
   stack_map_section *sm;
 
   parse_args(argc, argv);
-  snprintf(unwind_addr_name, 512, "%s.%s", section_name, SECTION_UNWIND_ADDR);
 
   /* Initialize libELF & open ELF descriptors */
   if(elf_version(EV_CURRENT) == EV_NONE)
@@ -110,13 +108,12 @@ int main(int argc, char **argv)
   if((ret = init_stackmap(b, &sm, &num_sm)))
     die("could not read stack map section", ret);
 
-  /* Sort the unwind address range section */
-  if((ret = update_function_addr(b, unwind_addr_name)))
-    die("could not sort unwind address range section", ret);
+  /* Sort the function records section */
+  if((ret = update_function_records(b, section_name)))
+    die("could not sort function records section", ret);
 
   /* Add stack transformation sections. */
-  if((ret = add_sections(b, sm, num_sm, section_name, start_id,
-                         unwind_addr_name)))
+  if((ret = add_sections(b, sm, num_sm, section_name, start_id)))
     die("could not add stack transformation sections", ret);
 
   free_stackmaps(sm, num_sm);

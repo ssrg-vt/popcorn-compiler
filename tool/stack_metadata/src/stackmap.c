@@ -28,8 +28,7 @@ static uint64_t stackmap_records_size(void *raw_sm, unsigned num_records)
     raw_sm += 4 + sizeof(live_out_record) * (*num);
     num = raw_sm; // Number of architecture-specific locations
     raw_sm += 2 + sizeof(arch_live_value) * (*num);
-    if((uint64_t)raw_sm % 8)
-      raw_sm += 8 - ((uint64_t)raw_sm % 8);
+    raw_sm = (void *)((unsigned long)(raw_sm + 7) & -8L);
   }
 
   return raw_sm - orig_raw;
@@ -106,7 +105,7 @@ ret_t init_stackmap(bin *b, stack_map_section **sm_ptr, size_t *num_sm)
     memcpy(&tmp_sm, data->d_buf + offset,
            offsetof(stack_map_section, function_records));
     offset += offsetof(stack_map_section, function_records);
-    offset += sizeof(function_record) * tmp_sm.num_functions;
+    offset += sizeof(stackmap_function) * tmp_sm.num_functions;
     offset += sizeof(uint64_t) * tmp_sm.num_constants;
     offset += stackmap_records_size(data->d_buf + offset, tmp_sm.num_records);
   }
@@ -132,15 +131,13 @@ ret_t init_stackmap(bin *b, stack_map_section **sm_ptr, size_t *num_sm)
 
     /* Read function_records */
     sm[i].function_records = data->d_buf + offset;
-    offset += sizeof(function_record) * sm[i].num_functions;
+    offset += sizeof(stackmap_function) * sm[i].num_functions;
 
     if(verbose)
       for(j = 0; j < sm[i].num_functions; j++)
-        printf("    Function %lu: %p, stack frame size = %lu byte(s), "
-               "%u unwinding records\n", j,
-               (void*)sm[i].function_records[j].func_addr,
-               sm[i].function_records[j].stack_size,
-               sm[i].function_records[j].num_unwind);
+        printf("    Function %lu: %p, stack frame size = %lu byte(s)\n",
+               j, (void*)sm[i].function_records[j].addr,
+               sm[i].function_records[j].frame_size);
 
     /* Read constants */
     sm[i].constants = data->d_buf + offset;

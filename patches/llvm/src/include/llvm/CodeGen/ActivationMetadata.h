@@ -17,27 +17,22 @@
 
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Support/Debug.h"
 #include <map>
 
 namespace llvm {
 
+class MachineFrameInfo;
+class TargetFrameLowering;
+class TargetRegisterInfo;
+class MCSymbol;
+class MCExpr;
+
 class ActivationMetadata {
 public:
-  struct FuncActivationMetadata {
-    // TODO other types of metadata, e.g., register liveness information?
-    uint32_t StackSlotOffset; // Offset into stack slot section
-    uint32_t NumStackSlot; // Number of stack slots
-
-    FuncActivationMetadata() : StackSlotOffset(UINT32_MAX), NumStackSlot(0) {}
-    FuncActivationMetadata(uint32_t StackSlotOffset, uint32_t NumStackSlot)
-      : StackSlotOffset(StackSlotOffset), NumStackSlot(NumStackSlot) {}
-  };
-
-  typedef std::pair<const MCSymbol *, FuncActivationMetadata> FuncActivationPair;
-  typedef std::map<const MCSymbol *, FuncActivationMetadata> FuncActivationMap;
-
+  /// Stack slots
   struct StackSlot {
     int64_t Offset; // Offset from frame register
     unsigned BaseReg; // Frame register used for offset (DWARF encoding)
@@ -49,37 +44,105 @@ public:
   typedef std::pair<const MCSymbol *, StackSlots> FuncStackSlotPair;
   typedef std::map<const MCSymbol *, StackSlots> FuncStackSlotMap;
 
+  /// Callee-saved registers
+  struct CalleeSavedReg {
+    uint32_t DwarfReg; // Register saved on the stack
+    int32_t Offset; // Offset at which register was saved
+    CalleeSavedReg() : DwarfReg(UINT32_MAX), Offset(INT32_MAX) {}
+    CalleeSavedReg(uint32_t DwarfReg, int32_t Offset)
+      : DwarfReg(DwarfReg), Offset(Offset) {}
+  };
+
+  typedef SmallVector<CalleeSavedReg, 16> CalleeSavedRegs;
+  typedef std::pair<const MCSymbol *, CalleeSavedRegs> FuncCalleePair;
+  typedef std::map<const MCSymbol *, CalleeSavedRegs> FuncCalleeMap;
+
+  /// Information for referencing a block of contiguous entries contained in
+  /// another section.
+  struct ExternalEntriesInfo {
+    uint32_t SecOffset; // Offset into the external section
+    uint32_t NumEntries; // Number of entries
+    ExternalEntriesInfo() : SecOffset(UINT32_MAX), NumEntries(0) {}
+    ExternalEntriesInfo(uint32_t SecOffset, uint32_t NumEntries)
+      : SecOffset(SecOffset), NumEntries(NumEntries) {}
+  };
+
+  /// References to other sections for all emitted metadata.
+  struct FunctionMetadata {
+    const MCExpr *FuncSize;
+    uint64_t StackSize;
+    ExternalEntriesInfo StackSlotInfo;
+    ExternalEntriesInfo CalleeSavedInfo;
+    FunctionMetadata() : StackSize(UINT64_MAX) {}
+  };
+
+  typedef std::pair<const MCSymbol *, FunctionMetadata> FuncMetaPair;
+  typedef std::map<const MCSymbol *, FunctionMetadata> FuncMetaMap;
+
   ActivationMetadata() = delete;
   ActivationMetadata(AsmPrinter &AP)
     : AP(AP), OutContext(AP.OutStreamer->getContext()), Emitted(false) {};
 
   void reset() {
-    Emitted = false;
-    StackSlotInfo.clear();
+    FuncStackSlotInfo.clear();
+    FuncCalleeSavedInfo.clear();
     FuncMetadata.clear();
+    Emitted = false;
   }
 
-  /// Record stack slot locations, sizes and alignments.
+  /// Return whether or not we should record metadata for the given function.
+  static bool needToRecordMetadata(const MachineFunction &MF);
+
+  /// Record all activation metadata.
   void recordActivationMetadata(const MachineFunction &MF);
+
+  /// Add a register restore offset for a function.  MachineReg will get
+  /// converted to a DWARF register internally.
+  void addRegisterUnwindInfo(const MachineFunction &MF,
+                             uint32_t MachineReg,
+                             int32_t Offset);
+
+  /// Add an expression that calculates a function's size to the metadata.
+  void addFunctionSize(const MachineFunction &MF, const MCExpr *FuncSize);
 
   /// Emit activation metadata.
   void serializeToActivationMetadataSection();
 
   /// Get activation metadata for a function
-  const FuncActivationMetadata &
-  getActivationMetadata(const MCSymbol *Func) const;
+  const FunctionMetadata &getMetadata(const MCSymbol *Func) const;
+  const ExternalEntriesInfo &getStackSlotInfo(const MCSymbol *Func) const;
+  const ExternalEntriesInfo &getCalleeSavedInfo(const MCSymbol *Func) const;
 
 private:
   AsmPrinter &AP;
   MCContext &OutContext;
-  FuncStackSlotMap StackSlotInfo;
-  FuncActivationMap FuncMetadata;
+  FuncStackSlotMap FuncStackSlotInfo;
+  FuncCalleeMap FuncCalleeSavedInfo;
+  FuncMetaMap FuncMetadata;
   bool Emitted;
 
-  static FuncActivationMetadata EmptyMD;
+  /// Information-providing objects used for generating metadata -- only valid
+  /// inside call to recordActivationMetadata()
+  const MachineFrameInfo *MFI;
+  const TargetFrameLowering *TFL;
+  const TargetRegisterInfo *TRI;
+  const MCSymbol *FuncSym;
 
-  /// \brief Emit the unwind info for each function.
+  const static FunctionMetadata EmptyMD;
+  const static ExternalEntriesInfo EmptySSI;
+
+  /// Record each type of metadata
+  void recordCalleeSavedRegs(const MachineFunction &MF);
+  void recordStackSlots(const MachineFunction &MF);
+
+  /// Emit the stack slot info for all functions.
   void emitStackSlotInfo(MCStreamer &OS);
+
+  /// Emit the callee-saved register locations for all functions.
+  void emitCalleeSavedLocInfo(MCStreamer &OS);
+
+  /// Emit the top-level function metadata for all functions.
+  void emitFunctionMetadata(MCStreamer &OS);
 
   void print(raw_ostream &OS);
   void debug() { print(dbgs()); }

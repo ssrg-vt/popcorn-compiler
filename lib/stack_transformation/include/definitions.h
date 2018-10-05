@@ -24,7 +24,7 @@
 #include "timer.h"
 #include "regs.h"
 #include "properties.h"
-#include "call_site.h"
+#include "rewrite_metadata.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Checking, debugging & information macros

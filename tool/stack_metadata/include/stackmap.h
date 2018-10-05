@@ -25,20 +25,19 @@
 
 #include "definitions.h"
 #include "bin.h"
-#include "call_site.h"
+#include "rewrite_metadata.h"
 
-/* A stack size record for a function. */
-typedef struct __attribute__((__packed__)) function_record {
-  uint64_t func_addr;
-  uint64_t stack_size;
-  uint32_t num_unwind;
-  uint32_t unwind_offset;
-  uint32_t num_stack_slot;
-  uint32_t stack_slot_offset;
-} function_record;
+/*
+ * Function address, function on-stack size and references to function
+ * activation metadata contained in other sections.
+ */
+typedef struct POPCORN_PACKED stackmap_function {
+  uint64_t addr; /* function address */
+  uint64_t frame_size; /* size of the stack frame */
+} stackmap_function;
 
 /* A live register across the stack map call. */
-typedef struct __attribute__((__packed__)) live_out_record {
+typedef struct POPCORN_PACKED live_out_record {
   uint16_t regnum;
   uint8_t reserved;
   uint8_t size; /* in bytes */
@@ -47,7 +46,7 @@ typedef struct __attribute__((__packed__)) live_out_record {
 /* A stack map record for a call site. */
 // Note: this doesn't directly mirror on-disk layout, as the on-disk records
 // are variably sized.
-typedef struct __attribute__((__packed__)) call_site_record {
+typedef struct POPCORN_PACKED call_site_record {
   /* Call site header */
   uint64_t id; /* per-call site ID */
   uint32_t func_idx; /* index into function_records for function information */
@@ -70,7 +69,7 @@ typedef struct __attribute__((__packed__)) call_site_record {
 } call_site_record;
 
 /* Per-module stack map information. */
-typedef struct stack_map_section {
+typedef struct POPCORN_PACKED stack_map_section {
   /* Header */
   uint8_t version;
   uint8_t reserved;
@@ -82,7 +81,7 @@ typedef struct stack_map_section {
   uint32_t num_records;
 
   /* Function records */
-  function_record *function_records;
+  stackmap_function *function_records;
 
   /* Constant pool entries */
   uint64_t *constants;

@@ -13,13 +13,13 @@
 #include "stackmap.h"
 
 /**
- * Update the offsets in the function unwinding metadata records and sort by
- * function address.
+ * Update the offsets in the function metadata records and sort by function
+ * address.
  * @param b a binary descriptor
- * @param sec section name for unwinding address range section
+ * @param sec prefix of sections to be added
  * @return 0 if the section was sorted, an error code otherwise
  */
-ret_t update_function_addr(bin *b, const char *sec);
+ret_t update_function_records(bin *b, const char *sec);
 
 /**
  * Add stack transformation metadata to the object.
@@ -28,15 +28,13 @@ ret_t update_function_addr(bin *b, const char *sec);
  * @param num_sm number of stack maps pointed to by sm
  * @param sec prefix of sections to be added
  * @param start_id beginning call site ID
- * @param unwind_sec name of function unwinding metadata section
  * @return 0 if the sections were added, an error code otherwise
  */
 ret_t add_sections(bin *b,
                    stack_map_section *sm,
                    size_t num_sm,
                    const char *sec,
-                   uint64_t start_id,
-                   const char *unwind_sec);
+                   uint64_t start_id);
 
 #endif /* _WRITE_H */
 

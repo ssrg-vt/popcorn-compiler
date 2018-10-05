@@ -10,7 +10,7 @@
 
 #include "definitions.h"
 #include "bin.h"
-#include "call_site.h"
+#include "rewrite_metadata.h"
 
 /**
  * Print warning message.
@@ -190,25 +190,25 @@ GElf_Sym get_sym_by_addr(Elf *e, uint64_t addr, uint8_t type);
 const char *get_sym_name(Elf *e, GElf_Sym sym);
 
 /**
- * Get function unwinding metadata for an instruction address.
- *
- * @param addr an instruction address
- * @param num number of function unwinding metadata records
- * @param addrs function unwinding metadata records
- * @return a pointer to the corresponding function's metadata, or NULL if not
- *         found
- */
-const unwind_addr *get_func_unwind_data(uint64_t addr,
-                                        size_t num,
-                                        const unwind_addr *addrs);
-
-/**
  * Add new section name to section header string table.
  * @param e an ELF object
  * @param name section name
  * @return offset of new section name in section header string table
  */
 uint64_t add_section_name(Elf *e, const char *name);
+
+/**
+ * Get function record metadata for an instruction address.
+ *
+ * @param addr an instruction address
+ * @param num number of function metadata records
+ * @param records function metadata records
+ * @return a pointer to the corresponding function's metadata, or NULL if not
+ *         found
+ */
+const function_record *get_func_metadata(uint64_t addr,
+                                         size_t num,
+                                         const function_record *records);
 
 /**
  * Add a new section to the ELF.
