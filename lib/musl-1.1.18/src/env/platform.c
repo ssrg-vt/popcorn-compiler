@@ -3,7 +3,7 @@
 #include "platform.h"
 #include "arch.h"
 
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+#if defined __aarch64__ || defined __x86_64__
 
 int popcorn_getnid() {
   struct popcorn_thread_status status;

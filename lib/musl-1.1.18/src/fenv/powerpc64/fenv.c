@@ -3,10 +3,8 @@
 
 static inline double get_fpscr_f(void)
 {
-	// TODO Popcorn: LLVM 3.7.1 incorrectly identifies "=d" as a memory output
-	// rather than double-precision register constraint.
 	double d;
-	__asm__ __volatile__("mffs %0" : "=f"(d));
+	__asm__ __volatile__("mffs %0" : "=d"(d));
 	return d;
 }
 
@@ -17,9 +15,7 @@ static inline long get_fpscr(void)
 
 static inline void set_fpscr_f(double fpscr)
 {
-	// TODO Popcorn: LLVM 3.7.1 incorrectly identifies "=d" as a memory output
-	// rather than double-precision register constraint.
-	__asm__ __volatile__("mtfsf 255, %0" : : "f"(fpscr));
+	__asm__ __volatile__("mtfsf 255, %0" : : "d"(fpscr));
 }
 
 static void set_fpscr(long fpscr)

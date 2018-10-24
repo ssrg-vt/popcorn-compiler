@@ -704,21 +704,19 @@ esac
 # be dangerously incorrect because it depends on (1) the macros being
 # correct, and (2) IEEE semantics.
 #
-# TODO Popcorn: clang doesn't support generating IEEE quad-precision long
-# double types on PowerPC but instead defaults to IBM extended precision
 #printf "checking whether compiler's long double definition matches float.h... "
-#echo '#include <float.h>' > "$tmpc"
-#echo '#if LDBL_MANT_DIG == 53' >> "$tmpc"
-#echo 'typedef char ldcheck[9-(int)sizeof(long double)];' >> "$tmpc"
-#echo '#endif' >> "$tmpc"
-#if $CC $CFLAGS_C99FSE \
-#  -I$srcdir/arch/$ARCH -I$srcdir/arch/generic -I$srcdir/include \
-#  $CPPFLAGS $CFLAGS -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
-#printf "yes\n"
-#else
-#printf "no\n"
-#fail "$0: error: unsupported long double type"
-#fi
+echo '#include <float.h>' > "$tmpc"
+echo '#if LDBL_MANT_DIG == 53' >> "$tmpc"
+echo 'typedef char ldcheck[9-(int)sizeof(long double)];' >> "$tmpc"
+echo '#endif' >> "$tmpc"
+if $CC $CFLAGS_C99FSE \
+  -I$srcdir/arch/$ARCH -I$srcdir/arch/generic -I$srcdir/include \
+  $CPPFLAGS $CFLAGS -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
+printf "yes\n"
+else
+printf "no\n"
+fail "$0: error: unsupported long double type"
+fi
 
 #
 # Some build systems globally pass in broken CFLAGS like -ffast-math

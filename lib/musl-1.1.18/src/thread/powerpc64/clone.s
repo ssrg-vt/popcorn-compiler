@@ -1,8 +1,6 @@
-/* .text */
-.section .text.__clone, "ax"
+.text
 .global __clone
 .type __clone, %function
-.align 4
 __clone:
 	# int clone(fn, stack, flags, arg, ptid, tls, ctid)
 	#            a  b       c     d     e    f    g

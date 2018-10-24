@@ -1,13 +1,3 @@
-/* PIERRE How to proceed here? I'm afraid that we cannot place __cp_end 
- * and __cp_cancel in different sections as these can be moved around by the 
- * alignement tool and we might break the instruction flow here. 
- * With the current migration constraints there is absolutely no chances to 
- * migrate while the application code is holding a reference to __cp_end and
- * __cp_cancel, however in the future the migration constraint might be relaxed,
- * in that case we might need a solution here.
- */
-
-.section .text.__syscall_cp_asm, "ax"
 	.global __cp_begin
 	.hidden __cp_begin
 	.global __cp_end
@@ -17,9 +7,8 @@
 	.hidden __cancel
 	.global __syscall_cp_asm
 	.hidden __syscall_cp_asm
-/*	.text */
+	.text
 	.type   __syscall_cp_asm,%function
-	.align 4
 __syscall_cp_asm:
 	# at enter: r3 = pointer to self->cancel, r4: syscall no, r5: first arg, r6: 2nd, r7: 3rd, r8: 4th, r9: 5th, r10: 6th
 __cp_begin:

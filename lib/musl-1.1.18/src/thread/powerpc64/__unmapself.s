@@ -1,8 +1,6 @@
-	/* .text */
-	.section .text.__unmapself, "ax"
+	.text
 	.global __unmapself
 	.type   __unmapself,%function
-	.align 4
 __unmapself:
 	li      0, 91 # __NR_munmap
 	sc
