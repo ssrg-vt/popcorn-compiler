@@ -5,8 +5,6 @@
 POPCORN := /usr/local/popcorn
 ARM64_LIBGCC := $(shell dirname \
                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
-POWERPC64_LIBGCC := $(shell dirname \
-                    $(shell powerpc64le-linux-gnu-gcc -print-libgcc-file-name))
 
 ###############################################################################
 #                  Compiler toolchain & command-line flags                    #
@@ -50,22 +48,6 @@ ARM64_INC    := -isystem $(ARM64_POPCORN)/include
 ARM64_LIB    := -L$(ARM64_POPCORN)/lib -L$(ARM64_LIBGCC) \
 								$(addprefix $(ARM64_POPCORN),$(LIBS)) -lgcc
 
-#############
-# PowerPC64 #
-#############
-
-# Locations
-POWERPC64_POPCORN := $(POPCORN)/powerpc64
-POWERPC64_BUILD   := build_powerpc64
-POWERPC64_BIN     := $(BIN)_powerpc64
-POWERPC64_BC      := $(addprefix $(POWERPC64_BUILD)/,$(BC))
-
-# Flags
-POWERPC64_TARGET := powerpc64le-linux-gnu
-POWERPC64_INC    := -isystem $(POWERPC64_POPCORN)/include
-POWERPC64_LIB    := -L$(POWERPC64_POPCORN)/lib -L$(POWERPC64_LIBGCC) \
-                    $(addprefix $(POWERPC64_POPCORN),$(LIBS)) -lgcc
-
 ##########
 # x86-64 #
 ##########
@@ -85,12 +67,11 @@ X86_64_LIB    := -L$(X86_64_POPCORN)/lib $(addprefix $(X86_64_POPCORN),$(LIBS))
 #                                 Recipes                                     #
 ###############################################################################
 
-#$(POWERPC64_BIN)
 all: $(ARM64_BIN) $(X86_64_BIN)
 
 clean:
-	@echo " [CLEAN] $(ARM64_BIN) $(ARM64_BUILD) $(POWERPC64_BIN) $(POWERPC64_BUILD) $(X86_64_BIN) $(X86_64_BUILD) $(LOG)"
-	@rm -rf $(ARM64_BIN) $(ARM64_BUILD) $(POWERPC64_BIN) $(POWERPC64_BUILD) $(X86_64_BIN) $(X86_64_BUILD) $(LOG)
+	@echo " [CLEAN] $(ARM64_BIN) $(ARM64_BUILD) $(X86_64_BIN) $(X86_64_BUILD) $(LOG)"
+	@rm -rf $(ARM64_BIN) $(ARM64_BUILD) $(X86_64_BIN) $(X86_64_BUILD) $(LOG)
 
 %.dir:
 	@echo " [MKDIR] $*"
@@ -109,22 +90,6 @@ $(ARM64_BUILD)/%.bc: %.c
 $(ARM64_BIN): $(ARM64_BUILD)/.dir $(ARM64_BC)
 	@echo " [CC (aarch64)] $@"
 	@$(CC) -target $(ARM64_TARGET) $(CFLAGS) -o $@ $(ARM64_BC) $(ARM64_LIB)
-	@$(POST_PROCESS) -f $@
-
-#############
-# PowerPC64 #
-#############
-
-$(POWERPC64_BUILD)/%.bc: %.c
-	@echo " [CC (powerpc64)] $<"
-	@$(CC) -target $(POWERPC64_TARGET) $(CFLAGS) $(POWERPC64_INC) -c -emit-llvm \
-				 -o $@ $<
-	@$(OPT) $(OPT_FLAGS) -o $@ $@
-
-$(POWERPC64_BIN): $(POWERPC64_BUILD)/.dir $(POWERPC64_BC)
-	@echo " [CC (powerpc64)] $@"
-	@$(CC) -target $(POWERPC64_TARGET) $(CFLAGS) -o $@ $(POWERPC64_BC) \
-				 $(POWERPC64_LIB)
 	@$(POST_PROCESS) -f $@
 
 ##########

@@ -13,8 +13,6 @@ void outer_frame()
   {
 #ifdef __aarch64__
     TIME_AND_TEST_REWRITE("./stack_pointer_aarch64", outer_frame);
-#elif defined(__powerpc64__)
-    TIME_AND_TEST_REWRITE("./stack_pointer_powerpc64", outer_frame);
 #elif defined(__x86_64__)
     TIME_AND_TEST_REWRITE("./stack_pointer_x86-64", outer_frame);
 #endif

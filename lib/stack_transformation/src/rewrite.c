@@ -439,7 +439,6 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
   // architectures.  Need to handle more gracefully.
   //   x86_64:    24
   //   aarch64:   32
-  //   powerpc64:  8
   if(val_src->is_alloca && VAL_SIZE(val_src) == 24 &&
      val_dest->is_alloca && VAL_SIZE(val_dest) == 32)
     skip = true;

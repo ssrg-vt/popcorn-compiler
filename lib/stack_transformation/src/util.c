@@ -23,7 +23,6 @@ const char* arch_name(uint16_t arch)
   switch(arch)
   {
   case EM_AARCH64: return "aarch64";
-  case EM_PPC64: return "powerpc64";
   case EM_X86_64: return "x86-64";
   default: return "unknown/unsupported architecture";
   }
@@ -37,7 +36,6 @@ regops_t get_regops(uint16_t arch)
   switch(arch)
   {
   case EM_AARCH64: return &regs_aarch64;
-  case EM_PPC64: return &regs_powerpc64;
   case EM_X86_64: return &regs_x86_64;
   default:
     ST_WARN("unsupported architecture\n");
@@ -53,7 +51,6 @@ properties_t get_properties(uint16_t arch)
   switch(arch)
   {
   case EM_AARCH64: return &properties_aarch64;
-  case EM_PPC64: return &properties_powerpc64;
   case EM_X86_64: return &properties_x86_64;
   default:
     ST_WARN("unsupported architecture\n");
