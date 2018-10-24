@@ -9,8 +9,6 @@
 /* Architecture-specific includes. */
 #ifdef __aarch64__
 # include <arch/aarch64/migrate.h>
-#elif defined __powerpc64__
-# include <arch/powerpc64/migrate.h>
 #elif defined __x86_64__
 # include <arch/x86_64/migrate.h>
 #else

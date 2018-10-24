@@ -76,42 +76,6 @@ void dump_regs_aarch64(const struct regset_aarch64 *regset, const char *log)
   fclose(stream);
 }
 
-void dump_regs_powerpc64(const struct regset_powerpc64 *regset,
-                         const char *log)
-{
-  size_t i;
-  FILE *stream;
-
-  assert(regset && "Invalid regset");
-  if(log)
-  {
-    stream = fopen(log, "a");
-    if(!stream) return;
-  }
-  else stream = stderr;
-
-  fprintf(stream, "Register set located @ %p\n", regset);
-  fprintf(stream, "Program counter: %p\n", regset->pc);
-  fprintf(stream, "Link register: %p\n", regset->lr);
-  fprintf(stream, "Counter: %ld / %lu / %lx / %p\n",
-          UINT64(regset->ctr), UINT64(regset->ctr), UINT64(regset->ctr),
-          regset->ctr);
-
-  for(i = 0; i < 32; i++)
-  {
-    if(i == 1) fprintf(stream, "Stack pointer / ");
-    else if(i == 2) fprintf(stream, "Table-of-contents pointer / ");
-    else if(i == 13) fprintf(stream, "Frame-base pointer / ");
-    fprintf(stream, "R%lu: %ld / %lu / %lx\n", i,
-            regset->r[i], regset->r[i], regset->r[i]);
-  }
-
-  for(i = 0; i < 32; i++)
-    fprintf(stream, "F%lu: %lx\n", i, regset->f[i]);
-
-  fclose(stream);
-}
-
 void dump_regs_x86_64(const struct regset_x86_64 *regset, const char *log)
 {
   size_t i;
@@ -176,8 +140,6 @@ void dump_regs(const void *regset, const char *log)
 {
 #if defined __aarch64__
   dump_regs_aarch64(regset, log);
-#elif defined __powerpc64__
-  dump_regs_powerpc64(regset, log);
 #else /* x86_64 */
   dump_regs_x86_64(regset, log);
 #endif

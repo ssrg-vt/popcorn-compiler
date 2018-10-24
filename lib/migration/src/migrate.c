@@ -30,22 +30,17 @@
 /* Environment variables specifying at which function to migrate */
 static const char *env_start_aarch64 = "AARCH64_MIGRATE_START";
 static const char *env_end_aarch64 = "AARCH64_MIGRATE_END";
-static const char *env_start_powerpc64 = "POWERPC64_MIGRATE_START";
-static const char *env_end_powerpc64 = "POWERPC64_MIGRATE_END";
 static const char *env_start_x86_64 = "X86_64_MIGRATE_START";
 static const char *env_end_x86_64 = "X86_64_MIGRATE_END";
 
 /* Per-arch functions (specified via address range) at which to migrate */
 static void *start_aarch64 = NULL;
 static void *end_aarch64 = NULL;
-static void *start_powerpc64 = NULL;
-static void *end_powerpc64 = NULL;
 static void *start_x86_64 = NULL;
 static void *end_x86_64 = NULL;
 
 /* TLS keys indicating if the thread has previously migrated */
 static pthread_key_t num_migrated_aarch64 = 0;
-static pthread_key_t num_migrated_powerpc64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
 /* Read environment variables to setup migration points. */
@@ -64,16 +59,6 @@ __init_migrate_testing(void)
     end_aarch64 = (void *)strtoll(end, NULL, 16);
     if(start_aarch64 && end_aarch64)
       pthread_key_create(&num_migrated_aarch64, NULL);
-  }
-#elif defined(__powerpc64__)
-  start = getenv(env_start_powerpc64);
-  end = getenv(env_end_powerpc64);
-  if(start && end)
-  {
-    start_powerpc64 = (void *)strtoll(start, NULL, 16);
-    end_powerpc64 = (void *)strtoll(end, NULL, 16);
-    if(start_powerpc64 && end_powerpc64)
-      pthread_key_create(&num_migrated_powerpc64, NULL);
   }
 #else
   start = getenv(env_start_x86_64);
@@ -100,13 +85,6 @@ static inline int do_migrate(void *addr)
     if(start_aarch64 <= addr && addr < end_aarch64) {
       pthread_setspecific(num_migrated_aarch64, (void *)1);
       retval = 0;
-    }
-  }
-#elif defined(__powerpc64__)
-  if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
-    if(start_powerpc64 <= addr && addr < end_powerpc64) {
-      pthread_setspecific(num_migrated_powerpc64, (void *)1);
-      retval = 1;
     }
   }
 #else
@@ -233,7 +211,6 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     const enum arch dst_arch = ni[nid].arch;
     union {
        struct regset_aarch64 aarch;
-       struct regset_powerpc64 powerpc;
        struct regset_x86_64 x86;
     } regs_src, regs_dst;
 #if _TIME_REWRITE == 1
@@ -265,14 +242,6 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
         bp = (unsigned long)regs_dst.aarch.x[29];
 #if _LOG == 1
         dump_regs_aarch64(&regs_dst.aarch, LOG_FILE);
-#endif
-        break;
-      case ARCH_POWERPC64:
-        regs_dst.powerpc.pc = __migrate_fixup_powerpc64;
-        sp = (unsigned long)regs_dst.powerpc.r[1];
-        bp = (unsigned long)regs_dst.powerpc.r[31];
-#if _LOG == 1
-        dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE);
 #endif
         break;
       case ARCH_X86_64:
