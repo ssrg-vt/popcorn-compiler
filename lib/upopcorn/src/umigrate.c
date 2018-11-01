@@ -101,7 +101,7 @@ static void load_context()
 	while(__hold);
 
 	up_log("%s: sending cmd...\n", __func__);
-	ret = send_cmd_rsp(GET_CTXT, NULL, 0, &regs, sizeof(regs));
+	ret = send_cmd_rsp(GET_CTXT, 0, NULL, sizeof(regs), &regs);
 	if(ret)
 		perror(__func__);
 	up_log("%s: response received\n", __func__);

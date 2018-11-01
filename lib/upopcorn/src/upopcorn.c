@@ -133,6 +133,6 @@ __upopcorn_destroy(void)
 	if(remote)
 	{
 		printf("sending exit...");
-		send_cmd(SND_EXIT, NULL, 0);
+		send_cmd(SND_EXIT, 0, NULL);
 	}
 }

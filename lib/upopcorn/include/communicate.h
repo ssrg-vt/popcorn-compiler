@@ -33,5 +33,5 @@ static char *comm_cmd_char[] = {
 };
 
 int comm_migrate(int nid);
-int send_cmd(enum comm_cmd cmd, char *arg, int size);
-int send_cmd_rsp(enum comm_cmd cmd, char *arg, int size, void* resp, int resp_size);
+int send_cmd(enum comm_cmd cmd, int size, char *arg);
+int send_cmd_rsp(enum comm_cmd cmd, int size, char *arg, int resp_size, void* resp);

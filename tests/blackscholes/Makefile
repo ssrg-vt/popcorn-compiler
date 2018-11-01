@@ -203,9 +203,9 @@ $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 
 install: post_process
 	cp $(X86_64_ALIGNED) $(BIN)
-	cp $(BIN)* ~/bins
-	scp $(BIN)_* 10.1.1.51:~/bins
-	scp $(ARM64_ALIGNED) 10.1.1.51:~/bins/$(BIN)
+	#cp $(BIN)* ~/bins
+	#scp $(BIN)_* 10.1.1.51:~/bins
+	#scp $(ARM64_ALIGNED) 10.1.1.51:~/bins/$(BIN)
 
 run_x86: install
 	cd ~/bins; ./$(BIN) 1 in_10M.txt out.txt

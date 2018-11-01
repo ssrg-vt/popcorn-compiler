@@ -1,5 +1,36 @@
 #pragma once
 
+#ifdef __x86_64__
+#include "arch/x86_64/migrate.h"
+#elif defined __aarch64__
+#include "arch/aarch64/migrate.h"
+#else
+# error Unknown/unsupported architecture!
+#endif
+
+#include <stack_transform.h>
+//#include "config.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if 0
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
+#include <sched.h>
+#endif
+
+typedef union{
+		struct regset_aarch64 aarch;
+		struct regset_x86_64 x86;
+} regs_t;
+
+#ifdef __cplusplus
+}
+#endif
+
 #define POPCORN_CONFIG_FILE ".popcorn" /* file should be in HOME directory */
 #define POPCORN_NODE_MAX 16
 #define PATH_MAX 4096

@@ -45,6 +45,7 @@ typedef struct procmap_s{
 	void* addr_start; 	//< start address of the area
 	void* addr_end; 	//< end address
 	unsigned long length; //< size of the range
+	unsigned long referenced; //< size of the range
 
 	char perm[5];		//< permissions rwxp ( string format)
 	struct protection_s prot;

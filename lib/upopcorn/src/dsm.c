@@ -35,12 +35,29 @@ dsm_protect(void *addr, unsigned long length)
 	return 0;
 }
 
+struct page_exchange_s
+{
+	uint64_t address;
+	uint64_t size;
+};
+int send_page(char* arg, int size)
+{
+	struct page_exchange_s *pes = (struct page_exchange_s *)arg;
+	/*size is not page size but addr size in char */
+	printf("%s: ptr = %p , size %ld\n", __func__, (void*)pes->address, pes->size);
+	/*TODO: make sure it is the same page size on both arch!? */
+	writen(server_sock_fd, pes->address, pes->size);
+	return 0;
+}
 int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
-	char ca[NUM_LINE_SIZE_BUF+1];
-	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
-	up_log("%s: %p == %s\n", __func__, raddr, ca);
-	return send_cmd_rsp(GET_PAGE, ca, sizeof(ca), buffer, page_size);
+	struct page_exchange_s pes;
+	//char ca[NUM_LINE_SIZE_BUF+1];
+	//snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
+	//up_log("%s: %p == %s\n", __func__, raddr, ca);
+	pes.address=raddr;
+	pes.size=page_size;
+	return send_cmd_rsp(GET_PAGE,  sizeof(pes), (char*) pes, page_size, buffer);
 }
 
 
@@ -56,8 +73,8 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 	char ca[NUM_LINE_SIZE_BUF+1];
 	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);//conflict with vfprintf?
 	up_log("%s: %p == %s, map %p map size %ld\n", __func__, addr, ca, new_map, sizeof(*new_map));
-	err= send_cmd_rsp(GET_PMAP, ca, sizeof(ca),
-				new_map, sizeof(*new_map));
+	err= send_cmd_rsp(GET_PMAP, sizeof(ca), ca,
+				sizeof(*new_map), new_map);
 	CHECK_ERR(err);
 	pmparser_insert(new_map, 0);//FIXME: should put node id
 

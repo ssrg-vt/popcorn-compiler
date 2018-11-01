@@ -11,10 +11,20 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "config.h"
+#include "dsm.h"
 #include "communicate.h"
 #include "migrate.h"
 #include "pmparser.h"
 
+
+#define CMD_EMBEDED_ARG_SIZE 64
+//TODO: struct cmd_s must have the same size across archs
+struct  __attribute__((__packed__)) cmd_s{
+	enum comm_cmd cmd;
+	uint32_t size;
+	char arg[CMD_EMBEDED_ARG_SIZE];
+};
+	
 
 static int server_sock_fd = 0;
 static int ori_to_remote_sock = 0;
@@ -72,15 +82,6 @@ readn(int fd, void *vptr, size_t n)
 
 
 
-static int send_page(char* arg, int size)
-{
-	void *addr = (void*) atol(arg);	
-	/*size is not page size but addr size in char */
-	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
-	/*TODO: make sure it is the same page size on both arch!? */
-	writen(server_sock_fd, addr, sysconf(_SC_PAGE_SIZE));
-	return 0;
-}
 
 static int print_text(char* arg, int size)
 {
@@ -110,6 +111,7 @@ static int get_pmap(char* arg, int size)
 	{
 		/* To avoid this redirection, we should update at each region creation:
 		 * mmap (done in dsm), malloc, pmalloc (?), thread creation, ? */ 
+		/* or assuming single-threaded app, just do it at migration? */
 		pmparser_update();
 		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
 		{
@@ -134,41 +136,37 @@ cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, get_pmap, hdl_exit};
 int __handle_commands(int sockfd)
 {
 	int n;
-	int size;
-	enum comm_cmd cmd;
-	char buff[MAX_NUM_CHAR_SIZE+1];
+	struct cmd_s cmds;
 
 	up_log("Entering function %s\n", __func__);
 
-	n = readn(sockfd, buff, CMD_SIZE);
+	n = readn(sockfd, &cmds, sizeof(cmds));
 	if(n<0)
 		perror("cmd_read");
-	buff[n]='\0';
-	cmd = (enum comm_cmd) atoi(buff);
-	up_log("%s: cmd read %d, %s\n", __func__, (int)cmd, buff);
-
-	n = readn(sockfd, buff, ARG_SIZE_SIZE);
-	if(n<0)
-		perror("arg_size");
-	buff[n]='\0';
-	size = atoi(buff);
-	up_log("%s: size read %d, %s\n", __func__, (int)size, buff);
+	up_log("%s: cmd %d; size %d\n", __func__, (int)cmds.cmd, cmds.size);
 
 	char* arg;
-	if(size !=0)
+	uint32_t size=cmds.size;
+	if(size>0)
 	{
-		arg = pmalloc(size+1);
-		n = readn(sockfd, arg, size);
-		if(n<0)
-			perror("arg_size");
-		arg[n]='\0';
-		up_log("%s: arg read is %s\n", __func__, arg);
-	}
-	else
+		if(size >= CMD_EMBEDED_ARG_SIZE)
+		{
+			arg = pmalloc(size+1);
+			n = readn(sockfd, arg, size);
+			if(n<0)
+				perror("arg_size");
+			arg[n]='\0';
+			up_log("%s: arg read is %s\n", __func__, arg);
+		}
+		else
+			arg=(char*)&cmds.arg;
+	}else
 		arg=NULL;
 
-	cmd_funcs[cmd](arg, size);
-	pfree(arg);
+	cmd_funcs[cmds.cmd](arg, size);
+
+	if(size >= CMD_EMBEDED_ARG_SIZE)
+		pfree(arg);
 
 	return 0;
 }
@@ -182,27 +180,23 @@ int handle_commands(int sockfd)
 	}
 }
 
-int send_cmd(enum comm_cmd cmd, char *arg, int size)
+int send_cmd(enum comm_cmd cmd, int size, char *arg)
 {
 	int n;
-	char buff[MAX_NUM_CHAR_SIZE+1];
+	struct cmd_s cmds;
 
 	up_log("sending a command\n");
+	cmds.cmd = cmd;
+	cmds.size = size;
+	if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
+		strncpy((char*)&(cmds.arg), arg, size);
 
-	snprintf(buff, CMD_SIZE+1, "%d", (int) cmd);
-	n = writen(ori_to_remote_sock, buff, CMD_SIZE);
+	n = writen(ori_to_remote_sock, &cmds, sizeof(cmds));
 	if(n<0)
 		perror("cmd_write");
-	up_log("cmd written %s\n", buff);
+	up_log("cmd written %d\n", cmds.cmd);
 
-	snprintf(buff, ARG_SIZE_SIZE+1, "%d", (int) size);
-	n = writen(ori_to_remote_sock, buff, ARG_SIZE_SIZE);
-	if(n<0)
-		perror("arg_size  write");
-
-	up_log("size written %s\n", buff);
-
-	if(size)
+	if(size >= CMD_EMBEDED_ARG_SIZE)
 	{
 		n = writen(ori_to_remote_sock, arg, size);
 		if(n<0)
@@ -212,13 +206,12 @@ int send_cmd(enum comm_cmd cmd, char *arg, int size)
 	return 0;
 }
 
-int send_cmd_rsp(enum comm_cmd cmd, char *arg, int size, void* resp, int resp_size)
+/* send a cmd and wait for a response */
+int send_cmd_rsp(enum comm_cmd cmd, int size, char *arg, int resp_size, void* resp)
 {
+	send_cmd(cmd, size, arg);
 
-	send_cmd(cmd, arg, size);
-	int n;
-
-	n = readn(ori_to_remote_sock, resp, resp_size);
+	int n = readn(ori_to_remote_sock, resp, resp_size);
 	if(n<0)
 		perror("resp_read");
 
@@ -301,7 +294,7 @@ static void test()
 {
 	int ret;
         char msg[] = "Hello world from prog\n";
-        ret = send_cmd(PRINT_ST, msg, strlen(msg));
+        ret = send_cmd(PRINT_ST, strlen(msg), msg);
         if(ret < 0)
                 perror(__func__);
 
@@ -315,7 +308,7 @@ static int remote_init()
 
         up_log("%s: %d\n", __func__, ori_to_remote_sock);
 
-	test();
+	//test();
         //close(fd);
 
         up_log("%s: end\n", __func__);

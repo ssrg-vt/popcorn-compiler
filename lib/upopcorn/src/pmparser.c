@@ -23,7 +23,7 @@ implied warranty.
 procmap_t* pmp_head =NULL;
 procmap_t* pmp_curr =NULL;
 
-static int pmparser_parse();
+static int pmparser_parse(int update);
 
 int pmparser_init()
 {
@@ -70,7 +70,7 @@ static int pmparser_parse(int update)
 	int fields;
 	struct procmap_s *tmp, *tmp2;
 
-	file=fopen("/proc/self/maps","r");
+	file=fopen("/proc/self/smaps","r");
 	if(!file){
 		fprintf(stderr,"pmparser : cannot open the memory maps, %s\n",strerror(errno));
 		return -1;
@@ -103,10 +103,27 @@ static int pmparser_parse(int update)
 		tmp->prot.is_p=(tmp->perm[3]=='p');
 		tmp->next=NULL;
 
+		//read reference field and skip other fields
+		int i;
+		for(i=0; i<20; i++)
+		{
+			char substr[32];
+        		int n;
+			if(getline(&lineptr, &linesz, file)<0)
+				perror("reading # referenced");
+			if (sscanf(lineptr, "%31[^:]: %d", substr, &n) == 2)
+			{
+				if (strcmp(substr, "Referenced") == 0)     
+					tmp->referenced = n; 
+				//printf("referenced %d\n", tmp->referenced);
+			}
+		}
+		
+
 #if 1
                 up_log("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
                        (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
-			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->pathname);
+			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
 #endif
 		if(update && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
 		{
