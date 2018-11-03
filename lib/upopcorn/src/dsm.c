@@ -370,7 +370,7 @@ void userfaultfd_init(void)
 }
 #endif
 
-volatile int hold_remote_init=1;
+volatile int hold_remote_init=0;
 int dsm_init_remote()
 {
 	int ret;
