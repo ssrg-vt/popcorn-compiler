@@ -81,7 +81,7 @@ static int pmparser_parse(int update)
 
 	while(getline(&lineptr, &linesz, file) >= 0)
         {
-		//up_log("line read: %s", lineptr);
+		up_log("line read: %s", lineptr);
 		tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
 		if(!tmp)
 			perror(__func__);
@@ -104,26 +104,37 @@ static int pmparser_parse(int update)
 		tmp->next=NULL;
 
 		//read reference field and skip other fields
-		int i;
-		for(i=0; i<20; i++)
+		int i; for(i=0;i<20;i++)
+		//for(;;)
 		{
 			char substr[32];
         		int n;
 			if(getline(&lineptr, &linesz, file)<0)
 				perror("reading # referenced");
-			if (sscanf(lineptr, "%31[^:]: %d", substr, &n) == 2)
+			//printf("line read: %s", lineptr);
+			if (sscanf(lineptr, "%31[^:]%n", substr, &n) == 1)
 			{
+				//printf("subtr read: %32s\n", lineptr);
 				if (strcmp(substr, "Referenced") == 0)     
+				{
 					tmp->referenced = n; 
-				//printf("referenced %d\n", tmp->referenced);
+					//printf("referenced %ld\n", tmp->referenced);
+				}
+				//VmFlags should be the last line
+				if (strcmp(substr, "VmFlags") == 0)     
+				{
+					//printf("VmFlags found\n");
+					//break;
+				}
 			}
 		}
 		
 
-#if 1
-                up_log("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
-                       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
-			tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
+#if 0
+		if(tmp)
+			up_log("%p = %lx-%lx %s %lx %s %lu %s;\n", tmp,
+			       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
+				tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
 #endif
 		if(update && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
 		{

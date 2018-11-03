@@ -80,6 +80,10 @@ readn(int fd, void *vptr, size_t n)
 	return (n - nleft);		 /* return >= 0 */
 }
 
+int send_data(void* addr, size_t len)
+{
+	return writen(server_sock_fd, addr, len);
+}
 
 
 
@@ -105,6 +109,7 @@ static int get_ctxt(char* arg, int size)
 static int get_pmap(char* arg, int size)
 {
 	void *pmap;
+	arg[size]='\0';
 	void *addr = (void*) atol(arg);
 	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
 	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
@@ -149,23 +154,24 @@ int __handle_commands(int sockfd)
 	uint32_t size=cmds.size;
 	if(size>0)
 	{
-		if(size >= CMD_EMBEDED_ARG_SIZE)
+		//if(size >= CMD_EMBEDED_ARG_SIZE)
 		{
 			arg = pmalloc(size+1);
 			n = readn(sockfd, arg, size);
 			if(n<0)
 				perror("arg_size");
-			arg[n]='\0';
-			up_log("%s: arg read is %s\n", __func__, arg);
+			//arg[n]='\0';
+			//up_log("%s: arg read is %s\n", __func__, arg);
 		}
-		else
-			arg=(char*)&cmds.arg;
+		//else
+		//	arg=(char*)&cmds.arg;
 	}else
 		arg=NULL;
 
 	cmd_funcs[cmds.cmd](arg, size);
 
-	if(size >= CMD_EMBEDED_ARG_SIZE)
+	//if(size>0 && size >= CMD_EMBEDED_ARG_SIZE)
+	if(size >0)
 		pfree(arg);
 
 	return 0;
@@ -188,19 +194,20 @@ int send_cmd(enum comm_cmd cmd, int size, char *arg)
 	up_log("sending a command\n");
 	cmds.cmd = cmd;
 	cmds.size = size;
-	if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
-		strncpy((char*)&(cmds.arg), arg, size);
+	//if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
+	//	strncpy((char*)&(cmds.arg), arg, size);
 
 	n = writen(ori_to_remote_sock, &cmds, sizeof(cmds));
 	if(n<0)
 		perror("cmd_write");
 	up_log("cmd written %d\n", cmds.cmd);
 
-	if(size >= CMD_EMBEDED_ARG_SIZE)
+	//if(size >= CMD_EMBEDED_ARG_SIZE)
 	{
 		n = writen(ori_to_remote_sock, arg, size);
 		if(n<0)
 			perror("arg_size write");
+		up_log("arg written %d\n", cmds.cmd);
 	}
 
 	return 0;
@@ -247,13 +254,13 @@ int comm_migrate(int nid)
 
 	if(inet_pton(AF_INET, arch_nodes[nid], &serv_addr.sin_addr)<=0)
 	{
-		up_log("\n inet_pton error occured\n");
+		perror("\n inet_pton error occured\n");
 		return 1;
 	}
 
 	if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 	{
-	   up_log("\n Error : Connect Failed \n");
+	   perror("\n Error : Connect Failed \n");
 	   return 1;
 	}
 
@@ -290,14 +297,13 @@ int comm_migrate(int nid)
 	return 0;
 }
 
-static void test()
+static void test(void)
 {
 	int ret;
         char msg[] = "Hello world from prog\n";
         ret = send_cmd(PRINT_ST, strlen(msg), msg);
         if(ret < 0)
                 perror(__func__);
-
 }
 
 static int remote_init()
@@ -308,7 +314,7 @@ static int remote_init()
 
         up_log("%s: %d\n", __func__, ori_to_remote_sock);
 
-	//test();
+	test();
         //close(fd);
 
         up_log("%s: end\n", __func__);
