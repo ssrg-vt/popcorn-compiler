@@ -130,7 +130,8 @@ static int bin_index_up(size_t x)
 {
 	x = x / SIZE_ALIGN - 1;
 	if (x <= 32) return x;
-	return ((union { float v; uint32_t r; }){(int)x}.r+0x1fffff>>21) - 496;
+	//return ((union { float v; uint32_t r; }){(int)x}.r+0x1fffff>>21) - 496;
+	return (((union { float v; uint32_t r; }){(int)x}.r+0x1fffff)>>21) - 496;
 }
 
 #if 0
@@ -155,7 +156,7 @@ void __dump_heap(int x)
 #endif
 
 uintptr_t __malloc_start = 0;
-extern uintptr_t __pmalloc_start;
+
 #define INIT_SIZE (PAGE_SIZE << 4)
 
 static int init;
@@ -164,12 +165,13 @@ int malloc_init(void* start)
 	if(init)
 	{
 		printf("%s: malloc already initialized!!!\n", __func__);
+		goto fail;
 	}
 
-	printf("%s: malloc start %p, pmalloc start %ld\n",
-			__func__, start, __pmalloc_start);
+	printf("%s: malloc start %p\n",
+			__func__, start);
 	mal.brk_init = (uintptr_t)__mmap(start, INIT_SIZE, PROT_READ|PROT_WRITE,
-		MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+		MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
 
 	if(mal.brk_init == (uintptr_t)MAP_FAILED)
 		goto fail;

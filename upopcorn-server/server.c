@@ -59,6 +59,7 @@ void __process(int fd, struct sockaddr_in *clientaddr){
 	setenv("POPCORN_REMOTE_START", "1", 1);
 
 	execl(exec_path, exec_path, NULL);
+	//execl("/usr/bin/gdb", "-iex \"set auto-load safe-path /\"", "-ex run", "--args", exec_path, NULL);
 
 	perror(__func__);
 }

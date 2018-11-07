@@ -23,11 +23,18 @@ implied warranty.
 procmap_t* pmp_head =NULL;
 procmap_t* pmp_curr =NULL;
 
+enum PARSE_MODE
+{
+	NORMAL=0,
+	UPDATE,
+	JUST_PRINT
+};
+
 static int pmparser_parse(int update);
 
 int pmparser_init()
 {
-	return pmparser_parse(0);
+	return pmparser_parse(NORMAL);
 }
 
 
@@ -62,7 +69,7 @@ void pmparser_insert(procmap_t* node, int nid)
 
 
 #define BUF_SIZE 512
-static int pmparser_parse(int update)
+static int pmparser_parse(int mode)
 {
 	FILE* file;
 	size_t linesz=BUF_SIZE;
@@ -70,6 +77,7 @@ static int pmparser_parse(int update)
 	int fields;
 	struct procmap_s *tmp, *tmp2;
 
+	printf("parsing /proc/self/smaps\n"); 
 	file=fopen("/proc/self/smaps","r");
 	if(!file){
 		fprintf(stderr,"pmparser : cannot open the memory maps, %s\n",strerror(errno));
@@ -82,53 +90,64 @@ static int pmparser_parse(int update)
 	while(getline(&lineptr, &linesz, file) >= 0)
         {
 		up_log("line read: %s", lineptr);
-		tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
-		if(!tmp)
-			perror(__func__);
 
-                fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
-                       (unsigned long*)&tmp->addr_start,  (unsigned long*)&tmp->addr_end, 
-			tmp->perm, &tmp->offset, tmp->dev, &tmp->inode, tmp->pathname);
+		if(mode != JUST_PRINT)
+		{
+			/* allocate node and fill min fields */
+			tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
+			if(!tmp)
+				perror(__func__);
 
-                if(fields < 6)
-			up_log("maps: less fields (%d) than expected (6 or 7)", fields);
+			fields = sscanf(lineptr, "%lx-%lx %s %lx %s %lu %s",
+			       (unsigned long*)&tmp->addr_start,  (unsigned long*)&tmp->addr_end, 
+				tmp->perm, &tmp->offset, tmp->dev, &tmp->inode, tmp->pathname);
 
-		tmp->pathname[PMPARSER_PATHNAME_MAX-1] = '\0';
+			if(fields < 6)
+				up_log("maps: less fields (%d) than expected (6 or 7)", fields);
 
-		tmp->length = (unsigned long)tmp->addr_end - 
-				(unsigned long)tmp->addr_start;
-		tmp->prot.is_r=(tmp->perm[0]=='r');
-		tmp->prot.is_w=(tmp->perm[1]=='w');
-		tmp->prot.is_x=(tmp->perm[2]=='x');
-		tmp->prot.is_p=(tmp->perm[3]=='p');
-		tmp->next=NULL;
+			tmp->pathname[PMPARSER_PATHNAME_MAX-1] = '\0';
+
+			tmp->length = (unsigned long)tmp->addr_end - 
+					(unsigned long)tmp->addr_start;
+			tmp->prot.is_r=(tmp->perm[0]=='r');
+			tmp->prot.is_w=(tmp->perm[1]=='w');
+			tmp->prot.is_x=(tmp->perm[2]=='x');
+			tmp->prot.is_p=(tmp->perm[3]=='p');
+			tmp->next=NULL;
+		}
 
 		//read reference field and skip other fields
-		int i; for(i=0;i<20;i++)
-		//for(;;)
+		for(;;)
 		{
 			char substr[32];
         		int n;
 			if(getline(&lineptr, &linesz, file)<0)
 				perror("reading # referenced");
+
 			//printf("line read: %s", lineptr);
 			if (sscanf(lineptr, "%31[^:]%n", substr, &n) == 1)
 			{
 				//printf("subtr read: %32s\n", lineptr);
 				if (strcmp(substr, "Referenced") == 0)     
 				{
-					tmp->referenced = n; 
-					//printf("referenced %ld\n", tmp->referenced);
+					if(mode != JUST_PRINT)
+					{
+						tmp->referenced = n; 
+						//printf("referenced %ld\n", tmp->referenced);
+					}
 				}
-				//VmFlags should be the last line
+
+				//VmFlags is the end marker (should be the last line)
 				if (strcmp(substr, "VmFlags") == 0)     
 				{
 					//printf("VmFlags found\n");
-					//break;
+					break;
 				}
 			}
 		}
 		
+		if(mode == JUST_PRINT)
+			continue;
 
 #if 0
 		if(tmp)
@@ -136,7 +155,7 @@ static int pmparser_parse(int update)
 			       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
 				tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
 #endif
-		if(update && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
+		if(mode==UPDATE && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
 		{
 			up_log("region exist: updating content\n");
 			/*revising the updating of regions since its complexe: local/remote regions, 
@@ -176,7 +195,15 @@ int pmparser_update()
 {
 	//should simply ask for more info and create a region and insert it?!
 	up_log("updating pmparser...\n");
-	return pmparser_parse(1);
+	return pmparser_parse(UPDATE);
+}
+
+
+int pmparser_parse_print()
+{
+	//should simply ask for more info and create a region and insert it?!
+	up_log("pinting smaps...\n");
+	return pmparser_parse(JUST_PRINT);
 }
 
 

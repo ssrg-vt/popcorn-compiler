@@ -158,6 +158,47 @@ void __dump_heap(int x)
 uintptr_t __pmalloc_start = 0;
 
 #define INIT_SIZE (PAGE_SIZE << 4)
+
+static int init=0;
+int pmalloc_init(void* start)
+{
+	if(init)
+	{
+		printf("%s: pmalloc already initialized!!!\n", __func__);
+		goto fail;
+	}
+
+	printf("%s: pmalloc start %p\n",
+			__func__, __pmalloc_start);
+	mal.brk_init = (uintptr_t)__mmap(start, INIT_SIZE, PROT_READ|PROT_WRITE,
+		MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+	if(mal.brk_init == (uintptr_t)MAP_FAILED)
+		goto fail;
+
+	mal.brk_size = INIT_SIZE;
+
+	mal.brk = mal.brk_init;
+
+	__pmalloc_start = mal.brk;
+	printf("--> pmalloc start %p\n", (void*)__pmalloc_start);
+#ifdef SHARED
+	mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
+#endif
+	mal.brk = mal.brk + 2*SIZE_ALIGN-1 & -SIZE_ALIGN;
+	mal.heap = (void *)mal.brk;
+	init = 1;
+
+	return 0;
+fail:
+	return -1;
+}
+
+
+#ifndef POPCORN_PMALLOC_BASE 
+#define POPCORN_PMALLOC_BASE 0x500000000000UL
+#endif
+
 static struct chunk *expand_heap(size_t n)
 {
 	static int init;
@@ -166,25 +207,11 @@ static struct chunk *expand_heap(size_t n)
 
 	lock(mal.brk_lock);
 
-	if (!init) {
-		mal.brk_init = (uintptr_t)__mmap(0, INIT_SIZE, PROT_READ|PROT_WRITE,
-			MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-
-		if(mal.brk_init == (uintptr_t)MAP_FAILED)
-			goto fail;
-
-		mal.brk_size = INIT_SIZE;
-
-		mal.brk = mal.brk_init;
-
-		__pmalloc_start = mal.brk;
-		printf("--> pmalloc start %p\n", (void*)__pmalloc_start);
-#ifdef SHARED
-		mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
-#endif
-		mal.brk = mal.brk + 2*SIZE_ALIGN-1 & -SIZE_ALIGN;
-		mal.heap = (void *)mal.brk;
-		init = 1;
+	if (!init)
+	{
+		perror("WARNING: automatic pmalloc initialization!!!");
+		pmalloc_init((void*)POPCORN_PMALLOC_BASE);
+		init=1;
 	}
 
 	if (n > SIZE_MAX - mal.brk - 2*PAGE_SIZE) goto fail;

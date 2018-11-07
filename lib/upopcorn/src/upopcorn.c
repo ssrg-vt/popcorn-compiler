@@ -74,14 +74,29 @@ void upopcorn_set_node_id(int remote)
 /* We start the slicing  the space a little (2 GB) after the end of bss */
 #define MALLOC_OFFSET_SIZE (2UL<<30)	/* 2 GB */
 
+
+/* Each instance should have its own slice of the virtual @ space: 4 GB */
+#define PMALLOC_SIZE (10UL<<30) /* 4 GB */
+/* We start the slicing  the space a little (80 GB) after the end of malloc (above) */
+/* This makes the size of malloc 80 GB == 8 nodes max?*/
+#define PMALLOC_OFFSET_SIZE (80UL<<30)	/* 80 GB */
+
 extern char end;
 void malloc_init(void* start);
+void pmalloc_init(void* start);
 void upopcorn_start_malloc()
 {
-	unsigned long slicing_start = (unsigned long)PAGE_ALIGN(&end);
-	unsigned long malloc_start = slicing_start + MALLOC_OFFSET_SIZE +
+	unsigned long malloc_slicing_start = (unsigned long)PAGE_ALIGN(&end);//FIXME?
+	unsigned long malloc_start = malloc_slicing_start + MALLOC_OFFSET_SIZE +
 				(MALLOC_SIZE*upopcorn_node_id);
 	malloc_init((void*)malloc_start);
+
+	/*
+	unsigned long pmalloc_slicing_start = (unsigned long)PAGE_ALIGN(malloc_start);
+	unsigned long pmalloc_start = pmalloc_slicing_start + PMALLOC_OFFSET_SIZE +
+				(PMALLOC_SIZE*upopcorn_node_id);
+	pmalloc_init((void*)pmalloc_start);
+	*/
 }
 
 //static void __attribute__((constructor)) __upopcorn_init(void);

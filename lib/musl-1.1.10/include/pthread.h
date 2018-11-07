@@ -150,6 +150,7 @@ int pthread_attr_getguardsize(const pthread_attr_t *__restrict, size_t *__restri
 int pthread_attr_setguardsize(pthread_attr_t *, size_t);
 int pthread_attr_getstacksize(const pthread_attr_t *__restrict, size_t *__restrict);
 int pthread_attr_setstacksize(pthread_attr_t *, size_t);
+int pthread_attr_setstackaddr(pthread_attr_t *a, size_t* base);
 int pthread_attr_getdetachstate(const pthread_attr_t *, int *);
 int pthread_attr_setdetachstate(pthread_attr_t *, int);
 int pthread_attr_getstack(const pthread_attr_t *__restrict, void **__restrict, size_t *__restrict);

@@ -1,23 +1,7 @@
 #include <sys/types.h>
 #include <stdio.h>
-#include <linux/userfaultfd.h>
 #include <pthread.h>
-#include <errno.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <poll.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/ioctl.h>
-#include <poll.h>
-
-
-#include <sys/types.h>
-#include <stdio.h>
-#include <pthread.h>
+#include <limits.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -46,11 +30,11 @@
 #endif
 
 
-//#define USERFAULTFD 0
+//#define USERFAULTFD
 
 
 
-long uffd;		  /* userfaultfd file descriptor */
+static long uffd;		  /* userfaultfd file descriptor */
 extern unsigned long __pmalloc_start;
 void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
 
@@ -98,6 +82,8 @@ int dsm_get_page(void* raddr, void* buffer, int page_size)
 void userfaultfd_register(void* addr, uint64_t len){
 
 	struct uffdio_register uffdio_register;
+	
+	up_log("UFFD register start is %p end is %p\n", addr,addr+len);
 
 	/* Register the memory range of the mapping we just created for
 	handling by the userfaultfd object. In mode, we request to track
@@ -138,12 +124,12 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 #endif
 		//use segfault: do we ever reach here with an inode?
 		ERR_CHECK((__mmap(new_map->addr_start, new_map->length, PROT_NONE,
-				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)==MAP_FAILED));
+				MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)==MAP_FAILED));
 #ifdef USERFAULTFD
 	}else
 	{	//use userfaultfd
 		ERR_CHECK((__mmap(new_map->addr_start, new_map->length, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)==MAP_FAILED));
+				MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)==MAP_FAILED));
 		userfaultfd_register((void*)new_map->addr_start, new_map->length);
 	}
 #endif
@@ -201,9 +187,11 @@ int dsm_copy_stack(void* addr)
 }
 
 #ifdef USERFAULTFD
+static volatile void* userfaultfd_stack_base=NULL;
 static void *
 fault_handler_thread(void *arg)
 {
+	void* sp = NULL;
 	static struct uffd_msg msg;   /* Data read from userfaultfd */
 	static int fault_cnt = 0;	 /* Number of faults so far handled */
 	static char *page = NULL;
@@ -211,13 +199,17 @@ fault_handler_thread(void *arg)
 	ssize_t nread;
 	size_t page_size;
 
+	/* used to track the address of the stack */
+	userfaultfd_stack_base=&sp;
+
+	printf("userfaultfd_stack_base is (%p)\n", userfaultfd_stack_base);
 
 	page_size = PAGE_SIZE;
 
 	/* Create a page that will be copied into the faulting region */
 
 	if (page == NULL) {
-		page = malloc(PAGE_SIZE);
+		page = pmalloc(PAGE_SIZE);
 		ERR_CHECK(!page);
 	}
 
@@ -291,7 +283,7 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 	procmap_t* map=NULL;
 	void *addr=info->si_addr;
 
-	//up_log("%s: address %p\n", __func__, info->si_addr);
+	up_log("%s: address %p\n", __func__, info->si_addr);
 	if(addr == NULL)
 	{
 		while(hold_real_fault);
@@ -340,11 +332,10 @@ int dsm_init_pmap()
 }
 
 #ifdef USERFAULTFD
-void* userfaultfd_stack_base=NULL;
+int pthread_attr_setstack(pthread_attr_t *a, void *addr, size_t size);
 void userfaultfd_init(void)
 {
-	int stack_base;
-	userfaultfd_stack_base=&stack_base;
+	static pthread_attr_t tattr;
 	printf("%s: init...\n", __func__);
 
 
@@ -361,31 +352,52 @@ void userfaultfd_init(void)
 		errExit("ioctl-UFFDIO_API");
 
 	/* Create a thread that will process the userfaultfd events */
-	int s = pthread_create(&thr, NULL, fault_handler_thread, NULL);
-	if (s != 0) {
-		errno = s;
+	void *base;
+	int ret;
+	base = (void *) pmalloc(PTHREAD_STACK_MIN + 0x4000);
+	/* setting a new stack: size/address */
+	ret = pthread_attr_init(&tattr);
+	if (ret != 0) {
+		errno = ret;
+		errExit("pthread_create");
+	}
+	ret = pthread_attr_setstack(&tattr, base, 0x4000);
+	if (ret != 0) {
+		errno = ret;
+		errExit("pthread_create");
+	}
+	/* the actual creation */
+	ret = __pthread_create(&thr, &tattr, fault_handler_thread, NULL);
+	if (ret != 0) {
+		errno = ret;
 		errExit("pthread_create");
 	}
 	printf("%s: done init\n", __func__);
 }
 #endif
 
+int pmparser_parse_print();
 volatile int hold_remote_init=0;
 int dsm_init_remote()
 {
+	int skip_next=0;
 	int ret;
 	procmap_t* map=NULL;
 
 	up_log("dsm_init private start %p, end %p\n", private_start, private_end);
+
 	while(hold_remote_init);
 
+
 #ifdef USERFAULTFD
+	pmparser_parse_print();
 	userfaultfd_init();
 #endif
 
+	dsm_init_pmap();
+
 	catch_signal();
 
-	dsm_init_pmap();
 
 	up_log("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
 
@@ -395,13 +407,14 @@ int dsm_init_remote()
 		pmparser_print(map,0);
 		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
-		if(map->addr_start>=private_start && map->addr_end<=private_end)
+		if(map->addr_start<=private_start && map->addr_end>=private_end)
 		{
 			up_log("pdata section found and skipped!\n");
 			continue;
 
 		}else
 		{
+			//Are the signs corrent < or >?
 			if(map->addr_start>=private_start && map->addr_start<private_end)
 			{
 				up_log("section start lie in the boundary of the private data!\n");
@@ -417,13 +430,19 @@ int dsm_init_remote()
 
 		}
 #ifdef USERFAULTFD
-		if(map->addr_start>=userfaultfd_stack_base && map->addr_end<=userfaultfd_stack_base)
+		while(!userfaultfd_stack_base);
+		if(map->addr_start<=userfaultfd_stack_base && map->addr_end>=userfaultfd_stack_base)
 		{
-			up_log("userfaultfd_stack_base found and skipped!\n");
+			up_log("userfaultfd_stack_base found and skipped! (%p)\n", userfaultfd_stack_base);
+			skip_next=1;
 			continue;
 		}
+		//if(skip_next) { skip_next=0; continue; }
 #endif
-		if((unsigned long)map->addr_start == __pmalloc_start) {
+		if(((unsigned long) map->addr_start <= __pmalloc_start)
+			&& ((unsigned long)map->addr_end >= __pmalloc_start))
+		//if((unsigned long)map->addr_start == __pmalloc_start) 
+		{
 			up_log("pmalloc section found and skipped!\n");
 			continue;
 		}
@@ -437,6 +456,7 @@ int dsm_init_remote()
 			continue;
 		}*/
 
+		up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
 		if(map->prot.is_w)
 			dsm_protect(map->addr_start, map->length);
 
@@ -454,7 +474,7 @@ void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 {
 	void* ret;
 	ret = __mmap(start, len,prot, flags, fd, off);
-	pmparser_update();
+	pmparser_update();//FIXME: do we need it?
 	return ret;
 }
 

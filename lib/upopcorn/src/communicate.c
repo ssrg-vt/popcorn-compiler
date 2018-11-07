@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <pthread.h>
 #include <malloc.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -32,9 +33,10 @@ static int ori_to_remote_sock = 0;
 #define MAX_NUM_CHAR_SIZE 32
 typedef int (*cmd_func_t) (char* arg, int size); /* Note arg is freed after the function call */
 
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static ssize_t						 /* Write "n" bytes to a descriptor. */
-writen(int fd, const void *vptr, size_t n)
+__writen(int fd, const void *vptr, size_t n)
 {
 	size_t nleft;
 	ssize_t nwritten;
@@ -55,9 +57,17 @@ writen(int fd, const void *vptr, size_t n)
 	}
 	return (n);
 }
+static ssize_t						 /* Write "n" bytes to a descriptor. */
+writen(int fd, void *vptr, size_t n)
+{
+	pthread_mutex_lock(&mutex);
+	ssize_t ret=__writen(fd,vptr,n);
+	pthread_mutex_unlock(&mutex);
+	return ret;
+}
 
 static ssize_t						 /* Read "n" bytes from a descriptor. */
-readn(int fd, void *vptr, size_t n)
+__readn(int fd, void *vptr, size_t n)
 {
 	size_t  nleft;
 	ssize_t nread;
@@ -78,6 +88,14 @@ readn(int fd, void *vptr, size_t n)
 		ptr += nread;
 	}
 	return (n - nleft);		 /* return >= 0 */
+}
+static ssize_t						 /* Write "n" bytes to a descriptor. */
+readn(int fd, void *vptr, size_t n)
+{
+	pthread_mutex_lock(&mutex);
+	ssize_t ret=__readn(fd,vptr,n);
+	pthread_mutex_unlock(&mutex);
+	return ret;
 }
 
 int send_data(void* addr, size_t len)
@@ -191,7 +209,7 @@ int send_cmd(enum comm_cmd cmd, int size, char *arg)
 	int n;
 	struct cmd_s cmds;
 
-	up_log("sending a command\n");
+	up_log("sending a command using socket %d\n", ori_to_remote_sock);
 	cmds.cmd = cmd;
 	cmds.size = size;
 	//if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
