@@ -178,7 +178,6 @@ void* points_to_stack(const rewrite_context ctx,
 {
   void* stack_addr = NULL;
 
-  /* Is it a pointer (NOT an alloca/stack value)? */
   if(val->is_ptr || val->is_temporary)
   {
     /* Get the pointed-to address */
@@ -194,11 +193,13 @@ void* points_to_stack(const rewrite_context ctx,
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
              "invalid register size for pointer\n");
-      // Note 2: SM_DIRECT values should *only* come from temporaries
-      ASSERT(val->is_temporary,
-             "invalid live value -- cannot check allocas as pointers");
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
                    val->offset_or_constant;
+      // Note 2: temporaries encoded as references to stack slots (i.e., this
+      // branch) are by default pointers to the stack.  If it's *not* a
+      // temporary but is instead a regular alloca, then we're actually
+      // concerned with the value contained *in* the stack slot.
+      if(!val->is_temporary) stack_addr = *(void **)stack_addr;
       break;
     case SM_INDIRECT:
       // Note: we assume that we're doing offsets from 64-bit registers

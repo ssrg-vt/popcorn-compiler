@@ -139,10 +139,7 @@ st_handle st_init(const char* fn)
             handle->live_vals_count);
   }
   else
-  {
     ST_WARN("no live value location records\n");
-    goto close_elf;
-  }
 
   /* Read architecture-specific live value location records */
   // Note: unlike other sections, we may not have any architecture-specific
