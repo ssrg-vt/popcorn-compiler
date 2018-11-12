@@ -122,7 +122,7 @@ void put_val_arch(rewrite_context ctx, const arch_live_value* val)
 {
   void* dest_addr, *callee_addr = NULL;
 
-  TIMER_FG_START(put_val)
+  TIMER_FG_START(put_val);
   ASSERT(val->type == SM_REGISTER || val->type == SM_INDIRECT,
          "Invalid architecture-specific value type (%u)\n", val->type);
 
@@ -293,8 +293,8 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx)
   void* saved_loc;
 
   locs = ctx->handle->unwind_locs;
-  unwind_start = ACT(ctx).site.unwind_offset;
-  unwind_end = unwind_start + ACT(ctx).site.num_unwind;
+  unwind_start = CUR_FUNC(ctx).unwind.offset;
+  unwind_end = unwind_start + CUR_FUNC(ctx).unwind.num;
 
   // Frame pointer is likely at the very end of unwinding records
   for(index = unwind_end - 1; index >= unwind_start; index--)

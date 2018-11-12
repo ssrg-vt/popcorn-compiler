@@ -47,7 +47,7 @@ typedef struct timer* timer;
   X(put_val) \
   X(get_site_by_addr) \
   X(get_site_by_id) \
-  X(get_unwind_offset_by_addr)
+  X(get_function_by_addr)
 
 /* All timers available to the runtime. */
 #if defined(_TIMING) && defined(_FINE_GRAINED_TIMING)

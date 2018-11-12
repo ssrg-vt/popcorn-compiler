@@ -174,57 +174,45 @@ bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
 
 /* Check if an address is within the range of a function unwinding record */
 #define IN_RANGE( idx, _addr ) \
-  (handle->unwind_addrs[idx].addr <= _addr && \
-   _addr < handle->unwind_addrs[idx + 1].addr)
+  (handle->funcs[idx].addr <= _addr && \
+   _addr < (handle->funcs[idx].addr + handle->funcs[idx].code_size))
 
 /*
- * Search through unwinding information addresses for the specified address.
+ * Search through function records for the specified address.
  */
-bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
+const function_record *get_function_by_addr(st_handle handle, void* addr)
 {
   bool found = false;
   long min = 0;
-  long max = (handle->unwind_addr_count - 1);
+  long max = (handle->func_count - 1);
   long mid;
   uint64_t addr_int = (uint64_t)addr;
+  const function_record *fr = NULL;
 
-  TIMER_FG_START(get_unwind_offset_by_addr);
-  ASSERT(meta, "invalid arguments to get_unwind_offset_by_addr()\n");
+  TIMER_FG_START(get_function_by_addr);
+  ASSERT(handle && addr, "invalid arguments to get_unwind_offset_by_addr()\n");
 
   while(max >= min)
   {
     mid = (max + min) / 2;
 
-    // Corner case: mid == last record, this is always a stopping condition
-    if(mid == handle->unwind_addr_count - 1)
-    {
-      if(handle->unwind_addrs[mid].addr <= addr_int)
-      {
-        ST_WARN("cannot check range of last record (0x%lx = record %ld?)\n",
-                addr_int, mid);
-        *meta = handle->unwind_addrs[mid];
-        found = true;
-      }
-      break;
-    }
-
     if(IN_RANGE(mid, addr_int))
     {
-      *meta = handle->unwind_addrs[mid];
+      fr = &handle->funcs[mid];
       found = true;
       break;
     }
-    else if(addr_int > handle->unwind_addrs[mid].addr)
+    else if(addr_int > handle->funcs[mid].addr)
       min = mid + 1;
     else
       max = mid - 1;
   }
 
   if(found)
-    ST_INFO("Address of enclosing function: 0x%lx\n", meta->addr);
+    ST_INFO("Address of enclosing function: 0x%lx\n", fr->addr);
 
-  TIMER_FG_STOP(get_unwind_offset_by_addr);
-  return found;
+  TIMER_FG_STOP(get_function_by_addr);
+  return fr;
 }
 
 /*
@@ -232,9 +220,8 @@ bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
  */
 void* get_function_address(st_handle handle, void* pc)
 {
-  unwind_addr entry;
-
-  if(!get_unwind_offset_by_addr(handle, pc, &entry)) return NULL;
-  else return (void*)entry.addr;
+  const function_record *fr = get_function_by_addr(handle, pc);
+  if(fr) return (void*)fr->addr;
+  else return NULL;
 }
 

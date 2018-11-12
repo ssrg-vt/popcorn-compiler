@@ -382,7 +382,7 @@ static void unwind_and_size(rewrite_context src,
              REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
 
     /* Update stack size with newly discovered stack frame's size */
-    stack_size += ACT(dest).site.frame_size;
+    stack_size += CUR_FUNC(dest).frame_size;
 
     /* Set the CFA for the current frame, which becomes the next frame's SP */
     // Note: we need both the SP & call site information to set up CFA
@@ -558,9 +558,9 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
 
       // Find the same-frame data which corresponds to the fixup
       found_fixup = false;
-      src_offset = ACT(src).site.live_offset;
-      dest_offset = ACT(dest).site.live_offset;
-      for(i = 0, j = 0; j < ACT(dest).site.num_live; i++, j++)
+      src_offset = ACT(src).site.live.offset;
+      dest_offset = ACT(dest).site.live.offset;
+      for(i = 0, j = 0; j < ACT(dest).site.live.num; i++, j++)
       {
         val_src = &src->handle->live_vals[i + src_offset];
         val_dest = &dest->handle->live_vals[j + dest_offset];
@@ -612,9 +612,9 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
   ST_INFO("Rewriting frame (CFA: %p -> %p)\n", ACT(src).cfa, ACT(dest).cfa);
 
   /* Copy live values */
-  src_offset = ACT(src).site.live_offset;
-  dest_offset = ACT(dest).site.live_offset;
-  for(i = 0, j = 0; j < ACT(dest).site.num_live; i++, j++)
+  src_offset = ACT(src).site.live.offset;
+  dest_offset = ACT(dest).site.live.offset;
+  for(i = 0, j = 0; j < ACT(dest).site.live.num; i++, j++)
   {
     ASSERT(i < src->handle->live_vals_count,
            "out-of-bounds live value record access in source handle\n");
@@ -645,12 +645,12 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest)
     while((i + 1 + src_offset) < src->handle->live_vals_count &&
           src->handle->live_vals[i + 1 + src_offset].is_duplicate) i++;
   }
-  ASSERT(i == ACT(src).site.num_live && j == ACT(dest).site.num_live,
+  ASSERT(i == ACT(src).site.live.num && j == ACT(dest).site.live.num,
         "did not handle all live values\n");
 
   /* Set architecture-specific live values */
-  dest_offset = ACT(dest).site.arch_live_offset;
-  for(i = 0; i < ACT(dest).site.num_arch_live; i++)
+  dest_offset = ACT(dest).site.arch_live.offset;
+  for(i = 0; i < ACT(dest).site.arch_live.num; i++)
     put_val_arch(dest, &dest->handle->arch_live_vals[i + dest_offset]);
 
   /* Fix up pointers to local values */

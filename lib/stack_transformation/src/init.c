@@ -85,20 +85,17 @@ st_handle st_init(const char* fn)
   if(!(id = elf_getident(handle->elf, NULL))) goto close_elf;
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
-  /* Read unwinding addresses */
-  handle->unwind_addr_count = get_num_entries(handle->elf,
-                                              SECTION_ST_UNWIND_ADDR);
-  if(handle->unwind_addr_count > 0)
+  /* Read function records */
+  handle->func_count = get_num_entries(handle->elf, SECTION_FUNCTIONS);
+  if(handle->func_count > 0)
   {
-    handle->unwind_addrs = get_section_data(handle->elf,
-                                            SECTION_ST_UNWIND_ADDR);
-    if(!handle->unwind_addrs) goto close_elf;
-    ST_INFO("Found %lu per-function unwinding metadata entries\n",
-            handle->unwind_addr_count);
+    handle->funcs = get_section_data(handle->elf, SECTION_FUNCTIONS);
+    if(!handle->funcs) goto close_elf;
+    ST_INFO("Found %lu function entries\n", handle->func_count);
   }
   else
   {
-    ST_WARN("no per-function unwinding metadata\n");
+    ST_WARN("no function metadata\n");
     goto close_elf;
   }
 

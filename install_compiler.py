@@ -586,6 +586,17 @@ def install_tools(base_path, install_path, num_threads):
     args += ['install']
     run_cmd('install stack metadata tools', args)
 
+    #=====================================================
+    # COPY METADATA HEADERS FOR OUTSIDE TOOLS
+    #=====================================================
+    dest = os.path.join(install_path, 'include')
+    print('Copying headers defining metadata...')
+    files = [ 'het_bin.h', 'rewrite_metadata.h', 'StackTransformTypes.def' ]
+    for f in files:
+        full = os.path.join(base_path, 'common', 'include', f)
+        args = [ 'cp', full, dest ]
+        run_cmd('copy metadata headers', args)
+
     os.chdir(cur_dir)
 
 def install_utils(base_path, install_path, num_threads):

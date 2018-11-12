@@ -100,19 +100,16 @@ bool get_site_by_id(st_handle handle, uint64_t csid, call_site* site);
 void* get_function_address(st_handle handle, void* pc);
 
 /*
- * Return the function unwinding metadata (offset into the unwinding
- * information section & number of unwinding records) for the function
- * enclosing the specified address.  This is used as a fallback when the PC is
- * not at a call site, i.e., when bootstrapping in the outermost frame.
+ * Return the function record for the function enclosing the specified address.
+ * This is used as a fallback when the PC is not at a call site, i.e., when
+ * bootstrapping in the outermost frame.
  *
  * @param handle a stack transformation handle
  * @param addr a program counter address
- * @param metadata metadata describing unwinding information for the function
- * @return true if the enclosing function was found, false otherwise
+ * @return pointer to the function record containing addr or NULL if no
+ *         matching record was found
  */
-bool get_unwind_offset_by_addr(st_handle handle,
-                               void* addr,
-                               unwind_addr* meta);
+const function_record *get_function_by_addr(st_handle handle, void* addr);
 
 #endif /* _UTIL_H */
 

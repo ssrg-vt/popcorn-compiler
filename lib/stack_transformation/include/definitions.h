@@ -181,9 +181,9 @@ struct _st_handle
   // Code/data/stack metadata
   /////////////////////////////////////////////////////////////////////////////
 
-  /* Per-function unwinding record metadata */
-  uint64_t unwind_addr_count;
-  const unwind_addr* unwind_addrs;
+  /* Function records */
+  uint64_t func_count;
+  const function_record* funcs;
 
   /* Register unwinding records */
   uint64_t unwind_count;
@@ -237,6 +237,10 @@ typedef struct rewrite_context* rewrite_context;
 #define ACT( ctx ) ctx->acts[ctx->act]
 #define PREV_ACT( ctx ) ctx->acts[ctx->act - 1]
 #define NEXT_ACT( ctx ) ctx->acts[ctx->act + 1]
+
+/* Macros to access function information */
+#define FUNC( ctx, act ) ctx->handle->funcs[act.site.func]
+#define CUR_FUNC( ctx ) FUNC(ctx, ACT(ctx))
 
 /* Macros to access register set functions & properties. */
 #define REGOPS( ctx ) ctx->handle->regops

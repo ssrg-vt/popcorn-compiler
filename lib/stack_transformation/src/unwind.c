@@ -48,8 +48,8 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
 
   /* Get offsets into unwinding information section & unwind the frame */
   locs = ctx->handle->unwind_locs;
-  unwind_start = ctx->acts[act - 1].site.unwind_offset;
-  unwind_end = unwind_start + ctx->acts[act - 1].site.num_unwind;
+  unwind_start = FUNC(ctx, ctx->acts[act-1]).unwind.offset;
+  unwind_end = unwind_start + FUNC(ctx, ctx->acts[act-1]).unwind.num;
 
   for(i = unwind_start; i < unwind_end; i++)
   {
@@ -127,7 +127,8 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
 {
   ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
   ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs), "Invalid stack pointer\n");
-  return REGOPS(ctx)->sp(ctx->acts[act].regs) + ctx->acts[act].site.frame_size;
+  return REGOPS(ctx)->sp(ctx->acts[act].regs) +
+         FUNC(ctx, ctx->acts[act]).frame_size;
 }
 
 /*
@@ -243,8 +244,8 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
          "attempted to find register not saved in specified activation");
 
   unwind_locs = ctx->handle->unwind_locs;
-  unwind_start = act->site.unwind_offset;
-  unwind_end = unwind_start + act->site.num_unwind;
+  unwind_start = FUNC(ctx, (*act)).unwind.offset;
+  unwind_end = unwind_start + FUNC(ctx, (*act)).unwind.num;
   for(uint32_t i = unwind_start; i < unwind_end; i++)
   {
     if(unwind_locs[i].reg == reg)
