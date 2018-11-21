@@ -59,4 +59,4 @@ extern unsigned long page_size;
 #define PAGE_ALIGN(_arg) (void*)ALIGN(_arg, page_size)
 
 
-#define up_log(...) /*printf(__VA_ARGS__)*/
+#define up_log(...) printf(__VA_ARGS__)

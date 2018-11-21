@@ -60,9 +60,9 @@ __writen(int fd, const void *vptr, size_t n)
 static ssize_t						 /* Write "n" bytes to a descriptor. */
 writen(int fd, void *vptr, size_t n)
 {
-	pthread_mutex_lock(&mutex);
+	//pthread_mutex_lock(&mutex);
 	ssize_t ret=__writen(fd,vptr,n);
-	pthread_mutex_unlock(&mutex);
+	//pthread_mutex_unlock(&mutex);
 	return ret;
 }
 
@@ -187,6 +187,8 @@ int __handle_commands(int sockfd)
 		arg=NULL;
 
 	cmd_funcs[cmds.cmd](arg, size);
+
+	up_log("%s: cmd %d; handled\n", __func__, (int)cmds.cmd);
 
 	//if(size>0 && size >= CMD_EMBEDED_ARG_SIZE)
 	if(size >0)
@@ -319,6 +321,7 @@ static void test(void)
 {
 	int ret;
         char msg[] = "Hello world from prog\n";
+	printf("sending test hello\n");
         ret = send_cmd(PRINT_ST, strlen(msg), msg);
         if(ret < 0)
                 perror(__func__);

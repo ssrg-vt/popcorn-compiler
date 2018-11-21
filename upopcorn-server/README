@@ -1,0 +1,22 @@
+# Popcorn Server 
+
+This server needs to be run on all considered server.
+To compile it use:
+	$make
+	You probably want to compile it on each server if they have different architecture.
+
+To run the server simply execute it:
+	$./server
+
+
+# System Configuration
+
+All servers needs to be described in a file: "~/.popcorn".
+
+Example for a two x86_64 configuration file use the following:
+10.4.4.32;X86_64
+10.4.4.32;X86_64
+
+Example for a two heterogeneous system use the following:
+10.1.1.32;X86_64
+10.1.1.51;AARCH64

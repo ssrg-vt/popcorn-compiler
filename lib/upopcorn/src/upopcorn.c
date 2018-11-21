@@ -128,13 +128,13 @@ __upopcorn_init(void)
 
 	upopcorn_start_malloc();
 
+	ret=comm_init(remote);
+	if(ret)
+		perror("comm_init");
         ret = dsm_init(remote);
 	if(ret)
 		perror("dsm_init");
-	comm_init(remote);
-	if(ret)
-		perror("comm_init");
-	migrate_init(remote);
+	ret=migrate_init(remote);
 	if(ret)
 		perror("comm_init");
 

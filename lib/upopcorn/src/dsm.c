@@ -68,7 +68,7 @@ int send_page(char* arg, int size)
 }
 int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
-	struct page_exchange_s pes;
+	static struct page_exchange_s pes;
 	//char ca[NUM_LINE_SIZE_BUF+1];
 	//snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
 	//up_log("%s: %p == %s\n", __func__, raddr, ca);
@@ -187,6 +187,16 @@ int dsm_copy_stack(void* addr)
 }
 
 #ifdef USERFAULTFD
+static void uffd_test(void)
+{
+	int ret;
+        char msg[] = "Hello world from UFFD thread\n";
+	printf("sending UFFD hello\n");
+        ret = send_cmd(PRINT_ST, strlen(msg), msg);
+        if(ret < 0)
+                perror(__func__);
+}
+
 static volatile void* userfaultfd_stack_base=NULL;
 static void *
 fault_handler_thread(void *arg)
@@ -202,16 +212,20 @@ fault_handler_thread(void *arg)
 	/* used to track the address of the stack */
 	userfaultfd_stack_base=&sp;
 
-	printf("userfaultfd_stack_base is (%p)\n", userfaultfd_stack_base);
-
 	page_size = PAGE_SIZE;
+
+	printf("userfaultfd_stack_base is (%p), page size %d\n",
+			userfaultfd_stack_base, page_size);
 
 	/* Create a page that will be copied into the faulting region */
 
 	if (page == NULL) {
-		page = pmalloc(PAGE_SIZE);
+		page = pmalloc(PAGE_SIZE*2);
+		page=PAGE_ALIGN((page+PAGE_SIZE));
 		ERR_CHECK(!page);
 	}
+
+	uffd_test();
 
 	/* Loop, handling incoming events on the userfaultfd
 	   file descriptor */
@@ -332,10 +346,11 @@ int dsm_init_pmap()
 }
 
 #ifdef USERFAULTFD
+static pthread_attr_t tattr;
 int pthread_attr_setstack(pthread_attr_t *a, void *addr, size_t size);
 void userfaultfd_init(void)
 {
-	static pthread_attr_t tattr;
+	size_t page_size = PAGE_SIZE;
 	printf("%s: init...\n", __func__);
 
 
@@ -354,14 +369,18 @@ void userfaultfd_init(void)
 	/* Create a thread that will process the userfaultfd events */
 	void *base;
 	int ret;
-	base = (void *) pmalloc(PTHREAD_STACK_MIN + 0x4000);
+#define STACK_SIZE (PTHREAD_STACK_MIN + 0x4000)
+	base = (void *) pmalloc(STACK_SIZE+PAGE_SIZE);
 	/* setting a new stack: size/address */
 	ret = pthread_attr_init(&tattr);
 	if (ret != 0) {
 		errno = ret;
 		errExit("pthread_create");
 	}
-	ret = pthread_attr_setstack(&tattr, base, 0x4000);
+	printf("before alignement userfaultfd_stack_base is (%p)\n", base);
+	base=PAGE_ALIGN((base+PAGE_SIZE));
+	printf("aligned userfaultfd_stack_base is (%p)\n", base);
+	ret = pthread_attr_setstack(&tattr, base, STACK_SIZE);
 	if (ret != 0) {
 		errno = ret;
 		errExit("pthread_create");

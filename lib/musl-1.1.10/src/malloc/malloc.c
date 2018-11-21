@@ -159,38 +159,40 @@ uintptr_t __malloc_start = 0;
 
 #define INIT_SIZE (PAGE_SIZE << 4)
 
-static int init;
+static int __minit=0;
 int malloc_init(void* start)
 {
-	if(init)
+	if(__minit!=0)
 	{
 		printf("%s: malloc already initialized!!!\n", __func__);
 		goto fail;
 	}
 
-	printf("%s: malloc start %p\n",
-			__func__, start);
+
 	mal.brk_init = (uintptr_t)__mmap(start, INIT_SIZE, PROT_READ|PROT_WRITE,
 		MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
 
 	if(mal.brk_init == (uintptr_t)MAP_FAILED)
 		goto fail;
 
+
 	mal.brk_size = INIT_SIZE;
 
 	mal.brk = mal.brk_init;
 
 	__malloc_start = mal.brk;
-	printf("--> malloc start %p\n", (void*)__malloc_start);
+
+	printf("%s: malloc start %p\n", __func__, start);
 #ifdef SHARED
 	mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
 #endif
 	mal.brk = mal.brk + 2*SIZE_ALIGN-1 & -SIZE_ALIGN;
 	mal.heap = (void *)mal.brk;
-	init = 1;
+	__minit = 1;
 
 	return 0;
 fail:
+	printf("malloc init failed\n");
 	return -1;
 }
 
@@ -201,7 +203,7 @@ static struct chunk *expand_heap(size_t n)
 
 	lock(mal.brk_lock);
 
-	if (!init)
+	if (__minit==0)
 	{
 		perror("WARNING: automaitic malloc initialization!!!");
 		malloc_init(NULL);
