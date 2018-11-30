@@ -92,6 +92,7 @@ int pmparser_alloc_pages(procmap_t *map);
  * @order the order of the area to print, -1 to print everything
  */
 void pmparser_print(procmap_t* map,int order);
+int pmparser_parse_print();
 
 
 

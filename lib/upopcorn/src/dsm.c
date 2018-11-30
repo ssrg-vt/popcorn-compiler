@@ -30,7 +30,10 @@
 #endif
 
 
-//#define USERFAULTFD
+#define USERFAULTFD
+
+
+/* FIXME! check the use of usingned long/__u64/uint64_t */
 
 
 
@@ -42,14 +45,49 @@ extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
 void *private_end = &__tbss_end;
 
+#define CHECK_ERR(err) if(err) up_log("%s:%d error!!!", __func__, __LINE__);
 #define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)
 #define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); \
                         } while (0)
-int
-dsm_protect(void *addr, unsigned long length)
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+
+
+uint64_t DSM_UPDATE_START_SIZE(uint64_t addr, uint64_t region_start, uint64_t region_end, uint64_t *size) 
 {
-	ERR_CHECK(mprotect(addr, length, PROT_NONE));
-	return 0;
+	uint64_t tmp_start = addr;
+	unsigned long tmp_end;
+	up_log("%s: region_start %p, region_end %p\n", __func__, 
+		(char*)region_start,
+			(char*)region_end);
+
+	/* Aligned start and end */
+	tmp_start = (unsigned long) tmp_start & ~(DSM_PAGE_SIZE - 1);
+	tmp_end = (tmp_start + DSM_PAGE_SIZE);
+	up_log("%s: start %p, end %p\n", __func__, 
+		(char*)tmp_start, (char*)tmp_end);
+
+	/* limit to the region boundaries */
+	tmp_start = max(tmp_start, region_start);
+	tmp_end = min(tmp_end, region_end);
+	up_log("%s: start %p, end %p\n", __func__, 
+		(char*)tmp_start, (char*)tmp_end);
+
+	/* update return values*/
+	*size = tmp_end-tmp_start;
+	up_log("%s: dst %p, size %ld, end %p\n", __func__, 
+		(char*)tmp_start,  *size, 
+			(char*)tmp_end);
+
+	return tmp_start;
+
 }
 
 struct page_exchange_s
@@ -61,21 +99,43 @@ int send_page(char* arg, int size)
 {
 	struct page_exchange_s *pes = (struct page_exchange_s *)arg;
 	/*size is not page size but addr size in char */
-	//printf("%s: ptr = %p , size %ld\n", __func__, (void*)pes->address, pes->size);
-	/*TODO: make sure it is the same page size on both arch!? */
+	up_log("%s: ptr = %p , size %ld\n", __func__, (void*)pes->address, pes->size);
 	send_data((void*)pes->address, pes->size);
 	return 0;
 }
 int dsm_get_page(void* raddr, void* buffer, int page_size)
 {
 	static struct page_exchange_s pes;
-	//char ca[NUM_LINE_SIZE_BUF+1];
-	//snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) raddr);
-	//up_log("%s: %p == %s\n", __func__, raddr, ca);
 	pes.address=(uint64_t)raddr;
 	pes.size=page_size;
-	//printf("%s: ptr = %p , size %ld\n", __func__, (void*)pes.address, pes.size);
+	up_log("%s: ptr = %p , size %ld\n", __func__, (void*)pes.address, pes.size);
 	return send_cmd_rsp(GET_PAGE,  sizeof(pes), (char*)&pes, page_size, buffer);
+}
+
+struct pmap_exchange_s
+{
+	uint64_t address;
+};
+int send_pmap(char* arg, int size)
+{
+	void *pmap;
+	struct pmap_exchange_s *pms = (struct pmap_exchange_s *)arg;
+	void *addr = (void*) pms->address;
+	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
+	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+	{
+		/* To avoid this redirection, we should update at each region creation:
+		 * mmap (done in dsm), malloc, pmalloc (?), thread creation, ? */ 
+		/* or assuming single-threaded app, just do it at migration? */
+		pmparser_update();
+		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+		{
+			up_log("map not found!!!");
+		}
+	}
+	up_log("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
+	send_data(pmap, sizeof(procmap_t));
+	return 0;
 }
 
 #ifdef USERFAULTFD
@@ -96,20 +156,17 @@ void userfaultfd_register(void* addr, uint64_t len){
 }
 #endif
 
-
-#define CHECK_ERR(err) if(err) up_log("%s:%d error!!!", __func__, __LINE__);
-
-int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
+int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page, int stack)
 {
 	int err;
 	procmap_t *new_map;
+	struct pmap_exchange_s pms;
 
 	new_map = pmparser_new();
+	pms.address = (uint64_t) addr;
+	up_log("%s: addr %p, map %p map size %ld\n", __func__, addr, new_map, sizeof(*new_map));
 
-	char ca[NUM_LINE_SIZE_BUF+1];
-	snprintf(ca, NUM_LINE_SIZE_BUF, "%ld", (long) addr);//conflict with vfprintf?
-	up_log("%s: %p == %s, map %p map size %ld\n", __func__, addr, ca, new_map, sizeof(*new_map));
-	err= send_cmd_rsp(GET_PMAP, sizeof(ca), ca,
+	err= send_cmd_rsp(GET_PMAP, sizeof(pms), (void*)&pms,
 				sizeof(*new_map), new_map);
 	CHECK_ERR(err);
 	pmparser_insert(new_map, 0);//FIXME: should put node id
@@ -119,7 +176,7 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 
 
 #ifdef USERFAULTFD
-	if(new_map->inode)
+	if(new_map->inode || stack)
 	{
 #endif
 		//use segfault: do we ever reach here with an inode?
@@ -138,7 +195,6 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page)
 	return 0;
 }
 
-
 int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 {
 	int err;
@@ -146,18 +202,26 @@ int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 	if(!err)
 		return 0;
 
-	return dsm_get_remote_map(addr, map, page);
+	return dsm_get_remote_map(addr, map, page, 0);
 }
 
-static void unprotect_and_load_page(void* addr)
+
+
+static void unprotect_and_load_page(void* addr, procmap_t* map)
 {
+	uint64_t size;
+	up_log("%s: loading %p\n", __func__, addr);
+
+	addr = (void*) DSM_UPDATE_START_SIZE((uint64_t)addr, (uint64_t) map->addr_start, (uint64_t)map->addr_end, &size);
+
+	//TODO: support DSM_PAGE_SIZE
 	/*TODO: make the next two function atomic */
-	ERR_CHECK(mprotect(addr, page_size, PROT_READ | PROT_WRITE));
+	ERR_CHECK(mprotect(addr, size, PROT_READ | PROT_WRITE));
 
 	/* Copy content from remote into the temporary page */
-	dsm_get_page(addr, addr, page_size);
+	dsm_get_page(addr, addr, size);
 
-	//up_log("%s: done %p\n", __func__, addr);
+	up_log("%s: done %p\n", __func__, addr);
 }
 
 int dsm_copy_stack(void* addr)
@@ -166,21 +230,23 @@ int dsm_copy_stack(void* addr)
 
 	up_log("%s: address %p\n", __func__, addr);
 
-	addr = PAGE_ALIGN(addr);
+	addr = SYS_PAGE_ALIGN(addr);
 
 	up_log("%s: aligned address %p\n", __func__, addr);
 
-	dsm_get_remote_map(addr, &map, NULL);
+	dsm_get_remote_map(addr, &map, NULL, 1);
 
 	/* Copy content from remote into the temporary page */
 	//for(addr=map->addr_start; addr<map->addr_end; addr+=page_size)
-	unprotect_and_load_page(addr);
+//#ifndef USERFAULTFD
+	unprotect_and_load_page(addr, map);
 
 	/*unprotect lower addresses of the stack: new pages are allocated locally
 	 * These page are important for the fault handler to execute correctly */
 	/* Does the stack transf. lib use part of the stack? lower part maybe ?*/ 
 	ERR_CHECK(mprotect(map->addr_start, addr-map->addr_start, 
 						PROT_READ | PROT_WRITE));
+//#endif
 
 	up_log("%s: done %p\n", __func__, addr);
 	return 0;
@@ -191,7 +257,7 @@ static void uffd_test(void)
 {
 	int ret;
         char msg[] = "Hello world from UFFD thread\n";
-	printf("sending UFFD hello\n");
+	up_log("sending UFFD hello\n");
         ret = send_cmd(PRINT_ST, strlen(msg), msg);
         if(ret < 0)
                 perror(__func__);
@@ -202,6 +268,7 @@ static void *
 fault_handler_thread(void *arg)
 {
 	void* sp = NULL;
+	procmap_t* map=NULL;
 	static struct uffd_msg msg;   /* Data read from userfaultfd */
 	static int fault_cnt = 0;	 /* Number of faults so far handled */
 	static char *page = NULL;
@@ -212,16 +279,15 @@ fault_handler_thread(void *arg)
 	/* used to track the address of the stack */
 	userfaultfd_stack_base=&sp;
 
-	page_size = PAGE_SIZE;
+	page_size = DSM_PAGE_SIZE;
 
-	printf("userfaultfd_stack_base is (%p), page size %d\n",
+	up_log("userfaultfd_stack_base is (%p), page size %d\n",
 			userfaultfd_stack_base, page_size);
 
 	/* Create a page that will be copied into the faulting region */
 
 	if (page == NULL) {
-		page = pmalloc(PAGE_SIZE*2);
-		page=PAGE_ALIGN((page+PAGE_SIZE));
+		page = pmalloc(page_size);
 		ERR_CHECK(!page);
 	}
 
@@ -241,8 +307,8 @@ fault_handler_thread(void *arg)
 		if (nready == -1)
 			errExit("poll");
 
-		printf("\nfault_handler_thread():\n");
-		printf("	poll() returns: nready = %d; "
+		up_log("\nfault_handler_thread():\n");
+		up_log("	poll() returns: nready = %d; "
 				"POLLIN = %d; POLLERR = %d\n", nready,
 				(pollfd.revents & POLLIN) != 0,
 				(pollfd.revents & POLLERR) != 0);
@@ -250,7 +316,7 @@ fault_handler_thread(void *arg)
 		/* Read an event from the userfaultfd */
 		nread = read(uffd, &msg, sizeof(msg));
 		if (nread == 0) {
-			printf("EOF on userfaultfd!\n");
+			up_log("EOF on userfaultfd!\n");
 			exit(EXIT_FAILURE);
 		}
 		if (nread == -1)
@@ -264,28 +330,48 @@ fault_handler_thread(void *arg)
 		}
 
 		/* Display info about the page-fault event */
-		printf("	UFFD_EVENT_PAGEFAULT event: ");
-		printf("flags = %llx; ", msg.arg.pagefault.flags);
-		printf("address = %llx\n", msg.arg.pagefault.address);
+		up_log("	UFFD_EVENT_PAGEFAULT event: ");
+		up_log("flags = %llx; ", msg.arg.pagefault.flags);
+		up_log("address = %llx\n", msg.arg.pagefault.address);
 
-		/* get remote page content */
-		dsm_get_page((void*)msg.arg.pagefault.address, page, page_size);
-		fault_cnt++;
 
-		uffdio_copy.src = (unsigned long) page;
+		/* We need the boundaries of the region */
+		ERR_CHECK(pmparser_get((void*)msg.arg.pagefault.address, &map, NULL));
 
 		/* We need to handle page faults in units of pages(!).
 		   So, round faulting address down to page boundary */
+		uint64_t size;
+		void* addr;
+		addr= (void*)DSM_UPDATE_START_SIZE((uint64_t)msg.arg.pagefault.address, 
+				(uint64_t) map->addr_start, (uint64_t) map->addr_end, &size);
 
+		/* get remote page content */
+		dsm_get_page((void*)addr, page, size);
+		fault_cnt++;
+
+		uffdio_copy.src = (unsigned long) page;
+		uffdio_copy.dst = (unsigned long) addr;
+		uffdio_copy.len=size;
+
+/*
 		uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
 										   ~(page_size - 1);
-		uffdio_copy.len = page_size;
+		unsigned long tmp_end = (uffdio_copy.dst + page_size);
+
+		uffdio_copy.dst = max(uffdio_copy.dst, (unsigned long) map->addr_start);
+		tmp_end = min((unsigned long)(map->addr_end), tmp_end);
+        	uffdio_copy.len = (tmp_end-uffdio_copy.dst);
+*/
+		up_log("%s: dst %p, size %lld, end %p\n", __func__, 
+			(char*)uffdio_copy.dst, uffdio_copy.len, 
+				(char*)uffdio_copy.dst+uffdio_copy.len);
+
 		uffdio_copy.mode = 0;
 		uffdio_copy.copy = 0;
 		if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
 			errExit("ioctl-UFFDIO_COPY");
 
-		printf("		(uffdio_copy.copy returned %lld)\n",
+		up_log("(uffdio_copy.copy returned %lld)\n",
 				uffdio_copy.copy);
 	}
 }
@@ -303,15 +389,19 @@ void fault_handler(int sig, siginfo_t *info, void *ucontext)
 		while(hold_real_fault);
 	}
 
-	assert(PAGE_SIZE == page_size);
+	//assert(PAGE_SIZE == page_size);
 
-	addr = PAGE_ALIGN(addr);
+	addr = SYS_PAGE_ALIGN(addr);
 
 	dsm_get_map(addr, &map, NULL);
 
 	//up_log("%s: aligned address %p\n", __func__, addr);
 
-	unprotect_and_load_page(addr);
+#ifdef USERFAULTFD //TODO: only if no inode and no stack
+	if((map->inode) || ((strstr(map->pathname, "stack") != NULL))) 
+#endif
+		unprotect_and_load_page(addr, map);
+	
 }
 
 
@@ -350,8 +440,7 @@ static pthread_attr_t tattr;
 int pthread_attr_setstack(pthread_attr_t *a, void *addr, size_t size);
 void userfaultfd_init(void)
 {
-	size_t page_size = PAGE_SIZE;
-	printf("%s: init...\n", __func__);
+	up_log("%s: init...\n", __func__);
 
 
 	struct uffdio_api uffdio_api;
@@ -370,33 +459,40 @@ void userfaultfd_init(void)
 	void *base;
 	int ret;
 #define STACK_SIZE (PTHREAD_STACK_MIN + 0x4000)
-	base = (void *) pmalloc(STACK_SIZE+PAGE_SIZE);
+	base = (void *) pmalloc(STACK_SIZE+SYS_PAGE_SIZE);
 	/* setting a new stack: size/address */
 	ret = pthread_attr_init(&tattr);
 	if (ret != 0) {
 		errno = ret;
 		errExit("pthread_create");
 	}
-	printf("before alignement userfaultfd_stack_base is (%p)\n", base);
-	base=PAGE_ALIGN((base+PAGE_SIZE));
-	printf("aligned userfaultfd_stack_base is (%p)\n", base);
+	up_log("before alignement userfaultfd_stack_base is (%p)\n", base);
+	base=SYS_PAGE_ALIGN((base+SYS_PAGE_SIZE));
+	up_log("aligned userfaultfd_stack_base is (%p)\n", base);
 	ret = pthread_attr_setstack(&tattr, base, STACK_SIZE);
 	if (ret != 0) {
 		errno = ret;
 		errExit("pthread_create");
 	}
 	/* the actual creation */
-	ret = __pthread_create(&thr, &tattr, fault_handler_thread, NULL);
+	ret = pthread_create(&thr, &tattr, fault_handler_thread, NULL);
 	if (ret != 0) {
 		errno = ret;
 		errExit("pthread_create");
 	}
-	printf("%s: done init\n", __func__);
+	up_log("%s: done init\n", __func__);
 }
 #endif
 
-int pmparser_parse_print();
-volatile int hold_remote_init=0;
+
+static int
+dsm_protect(void *addr, unsigned long length)
+{
+	ERR_CHECK(mprotect(addr, length, PROT_NONE));
+	return 0;
+}
+
+static volatile int hold_remote_init=0;
 int dsm_init_remote()
 {
 	int skip_next=0;
@@ -423,8 +519,6 @@ int dsm_init_remote()
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
 	while((map=pmparser_next())!=NULL){
-		pmparser_print(map,0);
-		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		if(map->addr_start<=private_start && map->addr_end>=private_end)
 		{
@@ -469,18 +563,39 @@ int dsm_init_remote()
 			up_log("stack section found and skipped!\n");
 			continue;
 		}
+		if(strstr(map->pathname, "vvar") != NULL) {
+			up_log("vvar section found and skipped!\n");
+			continue;
+		}
+		if(strstr(map->pathname, "vdso") != NULL) {
+			up_log("vdso section found and skipped!\n");
+			continue;
+		}
+		if(strstr(map->pathname, "vsyscall") != NULL) {
+			up_log("vdso section found and skipped!\n");
+			continue;
+		}
 		/*
 		if(strstr(map->pathname, "heap") != NULL) {
 			up_log("heap section found and skipped!\n");
 			continue;
 		}*/
 
-		up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
-		if(map->prot.is_w)
-			dsm_protect(map->addr_start, map->length);
+
+		if(!map->prot.is_w) {
+			up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
+			up_log("RO section found and skipped!\n");
+			continue;
+		}
+			
+		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+		pmparser_print(map,0);
+		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+
+		dsm_protect(map->addr_start, map->length);
 
 		if(!map->prot.is_p)
-			up_log("Not prrivate region are not supported?\n");
+			up_log("prrivate region are not supported?\n");
 	}
 
 	up_log("dsm_init done\n");

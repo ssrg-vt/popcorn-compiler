@@ -10,7 +10,7 @@ int dsm_init(int);
 int comm_init(int);
 int migrate_init(int);
 
-unsigned long page_size=0;//Why do we need to init this variable for here to get in the lib sections?
+unsigned long system_page_size=0;//Why do we need to init this variable for here to get in the lib sections?
 char arch_nodes[POPCORN_NODE_MAX][IP_FIELD]; //= {"127.0.0.1", "127.0.0.1"};
 int arch_type[POPCORN_NODE_MAX]; //= { X86_64, X86_64, AARCH64, AARCH64};
 
@@ -86,7 +86,7 @@ void malloc_init(void* start);
 void pmalloc_init(void* start);
 void upopcorn_start_malloc()
 {
-	unsigned long malloc_slicing_start = (unsigned long)PAGE_ALIGN(&end);//FIXME?
+	unsigned long malloc_slicing_start = (unsigned long)SYS_PAGE_ALIGN(&end);//FIXME?
 	unsigned long malloc_start = malloc_slicing_start + MALLOC_OFFSET_SIZE +
 				(MALLOC_SIZE*upopcorn_node_id);
 	malloc_init((void*)malloc_start);
@@ -111,7 +111,7 @@ __upopcorn_init(void)
         int ret;
         char *start_remote = getenv("POPCORN_REMOTE_START");
 
-	page_size = sysconf(_SC_PAGE_SIZE);
+	system_page_size = sysconf(_SC_PAGE_SIZE);
 
 	printf("%s start\n", __func__);
 	if(start_remote)

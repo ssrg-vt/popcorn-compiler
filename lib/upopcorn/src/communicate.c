@@ -124,27 +124,6 @@ static int get_ctxt(char* arg, int size)
 	return 0;
 }
 
-static int get_pmap(char* arg, int size)
-{
-	void *pmap;
-	arg[size]='\0';
-	void *addr = (void*) atol(arg);
-	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
-	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
-	{
-		/* To avoid this redirection, we should update at each region creation:
-		 * mmap (done in dsm), malloc, pmalloc (?), thread creation, ? */ 
-		/* or assuming single-threaded app, just do it at migration? */
-		pmparser_update();
-		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
-		{
-			up_log("map not found!!!");
-		}
-	}
-	up_log("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
-	writen(server_sock_fd, pmap, sizeof(procmap_t));
-	return 0;
-}
 
 int hdl_exit(char* arg, int size)
 {
@@ -154,7 +133,7 @@ int hdl_exit(char* arg, int size)
 
 
 /* commands table */
-cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, get_pmap, hdl_exit};
+cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, send_pmap, hdl_exit};
 
 int __handle_commands(int sockfd)
 {
@@ -211,7 +190,7 @@ int send_cmd(enum comm_cmd cmd, int size, char *arg)
 	int n;
 	struct cmd_s cmds;
 
-	up_log("sending a command using socket %d\n", ori_to_remote_sock);
+	up_log("sending a command %d of size %d using socket %d\n", cmd, size, ori_to_remote_sock);
 	cmds.cmd = cmd;
 	cmds.size = size;
 	//if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
@@ -241,6 +220,7 @@ int send_cmd_rsp(enum comm_cmd cmd, int size, char *arg, int resp_size, void* re
 	int n = readn(ori_to_remote_sock, resp, resp_size);
 	if(n<0)
 		perror("resp_read");
+	up_log("%s resp read\n", __func__);
 
 	return 0;
 }

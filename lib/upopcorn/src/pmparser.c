@@ -209,6 +209,7 @@ int pmparser_parse_print()
 
 int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 	int found;
+	//static procmap_t *cached_map = 
 	//int pg_num;
 	procmap_t *iter;
 
