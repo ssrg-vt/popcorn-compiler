@@ -9,7 +9,7 @@ POPCORN_X86_64 := $(POPCORN)/x86_64
 COMMON         := $(shell readlink -f ../../common/stack_transformation)
 
 CC     := gcc
-CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include -Iext/include -Lext/lib/
+CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include -Iext/include -Lext/lib/ -I$(POPCORN_X86_64)/include
           
 #-specs $(POPCORN_X86_64)/lib/musl-gcc.specs
 LIB    := -lelf

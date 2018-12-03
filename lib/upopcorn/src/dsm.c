@@ -17,21 +17,21 @@
 #include <assert.h>
 #include <signal.h>
 #include <poll.h>
-#include <linux/userfaultfd.h>
 #include "pmparser.h"
 #include "config.h"
 #include "communicate.h"
 
+//#define USERFAULTFD
 
-#ifdef __x86_64__
-	#define __NR_userfaultfd 323
-#elif __aarch64__
-	#define __NR_userfaultfd 282
+#ifdef USERFAULTFD
+	#ifdef __x86_64__
+		#define __NR_userfaultfd 323
+	#elif __aarch64__
+		#define __NR_userfaultfd 282
+	#endif
+
+	#include <linux/userfaultfd.h>
 #endif
-
-
-#define USERFAULTFD
-
 
 /* FIXME! check the use of usingned long/__u64/uint64_t */
 
