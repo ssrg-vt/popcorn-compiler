@@ -836,31 +836,31 @@ def main(args):
 
     cpus = multiprocessing.cpu_count()
 
-    #if not args.skip_llvm_clang_install:
-    #    install_clang_llvm(args.base_path, args.install_path, cpus,
-    #                       args.make_all_targets)
+    if not args.skip_llvm_clang_install:
+        install_clang_llvm(args.base_path, args.install_path, cpus,
+                           args.make_all_targets)
 
-    #if not args.skip_binutils_install:
-    #    install_binutils(args.base_path, args.install_path, cpus)
+    if not args.skip_binutils_install:
+        install_binutils(args.base_path, args.install_path, cpus)
 
-    #if not args.skip_libraries_install:
-    #    install_libraries(args.base_path, args.install_path, cpus,
-    #                      args.debug_stack_transformation,
-    #                      args.libmigration_type,
-    #                      args.enable_libmigration_timing)
+    if not args.skip_libraries_install:
+        install_libraries(args.base_path, args.install_path, cpus,
+                          args.debug_stack_transformation,
+                          args.libmigration_type,
+                          args.enable_libmigration_timing)
 
     if not args.skip_tools_install:
         install_tools(args.base_path, args.install_path, cpus)
 
-    #if args.install_call_info_library:
-    #    install_call_info_library(args.base_path, args.install_path,
-    #                              cpus)
+    if args.install_call_info_library:
+        install_call_info_library(args.base_path, args.install_path,
+                                  cpus)
 
-    #if not args.skip_utils_install:
-    #    install_utils(args.base_path, args.install_path, cpus)
+    if not args.skip_utils_install:
+        install_utils(args.base_path, args.install_path, cpus)
 
-    #if not args.skip_namespace:
-    #    build_namespace(args.base_path)
+    if not args.skip_namespace:
+        build_namespace(args.base_path)
 
 if __name__ == '__main__':
     parser = setup_argument_parsing()
