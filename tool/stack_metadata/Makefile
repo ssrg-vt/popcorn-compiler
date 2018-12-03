@@ -8,8 +8,10 @@ POPCORN        := /usr/local/popcorn
 POPCORN_X86_64 := $(POPCORN)/x86_64
 COMMON         := $(shell readlink -f ../../common/stack_transformation)
 
+EXT_LIB=ext
+
 CC     := gcc
-CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include -Iext/include -Lext/lib/ -I$(POPCORN_X86_64)/include
+CFLAGS := -O3 -g -Wall -Iinclude -I$(COMMON)/include -I$(EXT_LIB)/include -L$(EXT_LIB)/lib/
           
 #-specs $(POPCORN_X86_64)/lib/musl-gcc.specs
 LIB    := -lelf
@@ -21,12 +23,17 @@ OBJ := $(subst src,$(BUILD),$(SRC:.c=.o))
 UTIL_OBJ  := $(BUILD)/bin.o $(BUILD)/util.o $(BUILD)/strings.o
 CHECK_OBJ := $(UTIL_OBJ) $(BUILD)/stackmap.o
 
-all: $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
+all: $(EXT_LIB) $(BIN) $(DUMP_SM) $(DUMP_ST) $(CHECK)
 
 %/.dir:
 	@echo " [MK] $*"
 	@mkdir -p $*
 	@touch $@
+
+#FIXME
+$(EXT_LIB):
+	./libelf/upopcorn_config.sh
+	make -C libelf install
 
 build/%.o: src/%.c $(HDR)
 	@echo " [CC] $<"
