@@ -6,7 +6,7 @@ POPCORN_X86 := $(POPCORN)/x86_64
 CCARM         := $(POPCORN)/bin/libclang-arm
 CCX86         := $(POPCORN)/bin/libclang
 #CCX86         := $(POPCORN)/bin/clang
-CFLAGS     := -O1 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
+CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
               -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE -mllvm \
               -no-sm-warn
 ifneq ($(findstring env_select,$(type)),)

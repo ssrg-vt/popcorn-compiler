@@ -151,7 +151,7 @@ int __handle_commands(int sockfd)
 	uint32_t size=cmds.size;
 	if(size>0)
 	{
-		//if(size >= CMD_EMBEDED_ARG_SIZE)
+		if(size >= CMD_EMBEDED_ARG_SIZE)
 		{
 			arg = pmalloc(size+1);
 			n = readn(sockfd, arg, size);
@@ -159,9 +159,10 @@ int __handle_commands(int sockfd)
 				perror("arg_size");
 			//arg[n]='\0';
 			//up_log("%s: arg read is %s\n", __func__, arg);
+			printf("arg written for %d size %d\n", cmds.cmd, size);
 		}
-		//else
-		//	arg=(char*)&cmds.arg;
+		else
+			arg=(char*)&cmds.arg;
 	}else
 		arg=NULL;
 
@@ -169,8 +170,8 @@ int __handle_commands(int sockfd)
 
 	up_log("%s: cmd %d; handled\n", __func__, (int)cmds.cmd);
 
-	//if(size>0 && size >= CMD_EMBEDED_ARG_SIZE)
-	if(size >0)
+	if(size>0 && size >= CMD_EMBEDED_ARG_SIZE)
+	//if(size >0)
 		pfree(arg);
 
 	return 0;
@@ -193,20 +194,20 @@ int send_cmd(enum comm_cmd cmd, int size, char *arg)
 	up_log("sending a command %d of size %d using socket %d\n", cmd, size, ori_to_remote_sock);
 	cmds.cmd = cmd;
 	cmds.size = size;
-	//if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
-	//	strncpy((char*)&(cmds.arg), arg, size);
+	if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
+		memcpy(&(cmds.arg), arg, size);
 
 	n = writen(ori_to_remote_sock, &cmds, sizeof(cmds));
 	if(n<0)
 		perror("cmd_write");
 	up_log("cmd written %d\n", cmds.cmd);
 
-	//if(size >= CMD_EMBEDED_ARG_SIZE)
+	if(size >= CMD_EMBEDED_ARG_SIZE)
 	{
 		n = writen(ori_to_remote_sock, arg, size);
 		if(n<0)
 			perror("arg_size write");
-		up_log("arg written %d\n", cmds.cmd);
+		up_log("arg written for %d size %d\n", cmds.cmd, size);
 	}
 
 	return 0;
