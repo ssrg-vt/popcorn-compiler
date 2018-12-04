@@ -319,7 +319,7 @@ tryflag CFLAGS_NOSSP -fno-stack-protector
 # option is sufficient, and if not, add a macro to cripple these
 # functions with volatile...
 #
-tryflag CFLAGS_MEMOPS -fno-tree-loop-distribute-patterns
+#tryflag CFLAGS_MEMOPS -fno-tree-loop-distribute-patterns
 
 #
 # Enable debugging if requessted.

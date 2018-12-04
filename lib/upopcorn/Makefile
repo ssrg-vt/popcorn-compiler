@@ -3,8 +3,8 @@ POPCORN_ARM := $(POPCORN)/aarch64
 POPCORN_X86 := $(POPCORN)/x86_64
 
 # Although we disable IR optimizations, use -O3 to get backend optimizations
-CCARM         := $(POPCORN)/bin/clang
-CCX86         := $(POPCORN)/bin/clang
+CCARM         := $(POPCORN)/bin/libclang-arm
+CCX86         := $(POPCORN)/bin/libclang
 #CCX86         := $(POPCORN)/bin/clang
 CFLAGS     := -O3 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
               -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE -mllvm \

@@ -405,7 +405,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
+                                'CC={}/bin/libclang-arm'.format(install_path),
                                 'CFLAGS="-target aarch64-linux-gnu ' + 
 									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
@@ -451,7 +451,7 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                                 '--enable-gcc-wrapper',
                                 '--enable-optimize',
                                 '--disable-shared',
-                                'CC={}/bin/clang'.format(install_path),
+                                'CC={}/bin/libclang'.format(install_path),
                                 'CFLAGS="-target x86_64-linux-gnu ' + 
 									'-popcorn-libc -fno-common"']),
                                         #stdout=FNULL,
@@ -843,6 +843,10 @@ def main(args):
     if not args.skip_binutils_install:
         install_binutils(args.base_path, args.install_path, cpus)
 
+    #some are used by the libraries
+    if not args.skip_utils_install:
+        install_utils(args.base_path, args.install_path, cpus)
+
     if not args.skip_libraries_install:
         install_libraries(args.base_path, args.install_path, cpus,
                           args.debug_stack_transformation,
@@ -855,9 +859,6 @@ def main(args):
     if args.install_call_info_library:
         install_call_info_library(args.base_path, args.install_path,
                                   cpus)
-
-    if not args.skip_utils_install:
-        install_utils(args.base_path, args.install_path, cpus)
 
     if not args.skip_namespace:
         build_namespace(args.base_path)
