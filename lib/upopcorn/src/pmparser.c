@@ -32,9 +32,17 @@ enum PARSE_MODE
 
 static int pmparser_parse(int update);
 
+static int __pmparser_init=0;
 int pmparser_init()
 {
-	return pmparser_parse(NORMAL);
+	int ret;
+	if(__pmparser_init)
+		return 0;
+	__pmparser_init=1;
+	ret=pmparser_parse(NORMAL);
+	if(ret)
+		printf("[map]: cannot parse the memory map of %d\n", getpid());//TODO:exit?
+	return ret;
 }
 
 
@@ -275,14 +283,14 @@ void pmparser_print(procmap_t* map, int order){
 	while(tmp!=NULL){
 		//(unsigned long) tmp->addr_start;
 		if(order==id || order==-1){
-			up_log("Node address :\t%p\n", tmp);
-			up_log("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
 			up_log("Range:\t\t%p-%p\n",tmp->addr_start,tmp->addr_end);
+			up_log("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
 			up_log("Length:\t\t%ld\n",tmp->length);
 			up_log("Offset:\t\t%ld\n",tmp->offset);
 			up_log("Permissions:\t%s\n",tmp->perm);
 			up_log("Inode:\t\t%lu\n",tmp->inode);
 			up_log("Device:\t\t%s\n",tmp->dev);
+			up_log("Node address :\t%p\n", tmp);
 		}
 		if(order!=-1 && id>order)
 			tmp=NULL;

@@ -39,6 +39,7 @@
 
 static long uffd;		  /* userfaultfd file descriptor */
 extern unsigned long __pmalloc_start;
+extern unsigned long __malloc_start;
 void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
 
 extern int __tdata_start, __tbss_end;
@@ -244,7 +245,7 @@ int dsm_copy_stack(void* addr)
 	/*unprotect lower addresses of the stack: new pages are allocated locally
 	 * These page are important for the fault handler to execute correctly */
 	/* Does the stack transf. lib use part of the stack? lower part maybe ?*/ 
-	ERR_CHECK(mprotect(map->addr_start, addr-map->addr_start, 
+	ERR_CHECK(mprotect(map->addr_start, addr - map->addr_start, 
 						PROT_READ | PROT_WRITE));
 //#endif
 
@@ -422,18 +423,6 @@ int catch_signal()
 	return 0;
 }
 
-int dsm_init_pmap()
-{
-	int ret;
-
-	ret = pmparser_init();
-
-	if(ret){
-		up_log ("[map]: cannot parse the memory map of %d\n", getpid());
-		return -1;
-	}
-	return 0;
-}
 
 #ifdef USERFAULTFD
 static pthread_attr_t tattr;
@@ -509,7 +498,7 @@ int dsm_init_remote()
 	userfaultfd_init();
 #endif
 
-	dsm_init_pmap();
+	pmparser_init();
 
 	catch_signal();
 
@@ -518,7 +507,8 @@ int dsm_init_remote()
 
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
-	while((map=pmparser_next())!=NULL){
+	while((map=pmparser_next())!=NULL)
+	{
 
 		if(map->addr_start<=private_start && map->addr_end>=private_end)
 		{
@@ -559,6 +549,12 @@ int dsm_init_remote()
 			up_log("pmalloc section found and skipped!\n");
 			continue;
 		}
+		if(((unsigned long) map->addr_start <= __malloc_start)
+			&& ((unsigned long)map->addr_end >= __malloc_start))
+		{
+			up_log("malloc section found and skipped!\n");
+			continue;
+		}
 		if(strstr(map->pathname, "stack") != NULL) {
 			up_log("stack section found and skipped!\n");
 			continue;
@@ -583,11 +579,11 @@ int dsm_init_remote()
 
 
 		if(!map->prot.is_w) {
-			up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
 			up_log("RO section found and skipped!\n");
 			continue;
 		}
 			
+		up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
 		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 		pmparser_print(map,0);
 		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
@@ -612,12 +608,21 @@ void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 	return ret;
 }
 
+int stack_move();
+int dsm_init_local()
+{
+	printf("%s:%d\n", __func__, __LINE__);
+	pmparser_init();
+	stack_move();
+	return 0;
+}
+
 int dsm_init(int remote_start)
 {
-	up_log("%s: remote start = %d\n", __func__, remote_start);
+	up_log("%s: remote_start = %d\n", __func__, remote_start);
 	if(remote_start)
 		dsm_init_remote();
 	else
-		dsm_init_pmap();
+		dsm_init_local();
 	return 0;
 }

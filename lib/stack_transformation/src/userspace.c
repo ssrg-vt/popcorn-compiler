@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
 
 #include "stack_transform.h"
 #include "definitions.h"
@@ -157,6 +158,7 @@ void __st_userspace_dtor(void)
   }
 }
 
+#if 0
 /*
  * Get stack bounds for a thread.
  */
@@ -199,6 +201,7 @@ stack_bounds get_stack_bounds()
 
   return cur_bounds;
 }
+#endif
 
 /* Public-facing rewrite macros */
 
@@ -450,6 +453,30 @@ static bool get_thread_stack(stack_bounds* bounds)
   return retval;
 }
 
+#define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)
+void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
+
+#ifndef ALL_STACK_BASE
+#define ALL_STACK_BASE 0x600000000000UL
+#endif
+#ifndef ALL_STACK_ALIGN
+#define ALL_STACK_ALIGN 0x1000
+#endif
+
+void* allocate_new_stack(unsigned long len)
+{
+	unsigned long ret;
+	static unsigned long stack_base=ALL_STACK_BASE;
+
+	len=(len+(len-1)) & ~(len-1);
+	ERR_CHECK((__mmap((void*)stack_base, len, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)==MAP_FAILED));
+	ret=stack_base;
+	stack_base+=len;
+	return (void*)ret;
+
+}
+
 /*
  * Rewrite from source to destination stack.  Logically, divides 8MB stack in
  * half, detects which half we're currently using and rewrite to the other.
@@ -503,7 +530,9 @@ static int userspace_rewrite_internal(void* sp,
 
   /* Find which half the current stack uses and rewrite to other. */
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
-  new_stack = (sp >= stack_b) ? stack_b : stack_a;
+  //new_stack = (sp >= stack_b) ? stack_b : stack_a;
+  new_stack = allocate_new_stack(MAX_STACK_SIZE);
+  new_stack = (void*)((unsigned long)new_stack+MAX_STACK_SIZE);//stack end
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
   if(st_rewrite_stack(handle_a, regs, cur_stack,
                       handle_b, dest_regs, new_stack))
