@@ -21,6 +21,8 @@
 #include "arch/x86_64/regs.h"
 #include "arch/aarch64/regs.h"
 
+//#define _UPOPCORN_BUILD
+
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
 ///////////////////////////////////////////////////////////////////////////////
@@ -329,6 +331,7 @@ static bool prep_stack(void)
 #endif
 
   if(!get_main_stack(&bounds)) return false;
+#ifndef _UPOPCORN_BUILD
   if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
   if(!ret)
   {
@@ -352,6 +355,7 @@ static bool prep_stack(void)
                  "mov %%r14, %%rsp" : : "g" (bounds.low) : "r14", "r15");
 #endif
   }
+#endif
 
   ST_INFO("Prepped stack for main thread, addresses %p -> %p\n",
           bounds.low, bounds.high);
@@ -370,10 +374,16 @@ static bool prep_stack(void)
   return true;
 }
 
+extern uintptr_t _upopcorn_stack_base;
+extern uintptr_t _upopcorn_stack_size;
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
-#ifdef _POPCORN_BUILD
+#ifdef _UPOPCORN_BUILD
+  bool found = true;
+  bounds->low = (void*)_upopcorn_stack_base;
+  bounds->high = (void*)_upopcorn_stack_base+_upopcorn_stack_size;
+#elif defined _POPCORN_BUILD
   // TODO hack -- Popcorn currently returns an incorrect PID, so hard-code in
   // assuming we're at the top of the address space
   bool found = true;
@@ -415,7 +425,6 @@ static bool get_main_stack(stack_bounds* bounds)
   pfree(lineptr);
   fclose(proc_fp);
 #endif
-
   ST_INFO("procfs stack limits: %p -> %p\n", bounds->low, bounds->high);
   return found;
 }
@@ -463,6 +472,7 @@ void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
 #define ALL_STACK_ALIGN 0x1000
 #endif
 
+/* FIXME: don't allocate a new stack everytime: use old stack ? */
 void* allocate_new_stack(unsigned long len)
 {
 	unsigned long ret;

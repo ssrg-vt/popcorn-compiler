@@ -12,7 +12,8 @@ implied warranty.
 */
 
 //#include "config.h"
-#include "pmparser.h"
+#include "region_db.h"
+#include "region.h"
 #include "config.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -20,8 +21,13 @@ implied warranty.
 /**
  * gobal variables
  */
-procmap_t* pmp_head =NULL;
-procmap_t* pmp_curr =NULL;
+struct regions_db_s
+{
+	region_t* head;
+	region_t* curr;
+};
+
+static struct regions_db_s region_db = {NULL, NULL};
 
 enum PARSE_MODE
 {
@@ -30,32 +36,24 @@ enum PARSE_MODE
 	JUST_PRINT
 };
 
-static int pmparser_parse(int update);
+static int region_db_parse(int update);
 
-static int __pmparser_init=0;
-int pmparser_init()
+static int __region_db_init=0;
+int region_db_init()
 {
 	int ret;
-	if(__pmparser_init)
+	if(__region_db_init)
 		return 0;
-	__pmparser_init=1;
-	ret=pmparser_parse(NORMAL);
+	__region_db_init=1;
+	ret=region_db_parse(NORMAL);
 	if(ret)
 		printf("[map]: cannot parse the memory map of %d\n", getpid());//TODO:exit?
 	return ret;
 }
 
 
-procmap_t* pmparser_new()
-{
-	void* ret;
-	ret = (procmap_t*)pmalloc(sizeof(procmap_t));
-	if(!ret)
-		up_log("%s: error!!!\n", __func__);
-	return ret;
-}
 
-static void pmp_update(procmap_t* dest, procmap_t* src)
+static void pmp_update(region_t* dest, region_t* src)
 {
 	dest->addr_start=src->addr_start;
 	dest->addr_end=src->addr_end;
@@ -68,31 +66,30 @@ static void pmp_update(procmap_t* dest, procmap_t* src)
 	//strcpydest->pathname=src->pathname;
 }
 
-void pmparser_insert(procmap_t* node, int nid)
+void region_db_insert(region_t* node, int nid)
 {
-	node->next = pmp_head;
+	node->next = region_db.head;
 	node->nid = nid;
-	pmp_head=node;	
+	region_db.head=node;	
 }
 
 
-#define BUF_SIZE 512
-static int pmparser_parse(int mode)
+static int region_db_parse(int mode)
 {
 	FILE* file;
-	size_t linesz=BUF_SIZE;
+	size_t linesz=LINE_MAX_SIZE;
 	char *lineptr;
 	int fields;
-	struct procmap_s *tmp, *tmp2;
+	struct region_s *tmp, *tmp2;
 
-	printf("parsing /proc/self/smaps\n"); 
-	file=fopen("/proc/self/smaps","r");
+	up_log("parsing %s\n", PROC_MAPS_FILE); 
+	file=fopen(PROC_MAPS_FILE , "r");
 	if(!file){
-		fprintf(stderr,"pmparser : cannot open the memory maps, %s\n",strerror(errno));
+		fprintf(stderr,"region_db : cannot open the memory maps, %s\n",strerror(errno));
 		return -1;
 	}
 
-	if(!(lineptr = (char*)pmalloc(BUF_SIZE * sizeof(char)))) 
+	if(!(lineptr = (char*)pmalloc(LINE_MAX_SIZE * sizeof(char)))) 
 			return -1;
 
 	while(getline(&lineptr, &linesz, file) >= 0)
@@ -102,7 +99,7 @@ static int pmparser_parse(int mode)
 		if(mode != JUST_PRINT)
 		{
 			/* allocate node and fill min fields */
-			tmp=(struct procmap_s*)pmalloc(sizeof(struct procmap_s));
+			tmp=(struct region_s*)pmalloc(sizeof(struct region_s));
 			if(!tmp)
 				perror(__func__);
 
@@ -113,7 +110,7 @@ static int pmparser_parse(int mode)
 			if(fields < 6)
 				up_log("maps: less fields (%d) than expected (6 or 7)", fields);
 
-			tmp->pathname[PMPARSER_PATHNAME_MAX-1] = '\0';
+			tmp->pathname[REGION_PATHNAME_MAX-1] = '\0';
 
 			tmp->length = (unsigned long)tmp->addr_end - 
 					(unsigned long)tmp->addr_start;
@@ -163,70 +160,70 @@ static int pmparser_parse(int mode)
 			       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
 				tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
 #endif
-		if(mode==UPDATE && (pmparser_get(tmp->addr_start, &tmp2, NULL)==0))
+		if(mode==UPDATE && (region_db_get(tmp->addr_start, &tmp2, NULL)==0))
 		{
 			up_log("region exist: updating content\n");
 			/*revising the updating of regions since its complexe: local/remote regions, 
 			 * extended regions, new/deleted!!! regions, what else? */
 			pmp_update(tmp2, tmp);//In case the region has beed extended (like for malloced ones), this a temp fix
-			pmparser_print(tmp,0);
+			region_print(tmp);
 			pfree(tmp);//updating requested and the node already exist
 			continue;
 		}
 
 		//attach the node
-		pmparser_insert(tmp, -1);
+		region_db_insert(tmp, -1);
 	}
 
 	pfree(lineptr);
 	fclose(file);
 
-	pmp_curr=NULL;
+	region_db.curr=NULL;
 
 	return 0;
 }
 
-procmap_t* pmparser_next()
+region_t* region_db_next()
 {
-	if(pmp_head==NULL) 
+	if(region_db.head==NULL) 
 		return NULL;
 
-	if(pmp_curr==NULL)
-		pmp_curr=pmp_head;
+	if(region_db.curr==NULL)
+		region_db.curr=region_db.head;
 	else
-		pmp_curr=pmp_curr->next;
+		region_db.curr=region_db.curr->next;
 
-	return pmp_curr;
+	return region_db.curr;
 }
 
-int pmparser_update()
+int region_db_update()
 {
 	//should simply ask for more info and create a region and insert it?!
-	up_log("updating pmparser...\n");
-	return pmparser_parse(UPDATE);
+	up_log("updating region_db...\n");
+	return region_db_parse(UPDATE);
 }
 
 
-int pmparser_parse_print()
+int region_db_parse_print()
 {
 	//should simply ask for more info and create a region and insert it?!
 	up_log("pinting smaps...\n");
-	return pmparser_parse(JUST_PRINT);
+	return region_db_parse(JUST_PRINT);
 }
 
 
-int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
+int region_db_get(void* addr, region_t **map, struct page_s **page){
 	int found;
-	//static procmap_t *cached_map = 
+	//static region_t *cached_map = 
 	//int pg_num;
-	procmap_t *iter;
+	region_t *iter;
 
 	if(map) *map = NULL;
 	//if(page) = *page = NULL;
 
 	found = 0;
-	pmp_curr = NULL;//rei-init the walk 
-	while((iter = pmparser_next()))
+	region_db.curr = NULL;//rei-init the walk 
+	while((iter = region_db_next()))
 	{
 		/* TODO: Quicker search: ordered list/ hashtable ?	*
 		 * and modify insertion accordingly			*/
@@ -250,19 +247,19 @@ int pmparser_get(void* addr, procmap_t **map, struct page_s **page){
 		return -1;
 }
 
-int pmparser_alloc_pages(procmap_t *map)
+int region_db_alloc_pages(region_t *map)
 {
 	//map->pages = calloc(map->length/page_size, sizeof(struct protection_s));	
 	return -1;
 }
 
 
-void pmparser_free(){
-	if(pmp_head==NULL) 
+void region_db_destroy(){
+	if(region_db.head==NULL) 
 		return;
 
-	procmap_t* act=pmp_head;
-	procmap_t* nxt=act->next;
+	region_t* act=region_db.head;
+	region_t* nxt=act->next;
 
 	while(act!=NULL){
 		pfree(act);
@@ -271,34 +268,7 @@ void pmparser_free(){
 			nxt=nxt->next;
 	}
 
-	pmp_head = NULL;
-	pmp_curr = NULL;
+	region_db.head = NULL;
+	region_db.curr = NULL;
 }
 
-void pmparser_print(procmap_t* map, int order){
-
-	procmap_t* tmp=map;
-	int id=0;
-	if(order<0) order=-1;
-	while(tmp!=NULL){
-		//(unsigned long) tmp->addr_start;
-		if(order==id || order==-1){
-			up_log("Range:\t\t%p-%p\n",tmp->addr_start,tmp->addr_end);
-			up_log("Backed by:\t%s\n",strlen(tmp->pathname)==0?"[anonym*]":tmp->pathname);
-			up_log("Length:\t\t%ld\n",tmp->length);
-			up_log("Offset:\t\t%ld\n",tmp->offset);
-			up_log("Permissions:\t%s\n",tmp->perm);
-			up_log("Inode:\t\t%lu\n",tmp->inode);
-			up_log("Device:\t\t%s\n",tmp->dev);
-			up_log("Node address :\t%p\n", tmp);
-		}
-		if(order!=-1 && id>order)
-			tmp=NULL;
-		else if(order==-1){
-			up_log("#################################\n");
-			tmp=tmp->next;
-		}else tmp=tmp->next;
-
-		id++;
-	}
-}

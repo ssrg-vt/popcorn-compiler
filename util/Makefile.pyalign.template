@@ -26,7 +26,8 @@ APP_DIR := $(shell pwd)
 # Compiler
 CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
-CFLAGS     := -O0 -Wall -nostdinc -g
+INTALL_TOOL:= $(POPCORN)/bin/upopcorn_install.sh
+CFLAGS     := -O0 -Wall -nostdinc -g #-Dmain=real_main
 HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
               -ftls-model=initial-exec
 
@@ -199,6 +200,10 @@ $(X86_64_SD_BUILD)/%.o: %.c
 $(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
 	@echo " [LD] $@ (stack depth)"
 	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
+
+install: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
+	$(INTALL_TOOL) $(BIN)
+	
 
 .PHONY: all post_process stack-depth clean \
         aligned aligned-aarch64 aligned-x86-64 \

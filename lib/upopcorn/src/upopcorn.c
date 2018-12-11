@@ -30,7 +30,7 @@ static void read_config()
 	if(ret == PATH_MAX)
 		perror(__func__);
 
-	printf("popcorn config path is %s\n", path);
+	//printf("popcorn config path is %s\n", path);
 
 	file = fopen(path, "r");
 	if(!file)
@@ -51,7 +51,7 @@ static void read_config()
 			perror("maximum number of nodes reached\n");
 			break;
 		}
-		printf("machine id %d type %s(%d) and ip %s\n",
+		up_log("machine id %d type %s(%d) and ip %s\n",
 			i, atype, arch_type[i], arch_nodes[i]);
 		i++;
 	}
@@ -113,7 +113,7 @@ __upopcorn_init(void)
 
 	system_page_size = sysconf(_SC_PAGE_SIZE);
 
-	printf("%s start\n", __func__);
+	//printf("%s start\n", __func__);
 	if(start_remote)
                 remote = atoi(start_remote);
         else
@@ -147,7 +147,7 @@ __upopcorn_destroy(void)
 {
 	if(remote)
 	{
-		printf("sending exit...");
+		//printf("sending exit...");
 		send_cmd(SND_EXIT, 0, NULL);
 	}
 }

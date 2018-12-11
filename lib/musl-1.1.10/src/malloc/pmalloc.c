@@ -164,7 +164,7 @@ int pmalloc_init(void* start)
 {
 	if(__pminit)
 	{
-		printf("%s: pmalloc already initialized!!!\n", __func__);
+		//printf("%s: pmalloc already initialized!!!\n", __func__);
 		goto fail;
 	}
 
@@ -181,7 +181,7 @@ int pmalloc_init(void* start)
 
 	__pmalloc_start = mal.brk;
 
-	printf("%s: pmalloc start %p\n", __func__, __pmalloc_start);
+	//printf("%s: pmalloc start %p\n", __func__, __pmalloc_start);
 #ifdef SHARED
 	mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
 #endif
@@ -190,7 +190,7 @@ int pmalloc_init(void* start)
 	__pminit=1;
 	return 0;
 fail:
-	printf("pmalloc init failed\n");
+	perror("pmalloc init failed\n");
 	return -1;
 }
 
@@ -208,7 +208,7 @@ static struct chunk *expand_heap(size_t n)
 
 	if (!__pminit)
 	{
-		perror("WARNING: automatic pmalloc initialization!!!");
+		//perror("WARNING: automatic pmalloc initialization!!!");
 		pmalloc_init((void*)POPCORN_PMALLOC_BASE);
 	}
 

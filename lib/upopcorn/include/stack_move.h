@@ -25,7 +25,9 @@
           asm volatile("mov %0, %%rsp; mov %1, %%rbp" : : "m" (sp), "m" (bp) )
 
         #define GET_FRAME(bp,sp) GET_FRAME_X86_64(bp,sp)
+#ifndef SET_FRAME
         #define SET_FRAME(bp,sp) SET_FRAME_X86_64(bp,sp)
+#endif
 
 
 #else   
@@ -54,7 +56,9 @@
           asm volatile("mov sp, %0; mov x29, %1;" : : "r" (sp), "r" (bp) )
 
         #define GET_FRAME(bp,sp) GET_FRAME_AARCH64(bp,sp)
+#ifndef SET_FRAME
         #define SET_FRAME(bp,sp) SET_FRAME_AARCH64(bp,sp)
+#endif
 
 #endif
 #endif

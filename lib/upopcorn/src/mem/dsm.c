@@ -17,7 +17,7 @@
 #include <assert.h>
 #include <signal.h>
 #include <poll.h>
-#include "pmparser.h"
+#include "region_db.h"
 #include "config.h"
 #include "communicate.h"
 
@@ -46,8 +46,6 @@ extern int __tdata_start, __tbss_end;
 void *private_start = &__tdata_start;
 void *private_end = &__tbss_end;
 
-#define CHECK_ERR(err) if(err) up_log("%s:%d error!!!", __func__, __LINE__);
-#define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)
 #define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); \
                         } while (0)
 #define max(a,b) \
@@ -61,7 +59,7 @@ void *private_end = &__tbss_end;
      _a < _b ? _a : _b; })
 
 
-uint64_t DSM_UPDATE_START_SIZE(uint64_t addr, uint64_t region_start, uint64_t region_end, uint64_t *size) 
+uint64_t DSM_GET_START_AND_SIZE(uint64_t addr, uint64_t region_start, uint64_t region_end, uint64_t *size) 
 {
 	uint64_t tmp_start = addr;
 	unsigned long tmp_end;
@@ -96,12 +94,12 @@ struct page_exchange_s
 	uint64_t address;
 	uint64_t size;
 };
-int send_page(char* arg, int size)
+int send_page(char* arg, int size, void* data)
 {
 	struct page_exchange_s *pes = (struct page_exchange_s *)arg;
 	/*size is not page size but addr size in char */
 	up_log("%s: ptr = %p , size %ld\n", __func__, (void*)pes->address, pes->size);
-	send_data((void*)pes->address, pes->size);
+	send_data((void*)pes->address, pes->size, data);
 	return 0;
 }
 int dsm_get_page(void* raddr, void* buffer, int page_size)
@@ -117,25 +115,25 @@ struct pmap_exchange_s
 {
 	uint64_t address;
 };
-int send_pmap(char* arg, int size)
+int send_pmap(char* arg, int size, void* data)
 {
 	void *pmap;
 	struct pmap_exchange_s *pms = (struct pmap_exchange_s *)arg;
 	void *addr = (void*) pms->address;
 	up_log("%s: ptr = %p , size %d\n", __func__, addr, size);
-	if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+	if(region_db_get(addr, (region_t**)&pmap, NULL))
 	{
 		/* To avoid this redirection, we should update at each region creation:
 		 * mmap (done in dsm), malloc, pmalloc (?), thread creation, ? */ 
 		/* or assuming single-threaded app, just do it at migration? */
-		pmparser_update();
-		if(pmparser_get(addr, (procmap_t**)&pmap, NULL))
+		region_db_update();
+		if(region_db_get(addr, (region_t**)&pmap, NULL))
 		{
 			up_log("map not found!!!");
 		}
 	}
-	up_log("%s: map = %p , size %ld\n", __func__, pmap, sizeof(procmap_t));
-	send_data(pmap, sizeof(procmap_t));
+	up_log("%s: map = %p , size %ld\n", __func__, pmap, sizeof(region_t));
+	send_data(pmap, sizeof(region_t), data);
 	return 0;
 }
 
@@ -157,25 +155,26 @@ void userfaultfd_register(void* addr, uint64_t len){
 }
 #endif
 
-int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page, int stack)
+int dsm_get_remote_map(void* addr, region_t **map, struct page_s **page, int stack)
 {
 	int err;
-	procmap_t *new_map;
+	region_t *new_map;
 	struct pmap_exchange_s pms;
 
-	new_map = pmparser_new();
+	new_map = region_new();
 	pms.address = (uint64_t) addr;
 	up_log("%s: addr %p, map %p map size %ld\n", __func__, addr, new_map, sizeof(*new_map));
 
-	err= send_cmd_rsp(GET_PMAP, sizeof(pms), (void*)&pms,
+	err = send_cmd_rsp(GET_PMAP, sizeof(pms), (void*)&pms,
 				sizeof(*new_map), new_map);
 	CHECK_ERR(err);
-	pmparser_insert(new_map, 0);//FIXME: should put node id
+	region_db_insert(new_map, 0);//FIXME: should put node id
 
 	up_log("printing received pmap\n");
-	pmparser_print(new_map, 0);
+	region_print(new_map);
 
 
+	/* Register region in the kernel */
 #ifdef USERFAULTFD
 	if(new_map->inode || stack)
 	{
@@ -196,10 +195,10 @@ int dsm_get_remote_map(void* addr, procmap_t **map, struct page_s **page, int st
 	return 0;
 }
 
-int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
+int dsm_get_map(void* addr, region_t **map, struct page_s **page)
 {
 	int err;
-	err = pmparser_get(addr, map, NULL);
+	err = region_db_get(addr, map, NULL);
 	if(!err)
 		return 0;
 
@@ -207,17 +206,19 @@ int dsm_get_map(void* addr, procmap_t **map, struct page_s **page)
 }
 
 
-
-static void unprotect_and_load_page(void* addr, procmap_t* map)
+/* addr: faulting address; map: coresponding map; write: write fault or read */
+static void unprotect_and_load_page(void* addr, region_t* map)
 {
 	uint64_t size;
 	up_log("%s: loading %p\n", __func__, addr);
 
-	addr = (void*) DSM_UPDATE_START_SIZE((uint64_t)addr, (uint64_t) map->addr_start, (uint64_t)map->addr_end, &size);
+	addr = (void*) DSM_GET_START_AND_SIZE((uint64_t)addr, (uint64_t) map->addr_start, (uint64_t)map->addr_end, &size);
 
 	//TODO: support DSM_PAGE_SIZE
 	/*TODO: make the next two function atomic */
 	ERR_CHECK(mprotect(addr, size, PROT_READ | PROT_WRITE));
+
+	region_register_page(map, addr, size);
 
 	/* Copy content from remote into the temporary page */
 	dsm_get_page(addr, addr, size);
@@ -227,7 +228,7 @@ static void unprotect_and_load_page(void* addr, procmap_t* map)
 
 int dsm_copy_stack(void* addr)
 {
-	procmap_t* map=NULL;
+	region_t* map=NULL;
 
 	up_log("%s: address %p\n", __func__, addr);
 
@@ -269,7 +270,7 @@ static void *
 fault_handler_thread(void *arg)
 {
 	void* sp = NULL;
-	procmap_t* map=NULL;
+	region_t* map=NULL;
 	static struct uffd_msg msg;   /* Data read from userfaultfd */
 	static int fault_cnt = 0;	 /* Number of faults so far handled */
 	static char *page = NULL;
@@ -299,7 +300,6 @@ fault_handler_thread(void *arg)
 	for (;;) {
 
 		/* See what poll() tells us about the userfaultfd */
-
 		struct pollfd pollfd;
 		int nready;
 		pollfd.fd = uffd;
@@ -337,13 +337,13 @@ fault_handler_thread(void *arg)
 
 
 		/* We need the boundaries of the region */
-		ERR_CHECK(pmparser_get((void*)msg.arg.pagefault.address, &map, NULL));
+		ERR_CHECK(region_db_get((void*)msg.arg.pagefault.address, &map, NULL));
 
 		/* We need to handle page faults in units of pages(!).
 		   So, round faulting address down to page boundary */
 		uint64_t size;
 		void* addr;
-		addr= (void*)DSM_UPDATE_START_SIZE((uint64_t)msg.arg.pagefault.address, 
+		addr= (void*)DSM_GET_START_AND_SIZE((uint64_t)msg.arg.pagefault.address, 
 				(uint64_t) map->addr_start, (uint64_t) map->addr_end, &size);
 
 		/* get remote page content */
@@ -381,7 +381,7 @@ fault_handler_thread(void *arg)
 volatile int hold_real_fault=1;
 void fault_handler(int sig, siginfo_t *info, void *ucontext)
 {
-	procmap_t* map=NULL;
+	region_t* map=NULL;
 	void *addr=info->si_addr;
 
 	up_log("%s: address %p\n", __func__, info->si_addr);
@@ -471,6 +471,8 @@ void userfaultfd_init(void)
 	}
 	up_log("%s: done init\n", __func__);
 }
+#else
+void userfaultfd_init(void){}
 #endif
 
 
@@ -481,34 +483,64 @@ dsm_protect(void *addr, unsigned long length)
 	return 0;
 }
 
-static volatile int hold_remote_init=0;
-int dsm_init_remote()
+
+#ifdef DSM_STOP_DEBUG
+void dsm_stop_debug()
+{
+	static volatile int hold_remote_init=0;
+	while(hold_remote_init)
+		;
+}
+#else
+void dsm_stop_debug(){}
+#endif
+
+int catch_mecanism_initialized=0;
+int dsm_catch_fault()
+{
+	if(catch_mecanism_initialized)
+	{
+		return 0;
+	}
+
+	dsm_stop_debug();
+
+	userfaultfd_init();
+
+	/* Needed even when using USERFAULTFD, 
+	 * we need to catch signal: absent region, 
+	 * file backed region (...?) */
+	catch_signal();
+
+	catch_mecanism_initialized=1;
+	return 0;
+
+}
+
+int dsm_control_access(int update)
 {
 	int skip_next=0;
 	int ret;
-	procmap_t* map=NULL;
+	region_t* map=NULL;
+
+	dsm_catch_fault();
 
 	up_log("dsm_init private start %p, end %p\n", private_start, private_end);
-
-	while(hold_remote_init);
-
-
-#ifdef USERFAULTFD
-	pmparser_parse_print();
-	userfaultfd_init();
-#endif
-
-	pmparser_init();
-
-	catch_signal();
-
-
 	up_log("dsm_init pmalloc start %p\n", (void*)__pmalloc_start);
+
+	if(update)
+		region_db_update();
+		
 
 	/* Set all writable regions as absent to make sure 	*
 	 * that the content is fetched remotely. 		*/
-	while((map=pmparser_next())!=NULL)
+	while((map=region_db_next())!=NULL)
 	{
+		if(!map->prot.is_w) {
+		/* we are skipping (at least): vvar, vsyscall and vdso */
+			up_log("RO section found and skipped!\n");
+			continue;
+		}
 
 		if(map->addr_start<=private_start && map->addr_end>=private_end)
 		{
@@ -532,43 +564,23 @@ int dsm_init_remote()
 			}
 
 		}
-#ifdef USERFAULTFD
-		while(!userfaultfd_stack_base);
-		if(map->addr_start<=userfaultfd_stack_base && map->addr_end>=userfaultfd_stack_base)
-		{
-			up_log("userfaultfd_stack_base found and skipped! (%p)\n", userfaultfd_stack_base);
-			skip_next=1;
-			continue;
-		}
-		//if(skip_next) { skip_next=0; continue; }
-#endif
 		if(((unsigned long) map->addr_start <= __pmalloc_start)
 			&& ((unsigned long)map->addr_end >= __pmalloc_start))
-		//if((unsigned long)map->addr_start == __pmalloc_start) 
 		{
+			/* include USERFAULTFD stack if used */
 			up_log("pmalloc section found and skipped!\n");
 			continue;
 		}
+#if 0
 		if(((unsigned long) map->addr_start <= __malloc_start)
 			&& ((unsigned long)map->addr_end >= __malloc_start))
 		{
 			up_log("malloc section found and skipped!\n");
 			continue;
 		}
+#endif
 		if(strstr(map->pathname, "stack") != NULL) {
 			up_log("stack section found and skipped!\n");
-			continue;
-		}
-		if(strstr(map->pathname, "vvar") != NULL) {
-			up_log("vvar section found and skipped!\n");
-			continue;
-		}
-		if(strstr(map->pathname, "vdso") != NULL) {
-			up_log("vdso section found and skipped!\n");
-			continue;
-		}
-		if(strstr(map->pathname, "vsyscall") != NULL) {
-			up_log("vdso section found and skipped!\n");
 			continue;
 		}
 		/*
@@ -578,14 +590,10 @@ int dsm_init_remote()
 		}*/
 
 
-		if(!map->prot.is_w) {
-			up_log("RO section found and skipped!\n");
-			continue;
-		}
 			
 		up_log("Protecting start is %p end is %p\n", map->addr_start,map->addr_start+map->length);
 		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-		pmparser_print(map,0);
+		region_print(map);
 		up_log("\n~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		dsm_protect(map->addr_start, map->length);
@@ -598,21 +606,30 @@ int dsm_init_remote()
 
 	return 0;
 
+
+
+}
+
+int dsm_init_remote()
+{
+	region_db_init();
+	dsm_control_access(0);
+	return 0;
 }
 
 void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 {
 	void* ret;
 	ret = __mmap(start, len,prot, flags, fd, off);
-	pmparser_update();//FIXME: do we need it?
+	region_db_update();//FIXME: do we need it?
 	return ret;
 }
 
 int stack_move();
 int dsm_init_local()
 {
-	printf("%s:%d\n", __func__, __LINE__);
-	pmparser_init();
+	//printf("%s:%d\n", __func__, __LINE__);
+	region_db_init();
 	stack_move();
 	return 0;
 }

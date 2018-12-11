@@ -33,13 +33,13 @@ int get_context(void **ctx, int *size)
 
 /* Check & invoke migration if requested. */
 //__thread  TODO
-int loading=0;//to distinguish between migrate and load
+int loading=0;/* to distinguish between migrate and load */
 static void inline __new_migrate(int nid)
 {
 	up_log("%s: entering\n", __func__);
 	if(loading) // Post-migration
 	{
-		up_log("%s: loading context\n", __func__);
+		up_log("%s: loading context done\n", __func__);
 		loading=0;
 		return;
 	}
@@ -93,12 +93,13 @@ static void __load_context(regs_t *regs)
 */
 
 volatile int __hold=0;
-static void load_context()
+void load_context()
 {
 	int ret;
 	regs_t regs;
 	
-	while(__hold);
+	while(__hold)
+		;
 
 	up_log("%s: sending cmd...\n", __func__);
 	ret = send_cmd_rsp(GET_CTXT, 0, NULL, sizeof(regs), &regs);

@@ -62,3 +62,5 @@ extern unsigned long system_page_size;
 
 
 #define up_log(...) /*printf(__VA_ARGS__)*/
+#define CHECK_ERR(err) if(err) up_log("%s:%d error!!!", __func__, __LINE__);
+#define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)

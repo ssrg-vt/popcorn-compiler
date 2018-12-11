@@ -36,7 +36,7 @@ AR      := ar
 ARFLAGS := -cq
 
 HDR := $(shell ls include/*.h)
-SRC := $(shell ls src/*.c)
+SRC := $(shell ls src/*.c src/*/*.c)
 
 BUILD := build
 BUILD_ARM := $(BUILD)/aarch64
@@ -65,6 +65,7 @@ $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	export OBJDUMP=aarch64-linux-gnu-objdump
 	export OBJCOPY=aarch64-linux-gnu-objcopy
 	@echo " [CC] $< (aarch64)"
+	mkdir -p $$(dirname $@)
 	#gcc -E $(INC_ARM) -o $@.cpp $<
 	@$(CCARM) -E $(CFLAGS_ARM) $(INC_ARM) -o $@.cpp $<
 	@$(CCARM) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
@@ -80,6 +81,7 @@ $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	export OBJDUMP=objdump
 	export OBJCOPY=objcopy
 	@echo " [CC] $< (x86-64)"
+	mkdir -p $$(dirname $@)
 	@$(CCX86) $(CFLAGS_X86) $(INC_X86) -emit-llvm -o $@.bc $<
 	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
 	@$(CCX86) $(CFLAGS_X86) -o $@ $@.bc

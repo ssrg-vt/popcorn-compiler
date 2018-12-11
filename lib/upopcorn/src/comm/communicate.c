@@ -15,7 +15,7 @@
 #include "dsm.h"
 #include "communicate.h"
 #include "migrate.h"
-#include "pmparser.h"
+#include "region_db.h"
 
 
 #define CMD_EMBEDED_ARG_SIZE 64
@@ -26,12 +26,15 @@ struct  __attribute__((__packed__)) cmd_s{
 	char arg[CMD_EMBEDED_ARG_SIZE];
 };
 	
-
-static int server_sock_fd = 0;
-static int ori_to_remote_sock = 0;
+/*	
+	From Origine point of view: this is the connection to remote;
+	From remote point of view: this is the connection to origine;
+	Assumes we have only two node;
+*/
+static int connection_socket = -1;
 
 #define MAX_NUM_CHAR_SIZE 32
-typedef int (*cmd_func_t) (char* arg, int size); /* Note arg is freed after the function call */
+typedef int (*cmd_func_t) (char* arg, int size, void* sockfd); /* Note arg is freed after the function call */
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -89,6 +92,7 @@ __readn(int fd, void *vptr, size_t n)
 	}
 	return (n - nleft);		 /* return >= 0 */
 }
+
 static ssize_t						 /* Write "n" bytes to a descriptor. */
 readn(int fd, void *vptr, size_t n)
 {
@@ -98,20 +102,22 @@ readn(int fd, void *vptr, size_t n)
 	return ret;
 }
 
-int send_data(void* addr, size_t len)
+/* used to send rsp data */
+int send_data(void* addr, size_t len, void* data)
 {
-	return writen(server_sock_fd, addr, len);
+	int sockfd=(int)data;
+	return writen(sockfd, addr, len);
 }
 
 
 
-static int print_text(char* arg, int size)
+static int print_text(char* arg, int size, void* data)
 {
 	fwrite(arg, size, sizeof(char), stdout);
 	return 0;
 }
 
-static int get_ctxt(char* arg, int size)
+static int get_ctxt(char* arg, int size, void* data)
 {
 	void *ptr;
 	int sz;
@@ -120,12 +126,20 @@ static int get_ctxt(char* arg, int size)
 	sz=0;
 	get_context(&ptr, &sz);
 	up_log("%s: ptr = %p , size %d\n", __func__, ptr, size);
-	writen(server_sock_fd, ptr, sz);
+	send_data(ptr, sz, data);
 	return 0;
 }
 
 
-int hdl_exit(char* arg, int size)
+void load_context();
+int mig_back(char* arg, int size, void* data)
+{
+	printf("%s!!!!!!!!!!!\n", __func__);
+	load_context();
+	dsm_control_access(1);
+}
+
+int hdl_exit(char* arg, int size, void* data)
 {
 	printf("Remote Exit\n");
 	exit(0);
@@ -133,7 +147,7 @@ int hdl_exit(char* arg, int size)
 
 
 /* commands table */
-cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, send_pmap, hdl_exit};
+cmd_func_t cmd_funcs[]  = {send_page, print_text, get_ctxt, send_pmap, hdl_exit, mig_back};
 
 int __handle_commands(int sockfd)
 {
@@ -159,14 +173,15 @@ int __handle_commands(int sockfd)
 				perror("arg_size");
 			//arg[n]='\0';
 			//up_log("%s: arg read is %s\n", __func__, arg);
-			printf("arg written for %d size %d\n", cmds.cmd, size);
+			//printf("arg written for %d size %d\n", cmds.cmd, size);
 		}
 		else
 			arg=(char*)&cmds.arg;
 	}else
 		arg=NULL;
 
-	cmd_funcs[cmds.cmd](arg, size);
+	if(cmd_funcs[cmds.cmd](arg, size, (void*)sockfd))
+		perror("cmd execution");
 
 	up_log("%s: cmd %d; handled\n", __func__, (int)cmds.cmd);
 
@@ -179,11 +194,13 @@ int __handle_commands(int sockfd)
 
 int handle_commands(int sockfd)
 {
+	int ret;
 	up_log("Entering function %s\n", __func__);
-	server_sock_fd = sockfd;
-	while(1){
-		__handle_commands(sockfd);
-	}
+	do{
+		ret = __handle_commands(sockfd);
+	}while(ret != 1);
+
+	return 0;
 }
 
 int send_cmd(enum comm_cmd cmd, int size, char *arg)
@@ -191,20 +208,20 @@ int send_cmd(enum comm_cmd cmd, int size, char *arg)
 	int n;
 	struct cmd_s cmds;
 
-	up_log("sending a command %d of size %d using socket %d\n", cmd, size, ori_to_remote_sock);
+	up_log("sending a command %d of size %d using socket %d\n", cmd, size, connection_socket);
 	cmds.cmd = cmd;
 	cmds.size = size;
 	if(size>0  && (size <= CMD_EMBEDED_ARG_SIZE))
 		memcpy(&(cmds.arg), arg, size);
 
-	n = writen(ori_to_remote_sock, &cmds, sizeof(cmds));
+	n = writen(connection_socket, &cmds, sizeof(cmds));
 	if(n<0)
 		perror("cmd_write");
 	up_log("cmd written %d\n", cmds.cmd);
 
 	if(size >= CMD_EMBEDED_ARG_SIZE)
 	{
-		n = writen(ori_to_remote_sock, arg, size);
+		n = writen(connection_socket, arg, size);
 		if(n<0)
 			perror("arg_size write");
 		up_log("arg written for %d size %d\n", cmds.cmd, size);
@@ -218,7 +235,7 @@ int send_cmd_rsp(enum comm_cmd cmd, int size, char *arg, int resp_size, void* re
 {
 	send_cmd(cmd, size, arg);
 
-	int n = readn(ori_to_remote_sock, resp, resp_size);
+	int n = readn(connection_socket, resp, resp_size);
 	if(n<0)
 		perror("resp_read");
 	up_log("%s resp read\n", __func__);
@@ -235,11 +252,39 @@ int print_arch_suffix(char* buff, int max)
 #endif
 }
 
-//TODO: don't always open a link see if one already exist?
-// or do it in the origine_init funciton below
-int comm_migrate(int nid)
+void send_path(int sockfd)
 {
-	int sockfd = 0, n = 0;
+	/* should we use __progname?	*/
+	int ps;
+	int n = 0;
+	char *path = pcalloc(PATH_MAX, 1);
+	ps = readlink("/proc/self/exe", path, PATH_MAX);
+	path[ps++] = '\0';
+	up_log("path is %s, size %ld\n", path, strlen(path));
+
+	/* add arch suffix */
+	ps += print_arch_suffix(&path[ps], PATH_MAX - ps);
+	ps++;//+1 for '\0
+	if(ps==PATH_MAX)
+		perror("path max");
+	else
+		up_log("suffixed path is %s, size with null %d\n", path, ps);
+
+	/* Send exec path size (using char*) */
+	char path_size[NUM_LINE_SIZE_BUF+1];
+	snprintf(path_size, NUM_LINE_SIZE_BUF+1, "%.8d",ps);
+	up_log("path size ori %d %.9s\n", ps, path_size);
+	n = writen(sockfd, path_size, NUM_LINE_SIZE_BUF);
+	up_log("\n %d bytes written\n", n);
+
+	/* Send exec path */
+	n = writen(sockfd, path, ps);
+	up_log("\n %d bytes written\n", n);
+}
+
+int create_socket(int nid)
+{
+	int sockfd = 0;
 	struct sockaddr_in serv_addr;
 
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -264,60 +309,56 @@ int comm_migrate(int nid)
 	   perror("\n Error : Connect Failed \n");
 	   return 1;
 	}
+	
+	return sockfd;
+}
 
-	/* get the path to the binary. TODO: consider the arch extension */
-	/* should we use __progname?	*/
-	int ps;
-	char *path = pcalloc(PATH_MAX, 1);
-	ps = readlink("/proc/self/exe", path, PATH_MAX);
-	path[ps++] = '\0';
-	up_log("path is %s, size %ld\n", path, strlen(path));
-
-	/* add arch suffix */
-	ps += print_arch_suffix(&path[ps], PATH_MAX - ps);
-	ps++;//+1 for '\0
-	if(ps==PATH_MAX)
-		perror("path max");
-	else
-		up_log("suffixed path is %s, size with null %d\n", path, ps);
-
-	/* Write path size */
-	char path_size[NUM_LINE_SIZE_BUF+1];
-	//snprintf(path_size, NUM_LINE_SIZE_BUF, "%."NUM_LINE_SIZE_BUF_STRING"d",ps);
-	snprintf(path_size, NUM_LINE_SIZE_BUF+1, "%.8d",ps);
-	up_log("path size ori %d %.9s\n", ps, path_size);
-	n = writen(sockfd, path_size, NUM_LINE_SIZE_BUF);
-	up_log("\n %d bytes written\n", n);
-	/* Write the path */
-	n = writen(sockfd, path, ps);
-	up_log("\n %d bytes written\n", n);
-
-	handle_commands(sockfd);
-
-	//close(sockfd);//?
+int set_connexion(int nid)
+{
+	connection_socket = create_socket(nid);
+	send_path(connection_socket);
 	return 0;
 }
 
+//TODO: don't always open a link see if one already exist?
+// or do it in the origine_init funciton below
+int comm_migrate(int nid)
+{
+	if(connection_socket == -1)
+		/* used by first migration (ori -> remote) */
+		set_connexion(nid);
+	else
+		/* All other migration send a MIG_BACK */
+        	ERR_CHECK(send_cmd(MIG_BACK, 0, NULL));
+
+	handle_commands(connection_socket);
+
+	return 0;
+}
+
+#ifdef TEST_COMM
 static void test(void)
 {
 	int ret;
         char msg[] = "Hello world from prog\n";
-	printf("sending test hello\n");
+	//printf("sending test hello\n");
         ret = send_cmd(PRINT_ST, strlen(msg), msg);
         if(ret < 0)
                 perror(__func__);
 }
+#else
+static void test(void){}
+#endif
 
 static int remote_init()
 {
         char *cfd = getenv("POPCORN_SOCK_FD");
 
-        ori_to_remote_sock = atoi(cfd);
+        connection_socket = atoi(cfd);
 
-        up_log("%s: %d\n", __func__, ori_to_remote_sock);
+        up_log("%s: %d\n", __func__, connection_socket);
 
 	test();
-        //close(fd);
 
         up_log("%s: end\n", __func__);
 

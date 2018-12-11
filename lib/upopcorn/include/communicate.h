@@ -23,6 +23,7 @@ enum comm_cmd{
 	GET_CTXT,
 	GET_PMAP,
 	SND_EXIT,
+	MIG_BACK,
 };
 
 static char *comm_cmd_char[] = {
@@ -31,11 +32,12 @@ static char *comm_cmd_char[] = {
 	"GET_CTXT",
 	"GET_PMAP",
 	"SND_EXIT",
+	"MIG_BACK",
 };
 
 int comm_migrate(int nid);
 int send_cmd(enum comm_cmd cmd, int size, char *arg);
 int send_cmd_rsp(enum comm_cmd cmd, int size, char *arg, int resp_size, void* resp);
-int send_data(void* addr, size_t len);
+int send_data(void* addr, size_t len, void* data);
 
 
