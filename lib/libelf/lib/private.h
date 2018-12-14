@@ -314,7 +314,7 @@ struct Scn_Data {
 extern unsigned _elf_version;
 extern int _elf_errno;
 extern int _elf_fill;
-extern int _elf_sanity_checks;
+extern const int _elf_sanity_checks;
 #define SANITY_CHECK_STRPTR	(1u << 0)
 
 /*

@@ -1,0 +1,23 @@
+*** TODO ***
+
+- [Test] Test suite/unit test, ...
+- [Compilation] Compile the umigrate separetly using clang, the rest can be compiled with gcc? Also remove the old migration library
+- [Bug fixes] Rebase to latest master branch.
+- [cleanup] Flatten LLVM. No more patch.
+- [?] Use libc directly (No more musl):
+	- For malloc use hooks
+	(- [multi-threaded case] can we override pthread_create?)
+- [New feature] multi-threaded support: DSM lock/page-atomicity, TLS, ...
+- [New feature] file I/O
+- ...
+
+
+*** DONE ***
+- Migrate back:
+	1- send an RPC for home thread to continue x
+		a- home thread will execute the loop handle_command x
+		b- remote thread will be the new handler x
+
+	2- the thread should protect the shared regions 
+	3- load the new context (stack and registers) and continue...
+	4- Adapt the DSM to consider that some pages need to be fetched locally, other remotely...

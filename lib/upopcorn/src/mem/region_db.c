@@ -16,6 +16,7 @@ implied warranty.
 #include "region.h"
 #include "config.h"
 #include <stdlib.h>
+#include <assert.h>
 #include <stdio.h>
 
 /**
@@ -55,6 +56,9 @@ int region_db_init()
 
 static void pmp_update(region_t* dest, region_t* src)
 {
+	region_print(src);
+	region_print(dest);
+	assert(dest->addr_start==src->addr_start);
 	dest->addr_start=src->addr_start;
 	dest->addr_end=src->addr_end;
 	dest->length=src->length;
@@ -64,6 +68,9 @@ static void pmp_update(region_t* dest, region_t* src)
 	//dest->dev=src->dev;
 	dest->inode=src->inode;
 	//strcpydest->pathname=src->pathname;
+	
+	if(dest->addr_end!=src->addr_end)
+		region_extend_pages(dest, 1);
 }
 
 void region_db_insert(region_t* node, int nid)
@@ -99,7 +106,7 @@ static int region_db_parse(int mode)
 		if(mode != JUST_PRINT)
 		{
 			/* allocate node and fill min fields */
-			tmp=(struct region_s*)pmalloc(sizeof(struct region_s));
+			tmp=(struct region_s*)region_new(0);//pmalloc(sizeof(struct region_s));
 			if(!tmp)
 				perror(__func__);
 
@@ -109,6 +116,7 @@ static int region_db_parse(int mode)
 
 			if(fields < 6)
 				up_log("maps: less fields (%d) than expected (6 or 7)", fields);
+
 
 			tmp->pathname[REGION_PATHNAME_MAX-1] = '\0';
 
@@ -160,8 +168,9 @@ static int region_db_parse(int mode)
 			       (unsigned long)tmp->addr_start,  (unsigned long)tmp->addr_end, 
 				tmp->perm, tmp->offset, tmp->dev, tmp->inode, tmp->referenced, tmp->pathname);
 #endif
-		if(mode==UPDATE && (region_db_get(tmp->addr_start, &tmp2, NULL)==0))
+		if(mode==UPDATE && (region_db_get(tmp->addr_start, &tmp2)==0))
 		{
+			/*TODO add/remove pages if the region becomes bigger/smaller */
 			up_log("region exist: updating content\n");
 			/*revising the updating of regions since its complexe: local/remote regions, 
 			 * extended regions, new/deleted!!! regions, what else? */
@@ -211,40 +220,51 @@ int region_db_parse_print()
 	return region_db_parse(JUST_PRINT);
 }
 
+static inline int addr_is_in_region(region_t *map, void* addr)
+{
+	if(addr < map->addr_end && addr >= map->addr_start)
+		return 1;
+	else
+		return 0;
+}
 
-int region_db_get(void* addr, region_t **map, struct page_s **page){
+
+int region_db_get(void* addr, region_t **map){
 	int found;
-	//static region_t *cached_map = 
-	//int pg_num;
+	/* FIXME: region can be freed!!! */
+	static region_t *cached_map = NULL;
 	region_t *iter;
 
-	if(map) *map = NULL;
-	//if(page) = *page = NULL;
+	if(!map) 
+		return -1;
 
-	found = 0;
+	*map = NULL;
+
+	if(cached_map && addr_is_in_region(cached_map, addr))
+	{
+		*map = cached_map;
+		goto region_found;
+	}
+		
+
 	region_db.curr = NULL;//rei-init the walk 
 	while((iter = region_db_next()))
 	{
 		/* TODO: Quicker search: ordered list/ hashtable ?	*
 		 * and modify insertion accordingly			*/
-		if(addr < iter->addr_end && addr >= iter->addr_start)
+		if(addr_is_in_region(iter, addr))
 		{
-			found = 1;
-			if(map) *map = iter;
-			/*
-			assert(iter->page);
-			if(page){
-				pg_num = addr-map->addr_start/page_size;
-				page = &iter->page[pg_num];
-			}
-			*/
-			break;
+			assert(map);
+			*map = iter;
+			cached_map = iter;
+			goto region_found;
 		}
 	}
-	if(found)
-		return 0;
-	else
-		return -1;
+
+	return -1;
+
+region_found:
+	return 0;
 }
 
 int region_db_alloc_pages(region_t *map)

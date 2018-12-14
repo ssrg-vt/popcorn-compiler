@@ -8,7 +8,7 @@ CCX86         := $(POPCORN)/bin/libclang
 #CCX86         := $(POPCORN)/bin/clang
 CFLAGS     := -O1 -Xclang -disable-llvm-optzns -Wall -c -g -popcorn-alignment \
               -fno-vectorize -Wno-unused-variable -D_GNU_SOURCE -mllvm \
-              -no-sm-warn
+              -no-sm-warn -ffunction-sections -fdata-sections
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE
 endif

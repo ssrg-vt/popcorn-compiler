@@ -14,15 +14,13 @@
 // File-local API & definitions
 ///////////////////////////////////////////////////////////////////////////////
 
-#if _TLS_IMPL == COMPILER_TLS
 
 /*
  * Per-thread rewriting context.  We can declare these at compile-time,
  * because we know each thread will only ever use a pair of these at a time.
  */
-static __thread struct rewrite_context src_ctx, dest_ctx;
+static struct rewrite_context src_ctx, dest_ctx;
 
-#endif
 
 /*
  * Initialize an architecture-specific (source) context using previously

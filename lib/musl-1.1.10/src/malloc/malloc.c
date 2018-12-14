@@ -164,7 +164,7 @@ int malloc_init(void* start)
 {
 	if(__minit!=0)
 	{
-		//printf("%s: malloc already initialized!!!\n", __func__);
+		printf("%s: malloc already initialized!!!\n", __func__);
 		goto fail;
 	}
 
@@ -182,7 +182,7 @@ int malloc_init(void* start)
 
 	__malloc_start = mal.brk;
 
-	//printf("%s: malloc start %p\n", __func__, start);
+	printf("%s: malloc start %p\n", __func__, start);
 #ifdef SHARED
 	mal.brk = mal.brk + PAGE_SIZE-1 & -PAGE_SIZE;
 #endif

@@ -21,7 +21,7 @@
 #include "arch/x86_64/regs.h"
 #include "arch/aarch64/regs.h"
 
-//#define _UPOPCORN_BUILD
+#define _UPOPCORN_BUILD
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API & definitions
@@ -29,11 +29,7 @@
 
 static st_handle aarch64_handle = NULL;
 static st_handle x86_64_handle = NULL;
-#if _TLS_IMPL == COMPILER_TLS
-static __thread stack_bounds bounds = { .high = NULL, .low = NULL };
-#else /* PTHREAD_TLS */
-static pthread_key_t stack_bounds_key = 0;
-#endif
+//static stack_bounds bounds = { .high = NULL, .low = NULL };
 
 /*
  * Set inside of musl at __libc_start_main() to point to where function
@@ -46,7 +42,7 @@ extern void* __popcorn_stack_base;
  * allocates them and we can divide the stack in half for rewriting.  Also,
  * calculate stack bounds for main thread.
  */
-static bool prep_stack(void);
+//static bool prep_stack(void);
 
 /*
  * Get main thread's stack information from procfs.
@@ -56,7 +52,7 @@ static bool get_main_stack(stack_bounds* bounds);
 /*
  * Get thread's stack information from pthread library.
  */
-static bool get_thread_stack(stack_bounds* bounds);
+//static bool get_thread_stack(stack_bounds* bounds);
 
 /*
  * Rewrite from the current stack (metadata provided by handle_a) to a
@@ -93,12 +89,14 @@ static bool alloc_x86_64_fn = false;
  */
 void __st_userspace_ctor(void)
 {
+#if 0
   /* Initialize the stack for the main thread. */
   if(!prep_stack())
   {
     ST_WARN("could not prepare stack for user-space rewriting\n");
     return;
   }
+#endif
 
   /* Prepare libELF. */
   if(elf_version(EV_CURRENT) == EV_NONE)
@@ -160,50 +158,6 @@ void __st_userspace_dtor(void)
   }
 }
 
-#if 0
-/*
- * Get stack bounds for a thread.
- */
-stack_bounds get_stack_bounds()
-{
-  int retval;
-  void* cur_stack;
-  stack_bounds cur_bounds = {NULL, NULL};
-
-  /* If not already resolved, get stack limits for thread. */
-#if _TLS_IMPL == COMPILER_TLS
-  if(bounds.high == NULL)
-    if(!get_thread_stack(&bounds)) return cur_bounds;
-  cur_bounds = bounds;
-#else /* PTHREAD_TLS */
-  stack_bounds* bounds_ptr;
-  if(!(bounds_ptr = pthread_getspecific(stack_bounds_key)))
-  {
-    bounds_ptr = (stack_bounds*)pmalloc(sizeof(stack_bounds));
-    ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-    retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
-    if(retval) {
-      ASSERT(!retval, "could not set TLS data for thread\n");
-      return cur_bounds;
-    }
-    if(!get_thread_stack(bounds_ptr)) return cur_bounds;
-  }
-  cur_bounds = *bounds_ptr;
-#endif
-
-  /* Determine which half of stack we're currently using. */
-#ifdef __aarch64__
-  asm volatile("mov %0, sp" : "=r"(cur_stack) ::);
-#elif defined __x86_64__
-  asm volatile("movq %%rsp, %0" : "=g"(cur_stack) ::);
-#endif
-  if(cur_stack >= cur_bounds.low + B_STACK_OFFSET)
-    cur_bounds.low += B_STACK_OFFSET;
-  else cur_bounds.high = cur_bounds.low += B_STACK_OFFSET;
-
-  return cur_bounds;
-}
-#endif
 
 /* Public-facing rewrite macros */
 
@@ -309,6 +263,7 @@ int st_userspace_rewrite_x86_64(void* sp,
 // File-local API (implementation)
 ///////////////////////////////////////////////////////////////////////////////
 
+#if 0
 /*
  * Touch stack pages up to the OS-defined stack size limit, so that the OS
  * allocates them and we can divide the stack in half for rewriting.  Also,
@@ -316,79 +271,42 @@ int st_userspace_rewrite_x86_64(void* sp,
  */
 static bool prep_stack(void)
 {
-  long ret;
-  size_t offset;
-  struct rlimit rlim;
-#if _TLS_IMPL == PTHREAD_TLS
-  stack_bounds bounds;
-  stack_bounds* bounds_ptr;
-
-  bounds_ptr = (stack_bounds*)pmalloc(sizeof(stack_bounds));
-  ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-  ret = pthread_key_create(&stack_bounds_key, pfree);
-  ret |= pthread_setspecific(stack_bounds_key, bounds_ptr);
-  ASSERT(!ret, "could not allocate TLS data for main thread\n");
-#endif
 
   if(!get_main_stack(&bounds)) return false;
-#ifndef _UPOPCORN_BUILD
-  if((ret = getrlimit(RLIMIT_STACK, &rlim)) < 0) return false;
-  if(!ret)
-  {
-    // Note: the Linux kernel grows the stack automatically, but some versions
-    // check to ensure that the stack pointer is near the page being accessed.
-    // To grow the stack:
-    //   1. Save the current stack pointer
-    //   2. Move stack pointer to bottom of stack (according to rlimit)
-    //   3. Touch the page using the stack pointer
-    //   4. Restore the original stack pointer
-    bounds.low = bounds.high - rlim.rlim_cur;
-#ifdef __aarch64__
-    asm volatile("mov x27, sp;"
-                 "mov sp, %0;"
-                 "ldr x28, [sp];"
-                 "mov sp, x27" : : "r" (bounds.low) : "x27", "x28");
-#elif defined(__x86_64__)
-    asm volatile("mov %%rsp, %%r14;"
-                 "mov %0, %%rsp;"
-                 "mov (%%rsp), %%r15;"
-                 "mov %%r14, %%rsp" : : "g" (bounds.low) : "r14", "r15");
-#endif
-  }
-#endif
 
-  ST_INFO("Prepped stack for main thread, addresses %p -> %p\n",
-          bounds.low, bounds.high);
-
-  /*
-   * Get offset of main thread's stack pointer from stack base so we can avoid
-   * clobbering argv & environment variables.
-   */
-  ASSERT(__popcorn_stack_base, "Stack base not correctly set by musl\n");
-  offset = (uint64_t)(bounds.high - __popcorn_stack_base);
-  offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
-  bounds.high -= offset;
-#if _TLS_IMPL == PTHREAD_TLS
-  *bounds_ptr = bounds;
-#endif
   return true;
 }
+#endif
 
-extern uintptr_t _upopcorn_stack_base;
-extern uintptr_t _upopcorn_stack_size;
+void upopcorn_get_stack_base_and_size(uintptr_t* upopcorn_stack_base, uintptr_t* upopcorn_stack_size);
 /* Read stack information for the main thread from the procfs. */
 static bool get_main_stack(stack_bounds* bounds)
 {
 #ifdef _UPOPCORN_BUILD
-  bool found = true;
-  bounds->low = (void*)_upopcorn_stack_base;
-  bounds->high = (void*)_upopcorn_stack_base+_upopcorn_stack_size;
-#elif defined _POPCORN_BUILD
-  // TODO hack -- Popcorn currently returns an incorrect PID, so hard-code in
-  // assuming we're at the top of the address space
-  bool found = true;
-  bounds->high = (void*)0x7ffffff000;
-  bounds->low = (void*)0x7ffffde000;
+  uintptr_t upopcorn_stack_base;
+  uintptr_t upopcorn_stack_size;
+  upopcorn_get_stack_base_and_size(&upopcorn_stack_base, &upopcorn_stack_size);
+  bounds->low = (void*)upopcorn_stack_base;
+  bounds->high = (void*)upopcorn_stack_base+upopcorn_stack_size;
+  ST_INFO("Preparing stack for main thread, addresses %p -> %p; psb %p\n",
+	  bounds->low, bounds->high, __popcorn_stack_base);
+  bool found = upopcorn_stack_base;
+#if 0
+  if(found)
+  {
+    size_t offset;
+    /*
+     * Get offset of main thread's stack pointer from stack base so we can avoid
+     * clobbering argv & environment variables.
+     */
+    ASSERT(__popcorn_stack_base, "Stack base not correctly set by musl\n");
+    offset = (uint64_t)(bounds->high - __popcorn_stack_base);
+    offset += (offset % 0x10 ? 0x10 - (offset % 0x10) : 0);
+    bounds->high -= offset;
+  }
+#endif
+  ST_INFO("Prepped stack for main thread, addresses %p -> %p; psb %p\n",
+	  bounds->low, bounds->high, __popcorn_stack_base);
 #else
   /* /proc/<id>/maps fields */
   bool found = false;
@@ -429,6 +347,7 @@ static bool get_main_stack(stack_bounds* bounds)
   return found;
 }
 
+#if 0
 /* Read stack information for cloned threads from the pthread library. */
 static bool get_thread_stack(stack_bounds* bounds)
 {
@@ -461,6 +380,7 @@ static bool get_thread_stack(stack_bounds* bounds)
   ST_INFO("Thread stack limits: %p -> %p\n", bounds->low, bounds->high);
   return retval;
 }
+#endif
 
 #define ERR_CHECK(func) if(func) do{perror(__func__); exit(-1);}while(0)
 void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off);
@@ -499,10 +419,7 @@ static int userspace_rewrite_internal(void* sp,
 {
   int retval = 0;
   void* stack_a, *stack_b, *cur_stack, *new_stack;
-#if _TLS_IMPL == PTHREAD_TLS
-  stack_bounds bounds;
-  stack_bounds* bounds_ptr;
-#endif
+  stack_bounds bounds = { .high = NULL, .low = NULL };
 
   if(!sp || !regs || !dest_regs || !handle_a || !handle_b)
   {
@@ -511,26 +428,19 @@ static int userspace_rewrite_internal(void* sp,
   }
 
   /* If not already resolved, get stack limits for thread. */
-#if _TLS_IMPL == COMPILER_TLS
-  if(bounds.high == NULL)
-    if(!get_thread_stack(&bounds)) return 1;
-#else /* PTHREAD_TLS */
-  if(!(bounds_ptr = pthread_getspecific(stack_bounds_key)))
-  {
-    bounds_ptr = (stack_bounds*)pmalloc(sizeof(stack_bounds));
-    ASSERT(bounds_ptr, "could not allocate memory for stack bounds\n");
-    retval = pthread_setspecific(stack_bounds_key, bounds_ptr);
-    ASSERT(!retval, "could not set TLS data for thread\n");
-    if(!get_thread_stack(bounds_ptr)) return 1;
-  }
-  bounds = *bounds_ptr;
-#endif
+  //if(bounds.high == NULL)
+    if(!get_main_stack(&bounds)) return 1;
 
   if(sp < bounds.low || bounds.high <= sp)
   {
+    ST_INFO("stack bounds %p -> %p; sp %p\n",
+          bounds.low, bounds.high, sp);
     ST_WARN("invalid stack pointer\n");
     return 1;
   }
+  
+  ST_INFO("rewriting stack bounds %p -> %p\n",
+          bounds.low, bounds.high);
 
   ST_INFO("Thread %ld beginning re-write\n", syscall(SYS_gettid));
 
@@ -540,9 +450,8 @@ static int userspace_rewrite_internal(void* sp,
 
   /* Find which half the current stack uses and rewrite to other. */
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
-  //new_stack = (sp >= stack_b) ? stack_b : stack_a;
-  new_stack = allocate_new_stack(MAX_STACK_SIZE);
-  new_stack = (void*)((unsigned long)new_stack+MAX_STACK_SIZE);//stack end
+  new_stack = (sp >= stack_b) ? stack_b : stack_a;
+  //new_stack = allocate_new_stack(MAX_STACK_SIZE); //new_stack = (void*)((unsigned long)new_stack+MAX_STACK_SIZE);//stack end
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
   if(st_rewrite_stack(handle_a, regs, cur_stack,
                       handle_b, dest_regs, new_stack))

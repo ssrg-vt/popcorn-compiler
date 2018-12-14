@@ -33,4 +33,4 @@ int _elf_fill = 0;
 #define SANITY_CHECKS	0
 #endif
 
-int _elf_sanity_checks = SANITY_CHECKS;
+const int _elf_sanity_checks = SANITY_CHECKS;

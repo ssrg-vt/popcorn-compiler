@@ -9,11 +9,13 @@
 #include <errno.h>
 #include <pthread.h>
 #include <malloc.h>
+#include <assert.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "config.h"
 #include "dsm.h"
 #include "communicate.h"
+#include "stack_move.h"
 #include "migrate.h"
 #include "region_db.h"
 
@@ -135,8 +137,13 @@ void load_context();
 int mig_back(char* arg, int size, void* data)
 {
 	printf("%s!!!!!!!!!!!\n", __func__);
+	dsm_control_access(1,0,0);
+	stack_use_original();/* can be avoided by either creating a stack per 
+				node (with a guard between them) or protect 
+				half of the stack (see stack_transformation)*/
 	load_context();
-	dsm_control_access(1);
+	assert(0);//no return from previous function?
+	return 0;
 }
 
 int hdl_exit(char* arg, int size, void* data)
@@ -180,7 +187,7 @@ int __handle_commands(int sockfd)
 	}else
 		arg=NULL;
 
-	if(cmd_funcs[cmds.cmd](arg, size, (void*)sockfd))
+	if(cmd_funcs[cmds.cmd](arg, size, (void*)(long)sockfd))
 		perror("cmd execution");
 
 	up_log("%s: cmd %d; handled\n", __func__, (int)cmds.cmd);

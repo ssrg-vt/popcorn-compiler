@@ -28,9 +28,11 @@ elf_version(unsigned ver) {
     const char *s;
     unsigned tmp;
 
+/*
     if ((s = getenv("LIBELF_SANITY_CHECKS"))) {
 	_elf_sanity_checks = (int)strtol(s, (char**)NULL, 0);
     }
+*/
     if (ver == EV_NONE) {
 	return EV_CURRENT;
     }

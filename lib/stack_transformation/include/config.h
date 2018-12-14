@@ -40,13 +40,6 @@
 #define GETTIMEOFDAY 1
 #define _TIMER_SRC CLOCK_GETTIME // musl-libc has vDSO versions for both archs
 
-/*
- * Select TLS implementation.  Popcorn compiler support for TLS is a little
- * iffy, so fall back to the pthreads implementation if necessary.
- */
-#define COMPILER_TLS 0
-#define PTHREAD_TLS 1
-#define _TLS_IMPL PTHREAD_TLS
 
 /*
  * Maximum number of frames that can be rewritten.

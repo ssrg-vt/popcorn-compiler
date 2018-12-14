@@ -74,28 +74,10 @@ void __init_libc(char **envp, char *pn)
  */
 void *__popcorn_stack_base = NULL;
 
-#define MAX_CP_ARGV 100
-char* __argvs__[MAX_CP_ARGV];
-char** __cp_argv(int argc, char **argv)
-{
-	if(argc>MAX_CP_ARGV)
-	{
-	        argc=MAX_CP_ARGV;
-	        perror("Too many arguments!\n");
-	}
-	int i;
-	for(i=0; i<argc; i++)
-	{
-		int size=strlen(argv[i])+1;
-		char* tmp=malloc(size);
-		memcpy(tmp,argv[i],size);
-		__argvs__[i]=tmp;
-	}
-	return &__argvs__;
-}
-
 
 //void __upopcorn_init();//FIXME;use ctor
+int __upopcorn_main(int argc, char **argv, char **envp);
+int main(int argc, char **argv, char **envp);
 int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 {
 	char **envp = argv+argc+1;
@@ -111,8 +93,14 @@ int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 		(*(void (**)())a)();
 #endif
 
-	argv = __cp_argv(argc, argv);
 	/* Pass control to the application */
-	exit(main(argc, argv, envp));
+	exit(__upopcorn_main(argc, argv, envp));
 	return 0;
 }
+
+int __upopcorn_main_default(int argc, char **argv, char **envp)
+{
+	return main(argc, argv, envp);
+}
+
+weak_alias(__upopcorn_main_default, __upopcorn_main);

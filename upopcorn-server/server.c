@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <libgen.h>
 
 #include "common.h"
 
@@ -57,6 +58,9 @@ void __process(int fd, struct sockaddr_in *clientaddr){
 	sprintf(cfd, "%d", fd);
 	setenv("POPCORN_SOCK_FD", cfd, 1);
 	setenv("POPCORN_REMOTE_START", "1", 1);
+
+	if(chdir(dirname(exec_path)))
+		perror("chdir...");
 
 	execl(exec_path, exec_path, NULL);
 	//execl("/usr/bin/gdb", "-iex \"set auto-load safe-path /\"", "-ex run", "--args", exec_path, NULL);

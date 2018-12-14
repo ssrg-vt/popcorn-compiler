@@ -2,8 +2,7 @@
 
 all="$*"
 
-#TODO: use an env var or search/replace
-BASE=/usr/local/popcorn/
+LCC=/usr/local/popcorn/bin/clang
 
 while [ "$#" -gt 0 ]
 do
@@ -22,8 +21,8 @@ do
         shift
 done
 
-echo "CMD: $BASE/bin/clang $all"
-$BASE/bin/clang $all
+echo "CMD: $LCC $all"
+$LCC $all
 
 echo object: $object
 if [ "$object" == "/dev/null" ]; then                                            

@@ -2,6 +2,7 @@
 
 #include "protection.h"
 #include "page.h"
+//#include "utarray.h"
 
 /**
  * region_t
@@ -26,14 +27,20 @@ typedef struct region_s{
 	/* private data */
 	struct region_s* next;		//<handler of the chained list
 	int nid;			// nid of manager
+	int remote;			//has the region been fetched/requested remotely: shared region
 	/* use bitmap ? */
 	uint32_t region_nb_pages;
-	struct page_s* region_pages;		// page descriptors of this region
+	//struct page_s* region_pages;		// page descriptors of this region
+	//UT_array *region_pages;
+	char *region_pages;
 } region_t;
 
 /* allocate a new region_t */
-region_t* region_new();
+region_t* region_new(int remote);
+void region_init_pages(region_t* map, int present);
 void region_delete(region_t* map);
 void region_print(region_t* map);
-page_t* region_find_page(region_t* map, void* addr);
-int region_register_page(region_t* map, void* addr, uint64_t size);
+//page_t* region_find_page(region_t* map, void* addr);
+int region_set_page(region_t* map, void* addr, uint64_t size, int present);
+void region_extend_pages(region_t* map, int present);
+int region_is_page_present(region_t* map, void* addr, uint64_t size);

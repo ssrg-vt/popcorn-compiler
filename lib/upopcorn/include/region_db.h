@@ -53,7 +53,7 @@ void region_db_destroy();
 
 
 /* return the map that lies within the addr argument */
-int region_db_get(void* addr, region_t **map, struct page_s **page);
+int region_db_get(void* addr, region_t **map);
 
 int region_db_parse_print();
 

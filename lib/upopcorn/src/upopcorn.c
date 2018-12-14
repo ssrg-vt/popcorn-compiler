@@ -3,7 +3,9 @@
 #include <unistd.h>
 #include <config.h>
 #include <string.h>
+#include <assert.h>
 #include "communicate.h"
+#include "stack_move.h"
 
 int upopcorn_node_id;
 int dsm_init(int);
@@ -102,7 +104,7 @@ void upopcorn_start_malloc()
 //static void __attribute__((constructor)) __upopcorn_init(void);
 
 volatile static int __hold_upop=0;
-static int remote;
+static int remote=-1;
 //void __upopcorn_destroy(void);
 static void __attribute__((constructor)) 
 //void 
@@ -134,11 +136,41 @@ __upopcorn_init(void)
         ret = dsm_init(remote);
 	if(ret)
 		perror("dsm_init");
-	ret=migrate_init(remote);
+
+	//atexit(__upopcorn_destroy);
+}
+
+char** __cp_argv(int argc, char **argv)
+{
+	int i;
+	char** __argvs__;
+	__argvs__ = malloc((argc+1)*sizeof(char**));
+	printf("argvs new addr %p; old %p\n", __argvs__, argv);
+	for(i=0; i<argc; i++)
+	{
+		int size=strlen(argv[i])+1;
+		char* tmp=malloc(size);
+		memcpy(tmp,argv[i],size);
+		__argvs__[i]=tmp;
+	}
+	return __argvs__;
+}
+
+
+int main(int argc, char **argv, char **envp);
+int __upopcorn_main(int argc, char **argv, char **envp)
+{
+	int ret;
+	assert(remote!=-1);
+	printf("%s\n", __func__);
+	ret=migrate_init(remote); /* no return if remote */
 	if(ret)
 		perror("comm_init");
 
-	//atexit(__upopcorn_destroy);
+	stack_move();
+	argv = __cp_argv(argc, argv);
+	//envp = __cp_argv(nbenvp?, envp);
+	return main(argc, argv, envp);
 }
 
 static void __attribute__((destructor)) 

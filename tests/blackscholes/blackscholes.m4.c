@@ -331,6 +331,13 @@ int bs_thread(void *tid_ptr) {
             }
 #endif
         }
+#if 1
+	if((j%2)==0)
+    		new_migrate(0, NULL, NULL);
+	else
+    		new_migrate(1, NULL, NULL);
+#endif
+		
     }
 
     return 0;

@@ -1,4 +1,5 @@
 #pragma once
+
 #if 1
 #ifdef __x86_64__
 
@@ -63,3 +64,6 @@
 #endif
 #endif
 
+int set_thread_stack(void *base, unsigned long len);
+int stack_move();
+int stack_use_original();

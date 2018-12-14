@@ -13,7 +13,9 @@ INC   := include
 SRC   := src
 UTILS := utils
 
-CC     := $(POPCORN)/bin/clang
+#CC     := $(POPCORN)/bin/clang
+CCARM         := $(POPCORN)/bin/libclang-arm
+CCX86         := $(POPCORN)/bin/libclang
 CFLAGS := -g -Wall -D_GNU_SOURCE -popcorn-alignment
 
 AR  := ar
@@ -40,7 +42,7 @@ POPCORN_AARCH64 := $(POPCORN)/aarch64
 
 BUILD_AARCH64 := $(BUILD)/aarch64
 LIB_AARCH64   := $(BUILD_AARCH64)/libstack-transform.a
-CC_AARCH64    := $(CC) -target aarch64-linux-gnu
+CC_AARCH64    := $(CCARM) -target aarch64-linux-gnu
 LOC_AARCH64   := $(LOC) -isystem $(POPCORN_AARCH64)/include
 
 LIB_OBJ_AARCH64      := $(subst $(SRC),$(BUILD_AARCH64),$(LIB_SRC:.c=.o))
@@ -54,7 +56,7 @@ POPCORN_X86_64 := $(POPCORN)/x86_64
 
 BUILD_X86_64 := $(BUILD)/x86_64
 LIB_X86_64   := $(BUILD_X86_64)/libstack-transform.a
-CC_X86_64    := $(CC) -target x86_64-linux-gnu
+CC_X86_64    := $(CCX86) -target x86_64-linux-gnu
 LOC_X86_64   := $(LOC) -isystem $(POPCORN_X86_64)/include
 
 LIB_OBJ_X86_64      := $(subst $(SRC),$(BUILD_X86_64),$(LIB_SRC:.c=.o))
