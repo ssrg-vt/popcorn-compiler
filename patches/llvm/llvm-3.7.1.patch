@@ -9388,18 +9388,21 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  
    const char *getPassName() const override {
      return "AArch64 Assembly Printer";
-@@ -83,7 +85,9 @@
+@@ -83,7 +85,12 @@
  
    bool runOnMachineFunction(MachineFunction &F) override {
      AArch64FI = F.getInfo<AArch64FunctionInfo>();
 -    return AsmPrinter::runOnMachineFunction(F);
 +    bool retval = AsmPrinter::runOnMachineFunction(F);
-+    AM.recordActivationMetadata(F);
++
++    // Add this function's activation metadata.
++    if(AM.needToRecordMetadata(F)) AM.recordActivationMetadata(F);
++
 +    return retval;
    }
  
  private:
-@@ -114,6 +118,10 @@
+@@ -114,6 +121,10 @@
  
    typedef std::map<const MachineInstr *, MCSymbol *> MInstToMCSymbol;
    MInstToMCSymbol LOHInstToLabel;
@@ -9410,7 +9413,7 @@ Index: lib/Target/AArch64/AArch64AsmPrinter.cpp
  };
  
  } // end of anonymous namespace
-@@ -129,8 +137,9 @@
+@@ -129,8 +140,9 @@
      // linker can safely perform dead code stripping.  Since LLVM never
      // generates code that does this, it is always safe to set.
      OutStreamer->EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
