@@ -231,6 +231,12 @@ void hierarchy_init_node_team_state(int nid,
                                     void *data);
 
 /*
+ * Clear the node's team state so at the start of the next parallel region the
+ * threads on the node exit.
+ */
+void hierarchy_clear_node_team_state(int nid);
+
+/*
  * Initialize thread state to begin execution of parallel region.
  * @param nid the node on which to execute
  */
