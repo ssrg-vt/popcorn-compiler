@@ -13,6 +13,88 @@ library supports all OpenMP 4.5 features (including offloading), not all OpenMP
 4.5 features are allowed when used on Popcorn Linux; for example, threads
 cannot use offloading features.
 
+---------------------
+Environment Variables
+---------------------
+
+libopenpop defaults to single-node execution.  Users can configure distributed
+execution using the following environment variables.
+
+POPCORN_PLACES : string
+-----------------------
+
+Comma-separated list specifying where to place OpenMP team threads.  To place
+an identical number of threads on each node, use the "node" keyword like so:
+
+OMP_NUM_THREADS=24 POPCORN_PLACES="nodes(8)" ...
+
+This spawns 24 threads and puts 8 threads on each node.  Alternatively if the
+user would like to place differing numbers of threads on each node they can
+put the thread count for each node in curly-braces like so:
+
+OMP_NUM_THREADS=112 POPCORN_PLACES="{16},{96}" ...
+
+This places threads 0-15 on node zero and threads 16-95 on node 1.
+
+POPCORN_HYBRID_BARRIER : boolean
+--------------------------------
+
+Flag setting whether to use multi-node optimized barrier.  Defaults to true
+when distributing threads across nodes.
+
+POPCORN_HYBRID_REDUCE : boolean
+-------------------------------
+
+Flag setting whether to use multi-node optimized reductions.  Defaults to true
+when distributing threads across nodes.
+
+POPCORN_HET_WORKSHARE : string
+------------------------------
+
+Comma-separated list specifying how to skew loop iteration distribution for
+work-sharing regions.  For example, to give threads on node 0 three times as
+many loop iterations as those on node 1:
+
+POPCORN_HET_WORKSHARE={3},{1} ...
+
+Note: only applies to for-loops using the "static" loop iteration scheduler
+
+POPCORN_PROBE_PERCENT : float
+-----------------------------
+
+Percent of loop iterations in a work-sharing region to be used for the probing
+phase of the HetProbe scheduler.  Must be between 0.0 (0%) and 1.0 (100%).
+
+Note: only applies to for-loops using the "hetprobe" loop iteration scheduler
+
+POPCORN_MAX_PROBES : integer
+----------------------------
+
+Because the probing phase has overhead, only probe a work sharing region this
+number of times before caching and re-using the result for all subsequent
+visits to the region.
+
+Note: only applies to for-loops using the "hetprobe" loop iteration scheduler
+
+The following environment variables are implementation hacks that exist until
+the HetProbe scheduler takes on more autonomy and reading performance counters
+is introduced into libopenpop.
+
+POPCORN_PRIME_REGION : string
+-----------------------------
+
+Identifier for the region which should be used to make all work-sharing
+distribution decisions.  clang's own internal identifier.
+
+Note: only applies to for-loops using the "hetprobe" loop iteration scheduler
+
+POPCORN_PREFERRED_NODE : integer
+--------------------------------
+
+Which node should be used for single-node execution if the HetProbe scheduler
+decides cross-node execution is too expensive.
+
+Note: only applies to for-loops using the "hetprobe" loop iteration scheduler
+
 [1] "Specifications - OpenMP". http://www.openmp.org/specifications/
 [2] "GNU libgomp: Top". https://gcc.gnu.org/onlinedocs/libgomp/index.html
-

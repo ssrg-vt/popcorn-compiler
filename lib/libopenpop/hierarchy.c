@@ -184,6 +184,13 @@ void hierarchy_init_node_team_state(int nid,
   popcorn_node[nid].ns.data = data;
 }
 
+void hierarchy_clear_node_team_state(int nid)
+{
+  // Threads check the function passed by gomp_team_start() to
+  // gomp_thread_start() to determine whether to participate.
+  popcorn_node[nid].ns.fn = NULL;
+}
+
 /* Note: the main thread should already have initialized this node's
    synchronization data structures! */
 void hierarchy_init_thread(int nid)
@@ -200,6 +207,8 @@ void hierarchy_init_thread(int nid)
   /* If the main thread didn't set this node's function then we aren't
      participating in the parallel region. */
   if(!fn) return;
+
+  // TODO if we fell back to single node execution, reassign node IDs
 
   leader = select_leader_synchronous(&popcorn_node[nid].sync,
                                      &popcorn_node[nid].bar,
