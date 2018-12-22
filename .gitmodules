@@ -3,6 +3,6 @@
 	url = https://github.com/ssrg-vt/popcorn-llvm.git
 	branch = popcorn
 [submodule "clang"]
-	path = llvm/tool/clang
+	path = clang
 	url = https://github.com/ssrg-vt/popcorn-clang.git
 	branch = popcorn

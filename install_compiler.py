@@ -4,7 +4,7 @@ from __future__ import print_function
 
 import argparse
 import multiprocessing
-import os, os.path
+import os, os.path, errno
 import platform
 import shutil
 import subprocess
@@ -268,12 +268,22 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     #=====================================================
     cur_dir = os.getcwd()
     llvm_path = os.path.join(cur_dir, 'llvm')
-    os.chdir(llvm_path)
-    os.mkdir('build')
-    os.chdir('build')
+    clang_path = os.path.join(cur_dir, 'clang')
+    llvm_clang_path = os.path.join(llvm_path, 'tools', 'clang')
+    print(llvm_clang_path, clang_path)
+    try:
+        os.symlink(clang_path, llvm_clang_path)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise
+
+    llvm_install_path = os.path.join(install_path, 'build_llvm')
+    os.mkdir(llvm_install_path)
+    os.chdir(llvm_install_path)
+
 
     print('Running CMake...')
-    args = ['cmake'] + cmake_flags + ['..']
+    args = ['cmake'] + cmake_flags + [llvm_path]
     run_cmd('run CMake', args)
 
 
