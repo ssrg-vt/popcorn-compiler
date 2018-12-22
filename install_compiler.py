@@ -256,55 +256,19 @@ def get_cmd_output(name, cmd, ins=None, use_shell=False):
     return out.decode('utf-8')
 
 def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
-
-    llvm_download_path = os.path.join(install_path, 'src', 'llvm')
-    clang_download_path = os.path.join(llvm_download_path, 'tools', 'clang')
-
-    patch_base = os.path.join(base_path, 'patches', 'llvm')
-    llvm_patch_path = os.path.join(patch_base, 'llvm-3.7.1.patch')
-    clang_patch_path = os.path.join(patch_base, 'clang-3.7.1.patch')
-
     cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
                    '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
                    '-DCMAKE_BUILD_TYPE=Debug',
                    '-DLLVM_ENABLE_RTTI=ON',
                    '-DBUILD_SHARED_LIBS=ON']
 
-    #=====================================================
-    # DOWNLOAD LLVM
-    #=====================================================
-    print('Downloading LLVM source...')
-    args = ['svn', 'co', llvm_url, llvm_download_path, '-r', llvm_revision]
-    run_cmd('download LLVM source', args)
-
-    #=====================================================
-    # DOWNLOAD CLANG
-    #=====================================================
-    print('Downloading Clang source...')
-    args = ['svn', 'co', clang_url, clang_download_path, '-r', llvm_revision]
-    run_cmd('download Clang source', args)
-
-    #=====================================================
-    # PATCH LLVM
-    #=====================================================
-    with open(llvm_patch_path, 'r') as patch_file:
-        print('Patching LLVM...')
-        args = ['patch', '-p0', '-d', llvm_download_path]
-        run_cmd('patch LLVM', args, patch_file)
-
-    #=====================================================
-    # PATCH CLANG
-    #=====================================================
-    with open(clang_patch_path, 'r') as patch_file:
-        print("Patching clang...")
-        args = ['patch', '-p0', '-d', clang_download_path]
-        run_cmd('patch Clang', args, patch_file)
-
+    #TODO: update submodules#
     #=====================================================
     # BUILD AND INSTALL LLVM
     #=====================================================
     cur_dir = os.getcwd()
-    os.chdir(llvm_download_path)
+    llvm_path = os.path.join(cur_dir, 'llvm')
+    os.chdir(llvm_path)
     os.mkdir('build')
     os.chdir('build')
 

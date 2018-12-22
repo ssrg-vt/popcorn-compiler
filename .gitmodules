@@ -1,0 +1,8 @@
+[submodule "llvm"]
+	path = llvm
+	url = https://github.com/ssrg-vt/popcorn-llvm.git
+	branch = popcorn
+[submodule "clang"]
+	path = llvm/tool/clang
+	url = https://github.com/ssrg-vt/popcorn-clang.git
+	branch = popcorn
