@@ -514,6 +514,8 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
   RegValsMap::iterator RegIt;
   StackValsMap::iterator SSIt;
   MachineInstr::const_mop_iterator MOit;
+  int64_t SMID = cast<ConstantInt>(IRSM->getArgOperand(0))->getSExtValue();
+  unsigned NumMO;
 
   // Initialize new storage location/IR map objects (i.e., for virtual
   // registers & stack slots) for the stackmap
@@ -526,52 +528,57 @@ void StackTransformMetadata::mapOpsToIR(const CallInst *IRSM,
     const Value *IRVal = IRSM->getArgOperand(i);
     assert(IRVal && "Invalid stackmap IR operand");
 
-    if(MOit->isImm()) { // Map IR values to stack slots
-      int FrameIdx = INT32_MAX;
-      switch(MOit->getImm()) {
-      case StackMaps::DirectMemRefOp:
-        MOit++;
-        assert(MOit->isFI() && "Invalid operand type");
-        FrameIdx = MOit->getIndex();
-        MOit = std::next(MOit, 2);
-        break;
-      case StackMaps::IndirectMemRefOp:
-        MOit = std::next(MOit, 2);
-        assert(MOit->isFI() && "Invalid operand type");
-        FrameIdx = MOit->getIndex();
-        MOit = std::next(MOit, 2);
-        break;
-      case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
-      default: llvm_unreachable("Unrecognized stackmap operand type"); break;
+    // Legalization may have changed how many machine operands map to the IR
+    // value.  Loop over all relevant machine operands.
+    NumMO = MF->getNumLegalizedOps(SMID, MOit - MISM->operands_begin());
+    for(size_t j = 0; j < NumMO; j++) {
+      if(MOit->isImm()) { // Map IR values to stack slots
+        int FrameIdx = INT32_MAX;
+        switch(MOit->getImm()) {
+        case StackMaps::DirectMemRefOp:
+          MOit++;
+          assert(MOit->isFI() && "Invalid operand type");
+          FrameIdx = MOit->getIndex();
+          MOit = std::next(MOit, 2);
+          break;
+        case StackMaps::IndirectMemRefOp:
+          MOit = std::next(MOit, 2);
+          assert(MOit->isFI() && "Invalid operand type");
+          FrameIdx = MOit->getIndex();
+          MOit = std::next(MOit, 2);
+          break;
+        case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
+        default: llvm_unreachable("Unrecognized stackmap operand type"); break;
+        }
+
+        assert(MFI->getObjectIndexBegin() <= FrameIdx &&
+               FrameIdx <= MFI->getObjectIndexEnd() && "Invalid frame index");
+        assert(!MFI->isDeadObjectIndex(FrameIdx) && "Dead frame index");
+        DEBUG(dumpStackSlot(FrameIdx, IRVal););
+
+        // Update the list of IR values mapped to the stack slot (multiple IR
+        // values may be mapped to a single stack slot).
+        SSIt = SMStackSlots[MISM].find(FrameIdx);
+        if(SSIt == SMStackSlots[MISM].end())
+          SSIt = SMStackSlots[MISM].emplace(FrameIdx,
+                                            ValueVecPtr(new ValueVec)).first;
+        SSIt->second->push_back(IRVal);
       }
+      else if(MOit->isReg()) { // Map IR values to virtual registers
+        unsigned Reg = MOit->getReg();
+        MOit++;
 
-      assert(MFI->getObjectIndexBegin() <= FrameIdx &&
-             FrameIdx <= MFI->getObjectIndexEnd() && "Invalid frame index");
-      assert(!MFI->isDeadObjectIndex(FrameIdx) && "Dead frame index");
-      DEBUG(dumpStackSlot(FrameIdx, IRVal););
+        DEBUG(dumpReg(Reg, IRVal););
 
-      // Update the list of IR values mapped to the stack slot (multiple IR
-      // values may be mapped to a single stack slot).
-      SSIt = SMStackSlots[MISM].find(FrameIdx);
-      if(SSIt == SMStackSlots[MISM].end())
-        SSIt = SMStackSlots[MISM].emplace(FrameIdx,
-                                          ValueVecPtr(new ValueVec)).first;
-      SSIt->second->push_back(IRVal);
-    }
-    else if(MOit->isReg()) { // Map IR values to virtual registers
-      unsigned Reg = MOit->getReg();
-      MOit++;
-
-      DEBUG(dumpReg(Reg, IRVal););
-
-      // Update the list of IR values mapped to the virtual register (multiple
-      // IR values may be mapped to a single virtual register).
-      RegIt = SMRegs[MISM].find(Reg);
-      if(RegIt == SMRegs[MISM].end())
-        RegIt = SMRegs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
-      RegIt->second->push_back(IRVal);
-    } else {
-      llvm_unreachable("Unrecognized stackmap operand type.");
+        // Update the list of IR values mapped to the virtual register
+        // (multiple IR values may be mapped to a single virtual register).
+        RegIt = SMRegs[MISM].find(Reg);
+        if(RegIt == SMRegs[MISM].end())
+          RegIt = SMRegs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
+        RegIt->second->push_back(IRVal);
+      } else {
+        llvm_unreachable("Unrecognized stackmap operand type.");
+      }
     }
   }
 }
