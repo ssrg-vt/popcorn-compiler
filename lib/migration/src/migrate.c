@@ -120,7 +120,16 @@ static inline int do_migrate(void *addr)
   return retval;
 }
 
-#else /* _ENV_SELECT_MIGRATE */
+#elif _GBL_VARIABLE_MIGRATE == 1
+
+static volatile int __migrate_gb_variable=-1;
+
+static inline int do_migrate(void __attribute__((unused)) *fn)
+{
+	return __migrate_gb_variable;
+}
+
+#else
 
 // TODO remove this in future versions
 static inline int do_migrate(void __attribute__((unused)) *fn)
@@ -131,7 +140,7 @@ static inline int do_migrate(void __attribute__((unused)) *fn)
 	return status.proposed_nid;
 }
 
-#endif /* _ENV_SELECT_MIGRATE */
+#endif
 
 static struct popcorn_node_status ni[MAX_POPCORN_NODES];
 static int origin_nid = -1;

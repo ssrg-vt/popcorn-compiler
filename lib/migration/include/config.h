@@ -39,6 +39,11 @@
 #endif
 
 /* Use environment variables to specify at which function to migrate. */
+#ifndef _GBL_VARIABLE_MIGRATE
+#define _GBL_VARIABLE_MIGRATE 0
+#endif
+
+/* Use environment variables to specify at which function to migrate. */
 #ifndef _ENV_SELECT_MIGRATE
 #define _ENV_SELECT_MIGRATE 0
 #endif

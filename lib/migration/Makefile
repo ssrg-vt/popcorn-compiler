@@ -11,6 +11,9 @@ OPT_LEVEL  := -O3
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE=1
 endif
+ifneq ($(findstring gbl_select,$(type)),)
+CFLAGS     += -D_GBL_VARIABLE_MIGRATE=1
+endif
 ifneq ($(findstring native,$(type)),)
 CFLAGS     += -D_NATIVE=1
 endif
