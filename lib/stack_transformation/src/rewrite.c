@@ -93,6 +93,8 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest);
 // Perform stack transformation
 ///////////////////////////////////////////////////////////////////////////////
 
+#ifdef CHAMELEON
+
 int st_rewrite_randomized(void* cham_handle,
                           get_rand_info info_func,
                           st_handle handle,
@@ -190,6 +192,8 @@ int st_rewrite_randomized(void* cham_handle,
 
   return 0;
 }
+
+#endif /* CHAMELEON */
 
 /*
  * Perform stack transformation in its entirety, from source to destination.
