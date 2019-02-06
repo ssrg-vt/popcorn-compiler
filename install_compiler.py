@@ -597,6 +597,15 @@ def install_tools(base_path, install_path, num_threads):
         args = [ 'cp', full, dest ]
         run_cmd('copy metadata headers', args)
 
+    #=====================================================
+    # COPY STACK TRANSFORM API HEADERS FOR OUTSIDE TOOLS
+    #=====================================================
+    print('Copying headers for stack transformation API...')
+    full = os.path.join(base_path, 'lib', 'stack_transformation', 'include',
+                        'stack_transform.h')
+    args = [ 'cp', full, dest ]
+    run_cmd('copy stack transformation API headers', args)
+
     os.chdir(cur_dir)
 
 def install_utils(base_path, install_path, num_threads):
