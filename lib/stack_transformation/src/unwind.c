@@ -6,6 +6,7 @@
  */
 
 #include "unwind.h"
+#include "data.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API
@@ -56,6 +57,9 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
     saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[i].offset;
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
+#ifdef CHAMELEON
+    saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+#endif
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
     bitmap_set(ctx->acts[act - 1].callee_saved, locs[i].reg);
@@ -125,10 +129,14 @@ bool first_frame(uint64_t id)
  */
 inline void* calculate_cfa(rewrite_context ctx, int act)
 {
-  ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
   ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs), "Invalid stack pointer\n");
+#ifndef CHAMELEON
+  ASSERT(ctx->acts[act].site.addr, "Invalid call site information\n");
   return REGOPS(ctx)->sp(ctx->acts[act].regs) +
          FUNC(ctx, ctx->acts[act]).frame_size;
+#else
+  return REGOPS(ctx)->sp(ctx->acts[act].regs) + ctx->acts[act].frame_size;
+#endif
 }
 
 /*
@@ -194,9 +202,10 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
  * before the function has set it up, i.e., directly upon function entry.  Sets
  * up the stack pointer, frame base pointer & canonical frame address.
  */
-void pop_frame_funcentry(rewrite_context ctx)
+void pop_frame_funcentry(rewrite_context ctx, bool setup_bounds)
 {
   int next_frame = ctx->act + 1;
+  void *sp;
 
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
@@ -210,18 +219,29 @@ void pop_frame_funcentry(rewrite_context ctx)
    */
   if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, REGOPS(ctx)->ra_reg(ACT(ctx).regs));
-  else
-    REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs,
-                        *(void**)REGOPS(ctx)->sp(ACT(ctx).regs));
+  else {
+    sp = REGOPS(ctx)->sp(ACT(ctx).regs);
+#ifdef CHAMELEON
+    sp = translate_stack_address(ctx, ctx->act, sp);
+#endif
+    REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, *(void**)sp);
+  }
   ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(NEXT_ACT(ctx).regs));
 
-  setup_frame_bounds(ctx, next_frame);
-
   /*
-   * We also need to set the current frame's FBP to the caller's FBP since it
-   * hasn't been stored on the stack yet.
+   * setup_frame_bounds() calculates SP, FBP, & CFA.  Even if we don't want
+   * FBP/CFA, we still need to set up SP.
    */
-  REGOPS(ctx)->set_fbp(ACT(ctx).regs, REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
+  if(setup_bounds) {
+    setup_frame_bounds(ctx, next_frame);
+
+    /*
+     * We also need to set the current frame's FBP to the caller's FBP since it
+     * hasn't been stored on the stack yet.
+     */
+    REGOPS(ctx)->set_fbp(ACT(ctx).regs, REGOPS(ctx)->fbp(NEXT_ACT(ctx).regs));
+  }
+  else REGOPS(ctx)->set_sp(NEXT_ACT(ctx).regs, ACT(ctx).cfa);
 
   /* Advance to next frame. */
   ctx->act++;

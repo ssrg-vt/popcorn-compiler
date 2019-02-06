@@ -36,13 +36,17 @@ __st_ctor(void)
   ST_INFO("PID: %u\n", getpid());
 #endif
 
+#ifndef CHAMELEON
   __st_userspace_ctor();
+#endif
 }
 
 void /*__attribute__((destructor))*/
 __st_dtor(void)
 {
+#ifndef CHAMELEON
   __st_userspace_dtor();
+#endif
 
 #ifdef _LOG
   ST_INFO("--> Finished execution <--\n");
@@ -86,10 +90,14 @@ st_handle st_init(const char* fn)
   handle->ptr_size = (id[EI_CLASS] == ELFCLASS64 ? 8 : 4);
 
   /* Read function records */
-  handle->func_count = get_num_entries(handle->elf, SECTION_FUNCTIONS);
-  if(handle->func_count > 0)
+  handle->func_count = get_num_entries(handle->elf, SECTION_ST_FUNCTIONS);
+  if(handle->func_count == (size_t)-1)
+    handle->func_count = get_num_entries_sized(handle->elf,
+                                               SECTION_ST_FUNCTIONS,
+                                               sizeof(function_record));
+  if(handle->func_count != (size_t)-1)
   {
-    handle->funcs = get_section_data(handle->elf, SECTION_FUNCTIONS);
+    handle->funcs = get_section_data(handle->elf, SECTION_ST_FUNCTIONS);
     if(!handle->funcs) goto close_elf;
     ST_INFO("Found %lu function entries\n", handle->func_count);
   }
@@ -101,7 +109,11 @@ st_handle st_init(const char* fn)
 
   /* Read unwinding information */
   handle->unwind_count = get_num_entries(handle->elf, SECTION_ST_UNWIND);
-  if(handle->unwind_count > 0)
+  if(handle->unwind_count == (size_t)-1)
+    handle->unwind_count = get_num_entries_sized(handle->elf,
+                                                 SECTION_ST_UNWIND,
+                                                 sizeof(unwind_loc));
+  if(handle->unwind_count != (size_t)-1)
   {
     handle->unwind_locs = get_section_data(handle->elf, SECTION_ST_UNWIND);
     if(!handle->unwind_locs ) goto close_elf;
@@ -116,7 +128,7 @@ st_handle st_init(const char* fn)
 
   /* Read call site metadata */
   handle->sites_count = get_num_entries(handle->elf, SECTION_ST_ID);
-  if(handle->sites_count > 0)
+  if(handle->sites_count != (size_t)-1)
   {
     handle->sites_id = get_section_data(handle->elf, SECTION_ST_ID);
     handle->sites_addr = get_section_data(handle->elf, SECTION_ST_ADDR);
@@ -131,7 +143,7 @@ st_handle st_init(const char* fn)
 
   /* Read live value location records */
   handle->live_vals_count = get_num_entries(handle->elf, SECTION_ST_LIVE);
-  if(handle->live_vals_count > 0)
+  if(handle->live_vals_count != (size_t)-1)
   {
     handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
     if(!handle->live_vals) goto close_elf;
@@ -146,7 +158,7 @@ st_handle st_init(const char* fn)
   // live value records
   handle->arch_live_vals_count = get_num_entries(handle->elf,
                                                  SECTION_ST_ARCH_LIVE);
-  if(handle->arch_live_vals_count > 0)
+  if(handle->arch_live_vals_count != (size_t)-1)
   {
     handle->arch_live_vals = get_section_data(handle->elf,
                                               SECTION_ST_ARCH_LIVE);

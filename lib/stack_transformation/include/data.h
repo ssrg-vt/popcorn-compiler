@@ -113,5 +113,36 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr);
  */
 uint64_t* get_savedfbp_loc(rewrite_context ctx);
 
+#ifdef CHAMELEON
+
+/*
+ * Convert a stack address to its randomized location inside the child's
+ * address space.
+ *
+ * Note: do *not* read from or write to this location - use
+ * translate_stack_address() to get a pointer to a Chameleon-provided buffer
+ * for reading/writing stack data
+ *
+ * @param ctx a rewriting context
+ * @param act activation in which address resides
+ * @param addr a stack address from the child
+ * @return the randomized location
+ */
+void *randomized_address(rewrite_context ctx, int act, void *addr);
+
+/*
+ * Perform two levels of translation: 1. Translate a stack address to its
+ * randomized location and 2. Translate the randomized location to an address
+ * inside a buffer provided by Chameleon.
+ *
+ * @param ctx a rewriting context
+ * @param act activation in which address resides
+ * @param addr a stack address from the child
+ * @return a translated stack address or NULL if it could not be translated
+ */
+void *translate_stack_address(rewrite_context ctx, int act, void *addr);
+
+#endif
+
 #endif /* _DATA_H */
 

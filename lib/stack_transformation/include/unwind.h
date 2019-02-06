@@ -82,16 +82,23 @@ void pop_frame(rewrite_context ctx, bool setup_bounds);
 
 /*
  * Unwind the current call frame activation from the stack stored in the
- * context and set up the new frame's stack pointer, frame base pointer and
- * canonical frame address.  This is a special case for popping the frame
- * before the function has set it up, i.e., directly upon function entry.
+ * context.  Set up the new frame's stack pointer; if requested, set up the
+ * frame base pointer and canonical frame address.  This is a special case for
+ * popping the frame before the function has set it up, i.e., directly upon
+ * function entry - there are no callee-saved registers to restore.
  *
  * Note: call site information for the next frame must have already been
  * populated in order to set up the frame base pointer
  *
+ * Note: if you don't calculate the frame base pointer from the metadata
+ * (setup_bounds = false), you *must* calculate the canonical frame address
+ * separately using calculate_cfa() in order to unwind the next frame
+ *
  * @param ctx a rewriting context
+ * @param setup_bounds whether or not to set up the frame base pointer and
+ *                     canonical frame address from the transformation metadata
  */
-void pop_frame_funcentry(rewrite_context ctx);
+void pop_frame_funcentry(rewrite_context ctx, bool setup_bounds);
 
 /*
  * Return the spill location for the specified register in the specified

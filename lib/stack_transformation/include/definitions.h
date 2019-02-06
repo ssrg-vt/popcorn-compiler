@@ -25,6 +25,7 @@
 #include "regs.h"
 #include "properties.h"
 #include "rewrite_metadata.h"
+#include "stack_transform.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Checking, debugging & information macros
@@ -148,6 +149,11 @@ define_list_type(fixup);
 typedef struct activation
 {
   call_site site; /* call site information */
+#ifdef CHAMELEON
+  size_t frame_size;
+  size_t nslots;
+  const slotmap *slots;
+#endif
   void* cfa; /* canonical frame address */
   void* regs; /* register values */
   bitmap callee_saved; /* callee-saved registers stored in prologue */
@@ -229,6 +235,12 @@ struct rewrite_context
   /* Pools for constant-time allocation of per-frame/runtime-dependent data */
   void* regset_pool; /* Register sets */
   void* callee_saved_pool; /* Callee-saved registers (bitmaps) */
+
+#ifdef CHAMELEON
+  void *cham_handle; /* opaque handle for Chameleon */
+  get_rand_info rand_info; /* function returning randomization information */
+  void *buf; /* stack data buffer in Chameleon's address space */
+#endif
 };
 
 typedef struct rewrite_context* rewrite_context;

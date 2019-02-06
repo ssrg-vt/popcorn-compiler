@@ -49,7 +49,9 @@
 #define _TLS_IMPL COMPILER_TLS
 
 /* Select either global or per-thread malloc implementation */
-#define PER_NODE_MALLOC 1
+#ifndef CHAMELEON
+# define PER_NODE_MALLOC 1
+#endif
 #ifdef PER_NODE_MALLOC
 # define MALLOC popcorn_malloc_cur
 #else
@@ -70,6 +72,7 @@
  * Names of ELF sections containing stack transformation unwind & call site
  * meta-data.
  */
+#define SECTION_ST_FUNCTIONS SECTION_PREFIX "." SECTION_FUNCTIONS
 #define SECTION_ST_UNWIND_ADDR SECTION_PREFIX "." SECTION_UNWIND_ADDR
 #define SECTION_ST_UNWIND SECTION_PREFIX "." SECTION_UNWIND
 #define SECTION_ST_ID SECTION_PREFIX "." SECTION_ID

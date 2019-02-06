@@ -25,10 +25,15 @@ LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
                 $(shell ls $(SRC)/arch/powerpc64/*.c) \
                 $(shell ls $(SRC)/arch/x86_64/*.c)
 
-ifeq ($(type),debug)
+ifneq ($(findstring debug,$(type)),)
 CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
 else
 CFLAGS += -O3
+endif
+
+ifneq ($(findstring chameleon,$(type)),)
+CFLAGS  += -DCHAMELEON
+LIB_SRC := $(subst $(SRC)/userspace.c,,$(LIB_SRC))
 endif
 
 ###############################################################################

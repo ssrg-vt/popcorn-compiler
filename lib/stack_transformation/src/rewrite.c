@@ -93,6 +93,104 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest);
 // Perform stack transformation
 ///////////////////////////////////////////////////////////////////////////////
 
+int st_rewrite_randomized(void* cham_handle,
+                          get_rand_info info_func,
+                          st_handle handle,
+                          void* regset_src,
+                          void* sp_src_base,
+                          void* sp_src_buf,
+                          void* regset_dst,
+                          void* sp_dest_base,
+                          void* sp_dest_buf) {
+  rewrite_context src, dst;
+  uint64_t* saved_fbp;
+
+  if(!cham_handle || !info_func || !handle || !regset_src || !sp_src_base ||
+     !sp_src_buf || !regset_dst || !sp_dest_base || !sp_dest_buf)
+  {
+    ST_WARN("invalid arguments\n");
+    return 1;
+  }
+
+  TIMER_START(st_rewrite_stack);
+
+  ST_INFO("--> Initializing randomized rewrite (%s) <--\n",
+          arch_name(handle->arch));
+
+  /* Initialize rewriting contexts. */
+  src = init_src_context(handle, regset_src, sp_src_base);
+  dst = init_dest_context(handle, regset_dst, sp_dest_base);
+  src->buf = sp_src_buf;
+  dst->buf = sp_dest_buf;
+  src->cham_handle = dst->cham_handle = cham_handle;
+  src->rand_info = dst->rand_info = info_func;
+
+  if(!src || !dst)
+  {
+    if(src) free_context(src);
+    if(dst) free_context(dst);
+    return 1;
+  }
+
+  ST_INFO("--> Unwinding source stack to find live activations <--\n");
+
+  /* Unwind source stack to determine destination stack size. */
+  unwind_and_size(src, dst);
+
+  // Note: the following code is brittle -- it has to happen in this *exact*
+  // order because of the way the stack is unwound and information in the
+  // current & surrounding frames is accessed.  Modify with care!
+
+  ST_INFO("--> Rewriting from source to destination stack <--\n");
+
+  TIMER_START(rewrite_stack);
+
+  /* Rewrite outer-most frame. */
+  ST_INFO("--> Rewriting outermost frame <--\n");
+
+  set_return_address_funcentry(dst, (void*)NEXT_ACT(dst).site.addr);
+  pop_frame_funcentry(dst, true);
+
+  /* Rewrite rest of frames. */
+  for(src->act = 1; src->act < src->num_acts - 1; src->act++)
+  {
+    ST_INFO("--> Rewriting frame %d <--\n", src->act);
+
+    set_return_address(dst, (void*)NEXT_ACT(dst).site.addr);
+    rewrite_frame(src, dst);
+    saved_fbp = translate_stack_address(dst, dst->act, get_savedfbp_loc(dst));
+    ASSERT(saved_fbp, "invalid saved frame pointer location\n");
+    pop_frame(dst, true);
+    *saved_fbp = (uint64_t)REGOPS(dst)->fbp(ACT(dst).regs);
+    ST_INFO("Old FP saved to %p\n", saved_fbp);
+  }
+
+  // Note: there may be a few things to fix up in the innermost function, e.g.,
+  // the TOC pointer on PowerPC
+  ST_INFO("--> Rewriting frame %d (starting function) <--\n", src->act);
+  rewrite_frame(src, dst);
+
+  TIMER_STOP(rewrite_stack);
+
+  /* Copy out register state for destination & clean up. */
+  REGOPS(dst)->regset_copyout(dst->acts[0].regs, dst->regs);
+  free_context(dst);
+  free_context(src);
+
+  ST_INFO("Finished rewrite!\n");
+
+  TIMER_STOP(st_rewrite_stack);
+  TIMER_PRINT;
+
+#ifdef _LOG
+#ifndef _PER_LOG_OPEN
+  fflush(__log);
+#endif
+#endif
+
+  return 0;
+}
+
 /*
  * Perform stack transformation in its entirety, from source to destination.
  */
@@ -146,7 +244,7 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("--> Rewriting outermost frame <--\n");
 
   set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
-  pop_frame_funcentry(dest);
+  pop_frame_funcentry(dest, true);
 
   /* Rewrite rest of frames. */
   for(src->act = 1; src->act < src->num_acts - 1; src->act++)
@@ -243,6 +341,7 @@ static rewrite_context init_src_context(st_handle handle,
   ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
   ASSERT(ctx->stack, "invalid stack pointer\n");
 
+#ifndef CHAMELEON
   /*
    * Find the initial call site and set up the outermost frame's CFA in
    * preparation for unwinding the stack.
@@ -252,6 +351,13 @@ static rewrite_context init_src_context(st_handle handle,
     ST_ERR(1, "could not get source call site information for outermost frame "
            "(address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   ACT(ctx).cfa = calculate_cfa(ctx, 0);
+#else
+  // Chameleon sets up the source stack to be at either a function entry or
+  // exit, meaning it looks like we entered the outermost function
+  ACT(ctx).cfa = ctx->stack + PROPS(ctx)->cfa_offset_funcentry;
+  ACT(ctx).site.id = 0; // Make sure we don't accidentally trigger early exit
+  ACT(ctx).nslots = 0;
+#endif
 
   TIMER_STOP(init_src_context);
   return ctx;
@@ -362,6 +468,7 @@ static void unwind_and_size(rewrite_context src,
 
   TIMER_START(unwind_and_size);
 
+#ifndef CHAMELEON
   do
   {
     pop_frame(src, false);
@@ -389,6 +496,64 @@ static void unwind_and_size(rewrite_context src,
     ACT(src).cfa = calculate_cfa(src, src->act);
   }
   while(!first_frame(ACT(src).site.id));
+#else
+  func_rand_info rand_info;
+
+  pop_frame_funcentry(src, false);
+  src->num_acts++;
+  dest->num_acts++;
+  dest->act++;
+
+  /*
+   * Call site meta-data will be used to get return addresses, canonical
+   * frame addresses and frame-base pointer locations.
+   */
+  if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
+    ST_ERR(1, "could not get source call site information (address=%p)\n",
+           REGOPS(src)->pc(ACT(src).regs));
+  ACT(dest).site = ACT(src).site;
+  rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
+
+  ACT(src).frame_size = rand_info.old_frame_size;
+  ACT(src).nslots = rand_info.num_old_slots;
+  ACT(src).slots = rand_info.old_rand_slots;
+
+  ACT(dest).frame_size = rand_info.new_frame_size;
+  ACT(dest).nslots = rand_info.num_new_slots;
+  ACT(dest).slots = rand_info.new_rand_slots;
+  stack_size += rand_info.new_frame_size;
+
+  /* Set the CFA for the current frame, which becomes the next frame's SP */
+  // Note: we need both the SP & call site information to set up CFA
+  ACT(src).cfa = calculate_cfa(src, src->act);
+
+  while(!first_frame(ACT(src).site.id))
+  {
+    pop_frame(src, false);
+    src->num_acts++;
+    dest->num_acts++;
+    dest->act++;
+
+    if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
+      ST_ERR(1, "could not get source call site information (address=%p)\n",
+             REGOPS(src)->pc(ACT(src).regs));
+    ACT(dest).site = ACT(src).site;
+    rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
+
+    ACT(src).frame_size = rand_info.old_frame_size;
+    ACT(src).nslots = rand_info.num_old_slots;
+    ACT(src).slots = rand_info.old_rand_slots;
+
+    ACT(dest).frame_size = rand_info.new_frame_size;
+    ACT(dest).nslots = rand_info.num_new_slots;
+    ACT(dest).slots = rand_info.new_rand_slots;
+    stack_size += rand_info.new_frame_size;
+    ACT(src).cfa = calculate_cfa(src, src->act);
+  }
+
+  // Account for other stuff above the stack, e.g., TLS, environment variables
+  stack_size += src->stack_base - REGOPS(src)->sp(ACT(src).regs);
+#endif /* CHAMELEON */
 
   ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
 
@@ -402,9 +567,14 @@ static void unwind_and_size(rewrite_context src,
   /* Set destination stack pointer and finish setting up outermost frame */
   dest->stack = PROPS(dest)->align_sp(dest->stack_base - stack_size);
   bootstrap_first_frame_funcentry(dest, dest->stack);
+#ifndef CHAMELEON
   fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
   ASSERT(fn, "Could not find function address of outermost frame\n");
   REGOPS(dest)->set_pc(ACT(dest).regs, fn);
+#else
+  fn = REGOPS(src)->pc(ACT(src).regs);
+  REGOPS(dest)->set_pc(ACT(dest).regs, fn);
+#endif
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
   ST_INFO("Rewriting destination as if entering function @ %p\n", fn);
@@ -431,7 +601,7 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
 
   if(val_dest->is_temporary)
   {
-    ST_INFO("Skipping temporary value");
+    ST_INFO("Skipping temporary value\n");
     return false;
   }
 
@@ -509,6 +679,9 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
         ST_INFO("Found fixup for %p (in frame %d)\n",
                 fixup_node->data.src_addr, fixup_node->data.act);
 
+#ifdef CHAMELEON
+        stack_addr = randomized_address(dest, dest->act, stack_addr);
+#endif
         put_val_data(dest,
                      fixup_node->data.dest_loc,
                      fixup_node->data.act,
@@ -584,6 +757,9 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
         {
           ST_INFO("Found local fixup for %p\n", fixup_node->data.src_addr);
 
+#ifdef CHAMELEON
+          stack_addr = randomized_address(dest, dest->act, stack_addr);
+#endif
           put_val_data(dest,
                        fixup_node->data.dest_loc,
                        fixup_node->data.act,

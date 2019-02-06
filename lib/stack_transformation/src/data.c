@@ -265,8 +265,13 @@ void* points_to_data(const rewrite_context src,
  */
 void set_return_address(rewrite_context ctx, void* retaddr)
 {
+  void *saved_loc;
   ASSERT(retaddr, "invalid return address\n");
-  *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
+  saved_loc = ACT(ctx).cfa + PROPS(ctx)->ra_offset;
+#ifdef CHAMELEON
+  saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+#endif
+  *(void**)saved_loc = retaddr;
 }
 
 /*
@@ -277,11 +282,17 @@ void set_return_address(rewrite_context ctx, void* retaddr)
  */
 void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
 {
+  void *saved_loc;
   ASSERT(retaddr, "invalid return address\n");
   if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_ra_reg(ACT(ctx).regs, retaddr);
-  else
-    *(void**)(ACT(ctx).cfa + PROPS(ctx)->ra_offset) = retaddr;
+  else {
+    saved_loc = ACT(ctx).cfa + PROPS(ctx)->ra_offset;
+#ifdef CHAMELEON
+    saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+#endif
+    *(void**)saved_loc = retaddr;
+  }
 }
 
 /*
@@ -306,6 +317,47 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx)
   saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + locs[index].offset;
   return (uint64_t*)saved_loc;
 }
+
+#ifdef CHAMELEON
+
+static inline bool slot_contains(const slotmap *slot, int offset)
+{
+  return offset > (slot->original - (int)slot->size) &&
+         offset <= slot->original;
+}
+
+static inline int
+randomized_offset(size_t nslots, const slotmap *slots, int orig)
+{
+  size_t i;
+  // TODO use a binary search
+  for(i = 0; i < nslots; i++)
+    if(slot_contains(&slots[i], orig))
+      return slots[i].original - orig + slots[i].randomized;
+  return orig;
+}
+
+void *randomized_address(rewrite_context ctx, int act, void *addr)
+{
+  int offset, new_offset;
+
+  // Convert the current offset to the newly randomized version
+  ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs) <= addr &&
+         addr < ctx->acts[act].cfa, "Invalid address");
+  offset = ctx->acts[act].cfa - addr;
+  new_offset = randomized_offset(ctx->acts[act].nslots,
+                                 ctx->acts[act].slots,
+                                 offset);
+  return ctx->acts[act].cfa - new_offset;
+}
+
+void *translate_stack_address(rewrite_context ctx, int act, void *addr)
+{
+  void *new_addr = randomized_address(ctx, act, addr);
+  return ctx->buf - (ctx->stack_base - new_addr);
+}
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API (implementation)
@@ -332,6 +384,9 @@ static inline void* get_val_loc(rewrite_context ctx,
     val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
               offset_or_constant;
     ST_RAW_INFO("live value at stack address %p\n", val_loc);
+#ifdef CHAMELEON
+    val_loc = translate_stack_address(ctx, ctx->act, val_loc);
+#endif
     break;
   case SM_CONSTANT: // Value is constant
   case SM_CONST_IDX: // Value is in constant pool
@@ -402,6 +457,9 @@ static void* callee_saved_loc(rewrite_context ctx,
       ASSERT(saved_addr, "invalid callee-saved slot\n");
       ST_INFO("Saving callee-saved register %u at %p (frame %d)\n",
               regnum, saved_addr, act);
+#ifdef CHAMELEON
+      saved_addr = translate_stack_address(ctx, act, saved_addr);
+#endif
       return saved_addr;
     }
   }

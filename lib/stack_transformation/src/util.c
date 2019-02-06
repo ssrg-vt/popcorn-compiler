@@ -97,6 +97,20 @@ int64_t get_num_entries(Elf* e, const char* sec)
 }
 
 /*
+ * Get the number of entries in section SEC, where each entry has size
+ * ENT_SIZE.
+ */
+int64_t get_num_entries_sized(Elf* e, const char* sec, size_t ent_size)
+{
+  Elf_Scn* scn;
+  GElf_Shdr shdr;
+
+  if(!(scn = get_section(e, sec))) return -1;
+  if(gelf_getshdr(scn, &shdr) != &shdr) return -1;
+  return ent_size ? (shdr.sh_size / ent_size) : -1;
+}
+
+/*
  * Return the start of the section SEC in Elf data E.
  */
 const void* get_section_data(Elf* e, const char* sec)

@@ -58,6 +58,17 @@ Elf_Scn* get_section(Elf* e, const char* sec);
 int64_t get_num_entries(Elf* e, const char* sec);
 
 /*
+ * Returns the number of entries encoded in section SEC_NAME in ELF E.  User
+ * supplies the entry size.
+ *
+ * @param e an ELF descriptor
+ * @param sec name of the ELF section
+ * @param ent_size size of each entry
+ * @return the number of entries, or -1 if an error occurred
+ */
+int64_t get_num_entries_sized(Elf *e, const char *sec, size_t ent_size);
+
+/*
  * Return the section data encoded in section SEC_NAME in ELF E.
  *
  * @param e an ELF descriptor
