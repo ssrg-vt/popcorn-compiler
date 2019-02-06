@@ -330,16 +330,23 @@ static inline int
 randomized_offset(size_t nslots, const slotmap *slots, int orig)
 {
   size_t i;
+  int randomized;
+
   // TODO use a binary search
-  for(i = 0; i < nslots; i++)
-    if(slot_contains(&slots[i], orig))
-      return slots[i].original - orig + slots[i].randomized;
+  for(i = 0; i < nslots; i++) {
+    if(slot_contains(&slots[i], orig)) {
+      randomized = slots[i].original - orig + slots[i].randomized;
+      ST_INFO("Remapping CFA offset %d -> %d\n", orig, randomized);
+      return randomized;
+    }
+  }
   return orig;
 }
 
 void *randomized_address(rewrite_context ctx, int act, void *addr)
 {
   int offset, new_offset;
+  void *new_addr;
 
   // Convert the current offset to the newly randomized version
   ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs) <= addr &&
@@ -348,13 +355,17 @@ void *randomized_address(rewrite_context ctx, int act, void *addr)
   new_offset = randomized_offset(ctx->acts[act].nslots,
                                  ctx->acts[act].slots,
                                  offset);
-  return ctx->acts[act].cfa - new_offset;
+  new_addr = ctx->acts[act].cfa - new_offset;
+  ST_INFO("Randomized re-mapping: %p -> %p\n", addr, new_addr);
+  return new_addr;
 }
 
 void *translate_stack_address(rewrite_context ctx, int act, void *addr)
 {
   void *new_addr = randomized_address(ctx, act, addr);
-  return ctx->buf - (ctx->stack_base - new_addr);
+  void *cham_buf = ctx->buf - (ctx->stack_base - new_addr);
+  ST_INFO("Chameleon buffer: %p -> %p -> %p\n", addr, new_addr, cham_buf);
+  return cham_buf;
 }
 
 #endif
