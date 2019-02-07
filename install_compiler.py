@@ -133,6 +133,10 @@ def setup_argument_parsing():
                         help="Enable debug output for stack transformation library",
                         action="store_true",
                         dest="debug_stack_transformation")
+    build_opts.add_argument("--chameleon",
+                        help="Build Popcorn compiler components for use with Chameleon",
+                        action="store_true",
+                        dest="chameleon")
     build_opts.add_argument("--libmigration-type",
                         help="Choose configuration for libmigration " + \
                              "(see INSTALL for more details)",
@@ -496,7 +500,8 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
 
     os.chdir(cur_dir)
 
-def install_stack_transformation(base_path, install_path, num_threads, st_debug):
+def install_stack_transformation(base_path, install_path, num_threads, st_debug,
+                                 chameleon):
     cur_dir = os.getcwd()
 
     #=====================================================
@@ -507,7 +512,11 @@ def install_stack_transformation(base_path, install_path, num_threads, st_debug)
 
     print('Making stack_transformation...')
     args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
-    if st_debug: args += ['type=debug']
+    if st_debug or chameleon:
+        typeStr = 'type='
+        if st_debug: typeStr += "debug,"
+        if chameleon: typeStr += "chameleon,"
+        args += [typeStr[:-1]]
     run_cmd('make libstack-transform', args)
     args += ['install']
     run_cmd('install libstack-transform', args)
@@ -663,7 +672,8 @@ def main(args):
     if args.stacktransform_install:
         install_stack_transformation(args.base_path, args.install_path,
                                      args.threads,
-                                     args.debug_stack_transformation)
+                                     args.debug_stack_transformation,
+                                     args.chameleon)
 
     if args.migration_install:
         install_migration(args.base_path, args.install_path, args.threads,
