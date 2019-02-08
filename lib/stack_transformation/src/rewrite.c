@@ -556,7 +556,7 @@ static void unwind_and_size(rewrite_context src,
   }
 
   // Account for other stuff above the stack, e.g., TLS, environment variables
-  stack_size += src->stack_base - REGOPS(src)->sp(ACT(src).regs);
+  stack_size += src->stack_base - ACT(src).cfa;
 #endif /* CHAMELEON */
 
   ASSERT(stack_size < MAX_STACK_SIZE / 2, "invalid stack size\n");
