@@ -340,6 +340,7 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
       return randomized;
     }
   }
+  ST_WARN("Could not find randomized offset!\n");
   return orig;
 }
 
@@ -396,7 +397,7 @@ static inline void* get_val_loc(rewrite_context ctx,
               offset_or_constant;
     ST_RAW_INFO("live value at stack address %p\n", val_loc);
 #ifdef CHAMELEON
-    val_loc = translate_stack_address(ctx, ctx->act, val_loc);
+    val_loc = translate_stack_address(ctx, act, val_loc);
 #endif
     break;
   case SM_CONSTANT: // Value is constant

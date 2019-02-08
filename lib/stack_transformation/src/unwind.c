@@ -58,7 +58,7 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
 #ifdef CHAMELEON
-    saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+    saved_loc = translate_stack_address(ctx, act - 1, saved_loc);
 #endif
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));

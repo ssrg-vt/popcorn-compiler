@@ -137,7 +137,9 @@ void *randomized_address(rewrite_context ctx, int act, void *addr);
  *
  * @param ctx a rewriting context
  * @param act activation in which address resides
- * @param addr a stack address from the child
+ * @param addr a stack address from the child -- *must* be the original
+ *             address, i.e., address of a previous randomization must be
+ *             de-randomized
  * @return a translated stack address or NULL if it could not be translated
  */
 void *translate_stack_address(rewrite_context ctx, int act, void *addr);
