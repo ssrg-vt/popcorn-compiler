@@ -214,7 +214,7 @@ void ActivationMetadata::emitStackSlotInfo(MCStreamer &OS) {
                    << ", align = " << Slot.Alignment << "\n");
 
       OS.EmitIntValue(Slot.BaseReg, 2);
-      OS.EmitIntValue(Slot.Offset, 2);
+      OS.EmitIntValue(Slot.Offset, 4);
       OS.EmitIntValue(Slot.Size, 4);
       OS.EmitIntValue(Slot.Alignment, 4);
     }

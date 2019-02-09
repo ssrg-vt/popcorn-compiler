@@ -6001,7 +6001,7 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +                   << ", align = " << Slot.Alignment << "\n");
 +
 +      OS.EmitIntValue(Slot.BaseReg, 2);
-+      OS.EmitIntValue(Slot.Offset, 2);
++      OS.EmitIntValue(Slot.Offset, 4);
 +      OS.EmitIntValue(Slot.Size, 4);
 +      OS.EmitIntValue(Slot.Alignment, 4);
 +    }

@@ -53,7 +53,7 @@ typedef struct POPCORN_PACKED function_record {
 /* A stack slot's location, size and alignment. */
 typedef struct POPCORN_PACKED stack_slot {
   uint16_t base_reg; /* base register from which to offset */
-  int16_t offset; /* offset from base register */
+  int32_t offset; /* offset from base register */
   uint32_t size;
   uint32_t alignment;
 } stack_slot;
