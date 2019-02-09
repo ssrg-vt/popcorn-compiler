@@ -5974,7 +5974,7 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +///
 +/// StackSlotRecords[NumRecords] {
 +///   uint16 : DWARF-encoded base register
-+///   int16  : Offset from base register
++///   int32  : Offset from base register
 +///   uint32 : Size of stack slot
 +///   uint32 : Alignment of stack slot
 +/// }
@@ -9468,13 +9468,13 @@ Index: lib/MC/MCObjectFileInfo.cpp
 +  // Stack transformation metadata sections
 +  FuncMetadataSection =
 +      Ctx->getELFSection(".stack_transform.functions", ELF::SHT_PROGBITS, 0);
-+  FuncMetadataSection->setAlignment(sizeof(uint32_t));
++  FuncMetadataSection->setAlignment(1);
 +  ActStackSlotSection =
 +      Ctx->getELFSection(".stack_transform.stack_slots", ELF::SHT_PROGBITS, 0);
-+  ActStackSlotSection->setAlignment(sizeof(uint32_t));
++  ActStackSlotSection->setAlignment(1);
 +  UnwindInfoSection =
 +      Ctx->getELFSection(".stack_transform.unwind", ELF::SHT_PROGBITS, 0);
-+  UnwindInfoSection->setAlignment(sizeof(uint32_t));
++  UnwindInfoSection->setAlignment(1);
 +
    StackMapSection =
        Ctx->getELFSection(".llvm_stackmaps", ELF::SHT_PROGBITS, ELF::SHF_ALLOC);

@@ -187,7 +187,7 @@ void ActivationMetadata::addFunctionSize(const MachineFunction &MF,
 ///
 /// StackSlotRecords[NumRecords] {
 ///   uint16 : DWARF-encoded base register
-///   int16  : Offset from base register
+///   int32  : Offset from base register
 ///   uint32 : Size of stack slot
 ///   uint32 : Alignment of stack slot
 /// }
