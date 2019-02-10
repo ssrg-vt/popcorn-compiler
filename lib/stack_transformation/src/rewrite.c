@@ -653,6 +653,10 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
   {
     if(stack_addr >= PREV_ACT(src).cfa || src->act == 0)
     {
+      // Note: in Chameleon, we do not need to translate stack_addr to a
+      // randomized stack slot - we're reading a location populated by the
+      // application, which should have already stored a pointer to the
+      // randomized stack slot
       ST_INFO("Adding fixup for pointer-to-stack %p\n", stack_addr);
       fixup_data.src_addr = stack_addr;
       fixup_data.act = dest->act;
@@ -683,9 +687,8 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
         ST_INFO("Found fixup for %p (in frame %d)\n",
                 fixup_node->data.src_addr, fixup_node->data.act);
 
-#ifdef CHAMELEON
-        stack_addr = randomized_address(dest, dest->act, stack_addr);
-#endif
+        // Note: stack_addr will already be translated into a Chameleon buffer
+        // address by points_to_data
         put_val_data(dest,
                      fixup_node->data.dest_loc,
                      fixup_node->data.act,

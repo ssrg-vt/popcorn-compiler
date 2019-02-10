@@ -13,6 +13,18 @@
 // File-local API
 ///////////////////////////////////////////////////////////////////////////////
 
+#ifdef CHAMELEON
+/*
+ * Get a pointer to a value's location.  Converts the offset to it's randomized
+ * location, but does *not* translate it to a Chameleon buffer.
+ */
+static inline void* get_val_loc_notranslate(rewrite_context ctx,
+                                            uint8_t type,
+                                            uint16_t regnum,
+                                            int32_t offset_or_constant,
+                                            int act);
+#endif
+
 /*
  * Get a pointer to a value's location.  Returns the memory address needed to
  * read/write a register or the value's location in memory.
@@ -199,7 +211,12 @@ void* points_to_stack(const rewrite_context ctx,
       // branch) are by default pointers to the stack.  If it's *not* a
       // temporary but is instead a regular alloca, then we're actually
       // concerned with the value contained *in* the stack slot.
-      if(!val->is_temporary) stack_addr = *(void **)stack_addr;
+      if(!val->is_temporary) {
+#ifdef CHAMELEON
+        stack_addr = translate_stack_address(ctx, ctx->act, stack_addr);
+#endif
+        stack_addr = *(void **)stack_addr;
+      }
       break;
     case SM_INDIRECT:
       // Note: we assume that we're doing offsets from 64-bit registers
@@ -207,6 +224,9 @@ void* points_to_stack(const rewrite_context ctx,
              "invalid register size for pointer\n");
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
                    val->offset_or_constant;
+#ifdef CHAMELEON
+      stack_addr = translate_stack_address(ctx, ctx->act, stack_addr);
+#endif
       stack_addr = *(void**)stack_addr;
       break;
     case SM_CONSTANT:
@@ -243,17 +263,31 @@ void* points_to_data(const rewrite_context src,
          "invalid value types (must be allocas for pointed-to analysis)\n");
 
   ST_INFO("Checking if %p points to: ", src_ptr);
+#ifndef CHAMELEON
   src_addr = get_val_loc(src, src_val->type,
                          src_val->regnum,
                          src_val->offset_or_constant,
                          src->act);
+#else
+  src_addr = get_val_loc_notranslate(src, src_val->type,
+                                     src_val->regnum,
+                                     src_val->offset_or_constant,
+                                     src->act);
+#endif
   if(src_addr <= src_ptr && src_ptr < (src_addr + src_val->alloca_size))
   {
     ST_INFO("Reifying address of source value %p to: ", src_addr);
+#ifndef CHAMELEON
     dest_addr = get_val_loc(dest, dest_val->type,
                             dest_val->regnum,
                             dest_val->offset_or_constant,
                             dest->act);
+#else
+    dest_addr = get_val_loc_notranslate(dest, dest_val->type,
+                                        dest_val->regnum,
+                                        dest_val->offset_or_constant,
+                                        dest->act);
+#endif
     dest_addr += (src_ptr - src_addr);
   }
 
@@ -332,7 +366,13 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
   size_t i;
   int randomized;
 
-  // TODO use a binary search
+  /*
+   * We're probably looking for the return address slot in the outermost
+   * frame if we don't have any slot remappings, don't panic!
+   */
+  if(!nslots) return orig;
+
+  // TODO use a binary search (make sure we're sorted!)
   for(i = 0; i < nslots; i++) {
     if(slot_contains(&slots[i], orig)) {
       randomized = slots[i].original - orig + slots[i].randomized;
@@ -349,7 +389,7 @@ void *randomized_address(rewrite_context ctx, int act, void *addr)
   int offset, new_offset;
   void *new_addr;
 
-  // Convert the current offset to the newly randomized version
+  /* Convert the current offset to the newly randomized version */
   ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs) <= addr &&
          addr < ctx->acts[act].cfa, "Invalid address");
   offset = ctx->acts[act].cfa - addr;
@@ -374,6 +414,45 @@ void *translate_stack_address(rewrite_context ctx, int act, void *addr)
 ///////////////////////////////////////////////////////////////////////////////
 // File-local API (implementation)
 ///////////////////////////////////////////////////////////////////////////////
+
+#ifdef CHAMELEON
+
+static inline void* get_val_loc_notranslate(rewrite_context ctx,
+                                            uint8_t type,
+                                            uint16_t regnum,
+                                            int32_t offset_or_constant,
+                                            int act)
+{
+  void* val_loc = NULL;
+
+  switch(type)
+  {
+  case SM_REGISTER: // Value is in register
+    val_loc = REGOPS(ctx)->reg(ctx->acts[act].regs, regnum);
+    ST_RAW_INFO("live value in register %u\n", regnum);
+    break;
+  // Note: these value types are fundamentally different, but their locations
+  // are generated in an identical manner
+  case SM_DIRECT: // Value is allocated on stack
+  case SM_INDIRECT: // Value is in register, but spilled to the stack
+    val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
+              offset_or_constant;
+    ST_RAW_INFO("live value at stack address %p\n", val_loc);
+    val_loc = randomized_address(ctx, act, val_loc);
+    break;
+  case SM_CONSTANT: // Value is constant
+  case SM_CONST_IDX: // Value is in constant pool
+    ST_ERR(1, "cannot get location for constant/constant index\n");
+    break;
+  default:
+    ST_ERR(1, "invalid live value location type (%u)\n", type);
+    break;
+  }
+
+  return val_loc;
+}
+
+#endif
 
 static inline void* get_val_loc(rewrite_context ctx,
                                 uint8_t type,
