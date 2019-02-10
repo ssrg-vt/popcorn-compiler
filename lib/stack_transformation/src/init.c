@@ -145,8 +145,11 @@ st_handle st_init(const char* fn)
   handle->live_vals_count = get_num_entries(handle->elf, SECTION_ST_LIVE);
   if(handle->live_vals_count != (size_t)-1)
   {
-    handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
-    if(!handle->live_vals) goto close_elf;
+    if(handle->live_vals_count) {
+      handle->live_vals = get_section_data(handle->elf, SECTION_ST_LIVE);
+      if(!handle->live_vals) goto close_elf;
+    }
+    else handle->live_vals = NULL;
     ST_INFO("Found %lu live value location records\n",
             handle->live_vals_count);
   }
@@ -160,9 +163,11 @@ st_handle st_init(const char* fn)
                                                  SECTION_ST_ARCH_LIVE);
   if(handle->arch_live_vals_count != (size_t)-1)
   {
-    handle->arch_live_vals = get_section_data(handle->elf,
-                                              SECTION_ST_ARCH_LIVE);
-    if(!handle->arch_live_vals) goto close_elf;
+    if(handle->arch_live_vals_count) {
+      handle->arch_live_vals = get_section_data(handle->elf,
+                                                SECTION_ST_ARCH_LIVE);
+      if(!handle->arch_live_vals) goto close_elf;
+    } else handle->arch_live_vals = NULL;
     ST_INFO("Found %lu architecture-specific live value location records\n",
             handle->arch_live_vals_count);
   }
