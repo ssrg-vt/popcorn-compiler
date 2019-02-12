@@ -18,6 +18,7 @@ static void* regset_init_x86_64(const void* regs);
 static void regset_free_x86_64(void* regset);
 static void regset_clone_x86_64(const void* src, void* dest);
 static void regset_copyin_x86_64(void* regset, const void* regs);
+static void regset_copy_arg_regs_x86_64(void* regset, const void* regs);
 static void regset_copyout_x86_64(const void* regset, void* regs);
 
 static void* pc_x86_64(const void* regset);
@@ -49,6 +50,7 @@ const struct regops_t regs_x86_64 = {
   .regset_free = regset_free_x86_64,
   .regset_clone = regset_clone_x86_64,
   .regset_copyin = regset_copyin_x86_64,
+  .regset_copy_arg_regs = regset_copy_arg_regs_x86_64,
   .regset_copyout = regset_copyout_x86_64,
 
   .pc = pc_x86_64,
@@ -101,6 +103,28 @@ static void regset_copyin_x86_64(void* in, const void* out)
 {
   struct regset_x86_64* cur = (struct regset_x86_64*)in;
   *cur = *(struct regset_x86_64*)out;
+}
+
+static void regset_copy_arg_regs_x86_64(void* in, const void* out)
+{
+  struct regset_x86_64* cur = (struct regset_x86_64*)in,
+                      * input = (struct regset_x86_64*)out;
+
+  cur->rdi = input->rdi;
+  cur->rsi = input->rsi;
+  cur->rdx = input->rdx;
+  cur->rcx = input->rcx;
+  cur->r8 = input->r8;
+  cur->r9 = input->r9;
+
+  cur->xmm[0] = input->xmm[0];
+  cur->xmm[1] = input->xmm[1];
+  cur->xmm[2] = input->xmm[2];
+  cur->xmm[3] = input->xmm[3];
+  cur->xmm[4] = input->xmm[4];
+  cur->xmm[5] = input->xmm[5];
+  cur->xmm[6] = input->xmm[6];
+  cur->xmm[7] = input->xmm[7];
 }
 
 static void regset_copyout_x86_64(const void* in, void* out)

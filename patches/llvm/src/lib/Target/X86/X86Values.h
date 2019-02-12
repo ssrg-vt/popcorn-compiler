@@ -14,6 +14,11 @@ namespace llvm {
 class X86Values final : public TargetValues {
 public:
   X86Values() {}
+  virtual unsigned getArgSpaceBaseReg() const;
+  virtual void getArgRegs(const MachineInstr *MICall,
+                          std::vector<unsigned> &regs) const;
+  virtual int64_t getArgSlots(const MachineInstr *MICall,
+                              std::set<int64_t> &offsets) const;
   virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
                                               const VirtRegMap *VRM) const;
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;

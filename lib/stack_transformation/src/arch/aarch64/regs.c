@@ -24,6 +24,7 @@ static void* regset_init_aarch64(const void* regs);
 static void regset_free_aarch64(void* regset);
 static void regset_clone_aarch64(const void* src, void* dest);
 static void regset_copyin_aarch64(void* regset, const void* regs);
+static void regset_copy_arg_regs_aarch64(void* regset, const void* regs);
 static void regset_copyout_aarch64(const void* regset, void* regs);
 
 static void* pc_aarch64(const void* regset);
@@ -55,6 +56,7 @@ const struct regops_t regs_aarch64 = {
   .regset_free = regset_free_aarch64,
   .regset_clone = regset_clone_aarch64,
   .regset_copyin = regset_copyin_aarch64,
+  .regset_copy_arg_regs = regset_copy_arg_regs_aarch64,
   .regset_copyout = regset_copyout_aarch64,
 
   .pc = pc_aarch64,
@@ -107,6 +109,30 @@ static void regset_copyin_aarch64(void* in, const void* out)
 {
   struct regset_aarch64* cur = (struct regset_aarch64*)in;
   *cur = *(struct regset_aarch64*)out;
+}
+
+static void regset_copy_arg_regs_aarch64(void* in, const void* out)
+{
+  struct regset_aarch64* cur = (struct regset_aarch64*)in,
+                       * input = (struct regset_aarch64*)out;
+
+  cur->x[0] = input->x[0];
+  cur->x[1] = input->x[1];
+  cur->x[2] = input->x[2];
+  cur->x[3] = input->x[3];
+  cur->x[4] = input->x[4];
+  cur->x[5] = input->x[5];
+  cur->x[6] = input->x[6];
+  cur->x[7] = input->x[7];
+
+  cur->v[0] = input->v[0];
+  cur->v[1] = input->v[1];
+  cur->v[2] = input->v[2];
+  cur->v[3] = input->v[3];
+  cur->v[4] = input->v[4];
+  cur->v[5] = input->v[5];
+  cur->v[6] = input->v[6];
+  cur->v[7] = input->v[7];
 }
 
 static void regset_copyout_aarch64(const void* in, void* out)

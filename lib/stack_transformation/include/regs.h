@@ -51,6 +51,9 @@ struct regops_t
    */
   void (*regset_copyin)(void* in, const void* out);
 
+  /* Copy argument-passing registers to internal regset. */
+  void (*regset_copy_arg_regs)(void *in, const void *out);
+
   /* Copy internal regset to outside struct.  Note: does not free memory. */
   void (*regset_copyout)(const void* in, void* out);
 

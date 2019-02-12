@@ -18,6 +18,69 @@
 
 using namespace llvm;
 
+unsigned X86Values::getArgSpaceBaseReg() const { return X86::RSP; }
+
+void X86Values::getArgRegs(const MachineInstr *MICall,
+                               std::vector<unsigned> &regs) const {
+  size_t opIt;
+  unsigned Reg;
+
+  // Find the start of the registers used to pass arguments
+  for(opIt = 0; opIt < MICall->getNumOperands(); opIt++) {
+    const MachineOperand &MO = MICall->getOperand(opIt);
+    if(MO.isReg() && MO.getReg() == X86::RSP) break;
+  }
+
+  assert(opIt != MICall->getNumOperands() && "Unhandled call instruction");
+
+  regs.clear();
+  regs.reserve(6); // Max 6 integer registers used to pass arguments
+  for(opIt++; opIt < MICall->getNumOperands(); opIt++) {
+    const MachineOperand &op = MICall->getOperand(opIt);
+    if(op.isReg()) {
+      Reg = op.getReg();
+      switch(Reg) {
+      case X86::RSP: return;
+
+      // From the x86-64 ABI:
+      //   "with variable arguments passes information about the number of
+      //    vector registers used"
+      // TODO because Popcorn currently doesn't support vector operations, we
+      // don't handle this if the vararg function uses vector registers
+      case X86::RAX: case X86::EAX: case X86::AX: case X86::AL: break;
+
+      default: regs.push_back(op.getReg());
+      }
+    }
+  }
+}
+
+int64_t X86Values::getArgSlots(const MachineInstr *MICall,
+                               std::set<int64_t> &offsets) const {
+  const MachineBasicBlock *parent = MICall->getParent();
+  offsets.clear();
+
+  MachineBasicBlock::const_reverse_iterator it(MICall);
+  DEBUG(dbgs() << "\nSearching for argument slots:\n");
+  for(; it != parent->rend(); it++) {
+    DEBUG(it->dump());
+    switch(it->getOpcode()) {
+    case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
+      assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
+      return it->getOperand(0).getImm();
+    case X86::MOV64mi32:
+    case X86::MOV64mr:
+      if(it->getOperand(0).isReg() && it->getOperand(0).getReg() == X86::RSP) {
+        assert(it->getOperand(3).isImm() && "Invalid argument marshaling?");
+        offsets.insert(it->getOperand(3).getImm());
+      }
+      break;
+    default: break;
+    }
+  }
+  llvm_unreachable("Could not find frame space marshaling instructions");
+}
+
 static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
                                              const VirtRegMap *VRM,
                                              unsigned Size) {

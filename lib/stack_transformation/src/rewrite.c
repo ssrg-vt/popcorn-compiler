@@ -68,8 +68,7 @@ static void free_data_pools(rewrite_context ctx);
  * Unwind the source stack to find all live stack frames & determine
  * destination stack size.
  */
-static void unwind_and_size(rewrite_context src,
-                            rewrite_context dest);
+static bool unwind_and_size(rewrite_context src, rewrite_context dest);
 
 /*
  * Rewrite an individual value from the source to destination call frame.
@@ -137,7 +136,7 @@ int st_rewrite_randomized(void* cham_handle,
   ST_INFO("--> Unwinding source stack to find live activations <--\n");
 
   /* Unwind source stack to determine destination stack size. */
-  unwind_and_size(src, dst);
+  if(!unwind_and_size(src, dst)) return 1;
 
   // Note: the following code is brittle -- it has to happen in this *exact*
   // order because of the way the stack is unwound and information in the
@@ -173,6 +172,13 @@ int st_rewrite_randomized(void* cham_handle,
   rewrite_frame(src, dst);
 
   TIMER_STOP(rewrite_stack);
+
+  /*
+   * On Chameleon, we don't know if we have (potentially reified) arguments in
+   * registers.  Copy parameter passing registers from second frame (where they
+   * should have been rewritten) into the outermost frame.
+   */
+  REGOPS(dst)->regset_copy_arg_regs(dst->acts[0].regs, dst->acts[1].regs);
 
   /* Copy out register state for destination & clean up. */
   REGOPS(dst)->regset_copyout(dst->acts[0].regs, dst->regs);
@@ -234,7 +240,7 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("--> Unwinding source stack to find live activations <--\n");
 
   /* Unwind source stack to determine destination stack size. */
-  unwind_and_size(src, dest);
+  if(!unwind_and_size(src, dest)) return 1;
 
   // Note: the following code is brittle -- it has to happen in this *exact*
   // order because of the way the stack is unwound and information in the
@@ -464,7 +470,7 @@ static void free_data_pools(rewrite_context ctx)
  * Unwind source stack to find live frames & size destination stack.
  * Simultaneously caches function & call-site information.
  */
-static void unwind_and_size(rewrite_context src,
+static bool unwind_and_size(rewrite_context src,
                             rewrite_context dest)
 {
   size_t stack_size = 8; // Account for possible already-pushed return address
@@ -485,12 +491,18 @@ static void unwind_and_size(rewrite_context src,
      * frame addresses and frame-base pointer locations.
      */
     if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
-      ST_ERR(1, "could not get source call site information (address=%p)\n",
+    {
+      ST_WARN("could not get source call site information (address=%p)\n",
              REGOPS(src)->pc(ACT(src).regs));
+      return false;
+    }
 
     if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
-      ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
-             REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
+    {
+      ST_WARN("could not get destination call site information (address=%p, ID=%ld)\n",
+              REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
+      return false;
+    }
 
     /* Update stack size with newly discovered stack frame's size */
     stack_size += CUR_FUNC(dest).frame_size;
@@ -513,8 +525,11 @@ static void unwind_and_size(rewrite_context src,
    * frame addresses and frame-base pointer locations.
    */
   if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
-    ST_ERR(1, "could not get source call site information (address=%p)\n",
-           REGOPS(src)->pc(ACT(src).regs));
+  {
+    ST_WARN("could not get source call site information (address=%p)\n",
+            REGOPS(src)->pc(ACT(src).regs));
+    return false;
+  }
   ACT(dest).site = ACT(src).site;
   rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 
@@ -539,8 +554,11 @@ static void unwind_and_size(rewrite_context src,
     dest->act++;
 
     if(!get_site_by_addr(src->handle, REGOPS(src)->pc(ACT(src).regs), &ACT(src).site))
-      ST_ERR(1, "could not get source call site information (address=%p)\n",
-             REGOPS(src)->pc(ACT(src).regs));
+    {
+      ST_WARN("could not get source call site information (address=%p)\n",
+              REGOPS(src)->pc(ACT(src).regs));
+      return false;
+    }
     ACT(dest).site = ACT(src).site;
     rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 
@@ -588,6 +606,8 @@ static void unwind_and_size(rewrite_context src,
                                      dest->num_acts);
 
   TIMER_STOP(unwind_and_size);
+
+  return true;
 }
 
 /*

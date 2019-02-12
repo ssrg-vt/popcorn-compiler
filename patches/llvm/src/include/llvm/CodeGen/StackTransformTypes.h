@@ -434,6 +434,8 @@ class MachineLiveLoc {
 public:
   /// Constructors & destructors.
   // Note: create child class objects rather than objects of this class.
+  MachineLiveLoc() : Ptr(false) {}
+  MachineLiveLoc(const MachineLiveLoc &C) : Ptr(C.Ptr) {}
   virtual ~MachineLiveLoc() {}
   virtual MachineLiveLoc *copy() const = 0;
   virtual bool operator==(const MachineLiveLoc &R) const = 0;
@@ -444,14 +446,21 @@ public:
   virtual bool isStackSlot() const { return false; }
 
   virtual std::string toString() const = 0;
+
+  void setIsPtr(bool Ptr) { this->Ptr = Ptr; }
+  bool isPtr() const { return Ptr; }
+
+protected:
+  bool Ptr;
 };
 
 /// MachineLiveReg - a live value stored in a register.  Stores the register
 /// number as an architecture-specific physical register.
 class MachineLiveReg : public MachineLiveLoc {
 public:
+  MachineLiveReg() : Reg(0) {}
   MachineLiveReg(unsigned Reg) : Reg(Reg) {}
-  MachineLiveReg(const MachineLiveReg &C) : Reg(C.Reg) {}
+  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C), Reg(C.Reg) {}
   virtual MachineLiveLoc *copy() const { return new MachineLiveReg(*this); }
 
   virtual bool isReg() const { return true; }
@@ -477,7 +486,7 @@ public:
   MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size)
     : Offset(Offset), Reg(Reg), Size(Size) {}
   MachineLiveStackAddr(const MachineLiveStackAddr &C)
-    : Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
+    : MachineLiveLoc(C), Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
   virtual MachineLiveLoc *copy() const
   { return new MachineLiveStackAddr(*this); }
 
@@ -499,6 +508,7 @@ public:
   // The size of a stack object may need to be determined by code emission
   // metadata in child classes, hence the AsmPrinter argument
   virtual unsigned getSize(const AsmPrinter &AP) { return Size; }
+  virtual unsigned getSize() const { return Size; }
 
   virtual std::string toString() const
   {
@@ -580,6 +590,10 @@ typedef SmallVector<ArchLiveValue, 8> ArchLiveValues;
 // Map an IR instruction to architecture-specific live values
 typedef std::map<const Instruction *, ArchLiveValues> InstToArchLiveValues;
 typedef std::pair<const Instruction *, ArchLiveValues> InstArchLiveValuePair;
+
+// Map an IR instruction to argument-save live values
+typedef std::map<const Instruction *, MachineLiveLocs> InstToArgLocs;
+typedef std::pair<const Instruction *, MachineLiveLocs> InstToArgPair;
 
 }
 

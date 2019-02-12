@@ -24,6 +24,7 @@ static void* regset_init_powerpc64(const void* regs);
 static void regset_free_powerpc64(void* regset);
 static void regset_clone_powerpc64(const void* src, void* dest);
 static void regset_copyin_powerpc64(void* regset, const void* regs);
+static void regset_copy_arg_regs_powerpc64(void* regset, const void* regs);
 static void regset_copyout_powerpc64(const void* regset, void* regs);
 
 static void* pc_powerpc64(const void* regset);
@@ -55,6 +56,7 @@ const struct regops_t regs_powerpc64 = {
   .regset_free = regset_free_powerpc64,
   .regset_clone = regset_clone_powerpc64,
   .regset_copyin = regset_copyin_powerpc64,
+  .regset_copy_arg_regs = regset_copy_arg_regs_powerpc64,
   .regset_copyout = regset_copyout_powerpc64,
 
   .pc = pc_powerpc64,
@@ -107,6 +109,35 @@ static void regset_copyin_powerpc64(void* in, const void* out)
 {
   struct regset_powerpc64* cur = (struct regset_powerpc64*)in;
   *cur = *(struct regset_powerpc64*)out;
+}
+
+static void regset_copy_arg_regs_powerpc64(void* in, const void* out)
+{
+  struct regset_powerpc64* cur = (struct regset_powerpc64*)in,
+                         * input = (struct regset_powerpc64*)out;
+
+  cur->r[3] = input->r[3];
+  cur->r[4] = input->r[4];
+  cur->r[5] = input->r[5];
+  cur->r[6] = input->r[6];
+  cur->r[7] = input->r[7];
+  cur->r[8] = input->r[8];
+  cur->r[9] = input->r[9];
+  cur->r[10] = input->r[10];
+
+  cur->f[1] = input->f[1];
+  cur->f[2] = input->f[2];
+  cur->f[3] = input->f[3];
+  cur->f[4] = input->f[4];
+  cur->f[5] = input->f[5];
+  cur->f[6] = input->f[6];
+  cur->f[7] = input->f[7];
+  cur->f[8] = input->f[8];
+  cur->f[9] = input->f[9];
+  cur->f[10] = input->f[10];
+  cur->f[11] = input->f[11];
+  cur->f[12] = input->f[12];
+  cur->f[13] = input->f[13];
 }
 
 static void regset_copyout_powerpc64(const void* in, void* out)
