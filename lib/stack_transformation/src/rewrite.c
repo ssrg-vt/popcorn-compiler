@@ -97,6 +97,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest);
 int st_rewrite_randomized(void* cham_handle,
                           get_rand_info info_func,
                           st_handle handle,
+                          int is_return,
                           void* regset_src,
                           void* sp_src_base,
                           void* sp_src_buf,
@@ -174,11 +175,23 @@ int st_rewrite_randomized(void* cham_handle,
   TIMER_STOP(rewrite_stack);
 
   /*
-   * On Chameleon, we don't know if we have (potentially reified) arguments in
-   * registers.  Copy parameter passing registers from second frame (where they
-   * should have been rewritten) into the outermost frame.
+   * On Chameleon, we could be stopped either at a function entrance or
+   * function exit.  If the function accepts parameters/returns values, we need
+   * to fix up the registers to match what the caller/callee expected.
+   *
+   *  - For argument passing, we may have (potentially reified) arguments in
+   *    parameter passing registers - copy them from second frame (where they
+   *    should have been rewritten/reified) into the outermost frame.
+   *
+   *  - For return values, we may have arguments in return value registers -
+   *    copy them from the source register set, which prepared them prior to
+   *    being interrupted
    */
-  REGOPS(dst)->regset_copy_arg_regs(dst->acts[0].regs, dst->acts[1].regs);
+  // TODO how do we reify returned values which are pointer to the stack?
+  if(!is_return)
+    REGOPS(dst)->regset_copy_arg_regs(dst->acts[0].regs, dst->acts[1].regs);
+  else
+    REGOPS(dst)->regset_copy_ret_regs(dst->acts[0].regs, src->acts[0].regs);
 
   /* Copy out register state for destination & clean up. */
   REGOPS(dst)->regset_copyout(dst->acts[0].regs, dst->regs);

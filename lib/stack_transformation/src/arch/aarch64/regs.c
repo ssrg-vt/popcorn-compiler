@@ -58,6 +58,7 @@ const struct regops_t regs_aarch64 = {
   .regset_clone = regset_clone_aarch64,
   .regset_copyin = regset_copyin_aarch64,
   .regset_copy_arg_regs = regset_copy_arg_regs_aarch64,
+  .regset_copy_ret_regs = regset_copy_arg_regs_aarch64,
   .regset_copyout = regset_copyout_aarch64,
 
   .pc = pc_aarch64,

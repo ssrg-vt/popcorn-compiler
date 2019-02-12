@@ -58,6 +58,7 @@ const struct regops_t regs_powerpc64 = {
   .regset_clone = regset_clone_powerpc64,
   .regset_copyin = regset_copyin_powerpc64,
   .regset_copy_arg_regs = regset_copy_arg_regs_powerpc64,
+  .regset_copy_ret_regs = regset_copy_arg_regs_powerpc64,
   .regset_copyout = regset_copyout_powerpc64,
 
   .pc = pc_powerpc64,

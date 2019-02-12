@@ -678,6 +678,9 @@ static void apply_arch_operation(rewrite_context ctx,
   else /* Not generating a value, just use operand type to copy a value */
   {
     void* stack_slot;
+#ifdef CHAMELEON
+    int32_t offset;
+#endif
 
     switch(val->operand_type)
     {
@@ -687,14 +690,29 @@ static void apply_arch_operation(rewrite_context ctx,
       ST_RAW_INFO("copy from register %u\n", val->operand_regnum);
       break;
     case SM_DIRECT:
+#ifndef CHAMELEON
       stack_slot = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->operand_regnum) +
                    val->operand_offset_or_constant;
+#else
+      offset = translate_offset_from_reg(ctx, ctx->act, val->operand_regnum,
+                                         val->operand_offset_or_constant);
+      stack_slot = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->operand_regnum) +
+                   offset;
+      stack_slot = child_to_chameleon(ctx, stack_slot);
+#endif
       memcpy(dest, stack_slot, val->operand_size);
       ST_RAW_INFO("copy from stack slot @ %p\n", stack_slot);
       break;
     case SM_INDIRECT:
+#ifndef CHAMELEON
       stack_slot = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->operand_regnum) +
                    val->operand_offset_or_constant;
+#else
+      offset = translate_offset_from_reg(ctx, ctx->act, val->operand_regnum,
+                                         val->operand_offset_or_constant);
+      stack_slot = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->operand_regnum) +
+                   offset;
+#endif
       memcpy(dest, &stack_slot, val->operand_size);
       ST_RAW_INFO("reference to stack slot @ %p\n", stack_slot);
       break;

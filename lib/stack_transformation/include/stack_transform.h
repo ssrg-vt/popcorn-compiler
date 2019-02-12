@@ -100,6 +100,7 @@ typedef func_rand_info (*get_rand_info)(void *handle, uint64_t addr);
  * @param info_func callback used to gather randomization information
  * @param handle a stack transformation handle which has transformation
  *               metadata for the source binary
+ * @param is_return true if transforming at a return instruction
  * @param regset_src a pointer to a filled register set representing the
  *                   thread's state
  * @param sp_src_base source stack base in child's address space, i.e., highest
@@ -117,6 +118,7 @@ typedef func_rand_info (*get_rand_info)(void *handle, uint64_t addr);
 int st_rewrite_randomized(void *cham_handle,
                           get_rand_info info_func,
                           st_handle handle,
+                          int is_return,
                           void* regset_src,
                           void* sp_src_base,
                           void* sp_src_buf,
