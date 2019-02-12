@@ -44,6 +44,9 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
   const unwind_loc* locs;
   uint32_t unwind_start, unwind_end, i;
   void* saved_loc;
+#ifdef CHAMELEON
+  int32_t offset;
+#endif
 
   ASSERT(act > 0, "Cannot set up outermost activation using this function\n");
 
@@ -54,11 +57,16 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
 
   for(i = unwind_start; i < unwind_end; i++)
   {
+#ifndef CHAMELEON
     saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[i].offset;
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
-#ifdef CHAMELEON
-    saved_loc = translate_stack_address(ctx, act - 1, saved_loc);
+#else
+    offset = translate_fbp_offset(ctx, act - 1, locs[i].offset);
+    saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + offset;
+    ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
+            locs[i].reg, offset, saved_loc);
+    saved_loc = child_to_chameleon(ctx, saved_loc);
 #endif
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
@@ -222,7 +230,7 @@ void pop_frame_funcentry(rewrite_context ctx, bool setup_bounds)
   else {
     sp = REGOPS(ctx)->sp(ACT(ctx).regs);
 #ifdef CHAMELEON
-    sp = translate_stack_address(ctx, ctx->act, sp);
+    sp = child_to_chameleon(ctx, sp);
 #endif
     REGOPS(ctx)->set_pc(NEXT_ACT(ctx).regs, *(void**)sp);
   }
@@ -258,6 +266,9 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
   const unwind_loc* unwind_locs;
   uint32_t unwind_start, unwind_end;
   void* addr = NULL;
+#ifdef CHAMELEON
+  int32_t offset;
+#endif
 
   ASSERT(act, "invalid arguments to get_stored_loc()\n");
   ASSERT(bitmap_is_set(act->callee_saved, reg),
@@ -270,7 +281,13 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
   {
     if(unwind_locs[i].reg == reg)
     {
+#ifndef CHAMELEON
       addr = REGOPS(ctx)->fbp(act->regs) + unwind_locs[i].offset;
+#else
+      offset = translate_fbp_offset(ctx, act - ctx->acts,
+                                    unwind_locs[i].offset);
+      addr = REGOPS(ctx)->fbp(act->regs) + offset;
+#endif
       break;
     }
   }

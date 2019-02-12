@@ -44,6 +44,7 @@ const struct regops_t regs_x86_64 = {
   .has_ra_reg = false,
   .regset_size = sizeof(struct regset_x86_64),
   .fbp_regnum = RBP,
+  .sp_regnum = RSP,
 
   .regset_default = regset_default_x86_64,
   .regset_init = regset_init_x86_64,

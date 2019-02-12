@@ -50,6 +50,7 @@ const struct regops_t regs_aarch64 = {
   .has_ra_reg = true,
   .regset_size = sizeof(struct regset_aarch64),
   .fbp_regnum = AARCH64_FBP_REG,
+  .sp_regnum = SP,
 
   .regset_default = regset_default_aarch64,
   .regset_init = regset_init_aarch64,

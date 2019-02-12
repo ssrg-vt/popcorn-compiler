@@ -189,6 +189,9 @@ void* points_to_stack(const rewrite_context ctx,
                       const live_value* val)
 {
   void* stack_addr = NULL;
+#ifdef CHAMELEON
+  int32_t offset;
+#endif
 
   if(val->is_ptr || val->is_temporary)
   {
@@ -205,15 +208,22 @@ void* points_to_stack(const rewrite_context ctx,
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
              "invalid register size for pointer\n");
+#ifndef CHAMELEON
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
                    val->offset_or_constant;
+#else
+      offset = translate_offset_from_reg(ctx, ctx->act, val->regnum,
+                                         val->offset_or_constant);
+      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
+                   offset;
+#endif
       // Note 2: temporaries encoded as references to stack slots (i.e., this
       // branch) are by default pointers to the stack.  If it's *not* a
       // temporary but is instead a regular alloca, then we're actually
       // concerned with the value contained *in* the stack slot.
       if(!val->is_temporary) {
 #ifdef CHAMELEON
-        stack_addr = translate_stack_address(ctx, ctx->act, stack_addr);
+        stack_addr = child_to_chameleon(ctx, stack_addr);
 #endif
         stack_addr = *(void **)stack_addr;
       }
@@ -222,10 +232,15 @@ void* points_to_stack(const rewrite_context ctx,
       // Note: we assume that we're doing offsets from 64-bit registers
       ASSERT(REGOPS(ctx)->reg_size(val->regnum) == 8,
              "invalid register size for pointer\n");
+#ifndef CHAMELEON
       stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
                    val->offset_or_constant;
-#ifdef CHAMELEON
-      stack_addr = translate_stack_address(ctx, ctx->act, stack_addr);
+#else
+      offset = translate_offset_from_reg(ctx, ctx->act, val->regnum,
+                                         val->offset_or_constant);
+      stack_addr = *(void**)REGOPS(ctx)->reg(ACT(ctx).regs, val->regnum) +
+                   offset;
+      stack_addr = child_to_chameleon(ctx, stack_addr);
 #endif
       stack_addr = *(void**)stack_addr;
       break;
@@ -303,7 +318,7 @@ void set_return_address(rewrite_context ctx, void* retaddr)
   ASSERT(retaddr, "invalid return address\n");
   saved_loc = ACT(ctx).cfa + PROPS(ctx)->ra_offset;
 #ifdef CHAMELEON
-  saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+  saved_loc = child_to_chameleon(ctx, saved_loc);
 #endif
   *(void**)saved_loc = retaddr;
 }
@@ -323,7 +338,7 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
   else {
     saved_loc = ACT(ctx).cfa + PROPS(ctx)->ra_offset;
 #ifdef CHAMELEON
-    saved_loc = translate_stack_address(ctx, ctx->act, saved_loc);
+    saved_loc = child_to_chameleon(ctx, saved_loc);
 #endif
     *(void**)saved_loc = retaddr;
   }
@@ -348,7 +363,13 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx)
 
   ASSERT(index >= unwind_start, "no saved frame base pointer information\n");
 
+#ifndef CHAMELEON
   saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + locs[index].offset;
+#else
+  int32_t offset = translate_fbp_offset(ctx, ctx->act, locs[index].offset);
+  saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + offset;
+  saved_loc = child_to_chameleon(ctx, saved_loc);
+#endif
   return (uint64_t*)saved_loc;
 }
 
@@ -375,7 +396,7 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
   // TODO use a binary search (make sure we're sorted!)
   for(i = 0; i < nslots; i++) {
     if(slot_contains(&slots[i], orig)) {
-      randomized = slots[i].original - orig + slots[i].randomized;
+      randomized = orig - slots[i].original + slots[i].randomized;
       ST_INFO("Remapping CFA offset %d -> %d\n", orig, randomized);
       return randomized;
     }
@@ -384,30 +405,41 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
   return orig;
 }
 
-void *randomized_address(rewrite_context ctx, int act, void *addr)
-{
-  int offset, new_offset;
-  void *new_addr;
-
-  /* Convert the current offset to the newly randomized version */
-  ASSERT(REGOPS(ctx)->sp(ctx->acts[act].regs) <= addr &&
-         addr < ctx->acts[act].cfa, "Invalid address");
-  offset = ctx->acts[act].cfa - addr;
-  new_offset = randomized_offset(ctx->acts[act].nslots,
-                                 ctx->acts[act].slots,
-                                 offset);
-  new_addr = ctx->acts[act].cfa - new_offset;
-  ST_INFO("Randomized re-mapping: %p -> %p\n", addr, new_addr);
-  return new_addr;
+int32_t translate_fbp_offset(rewrite_context ctx, int act, int32_t offset) {
+  // TODO assumes FBP is at a fixed offset from CFA and that it's pointed-to
+  // position in the frame (e.g., on x86-64, FBP = CFA - 16) is not randomized.
+  // If this ever gets implemented for PPC, this needs to be fixed!
+  int32_t fbp_offset = ctx->acts[act].cfa -
+                       REGOPS(ctx)->fbp(ctx->acts[act].regs);
+  int32_t orig_offset = fbp_offset - offset;
+  int32_t new_offset = randomized_offset(ctx->acts[act].nslots,
+                                         ctx->acts[act].slots,
+                                         orig_offset);
+  return -(new_offset - fbp_offset);
 }
 
-void *translate_stack_address(rewrite_context ctx, int act, void *addr)
-{
-  void *new_addr = randomized_address(ctx, act, addr);
-  void *cham_buf = ctx->buf - (ctx->stack_base - new_addr);
-  ST_INFO("Chameleon buffer: %p -> %p -> %p\n", addr, new_addr, cham_buf);
-  return cham_buf;
+int32_t translate_sp_offset(rewrite_context ctx, int act, int32_t offset) {
+  int32_t orig_offset = FUNC(ctx, ctx->acts[act]).frame_size - offset;
+  int32_t new_offset = randomized_offset(ctx->acts[act].nslots,
+                                         ctx->acts[act].slots,
+                                         orig_offset);
+  return ctx->acts[act].frame_size - new_offset;
 }
+
+int32_t translate_offset_from_reg(rewrite_context ctx,
+                                  int act,
+                                  uint16_t reg,
+                                  int32_t offset) {
+  if(reg == REGOPS(ctx)->fbp_regnum)
+    return translate_fbp_offset(ctx, act, offset);
+  else {
+    ASSERT(reg == REGOPS(ctx)->sp_regnum, "invalid offset register");
+    return translate_sp_offset(ctx, act, offset);
+  }
+}
+
+void *child_to_chameleon(rewrite_context ctx, void *addr)
+{ return ctx->buf - (ctx->stack_base - addr); }
 
 #endif
 
@@ -424,6 +456,7 @@ static inline void* get_val_loc_notranslate(rewrite_context ctx,
                                             int act)
 {
   void* val_loc = NULL;
+  int32_t offset;
 
   switch(type)
   {
@@ -435,10 +468,10 @@ static inline void* get_val_loc_notranslate(rewrite_context ctx,
   // are generated in an identical manner
   case SM_DIRECT: // Value is allocated on stack
   case SM_INDIRECT: // Value is in register, but spilled to the stack
+    offset = translate_offset_from_reg(ctx, act, regnum, offset_or_constant);
     val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
-              offset_or_constant;
+              offset;
     ST_RAW_INFO("live value at stack address %p\n", val_loc);
-    val_loc = randomized_address(ctx, act, val_loc);
     break;
   case SM_CONSTANT: // Value is constant
   case SM_CONST_IDX: // Value is in constant pool
@@ -461,6 +494,9 @@ static inline void* get_val_loc(rewrite_context ctx,
                                 int act)
 {
   void* val_loc = NULL;
+#ifdef CHAMELEON
+  int32_t offset;
+#endif
 
   switch(type)
   {
@@ -472,11 +508,17 @@ static inline void* get_val_loc(rewrite_context ctx,
   // are generated in an identical manner
   case SM_DIRECT: // Value is allocated on stack
   case SM_INDIRECT: // Value is in register, but spilled to the stack
+#ifndef CHAMELEON
     val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
               offset_or_constant;
+#else
+    offset = translate_offset_from_reg(ctx, act, regnum, offset_or_constant);
+    val_loc = *(void**)REGOPS(ctx)->reg(ctx->acts[act].regs, regnum) +
+              offset;
+#endif
     ST_RAW_INFO("live value at stack address %p\n", val_loc);
 #ifdef CHAMELEON
-    val_loc = translate_stack_address(ctx, act, val_loc);
+    val_loc = child_to_chameleon(ctx, val_loc);
 #endif
     break;
   case SM_CONSTANT: // Value is constant
@@ -549,7 +591,7 @@ static void* callee_saved_loc(rewrite_context ctx,
       ST_INFO("Saving callee-saved register %u at %p (frame %d)\n",
               regnum, saved_addr, act);
 #ifdef CHAMELEON
-      saved_addr = translate_stack_address(ctx, act, saved_addr);
+      saved_addr = child_to_chameleon(ctx, saved_addr);
 #endif
       return saved_addr;
     }

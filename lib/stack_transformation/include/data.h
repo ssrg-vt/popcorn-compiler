@@ -116,33 +116,48 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx);
 #ifdef CHAMELEON
 
 /*
- * Convert a stack address to its randomized location inside the child's
- * address space.
- *
- * Note: do *not* read from or write to this location - use
- * translate_stack_address() to get a pointer to a Chameleon-provided buffer
- * for reading/writing stack data
+ * Convert an originally-encoded offset from the fbp to its randomized offset
+ * from the fbp.
  *
  * @param ctx a rewriting context
  * @param act activation in which address resides
- * @param addr a stack address from the child
- * @return the randomized location
+ * @return the randomized offset
  */
-void *randomized_address(rewrite_context ctx, int act, void *addr);
+int32_t translate_fbp_offset(rewrite_context ctx, int act, int32_t offset);
 
 /*
- * Perform two levels of translation: 1. Translate a stack address to its
- * randomized location and 2. Translate the randomized location to an address
- * inside a buffer provided by Chameleon.
+ * Convert an originally-encoded offset from the sp to its randomized offset
+ * from the sp.
  *
  * @param ctx a rewriting context
  * @param act activation in which address resides
- * @param addr a stack address from the child -- *must* be the original
- *             address, i.e., address of a previous randomization must be
- *             de-randomized
- * @return a translated stack address or NULL if it could not be translated
+ * @return the randomized offset
  */
-void *translate_stack_address(rewrite_context ctx, int act, void *addr);
+int32_t translate_sp_offset(rewrite_context ctx, int act, int32_t offset);
+
+/*
+ * Convert an originally-encoded offset from a register to its randomized
+ * offset from the register.
+ *
+ * @param ctx a rewriting context
+ * @param act activation in which address resides
+ * @param reg the base register
+ * @return the randomized offset
+ */
+int32_t translate_offset_from_reg(rewrite_context ctx,
+                                  int act,
+                                  uint16_t reg,
+                                  int32_t offset);
+
+/*
+ * Translate a stack address to the location in chameleon's buffers.
+ *
+ * @param ctx a rewriting context
+ * @param addr a stack address from the child
+ * @return a stack address in chameleon's buffer or NULL if it could not be
+ *         translated
+ */
+void *child_to_chameleon(rewrite_context ctx, void *addr);
 
 #endif
 

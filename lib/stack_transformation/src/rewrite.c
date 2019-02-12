@@ -159,7 +159,7 @@ int st_rewrite_randomized(void* cham_handle,
 
     set_return_address(dst, (void*)NEXT_ACT(dst).site.addr);
     rewrite_frame(src, dst);
-    saved_fbp = translate_stack_address(dst, dst->act, get_savedfbp_loc(dst));
+    saved_fbp = get_savedfbp_loc(dst);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");
     pop_frame(dst, true);
     *saved_fbp = (uint64_t)REGOPS(dst)->fbp(ACT(dst).regs);
@@ -653,6 +653,29 @@ static bool rewrite_val(rewrite_context src, const live_value* val_src,
     return false;
   }
 
+#ifdef CHAMELEON
+  /*
+   * The compiler may encode metadata for rewriting argument passing registers,
+   * but unless we're the outermost frame these don't apply.  It probably
+   * doesn't hurt to transform these registers, but it pollutes the log with
+   * false warnings; don't do that.
+   */
+  if(val_src->type == SM_REGISTER &&
+     !PROPS(src)->is_callee_saved(val_src->regnum) &&
+     src->act > 1)
+    skip = true;
+  else if(val_dest->type == SM_REGISTER &&
+          !PROPS(dest)->is_callee_saved(val_dest->regnum) &&
+          dest->act > 1)
+    skip = true;
+
+  if(skip)
+  {
+    ST_INFO("Skipping non-callee-saved register in inner frame\n");
+    return false;
+  }
+#endif
+
   ASSERT(VAL_SIZE(val_src) == VAL_SIZE(val_dest),
          "value has different size (%u vs. %u)\n",
          VAL_SIZE(val_src), VAL_SIZE(val_dest));
@@ -784,9 +807,6 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
         {
           ST_INFO("Found local fixup for %p\n", fixup_node->data.src_addr);
 
-#ifdef CHAMELEON
-          stack_addr = randomized_address(dest, dest->act, stack_addr);
-#endif
           put_val_data(dest,
                        fixup_node->data.dest_loc,
                        fixup_node->data.act,

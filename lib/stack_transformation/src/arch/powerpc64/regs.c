@@ -50,6 +50,7 @@ const struct regops_t regs_powerpc64 = {
   .has_ra_reg = true,
   .regset_size = sizeof(struct regset_powerpc64),
   .fbp_regnum = POWERPC64_FBP_REG,
+  .sp_regnum = POWERPC64_SP_REG,
 
   .regset_default = regset_default_powerpc64,
   .regset_init = regset_init_powerpc64,
