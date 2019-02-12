@@ -1048,10 +1048,14 @@ Index: include/llvm/CodeGen/MachineFunction.h
  #include "llvm/IR/DebugLoc.h"
  #include "llvm/IR/Metadata.h"
  #include "llvm/Support/Allocator.h"
-@@ -145,6 +147,12 @@
+@@ -145,6 +147,16 @@
    /// True if the function includes any inline assembly.
    bool HasInlineAsm;
  
++  /// Information about changes in number of IR operands to number of machine
++  /// /// operands due to legalization.
++  SMToOpLegalizeMap SMOpLegalizeChanges;
++
 +  /// Duplicate live value locations for stackmap operands
 +  InstToOperands SMDuplicateLocs;
 +
@@ -1061,7 +1065,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
    MachineFunction(const MachineFunction &) = delete;
    void operator=(const MachineFunction&) = delete;
  public:
-@@ -457,6 +465,9 @@
+@@ -457,6 +469,9 @@
      return Mask;
    }
  
@@ -1071,14 +1075,18 @@ Index: include/llvm/CodeGen/MachineFunction.h
    /// allocateMemRefsArray - Allocate an array to hold MachineMemOperand
    /// pointers.  This array is owned by the MachineFunction.
    MachineInstr::mmo_iterator allocateMemRefsArray(unsigned long Num);
-@@ -488,6 +499,39 @@
+@@ -488,6 +503,46 @@
    /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
    /// base.
    MCSymbol *getPICBaseSymbol() const;
 +
 +  //===--------------------------------------------------------------------===//
-+  // Architecture-specific stack transformation metadata
++  // Additional stack transformation metadata
 +  //
++
++  /// Add a note indicating that machine operand number OpNo was changed to Num
++  /// operands in stackmap SMID.
++  void addOpLegalizeChange(int64_t SMID, unsigned OpNo, unsigned Num);
 +
 +  /// Add an IR/architecture-specific location mapping for a stackmap operand
 +  void addSMOpLocation(const CallInst *SM, const Value *Val,
@@ -1093,6 +1101,9 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +
 +  /// Update stack slot references to new indexes after stack slot coloring
 +  void updateSMStackSlotRefs(SmallDenseMap<int, int, 16> &Changes);
++
++  /// Return the number of machine operands corresponding to a given IR operand.
++  unsigned getNumLegalizedOps(int64_t SMID, unsigned OpNo) const;
 +
 +  /// Are there any architecture-specific locations for operand Val in stackmap
 +  /// SM?
@@ -1394,7 +1405,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,577 @@
+@@ -0,0 +1,587 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1942,6 +1953,16 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +/// Tidy up objects defined above into smart pointers
 +typedef std::unique_ptr<MachineLiveVal> MachineLiveValPtr;
 +typedef std::unique_ptr<MachineLiveLoc> MachineLiveLocPtr;
++
++/// Map an IR operand number to the number of Machine IR operands in the lowered
++/// stackmap instruction.  Required as legalizing some types (e.g., i128) may
++/// require changing the IR value into more/fewer multiple machine values.
++typedef std::map<unsigned, unsigned> OpNumberMap;
++typedef std::pair<unsigned, unsigned> OpNumberPair;
++
++/// Map stackmaps to information about how operands changed during legalization.
++typedef std::map<int64_t, OpNumberMap> SMToOpLegalizeMap;
++typedef std::pair<int64_t, OpNumberMap> SMToOpLegalizePair;
 +
 +/// A vector of architecture-specific live value locations
 +// Note: we could use a set instead (because we want unique live values), but
@@ -5897,7 +5918,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  MachineInstr::mmo_iterator
  MachineFunction::allocateMemRefsArray(unsigned long Num) {
    return Allocator.Allocate<MachineMemOperand *>(Num);
-@@ -482,6 +491,164 @@
+@@ -482,6 +491,188 @@
                                 Twine(getFunctionNumber()) + "$pb");
  }
  
@@ -5908,6 +5929,18 @@ Index: lib/CodeGen/MachineFunction.cpp
 +  if((It = M.find(K)) == M.end())
 +    It = M.insert(std::pair<const Key *, Val>(K, Val())).first;
 +  return It->second;
++}
++
++void MachineFunction::addOpLegalizeChange(int64_t SMID,
++                                          unsigned OpNo,
++                                          unsigned Num) {
++  // TODO Popcorn: we currently assume operands are legalized in increasing
++  // operand number order, otherwise OpNo may be invalid or invalidate other
++  // operand numbers
++  OpNumberMap &OpChanges = SMOpLegalizeChanges[SMID];
++  assert(std::max_element(OpChanges.begin(), OpChanges.end())->first < OpNo &&
++         "Invalid legalization sequence");
++  SMOpLegalizeChanges[SMID][OpNo] = Num;
 +}
 +
 +/// Add an IR/architecture-specific location mapping for a stackmap operand
@@ -6012,6 +6045,18 @@ Index: lib/CodeGen/MachineFunction.cpp
 +      }
 +    }
 +  }
++}
++
++/// Return the number of machine operands corresponding to a given IR operand.
++unsigned
++MachineFunction::getNumLegalizedOps(int64_t SMID, unsigned OpNo) const {
++  SMToOpLegalizeMap::const_iterator SM = SMOpLegalizeChanges.find(SMID);
++  if(SM != SMOpLegalizeChanges.end()) {
++    const OpNumberMap &OpChanges = SM->second;
++    OpNumberMap::const_iterator Op = OpChanges.find(OpNo);
++    if(Op != OpChanges.end()) return Op->second;
++  }
++  return 1;
 +}
 +
 +/// Are there any architecture-specific locations for operand Val in stackmap
@@ -6220,6 +6265,54 @@ Index: lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
  SDValue DAGTypeLegalizer::PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo){
    assert(ISD::isUNINDEXEDStore(N) && "Indexed store during type legalization!");
    SDValue Ch = N->getChain(), Ptr = N->getBasePtr();
+@@ -2619,6 +2643,9 @@
+   case ISD::FRAMEADDR:         Res = ExpandIntOp_RETURNADDR(N); break;
+ 
+   case ISD::ATOMIC_STORE:      Res = ExpandIntOp_ATOMIC_STORE(N); break;
++
++  case (uint16_t)~TargetOpcode::STACKMAP:
++    Res = ExpandIntOp_STACKMAP(N, OpNo); break;
+   }
+ 
+   // If the result is null, the sub-method took care of registering results etc.
+@@ -3007,7 +3034,37 @@
+   return Swap.getValue(1);
+ }
+ 
++SDValue DAGTypeLegalizer::ExpandIntOp_STACKMAP(SDNode *N, unsigned OpNo) {
++  std::vector<SDValue> Ops;
++  SDLoc dl(N);
++  const SDValue &InvOp = N->getOperand(OpNo);
+ 
++  switch(InvOp.getSimpleValueType().SimpleTy) {
++  default: llvm_unreachable("Unhandled operand type in stackmap");
++  case MVT::i128:
++    if(InvOp->getOpcode() == ISD::BUILD_PAIR) {
++      // If the i128 is the result of a buildpair i64, i64, replace the i128
++      // operand with the two i64 operands in the stackmap
++      DEBUG(dbgs() << "Stackmap: replacing i128 operand with i64 pair\n");
++
++      Ops.reserve(N->getNumOperands() + 1);
++      for(unsigned i = 0; i < N->getNumOperands(); i++) {
++        if(i == OpNo) {
++          Ops.push_back(InvOp->getOperand(0));
++          Ops.push_back(InvOp->getOperand(1));
++        }
++        else Ops.push_back(N->getOperand(i));
++      }
++
++      int64_t SMID = cast<ConstantSDNode>(N->getOperand(0))->getSExtValue();
++      DAG.getMachineFunction().addOpLegalizeChange(SMID, OpNo, 2);
++    }
++    break;
++  }
++
++  return SDValue(DAG.MorphNodeTo(N, N->getOpcode(), N->getVTList(), Ops), 0);
++}
++
+ SDValue DAGTypeLegalizer::PromoteIntRes_EXTRACT_SUBVECTOR(SDNode *N) {
+   SDValue InOp0 = N->getOperand(0);
+   EVT InVT = InOp0.getValueType();
 Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
 ===================================================================
 --- lib/CodeGen/SelectionDAG/LegalizeTypes.h	(revision 320332)
@@ -6232,6 +6325,14 @@ Index: lib/CodeGen/SelectionDAG/LegalizeTypes.h
    SDValue PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo);
    SDValue PromoteIntOp_TRUNCATE(SDNode *N);
    SDValue PromoteIntOp_UINT_TO_FP(SDNode *N);
+@@ -367,6 +368,7 @@
+   SDValue ExpandIntOp_UINT_TO_FP(SDNode *N);
+   SDValue ExpandIntOp_RETURNADDR(SDNode *N);
+   SDValue ExpandIntOp_ATOMIC_STORE(SDNode *N);
++  SDValue ExpandIntOp_STACKMAP(SDNode *N, unsigned OpNo);
+ 
+   void IntegerExpandSetCCOperands(SDValue &NewLHS, SDValue &NewRHS,
+                                   ISD::CondCode &CCCode, SDLoc dl);
 Index: lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
 ===================================================================
 --- lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp	(revision 320332)
@@ -6392,7 +6493,7 @@ Index: lib/CodeGen/StackMaps.cpp
  static cl::opt<int> StackMapVersion(
      "stackmap-version", cl::init(1),
      cl::desc("Specify the stackmap encoding version (default = 1)"));
-@@ -84,32 +99,154 @@
+@@ -84,32 +99,157 @@
    return (unsigned)RegNum;
  }
  
@@ -6431,6 +6532,9 @@ Index: lib/CodeGen/StackMaps.cpp
 +  isPtr = false;
 +  isAlloca = false;
 +  AllocaSize = 0;
++  const PtrToIntInst *PTII;
++
++  if((PTII = dyn_cast<PtrToIntInst>(Op))) Op = PTII->getPointerOperand();
 +
 +  assert(Op != nullptr && "Invalid stackmap operand");
 +  Type *Ty = Op->getType();
@@ -6554,7 +6658,7 @@ Index: lib/CodeGen/StackMaps.cpp
        break;
      }
      case StackMaps::ConstantOp: {
-@@ -116,17 +253,26 @@
+@@ -116,17 +256,26 @@
        ++MOI;
        assert(MOI->isImm() && "Expected constant operand.");
        int64_t Imm = MOI->getImm();
@@ -6584,7 +6688,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +280,18 @@
+@@ -134,17 +283,18 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -6611,7 +6715,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +308,7 @@
+@@ -161,6 +311,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -6619,7 +6723,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +342,7 @@
+@@ -194,7 +345,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -6628,7 +6732,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +351,16 @@
+@@ -203,8 +354,16 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -6647,7 +6751,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +377,87 @@
+@@ -221,6 +380,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -6735,7 +6839,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +514,145 @@
+@@ -277,6 +517,145 @@
    return LiveOuts;
  }
  
@@ -6881,7 +6985,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +661,46 @@
+@@ -285,21 +664,53 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -6917,10 +7021,17 @@ Index: lib/CodeGen/StackMaps.cpp
 +  assert(IRSM && "Could not find associated stackmap instruction");
 +
    // Parse operands.
++  unsigned NumRepeat;
 +  Op = std::next(IRSM->op_begin(), 2);
++  MachineInstr::const_mop_iterator MFirst = MI.operands_begin();
    while (MOI != MOE) {
 -    MOI = parseOperand(MOI, MOE, Locations, LiveOuts);
 +    MOI = parseOperand(MOI, MOE, Locations, LiveOuts, Op);
++    NumRepeat = AP.MF->getNumLegalizedOps(ID, MOI - MFirst) - 1;
++    for(size_t i = 0; i < NumRepeat; i++) {
++      MOI = parseOperand(MOI, MOE, Locations, LiveOuts, Op);
++      --Op;
++    }
    }
 +  assert(Op == (IRSM->op_end() - 1) && "did not lower all stackmap operands");
  
@@ -6930,7 +7041,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +724,21 @@
+@@ -323,12 +734,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -6955,7 +7066,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -411,8 +821,11 @@
+@@ -411,8 +831,11 @@
  /// StkSizeRecord[NumFunctions] {
  ///   uint64 : Function Address
  ///   uint64 : Stack Size
@@ -6968,7 +7079,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Function Frame records.
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
-@@ -420,6 +833,15 @@
+@@ -420,6 +843,15 @@
                   << " frame size: " << FR.second);
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
@@ -6984,7 +7095,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -439,14 +861,20 @@
+@@ -439,14 +871,20 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -7009,7 +7120,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +883,25 @@
+@@ -455,6 +893,25 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -7035,7 +7146,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +917,29 @@
+@@ -470,23 +927,29 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7066,7 +7177,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +947,14 @@
+@@ -494,10 +957,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -7082,7 +7193,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +966,31 @@
+@@ -509,6 +976,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7114,7 +7225,7 @@ Index: lib/CodeGen/StackMaps.cpp
      // Emit alignment to 8 byte.
      OS.EmitValueToAlignment(8);
    }
-@@ -515,7 +997,7 @@
+@@ -515,7 +1007,7 @@
  }
  
  /// Serialize the stackmap data.
@@ -7123,7 +7234,7 @@ Index: lib/CodeGen/StackMaps.cpp
    (void)WSMP;
    // Bail out if there's no stack map data.
    assert((!CSInfos.empty() || (CSInfos.empty() && ConstPool.empty())) &&
-@@ -539,7 +1021,7 @@
+@@ -539,7 +1031,7 @@
    // Serialize data.
    DEBUG(dbgs() << "********** Stack Map Output **********\n");
    emitStackmapHeader(OS);
@@ -7158,7 +7269,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1384 @@
+@@ -0,0 +1,1391 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7675,6 +7786,8 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  RegValsMap::iterator RegIt;
 +  StackValsMap::iterator SSIt;
 +  MachineInstr::const_mop_iterator MOit;
++  int64_t SMID = cast<ConstantInt>(IRSM->getArgOperand(0))->getSExtValue();
++  unsigned NumMO;
 +
 +  // Initialize new storage location/IR map objects (i.e., for virtual
 +  // registers & stack slots) for the stackmap
@@ -7687,52 +7800,57 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const Value *IRVal = IRSM->getArgOperand(i);
 +    assert(IRVal && "Invalid stackmap IR operand");
 +
-+    if(MOit->isImm()) { // Map IR values to stack slots
-+      int FrameIdx = INT32_MAX;
-+      switch(MOit->getImm()) {
-+      case StackMaps::DirectMemRefOp:
-+        MOit++;
-+        assert(MOit->isFI() && "Invalid operand type");
-+        FrameIdx = MOit->getIndex();
-+        MOit = std::next(MOit, 2);
-+        break;
-+      case StackMaps::IndirectMemRefOp:
-+        MOit = std::next(MOit, 2);
-+        assert(MOit->isFI() && "Invalid operand type");
-+        FrameIdx = MOit->getIndex();
-+        MOit = std::next(MOit, 2);
-+        break;
-+      case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
-+      default: llvm_unreachable("Unrecognized stackmap operand type"); break;
++    // Legalization may have changed how many machine operands map to the IR
++    // value.  Loop over all relevant machine operands.
++    NumMO = MF->getNumLegalizedOps(SMID, MOit - MISM->operands_begin());
++    for(size_t j = 0; j < NumMO; j++) {
++      if(MOit->isImm()) { // Map IR values to stack slots
++        int FrameIdx = INT32_MAX;
++        switch(MOit->getImm()) {
++        case StackMaps::DirectMemRefOp:
++          MOit++;
++          assert(MOit->isFI() && "Invalid operand type");
++          FrameIdx = MOit->getIndex();
++          MOit = std::next(MOit, 2);
++          break;
++        case StackMaps::IndirectMemRefOp:
++          MOit = std::next(MOit, 2);
++          assert(MOit->isFI() && "Invalid operand type");
++          FrameIdx = MOit->getIndex();
++          MOit = std::next(MOit, 2);
++          break;
++        case StackMaps::ConstantOp: MOit = std::next(MOit, 2); continue;
++        default: llvm_unreachable("Unrecognized stackmap operand type"); break;
++        }
++
++        assert(MFI->getObjectIndexBegin() <= FrameIdx &&
++               FrameIdx <= MFI->getObjectIndexEnd() && "Invalid frame index");
++        assert(!MFI->isDeadObjectIndex(FrameIdx) && "Dead frame index");
++        DEBUG(dumpStackSlot(FrameIdx, IRVal););
++
++        // Update the list of IR values mapped to the stack slot (multiple IR
++        // values may be mapped to a single stack slot).
++        SSIt = SMStackSlots[MISM].find(FrameIdx);
++        if(SSIt == SMStackSlots[MISM].end())
++          SSIt = SMStackSlots[MISM].emplace(FrameIdx,
++                                            ValueVecPtr(new ValueVec)).first;
++        SSIt->second->push_back(IRVal);
 +      }
++      else if(MOit->isReg()) { // Map IR values to virtual registers
++        unsigned Reg = MOit->getReg();
++        MOit++;
 +
-+      assert(MFI->getObjectIndexBegin() <= FrameIdx &&
-+             FrameIdx <= MFI->getObjectIndexEnd() && "Invalid frame index");
-+      assert(!MFI->isDeadObjectIndex(FrameIdx) && "Dead frame index");
-+      DEBUG(dumpStackSlot(FrameIdx, IRVal););
++        DEBUG(dumpReg(Reg, IRVal););
 +
-+      // Update the list of IR values mapped to the stack slot (multiple IR
-+      // values may be mapped to a single stack slot).
-+      SSIt = SMStackSlots[MISM].find(FrameIdx);
-+      if(SSIt == SMStackSlots[MISM].end())
-+        SSIt = SMStackSlots[MISM].emplace(FrameIdx,
-+                                          ValueVecPtr(new ValueVec)).first;
-+      SSIt->second->push_back(IRVal);
-+    }
-+    else if(MOit->isReg()) { // Map IR values to virtual registers
-+      unsigned Reg = MOit->getReg();
-+      MOit++;
-+
-+      DEBUG(dumpReg(Reg, IRVal););
-+
-+      // Update the list of IR values mapped to the virtual register (multiple
-+      // IR values may be mapped to a single virtual register).
-+      RegIt = SMRegs[MISM].find(Reg);
-+      if(RegIt == SMRegs[MISM].end())
-+        RegIt = SMRegs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
-+      RegIt->second->push_back(IRVal);
-+    } else {
-+      llvm_unreachable("Unrecognized stackmap operand type.");
++        // Update the list of IR values mapped to the virtual register
++        // (multiple IR values may be mapped to a single virtual register).
++        RegIt = SMRegs[MISM].find(Reg);
++        if(RegIt == SMRegs[MISM].end())
++          RegIt = SMRegs[MISM].emplace(Reg, ValueVecPtr(new ValueVec)).first;
++        RegIt->second->push_back(IRVal);
++      } else {
++        llvm_unreachable("Unrecognized stackmap operand type.");
++      }
 +    }
 +  }
 +}

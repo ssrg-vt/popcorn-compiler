@@ -110,7 +110,7 @@ gomp_thread_start (void *xdata)
   /* Make thread pool local. */
   pool = thr->thread_pool;
 
-  if (popcorn_global.distributed && thr->popcorn_nid)
+  if (popcorn_distributed () && thr->popcorn_nid)
     migrate (thr->popcorn_nid, NULL, NULL);
 
   if (data->nested)
@@ -129,7 +129,7 @@ gomp_thread_start (void *xdata)
     {
       pool->threads[thr->ts.team_id] = thr;
 
-      gomp_simple_barrier_wait (&pool->threads_dock);
+      gomp_simple_barrier_wait_select (&pool->threads_dock);
       do
 	{
 	  struct gomp_team *team = thr->ts.team;
@@ -137,13 +137,18 @@ gomp_thread_start (void *xdata)
 
 	  local_fn (local_data);
 
-	  if (popcorn_global.hybrid_barrier)
-	    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
-	  else
-	    gomp_team_barrier_wait_final (&team->barrier);
+	  gomp_team_barrier_wait_final_select (&team->barrier);
 	  gomp_finish_task (task);
 
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
+
+	  if (popcorn_distributed ())
+            {
+              if (thr->popcorn_nid != popcorn_getnid())
+	        migrate(thr->popcorn_nid, NULL, NULL);
+              if (thr->popcorn_nid != 0)
+                hierarchy_init_thread(thr->popcorn_nid);
+            }
 
 	  local_fn = thr->fn;
 	  local_data = thr->data;
@@ -153,12 +158,12 @@ gomp_thread_start (void *xdata)
     }
 
   /* Migrate back to origin just in case application migrated us elsewhere */
-  if (popcorn_global.distributed && current_nid() > 0)
+  if (popcorn_distributed () && current_nid () > 0)
     migrate (0, NULL, NULL);
 
   /* If distributed, wait for everybody to get back to origin before exiting */
-  if (popcorn_global.finished)
-    gomp_simple_barrier_wait (&pool->threads_dock);
+  if (popcorn_finished ())
+    gomp_simple_barrier_wait_select (&pool->threads_dock);
 
   gomp_sem_destroy (&thr->release);
   thr->thread_pool = NULL;
@@ -285,7 +290,7 @@ gomp_release_pool_threads_final ()
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_thread_pool *pool = thr->thread_pool;
 
-  if (popcorn_global.distributed)
+  if (popcorn_distributed ())
     {
       /* Migrate back to origin just in case application migrated us
 	 elsewhere */
@@ -298,11 +303,11 @@ gomp_release_pool_threads_final ()
 	     cleanup */
 	  for (i = 0; i < pool->threads_used; i++)
 	    pool->threads[i]->fn = NULL;
-	  popcorn_global.finished = true;
+	  popcorn_set_finished (true);
 	  /* Break threads out of execution loop */
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 	  /* Wait for everybody to migrate back */
-	  gomp_simple_barrier_wait (&pool->threads_dock);
+	  gomp_simple_barrier_wait_select (&pool->threads_dock);
 	}
     }
 }
@@ -396,7 +401,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   icv = task ? &task->icv : &gomp_global_icv;
   if (__builtin_expect (gomp_places_list != NULL, 0) && thr->place == 0)
     gomp_init_affinity ();
-  popcorn_place = popcorn_global.distributed && !nested;
+  popcorn_place = popcorn_distributed () && !nested;
 
   /* Always save the previous state, even if this isn't a nested team.
      In particular, we should save any work share state from an outer
@@ -435,10 +440,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (popcorn_place)
     {
       for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
-	{
-	  popcorn_node[nid].sync.num = 0;
-	  popcorn_node[nid].opt.num = 0;
-	}
+	popcorn_global.threads_per_node[nid] = 0;
       thr->popcorn_nid = hierarchy_assign_node(0);
     }
 
@@ -702,6 +704,36 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 		nthr = pool->threads[i];
 	      place = p + 1;
 	    }
+	  else if(popcorn_place)
+	    {
+	      /* Initialize per-node team state and have node leader initialize
+		 threads to avoid global copies. */
+	      // TODO Note: currently not compatible with OMP_PLACES!
+	      nid = hierarchy_assign_node(i);
+	      if(nid != 0)
+		{
+		  if(i == hierarchy_node_first_thread (nid))
+		    {
+		      hierarchy_init_node_team_state(nid, team,
+						     &team->work_shares[0],
+						     NULL,
+						     i,
+						     team->prev_ts.level + 1,
+						     thr->ts.active_level,
+						     place_partition_off,
+						     place_partition_len,
+#ifdef HAVE_SYNC_BUILTINS
+						     0,
+#endif
+						     0, task, icv, fn, data);
+		      team->implicit_task[i].icv.nthreads_var = nthreads_var;
+		      team->implicit_task[i].icv.bind_var = bind_var;
+		      team->ordered_release[i] = &nthr->release;
+		    }
+		  continue;
+		}
+	      nthr = pool->threads[i];
+	    }
 	  else
 	    nthr = pool->threads[i];
 	  nthr->ts.team = team;
@@ -718,8 +750,6 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  nthr->ts.static_trip = 0;
 	  nthr->task = &team->implicit_task[i];
 	  nthr->place = place;
-	  if (popcorn_place)
-	    nthr->popcorn_nid = hierarchy_assign_node(i);
 	  gomp_init_task (nthr->task, task, icv);
 	  team->implicit_task[i].icv.nthreads_var = nthreads_var;
 	  team->implicit_task[i].icv.bind_var = bind_var;
@@ -918,6 +948,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 #endif
       start_data->ts.static_trip = 0;
       start_data->task = &team->implicit_task[i];
+      /* Note: since this thread is new it's data is still on the origin, so
+         no need to have per-node leaders initialize it. */
       if (popcorn_place)
 	start_data->popcorn_nid = hierarchy_assign_node(i);
       gomp_init_task (start_data->task, task, icv);
@@ -942,7 +974,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       nodes = 0;
       for (nid = 0; nid < MAX_POPCORN_NODES; nid++)
 	{
-	  if (popcorn_node[nid].sync.num)
+	  if (popcorn_global.threads_per_node[nid])
 	    {
 	      hierarchy_init_node(nid);
 	      nodes++;
@@ -954,7 +986,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   if (nested)
     gomp_barrier_wait (&team->barrier);
   else
-    gomp_simple_barrier_wait (&pool->threads_dock);
+    gomp_simple_barrier_wait_select (&pool->threads_dock);
 
   /* Decrease the barrier threshold to match the number of threads
      that should arrive back at the end of this team.  The extra
@@ -1006,10 +1038,7 @@ gomp_team_end (void)
      As #pragma omp cancel parallel might get awaited count in
      team->barrier in a inconsistent state, we need to use a different
      counter here.  */
-  if(popcorn_global.hybrid_barrier)
-    hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
-  else
-    gomp_team_barrier_wait_final (&team->barrier);
+  gomp_team_barrier_wait_final_select (&team->barrier);
   if (__builtin_expect (team->team_cancelled, 0))
     {
       struct gomp_work_share *ws = team->work_shares_to_free;

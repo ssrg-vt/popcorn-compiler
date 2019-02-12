@@ -272,7 +272,7 @@ Index: include/clang/Basic/DiagnosticParseKinds.td
  def err_omp_expected_identifier_for_critical : Error<
    "expected identifier specifying the name of the 'omp critical' directive">;
 +def err_omp_invalid_prefetch_kind : Error<
-+  "invalid argument; expected 'read' or 'write'">;
++  "invalid argument; expected 'read', 'write' or 'smart'">;
 +// TODO Technically these are semantics issues, but we're doing checking in the
 +// parser for this particular clause
 +def err_omp_invalid_prefetch_capture : Error<
@@ -372,18 +372,27 @@ Index: include/clang/Basic/OpenMPKinds.def
  
  // Clauses allowed for OpenMP directive 'omp sections'.
  OPENMP_SECTIONS_CLAUSE(private)
-@@ -206,6 +212,10 @@
+@@ -200,6 +206,7 @@
+ OPENMP_SCHEDULE_KIND(guided)
+ OPENMP_SCHEDULE_KIND(auto)
+ OPENMP_SCHEDULE_KIND(runtime)
++OPENMP_SCHEDULE_KIND(hetprobe)
+ 
+ // Static attributes for 'depend' clause.
+ OPENMP_DEPEND_KIND(in)
+@@ -206,6 +213,11 @@
  OPENMP_DEPEND_KIND(out)
  OPENMP_DEPEND_KIND(inout)
  
 +// Static attributes for 'prefetch' clause.
 +OPENMP_PREFETCH_KIND(read)
 +OPENMP_PREFETCH_KIND(write)
++OPENMP_PREFETCH_KIND(smart)
 +
  // Clauses allowed for OpenMP directive 'parallel for'.
  OPENMP_PARALLEL_FOR_CLAUSE(if)
  OPENMP_PARALLEL_FOR_CLAUSE(num_threads)
-@@ -220,6 +230,7 @@
+@@ -220,6 +232,7 @@
  OPENMP_PARALLEL_FOR_CLAUSE(collapse)
  OPENMP_PARALLEL_FOR_CLAUSE(schedule)
  OPENMP_PARALLEL_FOR_CLAUSE(ordered)
@@ -391,7 +400,7 @@ Index: include/clang/Basic/OpenMPKinds.def
  
  // Clauses allowed for OpenMP directive 'parallel for simd'.
  OPENMP_PARALLEL_FOR_SIMD_CLAUSE(if)
-@@ -237,6 +248,7 @@
+@@ -237,6 +250,7 @@
  OPENMP_PARALLEL_FOR_SIMD_CLAUSE(safelen)
  OPENMP_PARALLEL_FOR_SIMD_CLAUSE(linear)
  OPENMP_PARALLEL_FOR_SIMD_CLAUSE(aligned)
@@ -399,7 +408,7 @@ Index: include/clang/Basic/OpenMPKinds.def
  
  // Clauses allowed for OpenMP directive 'parallel sections'.
  OPENMP_PARALLEL_SECTIONS_CLAUSE(if)
-@@ -280,6 +292,7 @@
+@@ -280,6 +294,7 @@
  OPENMP_TEAMS_CLAUSE(shared)
  OPENMP_TEAMS_CLAUSE(reduction)
  
@@ -819,7 +828,7 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 ===================================================================
 --- include/clang/Sema/PrefetchAnalysis.h	(nonexistent)
 +++ include/clang/Sema/PrefetchAnalysis.h	(working copy)
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,145 @@
 +//===- PrefetchAnalysis.h - Prefetching Analysis for Statements ---*- C++ --*-//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -846,6 +855,9 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +#include "llvm/ADT/SmallVector.h"
 +#include "llvm/Support/raw_ostream.h"
 +#include <memory>
++
++class LoopNestTraversal;
++class ArrayAccessPattern;
 +
 +namespace clang {
 +
@@ -906,8 +918,11 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  void ignoreVars(const llvm::SmallPtrSet<VarDecl *, 4> &Ignore)
 +  { this->Ignore = Ignore; }
 +
-+  /// Analyze the statement.
++  /// Analyze the statement to capture loop information & array accesses.
 +  void analyzeStmt();
++
++  /// Construct prefetch ranges from array accesses & induction variables.
++  void calculatePrefetchRanges();
 +
 +  /// Get prefetch ranges discovered by analysis.
 +  const SmallVector<PrefetchRange, 8> &getArraysToPrefetch() const
@@ -932,6 +947,10 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  ASTContext *Ctx;
 +  Stmt *S;
 +
++  /// Analysis information.
++  std::shared_ptr<LoopNestTraversal> Loops;
++  std::shared_ptr<ArrayAccessPattern> ArrAccesses;
++
 +  /// Variables (i.e., arrays) to ignore during analysis
 +  llvm::SmallPtrSet<VarDecl *, 4> Ignore;
 +
@@ -941,11 +960,14 @@ Index: include/clang/Sema/PrefetchAnalysis.h
 +  /// Analyze individual types of statements.
 +  void analyzeForStmt();
 +
-+  /// Clean up prefetch analysis by merging overlapping or duplicate accesses.
-+  void mergeArrayAccesses();
++  /// Merge overlapping or contiguous prefetch ranges.
++  void mergePrefetchRanges();
 +
-+  /// Remove trivial or redundant array accesses.
++  /// Remove trivial or redundant array accesses.  This is split into two as
++  /// some array accesses may only become redundant after expansion into a
++  /// prefetch range.
 +  void pruneArrayAccesses();
++  void prunePrefetchRanges();
 +};
 +
 +} // end namespace clang
@@ -1478,6 +1500,27 @@ Index: lib/CodeGen/BackendUtil.cpp
 +
 +  AsmHelper.ApplyCodegenPasses(M);
 +}
+Index: lib/CodeGen/CGOpenMPRuntime.cpp
+===================================================================
+--- lib/CodeGen/CGOpenMPRuntime.cpp	(revision 320332)
++++ lib/CodeGen/CGOpenMPRuntime.cpp	(working copy)
+@@ -1577,6 +1577,7 @@
+   OMP_sch_guided_chunked = 36,
+   OMP_sch_runtime = 37,
+   OMP_sch_auto = 38,
++  OMP_sch_hetprobe = 39,
+   /// \brief Lower bound for 'ordered' versions.
+   OMP_ord_lower = 64,
+   OMP_ord_static_chunked = 65,
+@@ -1603,6 +1604,8 @@
+     return Ordered ? OMP_ord_runtime : OMP_sch_runtime;
+   case OMPC_SCHEDULE_auto:
+     return Ordered ? OMP_ord_auto : OMP_sch_auto;
++  case OMPC_SCHEDULE_hetprobe:
++    return OMP_sch_hetprobe;
+   case OMPC_SCHEDULE_unknown:
+     assert(!Chunked && "chunk was specified but schedule kind not known");
+     return Ordered ? OMP_ord_static : OMP_sch_static;
 Index: lib/CodeGen/CGStmt.cpp
 ===================================================================
 --- lib/CodeGen/CGStmt.cpp	(revision 320332)
@@ -2740,7 +2783,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  #include "clang/AST/StmtOpenMP.h"
  #include "clang/Parse/ParseDiagnostic.h"
  #include "clang/Parse/Parser.h"
-@@ -25,6 +26,89 @@
+@@ -25,6 +26,103 @@
  // OpenMP declarative directives.
  //===----------------------------------------------------------------------===//
  
@@ -2803,25 +2846,39 @@ Index: lib/Parse/ParseOpenMP.cpp
 +    for(auto &&I = D->getClausesOfKind(OMPC_prefetch); I; ++I) {
 +      auto *C = cast<OMPPrefetchClause>(*I);
 +
-+      // Verify we're only prefetching captured variables
-+      for(auto E : C->varlists()) {
-+        UseFinder.reset();
-+        // TODO this cast is nasty
-+        UseFinder.TraverseStmt((Expr *)E);
-+        for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
-+          if(!CapturedVars.count(V))
-+            Diag(E->getExprLoc(), diag::err_omp_invalid_prefetch_capture);
++      if(C->getPrefetchKind() == OMPC_PREFETCH_smart &&
++         !For->prefetchEnabled()) {
++        // Analyse for-loop to determine what variables to prefetch
++        ASTContext &Ctx = getActions().getASTContext();
++        For->setPrefetchEnabled(true);
++        PrefetchAnalysis PA(&Ctx, For);
++        PA.analyzeStmt();
++        PA.calculatePrefetchRanges();
++        // TODO remove
++        PA.dump();
++        Ctx.addPrefetchAnalysis(For, PA);
 +      }
-+
-+      // Verify loop iteration variable use
-+      Expr *Start = C->getStartOfRange(), *End = C->getEndOfRange();
-+      if(Start && !End) {
-+        UseFinder.reset();
-+        UseFinder.TraverseStmt(Start);
-+
-+        for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
-+          if(!LoopVars.count(V)) Diag(C->getFirstColonLoc(),
-+                                      diag::err_omp_invalid_prefetch_loop_var);
++      else {
++        // Verify we're only prefetching captured variables
++        for(auto E : C->varlists()) {
++          UseFinder.reset();
++          // TODO this cast is nasty
++          UseFinder.TraverseStmt((Expr *)E);
++          for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
++            if(!CapturedVars.count(V))
++              Diag(E->getExprLoc(), diag::err_omp_invalid_prefetch_capture);
++        }
++  
++        // Verify loop iteration variable use
++        Expr *Start = C->getStartOfRange(), *End = C->getEndOfRange();
++        if(Start && !End) {
++          UseFinder.reset();
++          UseFinder.TraverseStmt(Start);
++          for(const auto &V : UseFinder.getDeclaredOrReferencedVars())
++            if(!LoopVars.count(V))
++              Diag(C->getFirstColonLoc(),
++                   diag::err_omp_invalid_prefetch_loop_var);
++        }
 +      }
 +    }
 +  }
@@ -2830,7 +2887,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
    // Array of foldings: F[i][0] F[i][1] ===> F[i][2].
    // E.g.: OMPD_for OMPD_simd ===> OMPD_for_simd
-@@ -294,6 +378,21 @@
+@@ -294,6 +392,21 @@
            DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
            EndLoc);
  
@@ -2852,7 +2909,7 @@ Index: lib/Parse/ParseOpenMP.cpp
      // Exit scope.
      Actions.EndOpenMPDSABlock(Directive.get());
      OMPDirectiveScope.Exit();
-@@ -385,7 +484,7 @@
+@@ -385,7 +498,7 @@
  ///       lastprivate-clause | reduction-clause | proc_bind-clause |
  ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
  ///       mergeable-clause | flush-clause | read-clause | write-clause |
@@ -2861,7 +2918,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  ///
  OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                       OpenMPClauseKind CKind, bool FirstClause) {
-@@ -479,6 +578,7 @@
+@@ -479,6 +592,7 @@
    case OMPC_copyprivate:
    case OMPC_flush:
    case OMPC_depend:
@@ -2869,12 +2926,23 @@ Index: lib/Parse/ParseOpenMP.cpp
      Clause = ParseOpenMPVarListClause(CKind);
      break;
    case OMPC_unknown:
-@@ -702,17 +802,20 @@
+@@ -616,7 +730,7 @@
+ 
+   if (Kind == OMPC_schedule &&
+       (Type == OMPC_SCHEDULE_static || Type == OMPC_SCHEDULE_dynamic ||
+-       Type == OMPC_SCHEDULE_guided) &&
++       Type == OMPC_SCHEDULE_guided || Type == OMPC_SCHEDULE_hetprobe) &&
+       Tok.is(tok::comma)) {
+     CommaLoc = ConsumeAnyToken();
+     ExprResult LHS(ParseCastExpression(false, false, NotTypeCast));
+@@ -702,17 +816,22 @@
  ///       'flush' '(' list ')'
  ///    depend-clause:
  ///       'depend' '(' in | out | inout : list ')'
 +///    prefetch-clause:
 +///       'prefetch' '(' read | write ':' list [ ':' start ':' end ] ')'
++///                          or
++///                  '(' smart ')'
  ///
  OMPClause *Parser::ParseOpenMPVarListClause(OpenMPClauseKind Kind) {
    SourceLocation Loc = Tok.getLocation();
@@ -2892,7 +2960,7 @@ Index: lib/Parse/ParseOpenMP.cpp
  
    // Parse '('.
    BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
-@@ -755,6 +858,20 @@
+@@ -755,6 +874,30 @@
      } else {
        Diag(Tok, diag::warn_pragma_expected_colon) << "dependency type";
      }
@@ -2908,12 +2976,22 @@ Index: lib/Parse/ParseOpenMP.cpp
 +      Diag(PrefLoc, diag::err_omp_invalid_prefetch_kind) << true;
 +    } else {
 +      ConsumeToken(); // Keyword
-+      ConsumeToken(); // Colon
++      if(PrefKind == OMPC_PREFETCH_smart) {
++        // The smart prefetcher automatically generates list of variables to
++        // prefetch; nothing else is needed in the clause.
++        SmallVector<Expr *, 5> dummy;
++        T.consumeClose();
++        return Actions.ActOnOpenMPVarListClause(
++            Kind, dummy, nullptr, nullptr, Loc, LOpen, ColonLoc, EndColonLoc,
++            Tok.getLocation(), ReductionIdScopeSpec, DeclarationNameInfo(),
++            DepKind, DepLoc, PrefKind, PrefLoc);
++      }
++      else ConsumeToken(); // Colon
 +    }
    }
  
    SmallVector<Expr *, 5> Vars;
-@@ -761,7 +878,8 @@
+@@ -761,7 +904,8 @@
    bool IsComma = ((Kind != OMPC_reduction) && (Kind != OMPC_depend)) ||
                   ((Kind == OMPC_reduction) && !InvalidReductionId) ||
                   ((Kind == OMPC_depend) && DepKind != OMPC_DEPEND_unknown);
@@ -2923,7 +3001,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    while (IsComma || (Tok.isNot(tok::r_paren) && Tok.isNot(tok::colon) &&
                       Tok.isNot(tok::annot_pragma_openmp_end))) {
      ColonProtectionRAIIObject ColonRAII(*this, MayHaveTail);
-@@ -787,9 +905,9 @@
+@@ -787,9 +931,9 @@
            << (Kind == OMPC_flush);
    }
  
@@ -2935,7 +3013,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    if (MustHaveTail) {
      ColonLoc = Tok.getLocation();
      ConsumeToken();
-@@ -802,6 +920,20 @@
+@@ -802,6 +946,20 @@
                  StopBeforeMatch);
    }
  
@@ -2956,7 +3034,7 @@ Index: lib/Parse/ParseOpenMP.cpp
    // Parse ')'.
    T.consumeClose();
    if ((Kind == OMPC_depend && DepKind != OMPC_DEPEND_unknown && Vars.empty()) ||
-@@ -810,10 +942,10 @@
+@@ -810,10 +968,10 @@
      return nullptr;
  
    return Actions.ActOnOpenMPVarListClause(
@@ -3021,13 +3099,13 @@ Index: lib/Parse/ParsePragma.cpp
  }
  
  /// \brief Handle the annotation token produced for #pragma unused(...)
-@@ -868,6 +894,108 @@
+@@ -868,6 +894,109 @@
    return true;
  }
  
 +enum PopcornClauseKind {
 +  PC_PrefetchIgnore, // Ignore array/pointer variable during prefetch analysis
-+  PC_Unknown          // Unknown clause type
++  PC_Unknown         // Unknown clause type
 +};
 +
 +static const char *getPopcornClauseName(enum PopcornClauseKind K) {
@@ -3117,6 +3195,7 @@ Index: lib/Parse/ParsePragma.cpp
 +    PrefetchAnalysis PA(&Ctx, R.get());
 +    PA.ignoreVars(Ignore);
 +    PA.analyzeStmt();
++    PA.calculatePrefetchRanges();
 +    // TODO remove
 +    PA.dump();
 +    Ctx.addPrefetchAnalysis(R.get(), PA);
@@ -3130,7 +3209,7 @@ Index: lib/Parse/ParsePragma.cpp
  // #pragma GCC visibility comes in two variants:
  //   'push' '(' [visibility] ')'
  //   'pop'
-@@ -1458,10 +1586,10 @@
+@@ -1458,10 +1587,10 @@
  PragmaNoOpenMPHandler::HandlePragma(Preprocessor &PP,
                                      PragmaIntroducerKind Introducer,
                                      Token &FirstTok) {
@@ -3144,7 +3223,7 @@ Index: lib/Parse/ParsePragma.cpp
                                      diag::Severity::Ignored, SourceLocation());
    }
    PP.DiscardUntilEndOfDirective();
-@@ -2119,3 +2247,66 @@
+@@ -2119,3 +2248,66 @@
    PP.EnterTokenStream(TokenArray, 1, /*DisableMacroExpansion=*/false,
                        /*OwnsTokens=*/true);
  }
@@ -3243,7 +3322,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 ===================================================================
 --- lib/Sema/PrefetchAnalysis.cpp	(nonexistent)
 +++ lib/Sema/PrefetchAnalysis.cpp	(working copy)
-@@ -0,0 +1,912 @@
+@@ -0,0 +1,937 @@
 +//=- PrefetchAnalysis.cpp - Prefetching Analysis for Structured Blocks ---*-==//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -3578,6 +3657,9 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  const llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses() const
 +  { return ArrayAccesses; }
 +
++  llvm::SmallVector<ArrayAccess, 8> &getArrayAccesses()
++  { return ArrayAccesses; }
++
 +private:
 +  /// Which sub-tree of a binary operator we're traversing.  This determines
 +  /// whether we're reading or writing the array.
@@ -3596,11 +3678,26 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  llvm::SmallVector<ArrayAccess *, 8> CurAccess;
 +};
 +
-+void PrefetchAnalysis::mergeArrayAccesses() {
++void PrefetchAnalysis::pruneArrayAccesses() {
++  llvm::SmallVector<ArrayAccess, 8> &Accesses = ArrAccesses->getArrayAccesses();
++  llvm::SmallVector<ArrayAccess, 8>::iterator Cur, Next;
++  for(Cur = Accesses.begin(); Cur != Accesses.end(); Cur++) {
++    if(!Cur->isValid()) continue;
++    for(Next = Cur + 1; Next != Accesses.end(); Next++) {
++      if(!Next->isValid()) continue;
++      if(Cur->getBase() == Next->getBase() &&
++         PrefetchExprEquality::exprEqual(Cur->getIndex(), Next->getIndex()))
++        Next->setInvalid();
++    }
++  }
++}
++
++void PrefetchAnalysis::mergePrefetchRanges() {
 +  // TODO!
 +}
 +
-+void PrefetchAnalysis::pruneArrayAccesses() {
++void PrefetchAnalysis::prunePrefetchRanges()
++{
 +  // TODO we could prevent a bunch of copying if we used a linked list instead
 +  // of a vector for ToPrefetch
 +  llvm::SmallVector<PrefetchRange, 8>::iterator Cur, Next;
@@ -4035,8 +4132,34 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +/// Search a for-loop statement for array access patterns based on loop
 +/// induction variables that can be prefetched at runtime.
 +void PrefetchAnalysis::analyzeForStmt() {
-+  LoopNestTraversal Loops(Ctx);
-+  ArrayAccessPattern ArrAccesses(Ignore);
++  // Gather loop nest information, including induction variables
++  Loops->InitTraversal();
++  Loops->TraverseStmt(S);
++  Loops->PruneInductionVars();
++
++  // Find array/pointer accesses.
++  ArrAccesses->InitTraversal();
++  ArrAccesses->TraverseStmt(S);
++  ArrAccesses->PruneInvalidOrIgnoredAccesses();
++}
++
++//===----------------------------------------------------------------------===//
++// Prefetch analysis API
++//
++
++void PrefetchAnalysis::analyzeStmt() {
++  if(!Ctx || !S) return;
++
++  Loops = std::make_shared<LoopNestTraversal>(Ctx);
++  ArrAccesses = std::make_shared<ArrayAccessPattern>(Ignore);
++
++  // TODO other types of statements
++  if(isa<ForStmt>(S)) analyzeForStmt();
++
++  pruneArrayAccesses();
++}
++
++void PrefetchAnalysis::calculatePrefetchRanges() {
 +  PrefetchDataflow Dataflow(Ctx);
 +  IVMap AllIVs;
 +  IVMap::const_iterator IVIt;
@@ -4047,15 +4170,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  PrefetchExprBuilder::BuildInfo LowerBuild(Ctx, LowerBounds, true),
 +                                 UpperBuild(Ctx, UpperBounds, true);
 +
-+  // Gather loop nest information, including induction variables
-+  Loops.InitTraversal();
-+  Loops.TraverseStmt(S);
-+  Loops.PruneInductionVars();
-+
-+  // Find array/pointer accesses.
-+  ArrAccesses.InitTraversal();
-+  ArrAccesses.TraverseStmt(S);
-+  ArrAccesses.PruneInvalidOrIgnoredAccesses();
++  if(!Ctx || !S || !Loops || !ArrAccesses) return;
 +
 +  // TODO the following could probably be optimized to reduce re-computing
 +  // induction variable sets.
@@ -4063,9 +4178,9 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  // Run the dataflow analysis.  Collect all non-induction variables used to
 +  // construct array indices to see if induction variables are used in any
 +  // assignment expressions.
-+  for(auto &Access : ArrAccesses.getArrayAccesses()) {
++  for(auto &Access : ArrAccesses->getArrayAccesses()) {
 +    AllIVs.clear();
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
++    ForLoopInfoPtr Scope = Loops->getEnclosingLoop(Access);
 +    getAllInductionVars(Scope, AllIVs);
 +    for(auto &Var : Access.getVarsInIdx()) {
 +      if(!AllIVs.count(Var)) VarsToTrack.insert(Var);
@@ -4077,7 +4192,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +  // Reconstruct array subscript expressions with induction variable references
 +  // replaced by their bounds.  This includes variables defined using
 +  // expressions containing induction variables.
-+  for(auto &Access : ArrAccesses.getArrayAccesses()) {
++  for(auto &Access : ArrAccesses->getArrayAccesses()) {
 +    LowerBuild.reset();
 +    UpperBuild.reset();
 +    AllIVs.clear();
@@ -4096,7 +4211,7 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +    // In this example, 'i' is not directly used in addressing but the dataflow
 +    // analysis determines that 'j' is defined based on 'i', and hence we need
 +    // to replace 'j' with induction variable bounds expressions.
-+    ForLoopInfoPtr Scope = Loops.getEnclosingLoop(Access);
++    ForLoopInfoPtr Scope = Loops->getEnclosingLoop(Access);
 +    getAllInductionVars(Scope, AllIVs);
 +    for(auto &Pair : AllIVs) {
 +      const InductionVariablePtr &IV = Pair.second;
@@ -4129,20 +4244,9 @@ Index: lib/Sema/PrefetchAnalysis.cpp
 +      ToPrefetch.emplace_back(Access.getAccessType(), Access.getBase(),
 +                              LowerBound, UpperBound);
 +  }
-+}
 +
-+//===----------------------------------------------------------------------===//
-+// Prefetch analysis API
-+//
-+
-+void PrefetchAnalysis::analyzeStmt() {
-+  if(!Ctx || !S) return;
-+
-+  // TODO other types of statements
-+  if(isa<ForStmt>(S)) analyzeForStmt();
-+
-+  mergeArrayAccesses();
-+  pruneArrayAccesses();
++  mergePrefetchRanges();
++  prunePrefetchRanges();
 +}
 +
 +void PrefetchAnalysis::print(llvm::raw_ostream &O) const {

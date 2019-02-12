@@ -126,6 +126,11 @@ parse_schedule (void)
       gomp_global_icv.run_sched_var = GFS_AUTO;
       env += 4;
     }
+  else if (strncasecmp (env, "hetprobe", 8) == 0)
+    {
+      gomp_global_icv.run_sched_var = GFS_HETPROBE;
+      env += 8;
+    }
   else
     goto unknown;
 
@@ -223,6 +228,41 @@ parse_int (const char *name, int *pvalue, bool allow_zero)
       return false;
     }
   *pvalue = (int) value;
+  return true;
+}
+
+/* Parse a floating point environment variable.  Return true if one was
+   present and it was successfully parsed. */
+
+static bool
+parse_float (const char *name, float *pvalue)
+{
+  float value;
+  char *env, *end;
+
+  env = getenv (name);
+  if (!env)
+    return false;
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (*env == '\0')
+    return false;
+
+  errno = 0;
+  value = strtof (env, &end);
+  if (errno || end == env || value < 0.0)
+    {
+      gomp_error ("Invalid value for environment variable %s", name);
+      return false;
+    }
+
+  while (isspace ((unsigned char) *end))
+    ++end;
+  if (*end != '\0')
+    return false;
+
+  *pvalue = value;
   return true;
 }
 
@@ -1048,7 +1088,7 @@ parse_wait_policy (void)
 
   env = getenv ("OMP_WAIT_POLICY");
   if (env == NULL)
-    return -1;
+    return 1;
 
   while (isspace ((unsigned char) *env))
     ++env;
@@ -1231,6 +1271,7 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
   fprintf (stderr, "  OMP_NESTED = '%s'\n",
 	   gomp_global_icv.nest_var ? "TRUE" : "FALSE");
 
+  fprintf (stderr, "  OMP AVAILABLE CPUS = '%lu'\n", gomp_available_cpus);
   fprintf (stderr, "  OMP_NUM_THREADS = '%lu", gomp_global_icv.nthreads_var);
   for (i = 1; i < gomp_nthreads_var_list_len; i++)
     fprintf (stderr, ",%lu", gomp_nthreads_var_list[i]);
@@ -1253,6 +1294,15 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
       break;
     case GFS_AUTO:
       fputs ("AUTO", stderr);
+      break;
+    case GFS_HIERARCHY_DYNAMIC:
+      fputs ("DYNAMIC (hierarchy)", stderr);
+      break;
+    case GFS_HIERARCHY_STATIC:
+      fputs ("STATIC (hierarchy)", stderr);
+      break;
+    case GFS_HETPROBE:
+      fputs ("HETPROBE", stderr);
       break;
     }
   fputs ("'\n", stderr);
@@ -1304,9 +1354,9 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
       fputs ("  POPCORN_PLACES ({node, threads}) =", stderr);
       for (i = 0; i < MAX_POPCORN_NODES; i++)
         {
-          if (popcorn_global.threads_per_node[i])
+          if (popcorn_global.node_places[i])
             fprintf (stderr, " {%u, %lu}", i,
-                     popcorn_global.threads_per_node[i]);
+                     popcorn_global.node_places[i]);
         }
       fputs ("\n", stderr);
       fputs ("  POPCORN_HET_WORKSHARE({node, rating}) =", stderr);
@@ -1321,6 +1371,18 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
                popcorn_global.hybrid_barrier ? "TRUE" : "FALSE");
       fprintf (stderr, "  POPCORN_HYBRID_REDUCE = %s\n",
                popcorn_global.hybrid_reduce ? "TRUE" : "FALSE");
+      fprintf (stderr, "  POPCORN_PROBE_PERCENT = %.2f\n",
+               popcorn_probe_percent);
+      fprintf (stderr, "  POPCORN_MAX_PROBES = %lu\n", popcorn_max_probes);
+      fprintf (stderr, "  POPCORN_LOG_STATISTICS = %d\n",
+               popcorn_log_statistics);
+      if (popcorn_prime_region)
+        {
+          fprintf(stderr, "  POPCORN_PRIME_REGION = %s\n",
+                  popcorn_prime_region);
+          fprintf(stderr, "  POPCORN_PREFERRED_NODE = %d\n",
+                  popcorn_preferred_node);
+        }
     }
 
   fprintf (stderr, "  OMP_STACKSIZE = '%lu'\n", stacksize);
@@ -1361,7 +1423,7 @@ static void __attribute__((constructor))
 initialize_env (void)
 {
   unsigned long thread_limit_var, stacksize = GOMP_DEFAULT_STACKSIZE;
-  int wait_policy;
+  int wait_policy, cluster_cpus;
 
   /* Do a compile time check that mkomp_h.pl did good job.  */
   omp_check_defines ();
@@ -1443,18 +1505,49 @@ initialize_env (void)
   if (gomp_throttled_spin_count_var > gomp_spin_count_var)
     gomp_throttled_spin_count_var = gomp_spin_count_var;
 
-  /* Parse thread placement across nodes from environment variables. Don't
-     enable if user specified places, not yet supported. */
+  /* Parse thread placement across nodes from environment variables. */
   if (!gomp_global_icv.bind_var)
-    parse_popcorn_nodes_var ("POPCORN_PLACES");
+    {
+      /* TODO Note: Popcorn Linux won't necessarily zero out .bss :) */
+      memset(&popcorn_global, 0, sizeof(popcorn_global));
+      memset(popcorn_node, 0, sizeof(popcorn_node));
+      parse_popcorn_nodes_var ("POPCORN_PLACES");
+    }
 
   /* Users can selectively disable Popcorn optimizations. */
   if (popcorn_global.distributed)
     {
+      /* If the OS is reporting all CPUs in the Popcorn cluster, update the
+	 number of available CPUs.  Otherwise, reset the throttled spin count
+	 to perform active waiting regardless of the number of reported CPUs. */
+      cluster_cpus = gomp_parse_cpuinfo ();
+      if (cluster_cpus > 0 && cluster_cpus != gomp_available_cpus)
+	gomp_available_cpus = cluster_cpus;
+      else if (wait_policy > 0)
+	gomp_throttled_spin_count_var = gomp_spin_count_var;
       parse_boolean("POPCORN_HYBRID_BARRIER", &popcorn_global.hybrid_barrier);
       parse_boolean("POPCORN_HYBRID_REDUCE", &popcorn_global.hybrid_reduce);
       popcorn_global.het_workshare =
         parse_het_workshare_var("POPCORN_HET_WORKSHARE");
+      if (!parse_float("POPCORN_PROBE_PERCENT", &popcorn_probe_percent))
+        popcorn_probe_percent = 0.1;
+      else
+        {
+          if (popcorn_probe_percent <= 0.0 || popcorn_probe_percent >= 1.0)
+            {
+              gomp_error("Invalid value for POPCORN_PROBE_PERCENT");
+              popcorn_probe_percent = 0.1;
+            }
+        }
+      if (!parse_unsigned_long("POPCORN_MAX_PROBES", &popcorn_max_probes,
+                               false))
+        popcorn_max_probes = UINT64_MAX;
+      popcorn_log_statistics = false;
+      parse_boolean("POPCORN_LOG_STATISTICS", &popcorn_log_statistics);
+      popcorn_init_workshare_cache(128);
+      popcorn_prime_region = getenv("POPCORN_PRIME_REGION");
+      if (!parse_int("POPCORN_PREFERRED_NODE", &popcorn_preferred_node, true))
+        popcorn_preferred_node = 0;
     }
 
   /* Popcorn's page access trace files don't provide a clean mapping of task

@@ -546,6 +546,16 @@ private:
 typedef std::unique_ptr<MachineLiveVal> MachineLiveValPtr;
 typedef std::unique_ptr<MachineLiveLoc> MachineLiveLocPtr;
 
+/// Map an IR operand number to the number of Machine IR operands in the lowered
+/// stackmap instruction.  Required as legalizing some types (e.g., i128) may
+/// require changing the IR value into more/fewer multiple machine values.
+typedef std::map<unsigned, unsigned> OpNumberMap;
+typedef std::pair<unsigned, unsigned> OpNumberPair;
+
+/// Map stackmaps to information about how operands changed during legalization.
+typedef std::map<int64_t, OpNumberMap> SMToOpLegalizeMap;
+typedef std::pair<int64_t, OpNumberMap> SMToOpLegalizePair;
+
 /// A vector of architecture-specific live value locations
 // Note: we could use a set instead (because we want unique live values), but
 // because we're using MachineLiveLoc pointers the set would only uniquify

@@ -1,0 +1,23 @@
+--------
+COMPILER
+--------
+
+- Put all ident_t pointers on the same page (may read flags field) -- should be
+  read-only
+  - Looks like clang allocates stack space for ident_t, copies them into local
+    stack space & passes alloca address to runtime -- why???
+
+-------
+RUNTIME
+-------
+
+- Correctly implement page fault probing/cross-node execution decisions for
+  dynamic scheduler
+  - Some benchmarks may not have enough parallelism to work well with the
+    hetprobe (i.e., probing takes > 25% of total iterations) so we may degrade
+    to dynamic scheduler.  However we should still measure page faults and
+    make a cross-node decision.
+
+- Parallel region start optimization (hierarchy_init_node_team_state()/
+  hierarchy_init_thread()) doesn't allow adjusting per-node thread counts to,
+  for example, change to single-node execution after probing period

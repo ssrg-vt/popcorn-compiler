@@ -147,17 +147,16 @@ gomp_iter_ull_static_next (gomp_ull *pstart, gomp_ull *pend)
    ws->lock held.  */
 
 bool
-gomp_iter_ull_dynamic_next_locked (gomp_ull *pstart, gomp_ull *pend)
+gomp_iter_ull_dynamic_next_locked_raw (gomp_ull *pstart, gomp_ull *pend,
+				       struct gomp_work_share *ws,
+				       gomp_ull chunk)
 {
-  struct gomp_thread *thr = gomp_thread ();
-  struct gomp_work_share *ws = thr->ts.work_share;
-  gomp_ull start, end, chunk, left;
+  gomp_ull start, end, left;
 
   start = ws->next_ull;
   if (start == ws->end_ull)
     return false;
 
-  chunk = ws->chunk_size_ull;
   left = ws->end_ull - start;
   if (__builtin_expect (ws->mode & 2, 0))
     {
@@ -175,6 +174,23 @@ gomp_iter_ull_dynamic_next_locked (gomp_ull *pstart, gomp_ull *pend)
   *pstart = start;
   *pend = end;
   return true;
+
+}
+
+bool
+gomp_iter_ull_dynamic_next_locked_ws (gomp_ull *pstart, gomp_ull *pend,
+				      struct gomp_work_share *ws)
+{
+  return gomp_iter_ull_dynamic_next_locked_raw (pstart, pend, ws,
+						ws->chunk_size_ull);
+}
+
+bool
+gomp_iter_ull_dynamic_next_locked (gomp_ull *pstart, gomp_ull *pend)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_work_share *ws = thr->ts.work_share;
+  return gomp_iter_ull_dynamic_next_locked_ws (pstart, pend, ws);
 }
 
 
@@ -183,14 +199,12 @@ gomp_iter_ull_dynamic_next_locked (gomp_ull *pstart, gomp_ull *pend)
    instead.  Note that the only memory value that changes is ws->next_ull.  */
 
 bool
-gomp_iter_ull_dynamic_next (gomp_ull *pstart, gomp_ull *pend)
+gomp_iter_ull_dynamic_next_raw (gomp_ull *pstart, gomp_ull *pend,
+				struct gomp_work_share *ws, gomp_ull chunk)
 {
-  struct gomp_thread *thr = gomp_thread ();
-  struct gomp_work_share *ws = thr->ts.work_share;
-  gomp_ull start, end, nend, chunk;
+  gomp_ull start, end, nend;
 
   end = ws->end_ull;
-  chunk = ws->chunk_size_ull;
 
   if (__builtin_expect (ws->mode & 1, 1))
     {
@@ -251,6 +265,22 @@ gomp_iter_ull_dynamic_next (gomp_ull *pstart, gomp_ull *pend)
   *pend = nend;
   return true;
 }
+
+bool
+gomp_iter_ull_dynamic_next_ws (gomp_ull *pstart, gomp_ull *pend,
+			       struct gomp_work_share *ws)
+{
+  return gomp_iter_ull_dynamic_next_raw (pstart, pend, ws, ws->chunk_size_ull);
+}
+
+bool
+gomp_iter_ull_dynamic_next (gomp_ull *pstart, gomp_ull *pend)
+{
+  struct gomp_thread *thr = gomp_thread ();
+  struct gomp_work_share *ws = thr->ts.work_share;
+  return gomp_iter_ull_dynamic_next_ws (pstart, pend, ws);
+}
+
 #endif /* HAVE_SYNC_BUILTINS */
 
 

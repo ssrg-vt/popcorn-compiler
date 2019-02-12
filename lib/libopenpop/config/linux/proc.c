@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #ifdef HAVE_GETLOADAVG
 # ifdef HAVE_SYS_LOADAVG_H
 #  include <sys/loadavg.h>
@@ -73,6 +74,25 @@ gomp_cpuset_popcount (unsigned long cpusetsize, cpu_set_t *cpusetp)
 #endif
 }
 #endif
+
+/* Parse /proc/cpuinfo to count the number of "processor" entries */
+
+int gomp_parse_cpuinfo ()
+{
+  int num = -1;
+  size_t n = 128;
+  char *line = malloc (sizeof(char) * n);
+  FILE *fp = fopen ("/proc/cpuinfo", "r");
+  if (fp)
+    {
+      num++;
+      while (getline (&line, &n, fp) > 0)
+        if (strncmp (line, "processor", 9) == 0) num++;
+      free (line);
+      fclose (fp);
+    }
+  return num;
+}
 
 /* At startup, determine the default number of threads.  It would seem
    this should be related to the number of cpus online.  */

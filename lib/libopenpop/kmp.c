@@ -19,27 +19,20 @@
 #include <string.h>
 #include <assert.h>
 #include "config.h"
-#include "libgomp.h"
 #include "libgomp_g.h"
 #include "hierarchy.h"
 #include "kmp.h"
-
-/* Enable timing parallel sections */
-#define _TIME_PARALLEL 1
-
-#ifdef _TIME_PARALLEL
-# include <time.h>
-# include <debug/log.h>
-# define NS( ts ) ((ts.tv_sec * 1000000000UL) + ts.tv_nsec)
-#endif
 
 /* Enable debugging information */
 //#define _KMP_DEBUG 1
 
 #ifdef _KMP_DEBUG
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
+# define DEBUG_ONE( ... ) \
+  do { if(gtid == 0) fprintf(stderr, __VA_ARGS__); } while (0);
 #else
 # define DEBUG( ... )
+# define DEBUG_ONE( ... )
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -121,6 +114,28 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   popcorn_log("%s\t%p\t%lu\n", loc->psource, microtask, NS(end) - NS(start));
 #endif
 
+  /*
+   * We've already set the core speed ratios to adjust for single-node
+   * execution, change the configuration so that only threads on the
+   * preferred node execute.
+   */
+  // TODO hardcoded for 2 nodes
+  if(popcorn_global.popcorn_killswitch)
+  {
+    if(popcorn_preferred_node == 0)
+    {
+      omp_set_num_threads(popcorn_global.node_places[0]);
+      popcorn_global.node_places[1] = 0;
+      hierarchy_clear_node_team_state(1);
+    }
+    else
+    {
+      omp_set_num_threads(popcorn_global.node_places[1] + 1);
+      popcorn_global.node_places[0] = 1;
+      hierarchy_clear_node_team_state(0);
+    }
+  }
+
   if(argc > 1) free(ctx);
   free(wrapper_data);
 }
@@ -128,6 +143,15 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
 ///////////////////////////////////////////////////////////////////////////////
 // Work-sharing
 ///////////////////////////////////////////////////////////////////////////////
+
+// Note: clang generates libiomp calls such that lower bound is always smaller
+// than upper bound by analyzing the loop condition & increment expressions
+
+// Note: libgomp's APIs expect the end iteration to be non-inclusive while
+// libiomp's APIs expect it to be inclusive.  There are +1/-1 values scattered
+// across the work-sharing functions to translate between the two.
+
+// TODO check that skewed range calculations are signed/unsigned safe
 
 /*
  * Get the logical starting point & its range skewed based on the core rating
@@ -142,7 +166,7 @@ get_scaled_range(int32_t gtid, unsigned long *start, unsigned long *range)
   int i, tcount = 0, diff;
   unsigned long cur_range = 0;
   *start = UINT64_MAX;
-  *range = UINT64_MAX;
+  *range = 0;
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
@@ -195,7 +219,12 @@ static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
   unsigned long start, range, scaled_thr = popcorn_global.scaled_thread_range;\
                                                                               \
   get_scaled_range(gtid, &start, &range);                                     \
-  assert(start != UINT64_MAX && "Invalid core speed rating");                 \
+  if(range == 0)                                                              \
+  {                                                                           \
+    *plower = *pupper + incr;                                                 \
+    return;                                                                   \
+  }                                                                           \
+                                                                              \
   switch(schedtype)                                                           \
   {                                                                           \
   case kmp_sch_static: {                                                      \
@@ -222,8 +251,14 @@ static void for_static_skewed_init_##NAME(int32_t nthreads,                   \
     break;                                                                    \
   }                                                                           \
   case kmp_sch_static_chunked: {                                              \
-    assert(false && "TODO!");                                                 \
-    *plower = *pupper + incr;                                                 \
+    TYPE span;                                                                \
+    if(chunk < 1) chunk = 1;                                                  \
+    span = chunk * incr;                                                      \
+    *pstride = span * scaled_thr;                                             \
+    *plower = *plower + (span * start);                                       \
+    *pupper = *plower + (span * range) - incr;                                \
+    if(plastiter != NULL)                                                     \
+      *plastiter = (start == ((total_trips - 1)/chunk) % scaled_thr);         \
     break;                                                                    \
   }                                                                           \
   default:                                                                    \
@@ -266,15 +301,18 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
   int nthreads = omp_get_num_threads();                                       \
   TYPE total_trips;                                                           \
                                                                               \
-  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d "                        \
+  DEBUG("__kmpc_for_static_init_"#NAME": %s %d %d %d"                         \
         SPEC SPEC SPEC SPEC SPEC "\n",                                        \
-        loc->psource, gtid, schedtype, *plastiter, (int64_t)*plower,          \
-        (int64_t)*pupper, (int64_t)*pstride, (int64_t)incr, (int64_t)chunk);  \
+        loc->psource, gtid, schedtype, *plastiter, *plower, *pupper,          \
+        *pstride, incr, chunk);                                               \
                                                                               \
   if(incr == 1) total_trips = (*pupper - *plower) + 1;                        \
   else if(incr == -1) total_trips = (*plower - *pupper) + 1;                  \
   else if(incr > 1) total_trips = ((*pupper - *plower) / incr) + 1;           \
   else total_trips = ((*plower - *pupper) / (-incr)) + 1;                     \
+                                                                              \
+  if(popcorn_log_statistics)                                                  \
+    hierarchy_init_statistics(gomp_thread()->popcorn_nid);                    \
                                                                               \
   if(popcorn_global.het_workshare)                                            \
   {                                                                           \
@@ -322,10 +360,10 @@ void __kmpc_for_static_init_##NAME(ident_t *loc,                              \
 }
 
 /* Generate the above function for int32_t, uint32_t, int64_t, && uint64_t. */
-__kmpc_for_static_init(4, int32_t, "%d")
-__kmpc_for_static_init(4u, uint32_t, "%u")
-__kmpc_for_static_init(8, int64_t, "%ld")
-__kmpc_for_static_init(8u, uint64_t, "%lu")
+__kmpc_for_static_init(4, int32_t, " %d")
+__kmpc_for_static_init(4u, uint32_t, " %u")
+__kmpc_for_static_init(8, int64_t, " %ld")
+__kmpc_for_static_init(8u, uint64_t, " %lu")
 
 /*
  * Mark the end of a statically scheduled loop.
@@ -335,11 +373,68 @@ __kmpc_for_static_init(8u, uint64_t, "%lu")
 void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
 {
   DEBUG("__kmpc_for_static_fini: %s %d\n", loc->psource, global_tid);
+
+  if(popcorn_log_statistics)
+    hierarchy_log_statistics(gomp_thread()->popcorn_nid, loc->psource);
 }
 
-// Note: libgomp's APIs expect the end iteration to be non-inclusive while
-// libiomp's APIs expect it to be inclusive.  There are +1/-1 values scattered
-// across these functions to translate between the two.
+/*
+ * Select loop iteration scheduler; only applies when application specifies the
+ * "runtime" scheduler.
+ */
+static inline enum sched_type select_runtime_schedule()
+{
+  enum sched_type schedule;
+  switch(gomp_global_icv.run_sched_var)
+  {
+  default: /* Fall through to static */
+    DEBUG("Unknown/unsupported scheduler %d, reverting to static\n",
+          gomp_global_icv.run_sched_var);
+  case GFS_STATIC:
+    if(gomp_global_icv.run_sched_chunk_size <= 1 &&
+       gomp_global_icv.run_sched_chunk_size >= -1)
+      schedule = kmp_sch_static;
+    else
+      schedule = kmp_sch_static_chunked;
+    break;
+  case GFS_DYNAMIC: schedule = kmp_sch_dynamic_chunked; break;
+  case GFS_HETPROBE: schedule = kmp_sch_hetprobe; break;
+  }
+  return schedule;
+}
+
+/* Percent of loop iterations to spend on probing */
+float popcorn_probe_percent;
+
+static inline long calc_chunk_size_long(long lb,
+                                        long ub,
+                                        long stride,
+                                        int nthreads)
+{
+  long total_trips, chunk;
+  if(stride == 1) total_trips = (ub - lb) + 1;
+  else if(stride == -1) total_trips = (lb - ub) + 1;
+  else if(stride > 1) total_trips = ((ub - lb) / stride) + 1;
+  else total_trips = ((lb - ub) / (-stride)) + 1;
+  chunk = ((float)total_trips * popcorn_probe_percent) / nthreads;
+  if(chunk == 0) chunk = 1;
+  return chunk;
+}
+
+static inline unsigned long long calc_chunk_size_ull(unsigned long long lb,
+                                                     unsigned long long ub,
+                                                     unsigned long long stride,
+                                                     int nthreads)
+{
+  unsigned long long total_trips, chunk;
+  if(stride == 1) total_trips = (ub - lb) + 1;
+  else if(stride == -1) total_trips = (lb - ub) + 1;
+  else if(stride > 1) total_trips = ((ub - lb) / stride) + 1;
+  else total_trips = ((lb - ub) / (-stride)) + 1;
+  chunk = ((float)total_trips * popcorn_probe_percent) / nthreads;
+  if(chunk == 0) chunk = 1;
+  return chunk;
+}
 
 /*
  * Initialize a dynamic work-sharing construct using a given lower bound, upper
@@ -352,31 +447,128 @@ void __kmpc_for_static_fini(ident_t *loc, int32_t global_tid)
  * @param st the stride
  * @param chunk the chunk size
  */
-#define __kmpc_dispatch_init(NAME, TYPE, SPEC, INIT_FUNC)                     \
+#define __kmpc_dispatch_init(NAME, TYPE, SPEC, GOMP_TYPE,                     \
+                             STATIC_INIT,                                     \
+                             STATIC_HIERARCHY_INIT,                           \
+                             DYN_INIT,                                        \
+                             DYN_HIERARCHY_INIT,                              \
+                             HETPROBE_INIT)                                   \
 void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
-                            int32_t gtid,                                     \
-                            enum sched_type schedule,                         \
-                            TYPE lb,                                          \
-                            TYPE ub,                                          \
-                            TYPE st,                                          \
-                            TYPE chunk)                                       \
+                                 int32_t gtid,                                \
+                                 enum sched_type schedule,                    \
+                                 TYPE lb,                                     \
+                                 TYPE ub,                                     \
+                                 TYPE st,                                     \
+                                 TYPE chunk)                                  \
 {                                                                             \
-  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d "SPEC SPEC SPEC SPEC"\n",     \
-        loc->psource, gtid, schedule, (int64_t)lb, (int64_t)ub,               \
-        (int64_t)st, (int64_t)chunk);                                         \
+  struct gomp_thread *thr = gomp_thread();                                    \
+  struct gomp_team *team = thr->ts.team;                                      \
+  int nthreads = team ? team->nthreads : 1;                                   \
+  bool distributed = popcorn_distributed();                                   \
                                                                               \
-  assert(schedule == kmp_sch_dynamic_chunked && "Invalid dynamic schedule");  \
-  if(omp_get_num_threads() == 1) {                                            \
+  DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d"SPEC SPEC SPEC SPEC"\n",      \
+        loc->psource, gtid, schedule, lb, ub, st, chunk);                     \
+                                                                              \
+  if(schedule == kmp_sch_runtime)                                             \
+  {                                                                           \
+    schedule = select_runtime_schedule();                                     \
+    chunk = gomp_global_icv.run_sched_chunk_size;                             \
+    DEBUG("__kmpc_dispatch_init_"#NAME": %d %d -> %d, chunk ="SPEC"\n",       \
+          gtid, kmp_sch_runtime, schedule, chunk);                            \
+  }                                                                           \
+                                                                              \
+  if(nthreads == 1) {                                                         \
     st = 1;                                                                   \
     chunk = (ub + 1) - lb;                                                    \
+    schedule = kmp_sch_dynamic_chunked;                                       \
+    DEBUG("Single-thread team, assigning all iterations\n");                  \
   }                                                                           \
-  INIT_FUNC(lb, ub + 1, st, chunk);                                           \
+  else if((schedule == kmp_sch_static || schedule == kmp_sch_static_chunked)  \
+          && distributed) {                                                   \
+    schedule = kmp_sch_static_hierarchy;                                      \
+    DEBUG_ONE("Switching to hierarchical static scheduler\n");                \
+  }                                                                           \
+  else if(schedule == kmp_sch_dynamic_chunked && distributed) {               \
+    schedule = kmp_sch_dynamic_chunked_hierarchy;                             \
+    DEBUG_ONE("Switching to hierarchical dynamic scheduler\n");               \
+  }                                                                           \
+  else if(schedule == kmp_sch_hetprobe)                                       \
+  {                                                                           \
+    if(!distributed) {                                                        \
+      schedule = kmp_sch_dynamic_chunked;                                     \
+      DEBUG_ONE("Reverting to normal dynamic scheduler (not distributed)\n"); \
+    }                                                                         \
+    else                                                                      \
+    {                                                                         \
+      TYPE probe_size = nthreads * chunk * st;                                \
+      if(probe_size > (TYPE)((float)(ub - lb) * 0.25)) {                      \
+        schedule = kmp_sch_static_hierarchy;                                  \
+        DEBUG_ONE("Probe chunk too big (" SPEC "), reverting to "             \
+                  "hierarchical static scheduler\n", probe_size);             \
+      }                                                                       \
+    }                                                                         \
+  }                                                                           \
+                                                                              \
+  switch(schedule)                                                            \
+  {                                                                           \
+  case kmp_sch_static: /* Fall through */                                     \
+  case kmp_sch_static_chunked:                                                \
+    STATIC_INIT(lb, ub + 1, st, chunk);                                       \
+    thr->ts.static_trip = 0;                                                  \
+    break;                                                                    \
+  case kmp_sch_static_hierarchy:                                              \
+    STATIC_HIERARCHY_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);           \
+    thr->ts.static_trip = 0;                                                  \
+    break;                                                                    \
+  case kmp_sch_dynamic_chunked:                                               \
+    DYN_INIT(lb, ub + 1, st, chunk);                                          \
+    break;                                                                    \
+  case kmp_sch_dynamic_chunked_hierarchy:                                     \
+    if(chunk <= 1) /* Auto-select dynamic chunk size */                       \
+    {                                                                         \
+      chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
+      DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
+    }                                                                         \
+    DYN_HIERARCHY_INIT(thr->popcorn_nid, lb, ub + 1, st, chunk);              \
+    break;                                                                    \
+  case kmp_sch_hetprobe:                                                      \
+    if(chunk <= 1) /* Auto-select probe size */                               \
+    {                                                                         \
+      chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
+      DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
+    }                                                                         \
+    HETPROBE_INIT(thr->popcorn_nid, loc->psource, lb, ub + 1, st, chunk);     \
+    break;                                                                    \
+  default:                                                                    \
+    assert(false && "Unknown scheduling algorithm");                          \
+    break;                                                                    \
+  }                                                                           \
 }
 
-__kmpc_dispatch_init(4, int32_t, "%d", GOMP_loop_dynamic_init)
-__kmpc_dispatch_init(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_init)
-__kmpc_dispatch_init(8, int64_t, "%ld", GOMP_loop_dynamic_init)
-__kmpc_dispatch_init(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_init)
+__kmpc_dispatch_init(4, int32_t, " %d", long,
+                     GOMP_loop_static_init,
+                     hierarchy_init_workshare_static,
+                     GOMP_loop_dynamic_init,
+                     hierarchy_init_workshare_dynamic,
+                     hierarchy_init_workshare_hetprobe)
+__kmpc_dispatch_init(4u, uint32_t, " %u", ull,
+                     GOMP_loop_ull_static_init,
+                     hierarchy_init_workshare_static_ull,
+                     GOMP_loop_ull_dynamic_init,
+                     hierarchy_init_workshare_dynamic_ull,
+                     hierarchy_init_workshare_hetprobe_ull)
+__kmpc_dispatch_init(8, int64_t, " %ld", long,
+                     GOMP_loop_static_init,
+                     hierarchy_init_workshare_static,
+                     GOMP_loop_dynamic_init,
+                     hierarchy_init_workshare_dynamic,
+                     hierarchy_init_workshare_hetprobe)
+__kmpc_dispatch_init(8u, uint64_t, " %lu", ull,
+                     GOMP_loop_ull_static_init,
+                     hierarchy_init_workshare_static_ull,
+                     GOMP_loop_ull_dynamic_init,
+                     hierarchy_init_workshare_dynamic_ull,
+                     hierarchy_init_workshare_hetprobe_ull)
 
 /*
  * Mark the end of a dynamically scheduled loop.
@@ -386,8 +578,22 @@ __kmpc_dispatch_init(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_init)
 #define __kmpc_dispatch_fini(NAME) \
 void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
 {                                                                             \
+  struct gomp_thread *thr = gomp_thread();                                    \
+                                                                              \
   DEBUG("__kmpc_dispatch_fini_"#NAME": %s %d\n", loc->psource, gtid);         \
-  GOMP_loop_end();                                                            \
+                                                                              \
+  switch(thr->ts.work_share->sched)                                           \
+  {                                                                           \
+  case GFS_STATIC: /* Fall through */                                         \
+  case GFS_DYNAMIC: GOMP_loop_end(); break;                                   \
+  case GFS_HIERARCHY_STATIC:                                                  \
+    hierarchy_loop_end(thr->popcorn_nid, loc, false);                         \
+    break;                                                                    \
+  case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
+  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, loc, true); break;  \
+  default:                                                                    \
+    assert(false && "Unknown scheduling algorithm");                          \
+  }                                                                           \
 }
 
 __kmpc_dispatch_fini(4)
@@ -406,7 +612,11 @@ __kmpc_dispatch_fini(8u)
  * @param p_ub pointer to the upper bound
  * @param p_st (unused)
  */
-#define __kmpc_dispatch_next(NAME, TYPE, SPEC, NEXT_FUNC, ISLAST_FUNC, GTYPE) \
+#define __kmpc_dispatch_next(NAME, TYPE, GOMP_TYPE, SPEC,                     \
+                             DYN_NEXT, DYN_LAST,                              \
+                             DYN_HIERARCHY_NEXT,                              \
+                             HETPROBE_NEXT,                                   \
+                             HIERARCHY_LAST)                                  \
 int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
                                 int32_t gtid,                                 \
                                 int32_t *p_last,                              \
@@ -415,13 +625,54 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
                                 TYPE *p_st)                                   \
 {                                                                             \
   bool ret;                                                                   \
-  GTYPE istart, iend;                                                         \
+  GOMP_TYPE istart, iend;                                                     \
+  struct gomp_thread *thr = gomp_thread();                                    \
+  int nid = thr->popcorn_nid;                                                 \
+  struct gomp_work_share *ws = thr->ts.work_share;                            \
                                                                               \
-  ret = NEXT_FUNC(&istart, &iend);                                            \
+  switch(ws->sched)                                                           \
+  {                                                                           \
+  case GFS_STATIC: /* Fall through */                                         \
+  case GFS_HIERARCHY_STATIC: {                                                \
+    if(thr->ts.static_trip)                                                   \
+    {                                                                         \
+      istart = iend = 0;                                                      \
+      ret = false;                                                            \
+    }                                                                         \
+    else                                                                      \
+    {                                                                         \
+      enum sched_type sch = ws->chunk_size > 1 ? kmp_sch_static_chunked :     \
+                                                 kmp_sch_static;              \
+      *p_lb = ws->next;                                                       \
+      *p_ub = ws->end - 1;                                                    \
+      __kmpc_for_static_init_##NAME(loc, gtid, sch, p_last, p_lb, p_ub, p_st, \
+                                    ws->incr, ws->chunk_size);                \
+      istart = *p_lb;                                                         \
+      iend = *p_ub + 1;                                                       \
+      ret = istart <= iend;                                                   \
+      thr->ts.static_trip = 1;                                                \
+    }                                                                         \
+    break;                                                                    \
+  }                                                                           \
+  case GFS_DYNAMIC:                                                           \
+    ret = DYN_NEXT(&istart, &iend);                                           \
+    *p_last = DYN_LAST(iend);                                                 \
+    break;                                                                    \
+  case GFS_HIERARCHY_DYNAMIC:                                                 \
+    ret = DYN_HIERARCHY_NEXT(nid, &istart, &iend);                            \
+    *p_last = HIERARCHY_LAST(iend);                                           \
+    break;                                                                    \
+  case GFS_HETPROBE:                                                          \
+    ret = HETPROBE_NEXT(nid, loc->psource, &istart, &iend);                   \
+    *p_last = HIERARCHY_LAST(iend);                                           \
+    break;                                                                    \
+  default:                                                                    \
+    assert(false && "Unknown scheduling algorithm");                          \
+    break;                                                                    \
+  }                                                                           \
+                                                                              \
   *p_lb = istart;                                                             \
   *p_ub = iend - 1;                                                           \
-  *p_last = ISLAST_FUNC(iend);                                                \
-                                                                              \
   if(!ret)                                                                    \
   {                                                                           \
     *p_lb = 0;                                                                \
@@ -430,20 +681,28 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
     __kmpc_dispatch_fini_##NAME(loc, gtid);                                   \
   }                                                                           \
                                                                               \
-  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d "SPEC SPEC SPEC"\n",       \
-        loc->psource, gtid, ret, *p_last, *p_lb, *p_ub, *p_st);               \
+  DEBUG("__kmpc_dispatch_next_"#NAME": %s %d %d %d %d"SPEC SPEC SPEC"\n",     \
+        loc->psource, gtid, ret, ws->sched, *p_last, *p_lb, *p_ub, *p_st);    \
                                                                               \
   return ret;                                                                 \
 }
 
-__kmpc_dispatch_next(4, int32_t, "%d", GOMP_loop_dynamic_next,
-                     gomp_iter_is_last, long)
-__kmpc_dispatch_next(4u, uint32_t, "%u", GOMP_loop_ull_dynamic_next,
-                     gomp_iter_is_last_ull, unsigned long long)
-__kmpc_dispatch_next(8, int64_t, "%ld", GOMP_loop_dynamic_next,
-                     gomp_iter_is_last, long)
-__kmpc_dispatch_next(8u, uint64_t, "%lu", GOMP_loop_ull_dynamic_next,
-                     gomp_iter_is_last_ull, unsigned long long)
+__kmpc_dispatch_next(4, int32_t, long, " %d",
+                     GOMP_loop_dynamic_next, gomp_iter_is_last,
+                     hierarchy_next_dynamic, hierarchy_next_hetprobe,
+                     hierarchy_last)
+__kmpc_dispatch_next(4u, uint32_t, unsigned long long, " %u",
+                     GOMP_loop_ull_dynamic_next, gomp_iter_is_last_ull,
+                     hierarchy_next_dynamic_ull, hierarchy_next_hetprobe_ull,
+                     hierarchy_last_ull)
+__kmpc_dispatch_next(8, int64_t, long, " %ld",
+                     GOMP_loop_dynamic_next, gomp_iter_is_last,
+                     hierarchy_next_dynamic, hierarchy_next_hetprobe,
+                     hierarchy_last)
+__kmpc_dispatch_next(8u, uint64_t, unsigned long long, " %lu",
+                     GOMP_loop_ull_dynamic_next, gomp_iter_is_last_ull,
+                     hierarchy_next_dynamic_ull, hierarchy_next_hetprobe_ull,
+                     hierarchy_last_ull)
 
 /*
  * Start execution of an ordered construct.
@@ -588,6 +847,22 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
 // Reductions
 ///////////////////////////////////////////////////////////////////////////////
 
+/*
+ * The code generated by clang performs the following operations depending on
+ * __kmpc_reduce*()'s return value:
+ *
+ *  1. Perform the reduction without any atomics or locking
+ *
+ *     - Used when there's only 1 thread in the team, or if multiple threads,
+ *       they've been released from __kmpc_reduce*() after entering a critical
+ *       section.  In the latter case, __kmpc_end_reduce() exits the critical
+ *       section so other thread can make progress.
+ *
+ *  2. Perform the reduction using atomics
+ *
+ *  Default. Do nothing
+ */
+
 typedef void (*reduce_func)(void *lhs_data, void *rhs_data);
 
 /*
@@ -657,7 +932,19 @@ int32_t __kmpc_reduce(ident_t *loc,
   case critical_reduce_block: GOMP_critical_start(); return 1;
   case atomic_reduce_block: return 2;
   case tree_reduce_block:
-    return hierarchy_reduce(thr->popcorn_nid, reduce_data, func);
+    if(hierarchy_reduce(thr->popcorn_nid, reduce_data, func)) return 1;
+    else
+    {
+      /*
+       * This thread is not the final thread, meaning we need to wait until the
+       * final thread has finished all reductions.  Due to how clang emits
+       * OpenMP calls, this thread *won't* call __kmpc_end_reduce(), so wait on
+       * the barrier here.  The final thread will release after all reductions
+       * have been completed.
+       */
+      __kmpc_barrier(loc, global_tid);
+      return 0;
+    }
   default: return 1;
   }
 }
@@ -680,7 +967,7 @@ void __kmpc_end_reduce(ident_t *loc,
   assert(thr->reduction_method != reduction_method_not_defined);
   if(thr->reduction_method == critical_reduce_block) GOMP_critical_end();
   thr->reduction_method = reduction_method_not_defined;
-  GOMP_barrier();
+  __kmpc_barrier(loc, global_tid);
 }
 
 /*
@@ -792,7 +1079,7 @@ void *__kmpc_threadprivate_cached(ident_t *loc,
   /* Allocate (if necessary) & initialize this thread's data. */
   if((ret = (*cache)[global_tid]) == 0)
   {
-    if(popcorn_global.distributed)
+    if(popcorn_distributed())
       ret = popcorn_malloc(size, gomp_thread()->popcorn_nid);
     else ret = malloc(size);
 

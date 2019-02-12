@@ -30,7 +30,6 @@
 #define GOMP_SIMPLE_BARRIER_H 1
 
 #include "bar.h"
-#include "hierarchy.h"
 
 typedef struct
 {
@@ -58,11 +57,13 @@ gomp_simple_barrier_destroy (gomp_simple_barrier_t *bar)
 static inline void
 gomp_simple_barrier_wait (gomp_simple_barrier_t *bar)
 {
-  // TODO Popcorn: do an actual hybrid barrier
-  if (popcorn_global.hybrid_barrier)
-    gomp_barrier_wait_nospin (&bar->bar);
-  else
-    gomp_barrier_wait (&bar->bar);
+  gomp_barrier_wait (&bar->bar);
+}
+
+static inline void
+gomp_simple_barrier_wait_nospin (gomp_simple_barrier_t *bar)
+{
+  gomp_barrier_wait_nospin (&bar->bar);
 }
 
 static inline void

@@ -163,7 +163,7 @@ bool popcorn_affinity_init_nodes (unsigned long *counts,
     if(node_available(i) && cur < n)
     {
       popcorn_global.nodes++;
-      popcorn_global.threads_per_node[i] = counts[cur];
+      popcorn_global.node_places[i] = counts[cur];
       gomp_barrier_init(&popcorn_node[i].bar, counts[cur++]);
     }
   }
@@ -194,7 +194,7 @@ popcorn_affinity_init_nodes_uniform (unsigned long count, bool quiet)
     if(node_available(i))
     {
       popcorn_global.nodes++;
-      popcorn_global.threads_per_node[i] = count;
+      popcorn_global.node_places[i] = count;
       gomp_barrier_init(&popcorn_node[i].bar, count);
     }
   }
@@ -222,18 +222,18 @@ bool popcorn_affinity_init_node_ratings (unsigned long *ratings,
 
   for(i = 0; i < MAX_POPCORN_NODES; i++)
   {
-    if(popcorn_global.threads_per_node[i])
+    if(popcorn_global.node_places[i])
     {
       if(cur < n)
       {
         popcorn_global.scaled_thread_range +=
-          popcorn_global.threads_per_node[i] * ratings[cur];
+          popcorn_global.node_places[i] * ratings[cur];
         popcorn_global.core_speed_rating[i] = ratings[cur++];
       }
       else
       {
         popcorn_global.scaled_thread_range +=
-          popcorn_global.threads_per_node[i];
+          popcorn_global.node_places[i];
         popcorn_global.core_speed_rating[i] = 1;
       }
     }
