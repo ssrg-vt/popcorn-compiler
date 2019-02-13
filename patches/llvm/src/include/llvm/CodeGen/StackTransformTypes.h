@@ -15,9 +15,11 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/StackTransformTypes.def"
-#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 
 namespace llvm {
 
@@ -434,8 +436,9 @@ class MachineLiveLoc {
 public:
   /// Constructors & destructors.
   // Note: create child class objects rather than objects of this class.
-  MachineLiveLoc() : Ptr(false) {}
-  MachineLiveLoc(const MachineLiveLoc &C) : Ptr(C.Ptr) {}
+  MachineLiveLoc() : Reg(0), Ptr(false) {}
+  MachineLiveLoc(unsigned Reg, bool Ptr) : Reg(Reg), Ptr(Ptr) {}
+  MachineLiveLoc(const MachineLiveLoc &C) : Reg(C.Reg), Ptr(C.Ptr) {}
   virtual ~MachineLiveLoc() {}
   virtual MachineLiveLoc *copy() const = 0;
   virtual bool operator==(const MachineLiveLoc &R) const = 0;
@@ -446,11 +449,16 @@ public:
   virtual bool isStackSlot() const { return false; }
 
   virtual std::string toString() const = 0;
+  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const = 0;
+
+  unsigned getReg() const { return Reg; }
+  void setReg(unsigned Reg) { this->Reg = Reg; }
 
   void setIsPtr(bool Ptr) { this->Ptr = Ptr; }
   bool isPtr() const { return Ptr; }
 
 protected:
+  unsigned Reg;
   bool Ptr;
 };
 
@@ -458,23 +466,21 @@ protected:
 /// number as an architecture-specific physical register.
 class MachineLiveReg : public MachineLiveLoc {
 public:
-  MachineLiveReg() : Reg(0) {}
-  MachineLiveReg(unsigned Reg) : Reg(Reg) {}
-  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C), Reg(C.Reg) {}
+  MachineLiveReg(unsigned Reg, bool Ptr = false) : MachineLiveLoc(Reg, Ptr) {}
+  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C) {}
   virtual MachineLiveLoc *copy() const { return new MachineLiveReg(*this); }
-
-  virtual bool isReg() const { return true; }
-
   virtual bool operator==(const MachineLiveLoc &RHS) const;
 
-  unsigned getReg() const { return Reg; }
-  void setReg(unsigned Reg) { this->Reg = Reg; }
+  virtual bool isReg() const { return true; }
 
   virtual std::string toString() const
   { return "live value in register " + std::to_string(Reg); }
 
-private:
-  unsigned Reg;
+  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
+    os << "live value in register " << PrintReg(Reg, TRI);
+    if(Ptr) os << " (is a pointer)";
+    os << "\n";
+  }
 };
 
 /// MachineLiveStackAddr - a live value stored at a known stack address.  Can
@@ -482,22 +488,21 @@ private:
 /// location for PowerPC/ELFv2 ABI.
 class MachineLiveStackAddr : public MachineLiveLoc {
 public:
-  MachineLiveStackAddr() : Offset(INT32_MAX), Reg(UINT32_MAX), Size(0) {}
-  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size)
-    : Offset(Offset), Reg(Reg), Size(Size) {}
+  MachineLiveStackAddr()
+    : MachineLiveLoc(UINT32_MAX, false), Offset(INT32_MAX), Size(0) {}
+  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size,
+                       bool Ptr = false)
+    : MachineLiveLoc(Reg, Ptr), Offset(Offset), Size(Size) {}
   MachineLiveStackAddr(const MachineLiveStackAddr &C)
-    : MachineLiveLoc(C), Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
+    : MachineLiveLoc(C), Offset(C.Offset), Size(C.Size) {}
   virtual MachineLiveLoc *copy() const
   { return new MachineLiveStackAddr(*this); }
+  virtual bool operator==(const MachineLiveLoc &RHS) const;
 
   virtual bool isStackAddr() const { return true; }
 
-  virtual bool operator==(const MachineLiveLoc &RHS) const;
-
   int getOffset() const { return Offset; }
   void setOffset(int Offset) { this->Offset = Offset; }
-  unsigned getReg() const { return Reg; }
-  void setReg(unsigned Reg) { this->Reg = Reg; }
   void setSize(unsigned Size) { this->Size = Size; }
 
   // Calculate the final position of the stack object.  Return the object's
@@ -508,18 +513,27 @@ public:
   // The size of a stack object may need to be determined by code emission
   // metadata in child classes, hence the AsmPrinter argument
   virtual unsigned getSize(const AsmPrinter &AP) { return Size; }
+
+  // This version just returns the size without calculating anything.  If size
+  // has not previously been set using either the constructor or the above API,
+  // this return garbage.
   virtual unsigned getSize() const { return Size; }
 
-  virtual std::string toString() const
-  {
+  virtual std::string toString() const {
     return "live value at register " + std::to_string(Reg) +
            " + " + std::to_string(Offset);
+  }
+
+  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
+    os << "live value at register " << PrintReg(Reg, TRI) << " + " << Offset;
+    if(Ptr) os << " (is a pointer)";
+    os << "\n";
   }
 
 protected:
   // The object is referenced by an offset from a (physical) register's value.
   int Offset;
-  unsigned Reg, Size;
+  unsigned Size;
 };
 
 /// MachineLiveStackSlot - a live value stored in a stack slot.  A more
@@ -532,10 +546,9 @@ public:
     : MachineLiveStackAddr(C), Index(C.Index) {}
   virtual MachineLiveLoc *copy() const
   { return new MachineLiveStackSlot(*this); }
+  virtual bool operator==(const MachineLiveLoc &RHS) const;
 
   virtual bool isStackSlot() const { return true; }
-
-  virtual bool operator==(const MachineLiveLoc &RHS) const;
 
   unsigned getStackSlot() const { return Index; }
   void setStackSlot(int Index) { this->Index = Index; }
@@ -544,6 +557,12 @@ public:
 
   virtual std::string toString() const
   { return "live value in stack slot " + std::to_string(Index); }
+
+  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
+    os << "live value in stack slot " << Index;
+    if(Ptr) os << " (is a pointer)";
+    os << "\n";
+  }
 
 private:
   int Index;

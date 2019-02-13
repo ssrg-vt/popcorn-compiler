@@ -41,6 +41,7 @@ using namespace llvm;
 
 #define DEBUG_TYPE "stacktransform"
 
+extern cl::opt<bool> EmitMetadata;
 static cl::opt<bool>
 NoWarnings("no-sm-warn", cl::desc("Don't issue warnings about stackmaps"),
            cl::init(false), cl::Hidden);
@@ -1326,19 +1327,13 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
 }
 
 void StackTransformMetadata::findMarshaledArguments() {
-  unsigned opIt, baseReg, size;
-  int64_t argSpace;
-  std::vector<unsigned> PhysRegs;
-  std::set<int64_t> Offsets;
-  MachineLiveReg regLoc;
-  MachineLiveStackAddr stackLoc;
+  std::vector<MachineLiveLocPtr> Locs;
 
   DEBUG(dbgs() << "*** Finding argument passing locations ***\n\n");
 
   // TODO the following is only implemented for X86Values, need to implement
   // for other architectures
 
-  baseReg = TVG->getArgSpaceBaseReg();
   for(auto S = SM.begin(); S != SM.end(); S++) {
     // Find the IR call which triggered inserting the stackmap
     const CallInst *IRSM = getIRSM(*S);
@@ -1347,68 +1342,21 @@ void StackTransformMetadata::findMarshaledArguments() {
       if(isa<CallInst>(&*it)) break;
     if(it == IRSM->getParent()->rend()) continue;
     const CallInst *Call = cast<CallInst>(&*it);
-
-    // Find the arguments passed in registers
     const MachineInstr *MICall = getMICall(*S);
 
     DEBUG(Call->dump(); getMISM(*S)->dump(); MICall->dump(););
 
-    TVG->getArgRegs(MICall, PhysRegs);
+    TVG->getMarshaledArguments(Call, MICall, Locs);
 
-    assert(PhysRegs.size() <= (Call->getNumOperands() - 1) &&
-           "Too many registers for passing arguments");
+    DEBUG(dbgs() << "Arguments:\n");
+    for(auto &Loc : Locs) {
+      // For regular Popcorn we only migrate at calls to check_migrate() (which
+      // doesn't need to transform arguments), avoid generating metadata for
+      // argument registers
+      if(Loc->isReg() && !EmitMetadata) continue;
 
-    // TODO this matching doesn't work if we have floating-point arguments
-
-    // Add argument-passing registers to the stackmap if they contain pointers
-    // and thus may need to be reified.
-    // Note: reifying arguments in registers is only required for Chameleon --
-    // for Popcorn, we assume we only migrate at calls to check_migrate(),
-    // which have no pointer-to-stack arguments that need to be reified
-    // TODO turn off if not compiling for chameleon
-    DEBUG(dbgs() << "\nRegister arguments\n");
-    for(opIt = 0; opIt < PhysRegs.size(); opIt++) {
-      if(Call->getOperand(opIt)->getType()->isPointerTy()) {
-        DEBUG(dbgs() << " -> register " << PrintReg(PhysRegs[opIt], TRI)
-              << " is of pointer type\n");
-        regLoc = MachineLiveReg(PhysRegs[opIt]);
-        regLoc.setIsPtr(true);
-        MF->addSMArgLocation(IRSM, regLoc);
-      }
-    }
-
-    // Find the arguments passed in stack slots
-    argSpace = TVG->getArgSlots(MICall, Offsets);
-    DEBUG(dbgs() << "frame size for argument space: " << argSpace << "\n");
-
-    assert((Call->getNumOperands() - 1 - PhysRegs.size()) == Offsets.size() &&
-           "Number of on-stack arguments does not match number of offsets");
-    assert(PhysRegs.size() + Offsets.size() == (Call->getNumOperands() - 1) &&
-           "Found too  many arguments?");
-
-    // Add argument passing stack slots to stackmap.  This is always required
-    // as stack arguments may be accessed throughout the called function (LLVM
-    // may not have pulled them into registers).  Additionally, these slots may
-    // contain pointers that may need to be reified; mark if so.
-    DEBUG(dbgs() << "\nOn-stack arguments:\n");
-    std::set<int64_t>::const_iterator offsetIt = Offsets.begin();
-    for(opIt = PhysRegs.size();
-        opIt < Call->getNumOperands() - 1;
-        opIt++, offsetIt++) {
-      DEBUG(Call->getOperand(opIt)->dump());
-
-      // Calculate the size of the slot
-      auto nextOffset = offsetIt; nextOffset++;
-      if(nextOffset == Offsets.end()) size = argSpace - *offsetIt;
-      else size = *nextOffset - *offsetIt;
-
-      // Add the metadata for parsing during stackmap creation
-      stackLoc = MachineLiveStackAddr(*offsetIt, baseReg, size);
-      if(Call->getOperand(opIt)->getType()->isPointerTy()) {
-        DEBUG(dbgs() << " -> is of pointer type\n");
-        stackLoc.setIsPtr(true);
-      }
-      MF->addSMArgLocation(IRSM, stackLoc);
+      DEBUG(dbgs() << " -> "; Loc->print(dbgs(), TRI););
+      MF->addSMArgLocation(IRSM, *Loc);
     }
 
     DEBUG(dbgs() << "\n");

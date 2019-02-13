@@ -18,7 +18,6 @@
 #define LLVM_TARGET_TARGETVAL_H
 
 #include <memory>
-#include <set>
 #include <vector>
 #include "llvm/CodeGen/StackTransformTypes.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -59,21 +58,12 @@ public:
   void operator=(const TargetValues &) = delete;
   virtual ~TargetValues() {};
 
-  /// Return the base register used to address argument space on the stack
-  virtual unsigned getArgSpaceBaseReg() const { return 0; }
-
-  /// Find all registers used for argument passing for a given call instruction
-  /// and return the number of registers used to pass arguments.
-  virtual void getArgRegs(const MachineInstr *MICall,
-                          std::vector<unsigned> &regs) const
-  { regs.clear(); }
-
-  /// Find all stack pointer offsets used as argument passing space for the
-  /// given call instruction and return the total amount of space used for
-  /// passing arguments.
-  virtual int64_t getArgSlots(const MachineInstr *MICall,
-                              std::set<int64_t> &offsets) const
-  { offsets.clear(); return 0; }
+  /// Return metadata describing the locations (registers, stack slots) of
+  /// arguments marshaled for the given function call.
+  virtual void getMarshaledArguments(const CallInst *IRCall,
+                                     const MachineInstr *MICall,
+                                     std::vector<MachineLiveLocPtr> &Locs) const
+  { Locs.clear(); }
 
   /// The code generator may have materialized a temporary value solely to
   /// satisfy the stackmap if the value is materialized as-needed elsewhere.

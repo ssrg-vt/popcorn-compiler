@@ -1575,7 +1575,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,620 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -1593,9 +1593,11 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +#include <vector>
 +#include <map>
 +#include <memory>
++#include "llvm/ADT/SmallVector.h"
 +#include "llvm/CodeGen/MachineOperand.h"
 +#include "llvm/CodeGen/StackTransformTypes.def"
-+#include "llvm/ADT/SmallVector.h"
++#include "llvm/Support/raw_ostream.h"
++#include "llvm/Target/TargetRegisterInfo.h"
 +
 +namespace llvm {
 +
@@ -2012,8 +2014,9 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +public:
 +  /// Constructors & destructors.
 +  // Note: create child class objects rather than objects of this class.
-+  MachineLiveLoc() : Ptr(false) {}
-+  MachineLiveLoc(const MachineLiveLoc &C) : Ptr(C.Ptr) {}
++  MachineLiveLoc() : Reg(0), Ptr(false) {}
++  MachineLiveLoc(unsigned Reg, bool Ptr) : Reg(Reg), Ptr(Ptr) {}
++  MachineLiveLoc(const MachineLiveLoc &C) : Reg(C.Reg), Ptr(C.Ptr) {}
 +  virtual ~MachineLiveLoc() {}
 +  virtual MachineLiveLoc *copy() const = 0;
 +  virtual bool operator==(const MachineLiveLoc &R) const = 0;
@@ -2024,11 +2027,16 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  virtual bool isStackSlot() const { return false; }
 +
 +  virtual std::string toString() const = 0;
++  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const = 0;
++
++  unsigned getReg() const { return Reg; }
++  void setReg(unsigned Reg) { this->Reg = Reg; }
 +
 +  void setIsPtr(bool Ptr) { this->Ptr = Ptr; }
 +  bool isPtr() const { return Ptr; }
 +
 +protected:
++  unsigned Reg;
 +  bool Ptr;
 +};
 +
@@ -2036,23 +2044,21 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +/// number as an architecture-specific physical register.
 +class MachineLiveReg : public MachineLiveLoc {
 +public:
-+  MachineLiveReg() : Reg(0) {}
-+  MachineLiveReg(unsigned Reg) : Reg(Reg) {}
-+  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C), Reg(C.Reg) {}
++  MachineLiveReg(unsigned Reg, bool Ptr = false) : MachineLiveLoc(Reg, Ptr) {}
++  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C) {}
 +  virtual MachineLiveLoc *copy() const { return new MachineLiveReg(*this); }
-+
-+  virtual bool isReg() const { return true; }
-+
 +  virtual bool operator==(const MachineLiveLoc &RHS) const;
 +
-+  unsigned getReg() const { return Reg; }
-+  void setReg(unsigned Reg) { this->Reg = Reg; }
++  virtual bool isReg() const { return true; }
 +
 +  virtual std::string toString() const
 +  { return "live value in register " + std::to_string(Reg); }
 +
-+private:
-+  unsigned Reg;
++  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
++    os << "live value in register " << PrintReg(Reg, TRI);
++    if(Ptr) os << " (is a pointer)";
++    os << "\n";
++  }
 +};
 +
 +/// MachineLiveStackAddr - a live value stored at a known stack address.  Can
@@ -2060,22 +2066,21 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +/// location for PowerPC/ELFv2 ABI.
 +class MachineLiveStackAddr : public MachineLiveLoc {
 +public:
-+  MachineLiveStackAddr() : Offset(INT32_MAX), Reg(UINT32_MAX), Size(0) {}
-+  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size)
-+    : Offset(Offset), Reg(Reg), Size(Size) {}
++  MachineLiveStackAddr()
++    : MachineLiveLoc(UINT32_MAX, false), Offset(INT32_MAX), Size(0) {}
++  MachineLiveStackAddr(int Offset, unsigned Reg, unsigned Size,
++                       bool Ptr = false)
++    : MachineLiveLoc(Reg, Ptr), Offset(Offset), Size(Size) {}
 +  MachineLiveStackAddr(const MachineLiveStackAddr &C)
-+    : MachineLiveLoc(C), Offset(C.Offset), Reg(C.Reg), Size(C.Size) {}
++    : MachineLiveLoc(C), Offset(C.Offset), Size(C.Size) {}
 +  virtual MachineLiveLoc *copy() const
 +  { return new MachineLiveStackAddr(*this); }
++  virtual bool operator==(const MachineLiveLoc &RHS) const;
 +
 +  virtual bool isStackAddr() const { return true; }
 +
-+  virtual bool operator==(const MachineLiveLoc &RHS) const;
-+
 +  int getOffset() const { return Offset; }
 +  void setOffset(int Offset) { this->Offset = Offset; }
-+  unsigned getReg() const { return Reg; }
-+  void setReg(unsigned Reg) { this->Reg = Reg; }
 +  void setSize(unsigned Size) { this->Size = Size; }
 +
 +  // Calculate the final position of the stack object.  Return the object's
@@ -2086,18 +2091,27 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +  // The size of a stack object may need to be determined by code emission
 +  // metadata in child classes, hence the AsmPrinter argument
 +  virtual unsigned getSize(const AsmPrinter &AP) { return Size; }
++
++  // This version just returns the size without calculating anything.  If size
++  // has not previously been set using either the constructor or the above API,
++  // this return garbage.
 +  virtual unsigned getSize() const { return Size; }
 +
-+  virtual std::string toString() const
-+  {
++  virtual std::string toString() const {
 +    return "live value at register " + std::to_string(Reg) +
 +           " + " + std::to_string(Offset);
++  }
++
++  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
++    os << "live value at register " << PrintReg(Reg, TRI) << " + " << Offset;
++    if(Ptr) os << " (is a pointer)";
++    os << "\n";
 +  }
 +
 +protected:
 +  // The object is referenced by an offset from a (physical) register's value.
 +  int Offset;
-+  unsigned Reg, Size;
++  unsigned Size;
 +};
 +
 +/// MachineLiveStackSlot - a live value stored in a stack slot.  A more
@@ -2110,10 +2124,9 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +    : MachineLiveStackAddr(C), Index(C.Index) {}
 +  virtual MachineLiveLoc *copy() const
 +  { return new MachineLiveStackSlot(*this); }
++  virtual bool operator==(const MachineLiveLoc &RHS) const;
 +
 +  virtual bool isStackSlot() const { return true; }
-+
-+  virtual bool operator==(const MachineLiveLoc &RHS) const;
 +
 +  unsigned getStackSlot() const { return Index; }
 +  void setStackSlot(int Index) { this->Index = Index; }
@@ -2122,6 +2135,12 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +
 +  virtual std::string toString() const
 +  { return "live value in stack slot " + std::to_string(Index); }
++
++  virtual void print(raw_ostream &os, const TargetRegisterInfo *TRI) const {
++    os << "live value in stack slot " << Index;
++    if(Ptr) os << " (is a pointer)";
++    os << "\n";
++  }
 +
 +private:
 +  int Index;
@@ -2532,7 +2551,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,101 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2553,7 +2572,6 @@ Index: include/llvm/Target/TargetValues.h
 +#define LLVM_TARGET_TARGETVAL_H
 +
 +#include <memory>
-+#include <set>
 +#include <vector>
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/CodeGen/MachineFunction.h"
@@ -2594,21 +2612,12 @@ Index: include/llvm/Target/TargetValues.h
 +  void operator=(const TargetValues &) = delete;
 +  virtual ~TargetValues() {};
 +
-+  /// Return the base register used to address argument space on the stack
-+  virtual unsigned getArgSpaceBaseReg() const { return 0; }
-+
-+  /// Find all registers used for argument passing for a given call instruction
-+  /// and return the number of registers used to pass arguments.
-+  virtual void getArgRegs(const MachineInstr *MICall,
-+                          std::vector<unsigned> &regs) const
-+  { regs.clear(); }
-+
-+  /// Find all stack pointer offsets used as argument passing space for the
-+  /// given call instruction and return the total amount of space used for
-+  /// passing arguments.
-+  virtual int64_t getArgSlots(const MachineInstr *MICall,
-+                              std::set<int64_t> &offsets) const
-+  { offsets.clear(); return 0; }
++  /// Return metadata describing the locations (registers, stack slots) of
++  /// arguments marshaled for the given function call.
++  virtual void getMarshaledArguments(const CallInst *IRCall,
++                                     const MachineInstr *MICall,
++                                     std::vector<MachineLiveLocPtr> &Locs) const
++  { Locs.clear(); }
 +
 +  /// The code generator may have materialized a temporary value solely to
 +  /// satisfy the stackmap if the value is materialized as-needed elsewhere.
@@ -5844,7 +5853,7 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 ===================================================================
 --- lib/CodeGen/ActivationMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/ActivationMetadata.cpp	(working copy)
-@@ -0,0 +1,408 @@
+@@ -0,0 +1,407 @@
 +//===----------------------- ActivationMetadata.cpp -----------------------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -5867,8 +5876,7 @@ Index: lib/CodeGen/ActivationMetadata.cpp
 +
 +#define DEBUG_TYPE "activationmetadata"
 +
-+static cl::opt<bool> EmitMetadata(
-+  "act-metadata", cl::init(false),
++cl::opt<bool> EmitMetadata("act-metadata", cl::init(false),
 +  cl::desc("Emit metadata describing function activation layouts"));
 +
 +static const char *AMDbg = "Activation metadata: ";
@@ -7849,7 +7857,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1491 @@
+@@ -0,0 +1,1439 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -7893,6 +7901,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +
 +#define DEBUG_TYPE "stacktransform"
 +
++extern cl::opt<bool> EmitMetadata;
 +static cl::opt<bool>
 +NoWarnings("no-sm-warn", cl::desc("Don't issue warnings about stackmaps"),
 +           cl::init(false), cl::Hidden);
@@ -9178,19 +9187,13 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +}
 +
 +void StackTransformMetadata::findMarshaledArguments() {
-+  unsigned opIt, baseReg, size;
-+  int64_t argSpace;
-+  std::vector<unsigned> PhysRegs;
-+  std::set<int64_t> Offsets;
-+  MachineLiveReg regLoc;
-+  MachineLiveStackAddr stackLoc;
++  std::vector<MachineLiveLocPtr> Locs;
 +
 +  DEBUG(dbgs() << "*** Finding argument passing locations ***\n\n");
 +
 +  // TODO the following is only implemented for X86Values, need to implement
 +  // for other architectures
 +
-+  baseReg = TVG->getArgSpaceBaseReg();
 +  for(auto S = SM.begin(); S != SM.end(); S++) {
 +    // Find the IR call which triggered inserting the stackmap
 +    const CallInst *IRSM = getIRSM(*S);
@@ -9199,68 +9202,21 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +      if(isa<CallInst>(&*it)) break;
 +    if(it == IRSM->getParent()->rend()) continue;
 +    const CallInst *Call = cast<CallInst>(&*it);
-+
-+    // Find the arguments passed in registers
 +    const MachineInstr *MICall = getMICall(*S);
 +
 +    DEBUG(Call->dump(); getMISM(*S)->dump(); MICall->dump(););
 +
-+    TVG->getArgRegs(MICall, PhysRegs);
++    TVG->getMarshaledArguments(Call, MICall, Locs);
 +
-+    assert(PhysRegs.size() <= (Call->getNumOperands() - 1) &&
-+           "Too many registers for passing arguments");
++    DEBUG(dbgs() << "Arguments:\n");
++    for(auto &Loc : Locs) {
++      // For regular Popcorn we only migrate at calls to check_migrate() (which
++      // doesn't need to transform arguments), avoid generating metadata for
++      // argument registers
++      if(Loc->isReg() && !EmitMetadata) continue;
 +
-+    // TODO this matching doesn't work if we have floating-point arguments
-+
-+    // Add argument-passing registers to the stackmap if they contain pointers
-+    // and thus may need to be reified.
-+    // Note: reifying arguments in registers is only required for Chameleon --
-+    // for Popcorn, we assume we only migrate at calls to check_migrate(),
-+    // which have no pointer-to-stack arguments that need to be reified
-+    // TODO turn off if not compiling for chameleon
-+    DEBUG(dbgs() << "\nRegister arguments\n");
-+    for(opIt = 0; opIt < PhysRegs.size(); opIt++) {
-+      if(Call->getOperand(opIt)->getType()->isPointerTy()) {
-+        DEBUG(dbgs() << " -> register " << PrintReg(PhysRegs[opIt], TRI)
-+              << " is of pointer type\n");
-+        regLoc = MachineLiveReg(PhysRegs[opIt]);
-+        regLoc.setIsPtr(true);
-+        MF->addSMArgLocation(IRSM, regLoc);
-+      }
-+    }
-+
-+    // Find the arguments passed in stack slots
-+    argSpace = TVG->getArgSlots(MICall, Offsets);
-+    DEBUG(dbgs() << "frame size for argument space: " << argSpace << "\n");
-+
-+    assert((Call->getNumOperands() - 1 - PhysRegs.size()) == Offsets.size() &&
-+           "Number of on-stack arguments does not match number of offsets");
-+    assert(PhysRegs.size() + Offsets.size() == (Call->getNumOperands() - 1) &&
-+           "Found too  many arguments?");
-+
-+    // Add argument passing stack slots to stackmap.  This is always required
-+    // as stack arguments may be accessed throughout the called function (LLVM
-+    // may not have pulled them into registers).  Additionally, these slots may
-+    // contain pointers that may need to be reified; mark if so.
-+    DEBUG(dbgs() << "\nOn-stack arguments:\n");
-+    std::set<int64_t>::const_iterator offsetIt = Offsets.begin();
-+    for(opIt = PhysRegs.size();
-+        opIt < Call->getNumOperands() - 1;
-+        opIt++, offsetIt++) {
-+      DEBUG(Call->getOperand(opIt)->dump());
-+
-+      // Calculate the size of the slot
-+      auto nextOffset = offsetIt; nextOffset++;
-+      if(nextOffset == Offsets.end()) size = argSpace - *offsetIt;
-+      else size = *nextOffset - *offsetIt;
-+
-+      // Add the metadata for parsing during stackmap creation
-+      stackLoc = MachineLiveStackAddr(*offsetIt, baseReg, size);
-+      if(Call->getOperand(opIt)->getType()->isPointerTy()) {
-+        DEBUG(dbgs() << " -> is of pointer type\n");
-+        stackLoc.setIsPtr(true);
-+      }
-+      MF->addSMArgLocation(IRSM, stackLoc);
++      DEBUG(dbgs() << " -> "; Loc->print(dbgs(), TRI););
++      MF->addSMArgLocation(IRSM, *Loc);
 +    }
 +
 +    DEBUG(dbgs() << "\n");
@@ -10783,7 +10739,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,323 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -10793,6 +10749,7 @@ Index: lib/Target/X86/X86Values.cpp
 +//
 +//===----------------------------------------------------------------------===//
 +
++#include <set>
 +#include "X86Values.h"
 +#include "X86InstrInfo.h"
 +#include "llvm/MC/MCSymbol.h"
@@ -10804,10 +10761,8 @@ Index: lib/Target/X86/X86Values.cpp
 +
 +using namespace llvm;
 +
-+unsigned X86Values::getArgSpaceBaseReg() const { return X86::RSP; }
-+
-+void X86Values::getArgRegs(const MachineInstr *MICall,
-+                               std::vector<unsigned> &regs) const {
++static void
++getArgRegs(const MachineInstr *MICall, std::vector<unsigned> &regs) {
 +  size_t opIt;
 +  unsigned Reg;
 +
@@ -10817,59 +10772,103 @@ Index: lib/Target/X86/X86Values.cpp
 +    if(MO.isReg() && MO.getReg() == X86::RSP) break;
 +  }
 +
-+  assert(opIt != MICall->getNumOperands() && "Unhandled call instruction");
++  assert(opIt != MICall->getNumOperands() && "Could not pass argument regs");
 +
 +  regs.clear();
-+  regs.reserve(6); // Max 6 integer registers used to pass arguments
++  regs.reserve(14); // Max 6 integer/8 FP registers used to pass arguments
 +  for(opIt++; opIt < MICall->getNumOperands(); opIt++) {
 +    const MachineOperand &op = MICall->getOperand(opIt);
 +    if(op.isReg()) {
 +      Reg = op.getReg();
 +      switch(Reg) {
 +      case X86::RSP: return;
-+
 +      // From the x86-64 ABI:
 +      //   "with variable arguments passes information about the number of
 +      //    vector registers used"
 +      // TODO because Popcorn currently doesn't support vector operations, we
 +      // don't handle this if the vararg function uses vector registers
 +      case X86::RAX: case X86::EAX: case X86::AX: case X86::AL: break;
-+
-+      default: regs.push_back(op.getReg());
++      default: regs.push_back(Reg);
 +      }
 +    }
 +  }
 +}
 +
-+int64_t X86Values::getArgSlots(const MachineInstr *MICall,
-+                               std::set<int64_t> &offsets) const {
++static int64_t getArgSlots(const MachineInstr *MICall,
++                           std::set<int64_t> &Offsets) {
 +  int RegArg = X86::AddrBaseReg, OffArg = X86::AddrDisp;
 +  const MachineBasicBlock *parent = MICall->getParent();
-+  offsets.clear();
++  Offsets.clear();
 +
 +  MachineBasicBlock::const_reverse_iterator it(MICall);
-+  DEBUG(dbgs() << "\nSearching for argument slots:\n");
 +  for(; it != parent->rend(); it++) {
-+    DEBUG(it->dump());
 +    switch(it->getOpcode()) {
 +    case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
 +      assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
 +      return it->getOperand(0).getImm();
-+    case X86::MOV32mi:
-+    case X86::MOV32mr:
-+    case X86::MOV64mi32:
-+    case X86::MOV64mr:
++    case X86::MOV32mi: case X86::MOV32mr:
++    case X86::MOV64mi32: case X86::MOV64mr:
++    case X86::MOVSDmr:
 +      if(it->getOperand(RegArg).isReg() &&
 +         it->getOperand(RegArg).getReg() == X86::RSP) {
 +        assert(it->getOperand(OffArg).isImm() &&
 +               "Invalid argument marshaling?");
-+        offsets.insert(it->getOperand(OffArg).getImm());
++        Offsets.insert(it->getOperand(OffArg).getImm());
 +      }
 +      break;
 +    default: break;
 +    }
 +  }
 +  llvm_unreachable("Could not find frame space marshaling instructions");
++}
++
++void
++X86Values::getMarshaledArguments(const CallInst *IRCall,
++                                 const MachineInstr *MICall,
++                                 std::vector<MachineLiveLocPtr> &Locs) const {
++  size_t NOps = IRCall->getNumOperands() - 1, Size;
++  int64_t MaxOffset;
++  std::vector<unsigned> Regs;
++  std::set<int64_t> Offsets;
++  std::set<int64_t>::const_iterator CurOffset, NextOffset;
++
++  Locs.clear();
++  if(!NOps) return;
++
++  getArgRegs(MICall, Regs);
++  MaxOffset = getArgSlots(MICall, Offsets);
++  Locs.reserve(NOps);
++
++  DEBUG(dbgs() << "Found " << Regs.size() << " argument register(s) and "
++               << Offsets.size() << " argument slot(s)\n");
++
++  assert(Regs.size() + Offsets.size() == NOps &&
++         "Could not find all argument locations");
++
++  // Walk through arguments, adding location metadata.  The x86 backend is nice
++  // to us and directly matches MI register operands to arguments.  Once we've
++  // consumed those, the remaining arguments are on the stack.
++  if(Offsets.size()) {
++    CurOffset = Offsets.begin();
++    NextOffset = Offsets.begin(); NextOffset++;
++  }
++
++  for(size_t i = 0; i < NOps; i++) {
++    const Type *Ty = IRCall->getOperand(i)->getType();
++    if(i < Regs.size()) {
++      Locs.emplace_back(MachineLiveLocPtr(
++        new MachineLiveReg(Regs[i], Ty->isPointerTy())));
++    }
++    else {
++      if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
++      else Size = *NextOffset - *CurOffset;
++      Locs.emplace_back(MachineLiveLocPtr(
++        new MachineLiveStackAddr(*CurOffset, X86::RSP, Size,
++                                 Ty->isPointerTy())));
++      CurOffset++;
++      NextOffset++;
++    }
++  }
 +}
 +
 +static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
@@ -11068,7 +11067,7 @@ Index: lib/Target/X86/X86Values.h
 ===================================================================
 --- lib/Target/X86/X86Values.h	(nonexistent)
 +++ lib/Target/X86/X86Values.h	(working copy)
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,29 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -11085,11 +11084,9 @@ Index: lib/Target/X86/X86Values.h
 +class X86Values final : public TargetValues {
 +public:
 +  X86Values() {}
-+  virtual unsigned getArgSpaceBaseReg() const;
-+  virtual void getArgRegs(const MachineInstr *MICall,
-+                          std::vector<unsigned> &regs) const;
-+  virtual int64_t getArgSlots(const MachineInstr *MICall,
-+                              std::set<int64_t> &offsets) const;
++  virtual void getMarshaledArguments(const CallInst *IRCall,
++                                     const MachineInstr *MICall,
++                                     std::vector<MachineLiveLocPtr> &Locs) const;
 +  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
 +                                              const VirtRegMap *VRM) const;
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;

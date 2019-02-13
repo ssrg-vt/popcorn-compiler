@@ -20,8 +20,7 @@ using namespace llvm;
 
 #define DEBUG_TYPE "activationmetadata"
 
-static cl::opt<bool> EmitMetadata(
-  "act-metadata", cl::init(false),
+cl::opt<bool> EmitMetadata("act-metadata", cl::init(false),
   cl::desc("Emit metadata describing function activation layouts"));
 
 static const char *AMDbg = "Activation metadata: ";

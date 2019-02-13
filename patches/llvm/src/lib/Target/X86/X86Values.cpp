@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <set>
 #include "X86Values.h"
 #include "X86InstrInfo.h"
 #include "llvm/MC/MCSymbol.h"
@@ -18,10 +19,8 @@
 
 using namespace llvm;
 
-unsigned X86Values::getArgSpaceBaseReg() const { return X86::RSP; }
-
-void X86Values::getArgRegs(const MachineInstr *MICall,
-                               std::vector<unsigned> &regs) const {
+static void
+getArgRegs(const MachineInstr *MICall, std::vector<unsigned> &regs) {
   size_t opIt;
   unsigned Reg;
 
@@ -31,59 +30,103 @@ void X86Values::getArgRegs(const MachineInstr *MICall,
     if(MO.isReg() && MO.getReg() == X86::RSP) break;
   }
 
-  assert(opIt != MICall->getNumOperands() && "Unhandled call instruction");
+  assert(opIt != MICall->getNumOperands() && "Could not pass argument regs");
 
   regs.clear();
-  regs.reserve(6); // Max 6 integer registers used to pass arguments
+  regs.reserve(14); // Max 6 integer/8 FP registers used to pass arguments
   for(opIt++; opIt < MICall->getNumOperands(); opIt++) {
     const MachineOperand &op = MICall->getOperand(opIt);
     if(op.isReg()) {
       Reg = op.getReg();
       switch(Reg) {
       case X86::RSP: return;
-
       // From the x86-64 ABI:
       //   "with variable arguments passes information about the number of
       //    vector registers used"
       // TODO because Popcorn currently doesn't support vector operations, we
       // don't handle this if the vararg function uses vector registers
       case X86::RAX: case X86::EAX: case X86::AX: case X86::AL: break;
-
-      default: regs.push_back(op.getReg());
+      default: regs.push_back(Reg);
       }
     }
   }
 }
 
-int64_t X86Values::getArgSlots(const MachineInstr *MICall,
-                               std::set<int64_t> &offsets) const {
+static int64_t getArgSlots(const MachineInstr *MICall,
+                           std::set<int64_t> &Offsets) {
   int RegArg = X86::AddrBaseReg, OffArg = X86::AddrDisp;
   const MachineBasicBlock *parent = MICall->getParent();
-  offsets.clear();
+  Offsets.clear();
 
   MachineBasicBlock::const_reverse_iterator it(MICall);
-  DEBUG(dbgs() << "\nSearching for argument slots:\n");
   for(; it != parent->rend(); it++) {
-    DEBUG(it->dump());
     switch(it->getOpcode()) {
     case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
       assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
       return it->getOperand(0).getImm();
-    case X86::MOV32mi:
-    case X86::MOV32mr:
-    case X86::MOV64mi32:
-    case X86::MOV64mr:
+    case X86::MOV32mi: case X86::MOV32mr:
+    case X86::MOV64mi32: case X86::MOV64mr:
+    case X86::MOVSDmr:
       if(it->getOperand(RegArg).isReg() &&
          it->getOperand(RegArg).getReg() == X86::RSP) {
         assert(it->getOperand(OffArg).isImm() &&
                "Invalid argument marshaling?");
-        offsets.insert(it->getOperand(OffArg).getImm());
+        Offsets.insert(it->getOperand(OffArg).getImm());
       }
       break;
     default: break;
     }
   }
   llvm_unreachable("Could not find frame space marshaling instructions");
+}
+
+void
+X86Values::getMarshaledArguments(const CallInst *IRCall,
+                                 const MachineInstr *MICall,
+                                 std::vector<MachineLiveLocPtr> &Locs) const {
+  size_t NOps = IRCall->getNumOperands() - 1, Size;
+  int64_t MaxOffset;
+  std::vector<unsigned> Regs;
+  std::set<int64_t> Offsets;
+  std::set<int64_t>::const_iterator CurOffset, NextOffset;
+
+  Locs.clear();
+  if(!NOps) return;
+
+  getArgRegs(MICall, Regs);
+  MaxOffset = getArgSlots(MICall, Offsets);
+  Locs.reserve(NOps);
+
+  DEBUG(dbgs() << "Found " << Regs.size() << " argument register(s) and "
+               << Offsets.size() << " argument slot(s)\n");
+
+  assert(Regs.size() + Offsets.size() == NOps &&
+         "Could not find all argument locations");
+
+  // Walk through arguments, adding location metadata.  The x86 backend is nice
+  // to us and directly matches MI register operands to arguments.  Once we've
+  // consumed those, the remaining arguments are on the stack.
+  if(Offsets.size()) {
+    CurOffset = Offsets.begin();
+    NextOffset = Offsets.begin(); NextOffset++;
+  }
+
+  for(size_t i = 0; i < NOps; i++) {
+    const Type *Ty = IRCall->getOperand(i)->getType();
+    if(i < Regs.size()) {
+      Locs.emplace_back(MachineLiveLocPtr(
+        new MachineLiveReg(Regs[i], Ty->isPointerTy())));
+    }
+    else {
+      if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
+      else Size = *NextOffset - *CurOffset;
+      Locs.emplace_back(MachineLiveLocPtr(
+        new MachineLiveStackAddr(*CurOffset, X86::RSP, Size,
+                                 Ty->isPointerTy())));
+      CurOffset++;
+      NextOffset++;
+    }
+  }
 }
 
 static TemporaryValue *getTemporaryReference(const MachineInstr *MI,
