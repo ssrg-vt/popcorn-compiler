@@ -68,6 +68,7 @@ typedef struct POPCORN_PACKED unwind_loc {
   ((call_site){ \
     .id = 0, \
     .func = 0, \
+    .unhandled = 0, \
     .addr = 0, \
     .live_vals = {0, 0} \
     .arch_live_vals = {0, 0} \
@@ -76,7 +77,9 @@ typedef struct POPCORN_PACKED unwind_loc {
 /* Transformation metadata for a particular call site. */
 typedef struct POPCORN_PACKED call_site {
   uint64_t id; /* call site ID -- maps sites across binaries */
-  uint32_t func; /* index of function record */
+  uint32_t func : 31; /* index of function record */
+  // TODO unhandled should be removed once the compiler better handles all values
+  uint32_t unhandled : 1; /* did the compiler find unhandled live values? */
   uint64_t addr; /* call site return address */
   section_ref live; /* reference to live values */
   section_ref arch_live; /* reference to arch-specific live values */

@@ -49,7 +49,9 @@ typedef struct POPCORN_PACKED live_out_record {
 typedef struct POPCORN_PACKED call_site_record {
   /* Call site header */
   uint64_t id; /* per-call site ID */
-  uint32_t func_idx; /* index into function_records for function information */
+  uint32_t func_idx : 31; /* index into function_records for function information */
+  // TODO unhandled should be removed once the compiler better handles all values
+  uint32_t unhandled : 1; /* did the compiler find unhandled values? */
   uint32_t offset; /* offset from beginning of function */
   uint16_t reserved;
 

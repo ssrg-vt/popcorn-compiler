@@ -1446,6 +1446,7 @@ void StackTransformMetadata::warnUnhandled() const {
   std::string Msg;
   const CallInst *IRCall;
   const Function *CalledFunc;
+  bool unhandled;
 
   for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
   {
@@ -1453,6 +1454,7 @@ void StackTransformMetadata::warnUnhandled() const {
     const MachineInstr *MICall = getMICall(*S);
     const RegValsMap &CurVregs = SMRegs.at(MISM);
     const StackValsMap &CurSS = SMStackSlots.at(MISM);
+    unhandled = false;
     IRCall = findCalledFunc(getIRSM(*S));
     CalledFunc = IRCall->getCalledFunction();
     assert(IRCall && "No call instruction for stackmap");
@@ -1467,6 +1469,7 @@ void StackTransformMetadata::warnUnhandled() const {
         Msg = "Stack transformation: unhandled register ";
         Msg += TRI->getName(VRM->getPhys(Vreg));
         displayWarning(Msg, IRCall, CalledFunc);
+        unhandled = true;
       }
     }
 
@@ -1478,8 +1481,11 @@ void StackTransformMetadata::warnUnhandled() const {
         Msg = "Stack transformation: unhandled stack slot ";
         Msg += std::to_string(SS);
         displayWarning(Msg, IRCall, CalledFunc);
+        unhandled = true;
       }
     }
+
+    if(unhandled) MF->setSMHasUnhandled(getIRSM(*S));
   }
 }
 

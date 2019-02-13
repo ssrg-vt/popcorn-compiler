@@ -288,6 +288,7 @@ create_call_site_metadata(uint64_t start_id,
       else
         sites[cur].id = start_id++;
       sites[cur].func = full_fr - records;
+      sites[cur].unhandled = site_record->unhandled;
       // TODO if the function's address isn't resolved until runtime (dynamic
       // linker), we need to add a relocation entry for the call site (RELA,
       // function sym + offset) so the linker updates the rewriting metadata

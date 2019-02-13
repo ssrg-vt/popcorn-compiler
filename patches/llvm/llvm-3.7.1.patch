@@ -1207,16 +1207,18 @@ Index: include/llvm/CodeGen/MachineFunction.h
 ===================================================================
 --- include/llvm/CodeGen/MachineFunction.h	(revision 320332)
 +++ include/llvm/CodeGen/MachineFunction.h	(working copy)
-@@ -20,6 +20,8 @@
+@@ -19,7 +19,10 @@
+ #define LLVM_CODEGEN_MACHINEFUNCTION_H
  
  #include "llvm/ADT/ilist.h"
++#include "llvm/ADT/DenseSet.h"
  #include "llvm/CodeGen/MachineBasicBlock.h"
 +#include "llvm/CodeGen/StackTransformTypes.h"
 +#include "llvm/IR/Instructions.h"
  #include "llvm/IR/DebugLoc.h"
  #include "llvm/IR/Metadata.h"
  #include "llvm/Support/Allocator.h"
-@@ -145,6 +147,19 @@
+@@ -145,6 +148,22 @@
    /// True if the function includes any inline assembly.
    bool HasInlineAsm;
  
@@ -1233,10 +1235,13 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +  /// Argument marshaling live values
 +  InstToArgLocs SMArgs;
 +
++  /// Stackmaps with unhandled live values
++  DenseSet<const CallInst *> SMWithUnhandled;
++
    MachineFunction(const MachineFunction &) = delete;
    void operator=(const MachineFunction&) = delete;
  public:
-@@ -457,6 +472,9 @@
+@@ -457,6 +476,9 @@
      return Mask;
    }
  
@@ -1246,7 +1251,7 @@ Index: include/llvm/CodeGen/MachineFunction.h
    /// allocateMemRefsArray - Allocate an array to hold MachineMemOperand
    /// pointers.  This array is owned by the MachineFunction.
    MachineInstr::mmo_iterator allocateMemRefsArray(unsigned long Num);
-@@ -488,6 +506,55 @@
+@@ -488,6 +510,60 @@
    /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
    /// base.
    MCSymbol *getPICBaseSymbol() const;
@@ -1272,6 +1277,8 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +
 +  /// Add an argument save location for a stackmap
 +  void addSMArgLocation(const CallInst *SM, const MachineLiveLoc &MLL);
++
++  void setSMHasUnhandled(const CallInst *SM);
 +
 +  /// Update stack slot references to new indexes after stack slot coloring
 +  void updateSMStackSlotRefs(SmallDenseMap<int, int, 16> &Changes);
@@ -1299,6 +1306,9 @@ Index: include/llvm/CodeGen/MachineFunction.h
 +
 +  /// Return the argument locations for a stackmap.
 +  const MachineLiveLocs &getSMArgLocs(const CallInst *SM) const;
++
++  /// Return whether the stackmap was marked as having unhandled live values.
++  bool SMHasUnhandled(const CallInst *SM) const;
  };
  
  //===--------------------------------------------------------------------===//
@@ -1445,7 +1455,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    StackMaps(AsmPrinter &AP);
  
-@@ -193,17 +225,23 @@
+@@ -193,17 +225,26 @@
    typedef SmallVector<LiveOutReg, 8> LiveOutVec;
    typedef MapVector<uint64_t, uint64_t> ConstantPool;
    typedef MapVector<const MCSymbol *, uint64_t> FnStackSizeMap;
@@ -1453,6 +1463,7 @@ Index: include/llvm/CodeGen/StackMaps.h
 +  typedef SmallVector<ArchValue, 8> ArchValues;
  
    struct CallsiteInfo {
++    bool HasUnhandledVals;
 +    const MCSymbol *Func;
      const MCExpr *CSOffsetExpr;
      uint64_t ID;
@@ -1464,17 +1475,19 @@ Index: include/llvm/CodeGen/StackMaps.h
 -        : CSOffsetExpr(CSOffsetExpr), ID(ID), Locations(std::move(Locations)),
 -          LiveOuts(std::move(LiveOuts)) {}
 +    ArchValues Vals;
-+    CallsiteInfo() : Func(nullptr), CSOffsetExpr(nullptr), ID(0) {}
-+    CallsiteInfo(const MCSymbol *Func, const MCExpr *CSOffsetExpr,
-+                 uint64_t ID, LocationVec &&Locations,
-+                 LiveOutVec &&LiveOuts, ArchValues &&Vals)
-+        : Func(Func), CSOffsetExpr(CSOffsetExpr), ID(ID),
-+          Locations(std::move(Locations)), LiveOuts(std::move(LiveOuts)),
-+          Vals(std::move(Vals)) {}
++    CallsiteInfo() : HasUnhandledVals(false), Func(nullptr),
++                     CSOffsetExpr(nullptr), ID(0) {}
++    CallsiteInfo(bool HasUnhandledVals, const MCSymbol *Func,
++                 const MCExpr *CSOffsetExpr, uint64_t ID,
++                 LocationVec &&Locations, LiveOutVec &&LiveOuts,
++                 ArchValues &&Vals)
++        : HasUnhandledVals(HasUnhandledVals), Func(Func),
++          CSOffsetExpr(CSOffsetExpr), ID(ID), Locations(std::move(Locations)),
++          LiveOuts(std::move(LiveOuts)), Vals(std::move(Vals)) {}
    };
  
    typedef std::vector<CallsiteInfo> CallsiteInfoList;
-@@ -213,10 +251,22 @@
+@@ -213,10 +254,22 @@
    ConstantPool ConstPool;
    FnStackSizeMap FnStackSize;
  
@@ -1498,7 +1511,7 @@ Index: include/llvm/CodeGen/StackMaps.h
  
    /// \brief Create a live-out register record for the given register @p Reg.
    LiveOutReg createLiveOutReg(unsigned Reg,
-@@ -226,6 +276,18 @@
+@@ -226,6 +279,18 @@
    /// registers that need to be recorded in the stackmap.
    LiveOutVec parseRegisterLiveOutMask(const uint32_t *Mask) const;
  
@@ -6419,7 +6432,7 @@ Index: lib/CodeGen/MachineFunction.cpp
  MachineInstr::mmo_iterator
  MachineFunction::allocateMemRefsArray(unsigned long Num) {
    return Allocator.Allocate<MachineMemOperand *>(Num);
-@@ -482,6 +491,211 @@
+@@ -482,6 +491,217 @@
                                 Twine(getFunctionNumber()) + "$pb");
  }
  
@@ -6508,6 +6521,9 @@ Index: lib/CodeGen/MachineFunction.cpp
 +                       InstToArgLocs>(SM, SMArgs);
 +  Locs.push_back(MachineLiveLocPtr(MLL.copy()));
 +}
++
++void MachineFunction::setSMHasUnhandled(const CallInst *SM)
++{ SMWithUnhandled.insert(SM); }
 +
 +/// Update stack slot references to new indexes after stack slot coloring
 +void
@@ -6627,6 +6643,9 @@ Index: lib/CodeGen/MachineFunction.cpp
 +  assert(It != SMArgs.end() && "No argument locations for stackmap");
 +  return It->second;
 +}
++
++bool MachineFunction::SMHasUnhandled(const CallInst *SM) const
++{ return SMWithUnhandled.count(SM); }
 +
  //===----------------------------------------------------------------------===//
  //  MachineFrameInfo implementation
@@ -7645,9 +7664,9 @@ Index: lib/CodeGen/StackMaps.cpp
  
 -  CSInfos.emplace_back(CSOffsetExpr, ID, std::move(Locations),
 -                       std::move(LiveOuts));
-+  CSInfos.emplace_back(AP.CurrentFnSym, CSOffsetExpr, ID,
-+                       std::move(Locations), std::move(LiveOuts),
-+                       std::move(Constants));
++  CSInfos.emplace_back(AP.MF->SMHasUnhandled(IRSM), AP.CurrentFnSym,
++                       CSOffsetExpr, ID, std::move(Locations),
++                       std::move(LiveOuts), std::move(Constants));
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
@@ -7669,11 +7688,12 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
    }
-@@ -439,14 +902,20 @@
+@@ -439,14 +902,21 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
-+///   uint32 : Index of Function Record
++///   uint32 (31 bits) : Index of Function Record
++///   uint32 (1 bit)   : Does the call site have unhandled live values?
  ///   uint32 : Instruction Offset
  ///   uint16 : Reserved (record flags)
  ///   uint16 : NumLocations
@@ -7694,7 +7714,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +924,26 @@
+@@ -455,6 +925,26 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -7721,7 +7741,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +959,29 @@
+@@ -470,23 +960,32 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7747,12 +7767,15 @@ Index: lib/CodeGen/StackMaps.cpp
        continue;
      }
  
++    uint32_t FuncNum = FnStackSize.find(CSI.Func) - FnStackSize.begin();
++    if(CSI.HasUnhandledVals) FuncNum |= 0x1 << 31;
++
      OS.EmitIntValue(CSI.ID, 8);
-+    OS.EmitIntValue(FnStackSize.find(CSI.Func) - FnStackSize.begin(), 4);
++    OS.EmitIntValue(FuncNum, 4);
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +989,14 @@
+@@ -494,10 +993,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -7768,7 +7791,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +1008,31 @@
+@@ -509,6 +1012,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7826,7 +7849,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1485 @@
+@@ -0,0 +1,1491 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9275,6 +9298,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  std::string Msg;
 +  const CallInst *IRCall;
 +  const Function *CalledFunc;
++  bool unhandled;
 +
 +  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
 +  {
@@ -9282,6 +9306,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    const MachineInstr *MICall = getMICall(*S);
 +    const RegValsMap &CurVregs = SMRegs.at(MISM);
 +    const StackValsMap &CurSS = SMStackSlots.at(MISM);
++    unhandled = false;
 +    IRCall = findCalledFunc(getIRSM(*S));
 +    CalledFunc = IRCall->getCalledFunction();
 +    assert(IRCall && "No call instruction for stackmap");
@@ -9296,6 +9321,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        Msg = "Stack transformation: unhandled register ";
 +        Msg += TRI->getName(VRM->getPhys(Vreg));
 +        displayWarning(Msg, IRCall, CalledFunc);
++        unhandled = true;
 +      }
 +    }
 +
@@ -9307,8 +9333,11 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +        Msg = "Stack transformation: unhandled stack slot ";
 +        Msg += std::to_string(SS);
 +        displayWarning(Msg, IRCall, CalledFunc);
++        unhandled = true;
 +      }
 +    }
++
++    if(unhandled) MF->setSMHasUnhandled(getIRSM(*S));
 +  }
 +}
 +
@@ -10754,7 +10783,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,280 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -10814,6 +10843,7 @@ Index: lib/Target/X86/X86Values.cpp
 +
 +int64_t X86Values::getArgSlots(const MachineInstr *MICall,
 +                               std::set<int64_t> &offsets) const {
++  int RegArg = X86::AddrBaseReg, OffArg = X86::AddrDisp;
 +  const MachineBasicBlock *parent = MICall->getParent();
 +  offsets.clear();
 +
@@ -10825,11 +10855,15 @@ Index: lib/Target/X86/X86Values.cpp
 +    case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
 +      assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
 +      return it->getOperand(0).getImm();
++    case X86::MOV32mi:
++    case X86::MOV32mr:
 +    case X86::MOV64mi32:
 +    case X86::MOV64mr:
-+      if(it->getOperand(0).isReg() && it->getOperand(0).getReg() == X86::RSP) {
-+        assert(it->getOperand(3).isImm() && "Invalid argument marshaling?");
-+        offsets.insert(it->getOperand(3).getImm());
++      if(it->getOperand(RegArg).isReg() &&
++         it->getOperand(RegArg).getReg() == X86::RSP) {
++        assert(it->getOperand(OffArg).isImm() &&
++               "Invalid argument marshaling?");
++        offsets.insert(it->getOperand(OffArg).getImm());
 +      }
 +      break;
 +    default: break;

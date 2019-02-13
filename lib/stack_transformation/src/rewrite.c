@@ -509,6 +509,9 @@ static bool unwind_and_size(rewrite_context src,
              REGOPS(src)->pc(ACT(src).regs));
       return false;
     }
+    if(ACT(src).site.unhandled)
+      ST_WARN("compiler indicated source call site has unhandled live "
+              "values\n");
 
     if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
     {
@@ -516,6 +519,9 @@ static bool unwind_and_size(rewrite_context src,
               REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
       return false;
     }
+    if(ACT(dest).site.unhandled)
+      ST_WARN("compiler indicated destination call site has unhandled live "
+              "values\n");
 
     /* Update stack size with newly discovered stack frame's size */
     stack_size += CUR_FUNC(dest).frame_size;
@@ -543,6 +549,8 @@ static bool unwind_and_size(rewrite_context src,
             REGOPS(src)->pc(ACT(src).regs));
     return false;
   }
+  if(ACT(src).site.unhandled)
+    ST_WARN("compiler indicated call site has unhandled live values\n");
   ACT(dest).site = ACT(src).site;
   rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 
@@ -572,6 +580,8 @@ static bool unwind_and_size(rewrite_context src,
               REGOPS(src)->pc(ACT(src).regs));
       return false;
     }
+    if(ACT(src).site.unhandled)
+      ST_WARN("compiler indicated call site has unhandled live values\n");
     ACT(dest).site = ACT(src).site;
     rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 

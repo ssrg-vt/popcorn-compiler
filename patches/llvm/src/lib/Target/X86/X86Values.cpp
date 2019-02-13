@@ -57,6 +57,7 @@ void X86Values::getArgRegs(const MachineInstr *MICall,
 
 int64_t X86Values::getArgSlots(const MachineInstr *MICall,
                                std::set<int64_t> &offsets) const {
+  int RegArg = X86::AddrBaseReg, OffArg = X86::AddrDisp;
   const MachineBasicBlock *parent = MICall->getParent();
   offsets.clear();
 
@@ -68,11 +69,15 @@ int64_t X86Values::getArgSlots(const MachineInstr *MICall,
     case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
       assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
       return it->getOperand(0).getImm();
+    case X86::MOV32mi:
+    case X86::MOV32mr:
     case X86::MOV64mi32:
     case X86::MOV64mr:
-      if(it->getOperand(0).isReg() && it->getOperand(0).getReg() == X86::RSP) {
-        assert(it->getOperand(3).isImm() && "Invalid argument marshaling?");
-        offsets.insert(it->getOperand(3).getImm());
+      if(it->getOperand(RegArg).isReg() &&
+         it->getOperand(RegArg).getReg() == X86::RSP) {
+        assert(it->getOperand(OffArg).isImm() &&
+               "Invalid argument marshaling?");
+        offsets.insert(it->getOperand(OffArg).getImm());
       }
       break;
     default: break;

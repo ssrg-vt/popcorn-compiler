@@ -158,10 +158,11 @@ bool dump_callsite_section(Elf_Scn *scn)
   printf("found %lu entries\n", num_sites);
   for(i = 0; i < num_sites; i++)
     printf("%lu: 0x%lx, function %u, %u live value(s) (offset=%lu), "
-           "%u arch-specific live value(s) (offset=%lu)\n",
+           "%u arch-specific live value(s) (offset=%lu)%s\n",
       sites[i].id, sites[i].addr, sites[i].func,
       sites[i].live.num, sites[i].live.offset,
-      sites[i].arch_live.num, sites[i].arch_live.offset);
+      sites[i].arch_live.num, sites[i].arch_live.offset,
+      sites[i].unhandled ? " (!)" : "");
   printf("\n");
 
   return true;
