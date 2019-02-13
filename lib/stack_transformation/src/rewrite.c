@@ -549,8 +549,10 @@ static bool unwind_and_size(rewrite_context src,
             REGOPS(src)->pc(ACT(src).regs));
     return false;
   }
-  if(ACT(src).site.unhandled)
+  else if(ACT(src).site.unhandled) {
     ST_WARN("compiler indicated call site has unhandled live values\n");
+    return false;
+  }
   ACT(dest).site = ACT(src).site;
   rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 
@@ -580,8 +582,10 @@ static bool unwind_and_size(rewrite_context src,
               REGOPS(src)->pc(ACT(src).regs));
       return false;
     }
-    if(ACT(src).site.unhandled)
+    else if(ACT(src).site.unhandled) {
       ST_WARN("compiler indicated call site has unhandled live values\n");
+      return false;
+    }
     ACT(dest).site = ACT(src).site;
     rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
 
