@@ -7410,17 +7410,18 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +519,183 @@
+@@ -277,6 +519,185 @@
    return LiveOuts;
  }
  
 +void StackMaps::addArgumentLocations(const CallInst *SM, LocationVec &Locs) {
-+  unsigned Offset, DwarfRegNum;
++  unsigned Offset, DwarfRegNum, Size;
 +
 +  if(AP.MF->hasSMArgLocations(SM)) {
 +    auto &DL = AP.MF->getDataLayout();
 +    const MachineLiveLocs &MLL = AP.MF->getSMArgLocs(SM);
 +    unsigned PointerSize = DL.getPointerSize();
++    const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
 +
 +    for(auto &Loc : MLL) {
 +      if(Loc->isReg()) {
@@ -7428,9 +7429,10 @@ Index: lib/CodeGen/StackMaps.cpp
 +        assert(TargetRegisterInfo::isPhysicalRegister(Reg->getReg()) &&
 +               "Virtreg operands should have been rewritten before now.");
 +
++        Size = TRI->getMinimalPhysRegClass(Reg->getReg())->getSize();
 +        getRegLocation(Reg->getReg(), DwarfRegNum, Offset);
-+        Locs.emplace_back(Location::Register, PointerSize, DwarfRegNum, Offset,
-+                          true, false, false, false, 0);
++        Locs.emplace_back(Location::Register, Size, DwarfRegNum, Offset,
++                          Reg->isPtr(), false, false, false, 0);
 +      }
 +      else if(Loc->isStackAddr()) {
 +        const MachineLiveStackAddr *Slot =
@@ -7443,7 +7445,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +        }
 +        else {
 +          Locs.emplace_back(Location::Direct, PointerSize, DwarfRegNum,
-+                            Slot->getOffset(), true, true, false,
++                            Slot->getOffset(), false, true, false,
 +                            false, Slot->getSize());
 +        }
 +      }
@@ -7594,7 +7596,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +704,56 @@
+@@ -285,21 +706,56 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -7653,7 +7655,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +777,21 @@
+@@ -323,12 +779,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -7678,7 +7680,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -382,7 +845,7 @@
+@@ -382,7 +847,7 @@
  /// Emit the stackmap header.
  ///
  /// Header {
@@ -7687,7 +7689,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint8  : Reserved (expected to be 0)
  ///   uint16 : Reserved (expected to be 0)
  /// }
-@@ -417,7 +880,7 @@
+@@ -417,7 +882,7 @@
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
      DEBUG(dbgs() << WSMP << "function addr: " << FR.first
@@ -7696,7 +7698,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
    }
-@@ -439,14 +902,21 @@
+@@ -439,14 +904,21 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -7722,7 +7724,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +925,26 @@
+@@ -455,6 +927,26 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -7749,7 +7751,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +960,32 @@
+@@ -470,23 +962,32 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7783,7 +7785,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +993,14 @@
+@@ -494,10 +995,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -7799,7 +7801,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +1012,31 @@
+@@ -509,6 +1014,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }

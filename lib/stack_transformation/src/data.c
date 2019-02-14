@@ -384,8 +384,8 @@ static inline bool slot_contains(const slotmap *slot, int offset)
 static inline int
 randomized_offset(size_t nslots, const slotmap *slots, int orig)
 {
-  size_t i;
   int randomized;
+  long min, max, mid;
 
   /*
    * We're probably looking for the return address slot in the outermost
@@ -393,14 +393,19 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
    */
   if(!nslots) return orig;
 
-  // TODO use a binary search (make sure we're sorted!)
-  for(i = 0; i < nslots; i++) {
-    if(slot_contains(&slots[i], orig)) {
-      randomized = orig - slots[i].original + slots[i].randomized;
+  min = 0;
+  max = nslots - 1;
+  while(max >= min) {
+    mid = (max + min) / 2;
+    if(slot_contains(&slots[mid], orig)) {
+      randomized = orig - slots[mid].original + slots[mid].randomized;
       ST_INFO("Remapping CFA offset %d -> %d\n", orig, randomized);
       return randomized;
     }
+    else if(orig > slots[mid].original) min = mid + 1;
+    else max = mid - 1;
   }
+
   ST_WARN("Could not find randomized offset!\n");
   return orig;
 }
