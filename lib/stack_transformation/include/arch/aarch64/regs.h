@@ -23,6 +23,9 @@
  */
 struct regset_aarch64
 {
+  /* Magic number: AARCH64 => 0xAABCBDEADBEAF */
+  uint64_t  __magic;
+
   /* Stack pointer & program counter */
   void* sp;
   void* pc;

@@ -8,6 +8,8 @@
 
 #include <syscall.h>
 
+#define CURRENT_ARCH ARCH_POWERPC64
+
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_POWERPC64(regset.powerpc); \
     regset.powerpc.pc = get_call_site()

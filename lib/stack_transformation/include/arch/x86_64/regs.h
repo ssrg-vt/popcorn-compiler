@@ -22,6 +22,9 @@
  */
 struct regset_x86_64
 {
+  /* Magic number: x86_64 => 0xA8664DEADBEAF */
+  uint64_t  __magic;
+
   /* Program counter/instruction pointer */
   void* rip;
 

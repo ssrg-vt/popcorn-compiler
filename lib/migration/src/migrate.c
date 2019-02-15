@@ -1,3 +1,4 @@
+#if _GBL_VARIABLE_MIGRATE == 0
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -368,3 +369,4 @@ void migrate_schedule(size_t region,
   if (nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
+#endif

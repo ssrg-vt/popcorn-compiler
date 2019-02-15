@@ -8,6 +8,8 @@
 
 #include <syscall.h>
 
+#define CURRENT_ARCH ARCH_AARCH64
+
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_AARCH64(regset.aarch); \
     regset.aarch.pc = get_call_site()

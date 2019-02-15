@@ -8,6 +8,8 @@
 
 #include <syscall.h>
 
+#define CURRENT_ARCH ARCH_X86_64
+
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_X86_64(regset.x86); \
     regset.x86.rip = get_call_site()

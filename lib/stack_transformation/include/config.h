@@ -46,7 +46,8 @@
  */
 #define COMPILER_TLS 0
 #define PTHREAD_TLS 1
-#define _TLS_IMPL COMPILER_TLS
+#define _TLS_IMPL PTHREAD_TLS
+//COMPILER_TLS
 
 /* Select either global or per-thread malloc implementation */
 #define PER_NODE_MALLOC 1

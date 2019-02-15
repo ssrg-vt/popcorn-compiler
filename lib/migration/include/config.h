@@ -59,7 +59,7 @@
 #endif
 
 /* Dump verbose migration information to a log file. */
-#define _LOG 0
+#define _LOG 1
 #define LOG_FILE "/tmp/migrate.log"
 
 /*
