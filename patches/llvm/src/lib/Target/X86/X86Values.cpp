@@ -54,12 +54,29 @@ getArgRegs(const MachineInstr *MICall, std::vector<unsigned> &regs) {
 
 static int64_t getArgSlots(const MachineInstr *MICall,
                            std::set<int64_t> &Offsets) {
+  bool FindBaseReg = false;
+  unsigned BaseReg;
   int RegArg = X86::AddrBaseReg, OffArg = X86::AddrDisp;
   const MachineBasicBlock *parent = MICall->getParent();
   Offsets.clear();
 
   MachineBasicBlock::const_reverse_iterator it(MICall);
   for(; it != parent->rend(); it++) {
+    if(FindBaseReg) {
+      const MachineOperand &MO = it->getOperand(0);
+      if(MO.isReg() && MO.getReg() == BaseReg) {
+        switch(it->getOpcode()) {
+        case X86::COPY: {
+          const MachineOperand &Base = it->getOperand(1);
+          if(Base.isReg() && Base.getReg() == X86::RSP) Offsets.insert(0);
+          break;
+        }
+        default: break;
+        }
+        FindBaseReg = false;
+      }
+    }
+
     switch(it->getOpcode()) {
     case X86::ADJCALLSTACKDOWN32: case X86::ADJCALLSTACKDOWN64:
       assert(it->getOperand(0).isImm() && "Invalid frame marshaling?");
@@ -74,6 +91,10 @@ static int64_t getArgSlots(const MachineInstr *MICall,
         Offsets.insert(it->getOperand(OffArg).getImm());
       }
       break;
+    case X86::REP_MOVSQ_64:
+      assert(it->getOperand(1).isReg());
+      BaseReg = it->getOperand(1).getReg();
+      FindBaseReg = true;
     default: break;
     }
   }
@@ -84,7 +105,7 @@ void
 X86Values::getMarshaledArguments(const CallInst *IRCall,
                                  const MachineInstr *MICall,
                                  std::vector<MachineLiveLocPtr> &Locs) const {
-  size_t NOps = IRCall->getNumOperands() - 1, Size;
+  size_t NOps = IRCall->getNumArgOperands(), Size;
   int64_t MaxOffset;
   std::vector<unsigned> Regs;
   std::set<int64_t> Offsets;
@@ -112,6 +133,16 @@ X86Values::getMarshaledArguments(const CallInst *IRCall,
   }
 
   for(size_t i = 0; i < NOps; i++) {
+    if(IRCall->paramHasAttr(i + 1, Attribute::ByVal)) {
+      if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
+      else Size = *NextOffset - *CurOffset;
+      Locs.emplace_back(MachineLiveLocPtr(
+        new MachineLiveStackAddr(*CurOffset, X86::RSP, Size, false)));
+      CurOffset++;
+      NextOffset++;
+      continue;
+    }
+
     const Type *Ty = IRCall->getOperand(i)->getType();
     if(i < Regs.size()) {
       Locs.emplace_back(MachineLiveLocPtr(
