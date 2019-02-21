@@ -939,6 +939,29 @@ bool StackTransformMetadata::addSSMetadata(int SS,
   else return false;
 }
 
+/// Because we're not in machine-SSA form, some register "copies" actually have
+/// intervening instructions that invalidate the register as a copy.  Detect
+/// that here.
+// TODO other forms of copy invalidation?
+static bool isRegReallyCopy(const MachineRegisterInfo *MRI, unsigned Vreg) {
+  if(MRI->hasOneDef(Vreg)) return true;
+
+  // The instruction is both used and defined within a single instruction.
+  // Found when creating a reference to a field in a struct, e.g., copy the
+  // base pointer and add an immediate to reference a particular field.
+  for(auto start = MRI->def_instr_begin(Vreg), end = MRI->def_instr_end();
+      start != end;
+      start++) {
+    for(auto op : start->operands()) {
+      if(op.isReg() && op.getReg() == Vreg &&
+         op.isUse() && !start->isCopyLike()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 /// Search stack slot copies for additional virtual registers which are live
 /// across the stackmap.  Will check to see if the copy instructions have
 /// already been visited, and if appropriate, will add virtual registers to
@@ -963,7 +986,7 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
       if(!Visited.count(Instr)) {
         addVregMetadata(Vreg, IRVals, SM);
         Visited.insert(Instr);
-        work.emplace(Vreg, TraverseDefs);
+        work.emplace(Vreg, TraverseDefs && isRegReallyCopy(MRI, Vreg));
       }
     }
   }
@@ -1030,7 +1053,7 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
             vreg = RCL->SrcVreg;
             addVregMetadata(vreg, IRVals, SM);
             Visited.insert(&*instr);
-            work.emplace(vreg, true);
+            work.emplace(vreg, isRegReallyCopy(MRI, vreg));
             break;
           case CopyLoc::STACK_LOAD:
             SCL = (StackCopyLoc *)loc.get();
