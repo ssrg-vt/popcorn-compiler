@@ -613,6 +613,14 @@ static bool unwind_and_size(rewrite_context src,
   src->act = 0;
   dest->act = 0;
 
+  /*
+   * Clear initial register set & callee-saved bitmaps for all destination
+   * frames.
+   */
+  memset(dest->regset_pool, 0, REGOPS(dest)->regset_size);
+  memset(dest->callee_saved_pool, 0, bitmap_size(REGOPS(dest)->num_regs) *
+                                     dest->num_acts);
+
   /* Set destination stack pointer and finish setting up outermost frame */
   dest->stack = PROPS(dest)->align_sp(dest->stack_base - stack_size);
   bootstrap_first_frame_funcentry(dest, dest->stack);
@@ -627,10 +635,6 @@ static bool unwind_and_size(rewrite_context src,
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
   ST_INFO("Rewriting destination as if entering function @ %p\n", fn);
-
-  /* Clear the callee-saved bitmaps for all destination frames. */
-  memset(dest->callee_saved_pool, 0, bitmap_size(REGOPS(dest)->num_regs) *
-                                     dest->num_acts);
 
   TIMER_STOP(unwind_and_size);
 
