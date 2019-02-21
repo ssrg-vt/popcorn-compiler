@@ -278,7 +278,11 @@ create_call_site_metadata(uint64_t start_id,
       site_record = &sm[i].call_sites[j];
       sm_func = &sm[i].function_records[site_record->func_idx];
       full_fr = get_func_metadata(sm_func->addr, num_func, records);
-      if(!full_fr) return false;
+      if(!full_fr) {
+        if(verbose)
+          printf("Couldn't find metadata for function 0x%lx\n", sm_func->addr);
+        return false;
+      }
 
       /* Populate call site record */
       if(site_record->id == UINT64_MAX ||

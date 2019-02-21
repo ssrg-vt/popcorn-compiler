@@ -207,7 +207,8 @@ uint64_t add_section_name(Elf *e, const char *name)
 }
 
 #define IN_RANGE( idx, _addr ) \
-  (records[idx].addr <= _addr && _addr < records[idx + 1].addr)
+  (records[idx].addr <= _addr && \
+   _addr < (records[idx].addr + records[idx].code_size))
 
 const function_record *get_func_metadata(uint64_t addr,
                                          size_t num,
