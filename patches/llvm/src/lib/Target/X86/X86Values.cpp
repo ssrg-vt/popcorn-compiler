@@ -101,6 +101,26 @@ static int64_t getArgSlots(const MachineInstr *MICall,
   llvm_unreachable("Could not find frame space marshaling instructions");
 }
 
+/// Return whether or not an argument passing register is an integer register.
+static bool isIntegerArgReg(unsigned PhysReg) {
+  switch(PhysReg) {
+  default: return true;
+  case X86::XMM0: case X86::XMM1: case X86::XMM2: case X86::XMM3:
+  case X86::XMM4: case X86::XMM5: case X86::XMM6: case X86::XMM7: return false;
+  }
+}
+
+static bool typeMatchesRegister(const Type *Ty, unsigned Reg) {
+  // Cases:
+  //   FP type      - integer reg -> no match
+  //   FP type      - FP reg      -> match
+  //   integer type - FP reg      -> no match
+  //   integer type - integer reg -> match
+  if(Ty->isFloatingPointTy() && isIntegerArgReg(Reg)) return false;
+  else if(!Ty->isFloatingPointTy() && !isIntegerArgReg(Reg)) return false;
+  else return true;
+}
+
 void
 X86Values::getMarshaledArguments(const CallInst *IRCall,
                                  const MachineInstr *MICall,
@@ -108,6 +128,7 @@ X86Values::getMarshaledArguments(const CallInst *IRCall,
   size_t NOps = IRCall->getNumArgOperands(), Size;
   int64_t MaxOffset;
   std::vector<unsigned> Regs;
+  std::vector<unsigned>::const_iterator CurReg;
   std::set<int64_t> Offsets;
   std::set<int64_t>::const_iterator CurOffset, NextOffset;
 
@@ -124,16 +145,22 @@ X86Values::getMarshaledArguments(const CallInst *IRCall,
   assert(Regs.size() + Offsets.size() == NOps &&
          "Could not find all argument locations");
 
-  // Walk through arguments, adding location metadata.  The x86 backend is nice
-  // to us and directly matches MI register operands to arguments.  Once we've
-  // consumed those, the remaining arguments are on the stack.
+  if(Regs.size()) CurReg = Regs.begin();
+  else CurReg = Regs.end();
+
   if(Offsets.size()) {
     CurOffset = Offsets.begin();
     NextOffset = Offsets.begin(); NextOffset++;
   }
+  else {
+    CurOffset = Offsets.end();
+    NextOffset = Offsets.end();
+  }
 
   for(size_t i = 0; i < NOps; i++) {
+    // Structs passed by value *must* be passed on the stack
     if(IRCall->paramHasAttr(i + 1, Attribute::ByVal)) {
+      assert(CurOffset != Offsets.end() && "Invalid argument marshal");
       if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
       else Size = *NextOffset - *CurOffset;
       Locs.emplace_back(MachineLiveLocPtr(
@@ -144,9 +171,10 @@ X86Values::getMarshaledArguments(const CallInst *IRCall,
     }
 
     const Type *Ty = IRCall->getOperand(i)->getType();
-    if(i < Regs.size()) {
+    if(CurReg != Regs.end() && typeMatchesRegister(Ty, *CurReg)) {
       Locs.emplace_back(MachineLiveLocPtr(
-        new MachineLiveReg(Regs[i], Ty->isPointerTy())));
+        new MachineLiveReg(*CurReg, Ty->isPointerTy())));
+      CurReg++;
     }
     else {
       if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
