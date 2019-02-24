@@ -388,10 +388,11 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
   long min, max, mid;
 
   /*
-   * We're probably looking for the return address slot in the outermost
-   * frame if we don't have any slot remappings, don't panic!
+   * We're probably looking for the return address slot in the outermost frame
+   * if we don't have any slot remappings or argument slots if the original
+   * offset is negative, don't panic!
    */
-  if(!nslots) return orig;
+  if(!nslots || orig <= 0) return orig;
 
   min = 0;
   max = nslots - 1;
@@ -406,7 +407,7 @@ randomized_offset(size_t nslots, const slotmap *slots, int orig)
     else max = mid - 1;
   }
 
-  ST_WARN("Could not find randomized offset!\n");
+  ST_WARN("Could not find randomized offset for %d!\n", orig);
   return orig;
 }
 

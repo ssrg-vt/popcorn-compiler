@@ -70,6 +70,13 @@ static void free_data_pools(rewrite_context ctx);
  */
 static bool unwind_and_size(rewrite_context src, rewrite_context dest);
 
+#ifdef CHAMELEON
+/*
+ * Dump the stack.
+ */
+static void dump_unwind(rewrite_context ctx);
+#endif
+
 /*
  * Rewrite an individual value from the source to destination call frame.
  * Returns true if there's a fixup needed within this stack frame.
@@ -210,6 +217,36 @@ int st_rewrite_randomized(void* cham_handle,
 #endif
 
   return 0;
+}
+
+void st_dump_stack(void* cham_handle,
+                   get_rand_info info_func,
+                   st_handle handle,
+                   void* regset,
+                   void* sp_base,
+                   void* sp_buf) {
+  rewrite_context ctx;
+
+  if(!cham_handle || !info_func || !handle || !regset || !sp_base || !sp_buf)
+  {
+    ST_WARN("invalid arguments\n");
+    return;
+  }
+
+  TIMER_START(st_rewrite_stack);
+
+  ctx = init_src_context(handle, regset, sp_base);
+  ctx->buf = sp_buf;
+  ctx->cham_handle = cham_handle;
+  ctx->rand_info = info_func;
+
+  if(!ctx)
+  {
+    if(ctx) free_context(ctx);
+    return;
+  }
+
+  dump_unwind(ctx);
 }
 
 #endif /* CHAMELEON */
@@ -640,6 +677,63 @@ static bool unwind_and_size(rewrite_context src,
 
   return true;
 }
+
+#ifdef CHAMELEON
+
+static void dump_unwind(rewrite_context ctx)
+{
+  func_rand_info rand_info;
+
+  ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(ACT(ctx).regs));
+
+  pop_frame_funcentry(ctx, false);
+  ctx->num_acts++;
+  if(!get_site_by_addr(ctx->handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
+  {
+    ST_WARN("could not get source call site information (address=%p)\n",
+            REGOPS(ctx)->pc(ACT(ctx).regs));
+    return;
+  }
+  else if(ACT(ctx).site.unhandled) {
+    ST_WARN("compiler indicated call site has unhandled live values\n");
+    return;
+  }
+  ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(ACT(ctx).regs));
+  rand_info = ctx->rand_info(ctx->cham_handle, ACT(ctx).site.addr);
+
+  ACT(ctx).frame_size = rand_info.new_frame_size;
+  ACT(ctx).nslots = rand_info.num_new_slots;
+  ACT(ctx).slots = rand_info.new_rand_slots;
+
+  ACT(ctx).cfa = calculate_cfa(ctx, ctx->act);
+
+  while(!first_frame(ACT(ctx).site.id))
+  {
+    pop_frame(ctx, false);
+    ctx->num_acts++;
+
+    if(!get_site_by_addr(ctx->handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site))
+    {
+      ST_WARN("could not get source call site information (address=%p)\n",
+              REGOPS(ctx)->pc(ACT(ctx).regs));
+      return;
+    }
+    else if(ACT(ctx).site.unhandled) {
+      ST_WARN("compiler indicated call site has unhandled live values\n");
+      return;
+    }
+    ST_INFO("Return address: %p\n", REGOPS(ctx)->pc(ACT(ctx).regs));
+    rand_info = ctx->rand_info(ctx->cham_handle, ACT(ctx).site.addr);
+
+    ACT(ctx).frame_size = rand_info.new_frame_size;
+    ACT(ctx).nslots = rand_info.num_new_slots;
+    ACT(ctx).slots = rand_info.new_rand_slots;
+
+    ACT(ctx).cfa = calculate_cfa(ctx, ctx->act);
+  }
+}
+
+#endif
 
 /*
  * Rewrite an individual value from the source to destination call frame.

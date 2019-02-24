@@ -126,6 +126,26 @@ int st_rewrite_randomized(void *cham_handle,
                           void* sp_dest_base,
                           void *sp_dest_buf);
 
+/*
+ * Dump the child's stack.
+ *
+ * @param cham_handle opaque handle providied chameleon
+ * @param info_func callback used to gather randomization information
+ * @param handle a stack transformation handle which has transformation
+ *               metadata for the source binary
+ * @param regset a pointer to a filled register set representing the thread's
+ *               state
+ * @param sp_base stack base in child's address space, i.e., highest stack
+ *                address
+ * @param sp_buf stack base of buffer in Chameleon's address space
+ */
+void st_dump_stack(void *cham_handle,
+                   get_rand_info info_func,
+                   st_handle handle,
+                   void *regset,
+                   void *sp_base,
+                   void *sp_buf);
+
 #else /* CHAMELEON */
 
 /*
