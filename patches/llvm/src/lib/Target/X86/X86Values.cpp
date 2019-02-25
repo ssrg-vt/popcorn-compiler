@@ -122,10 +122,10 @@ static bool typeMatchesRegister(const Type *Ty, unsigned Reg) {
 }
 
 void
-X86Values::getMarshaledArguments(const CallInst *IRCall,
+X86Values::getMarshaledArguments(const ImmutableCallSite &IRCall,
                                  const MachineInstr *MICall,
                                  std::vector<MachineLiveLocPtr> &Locs) const {
-  size_t NOps = IRCall->getNumArgOperands(), Size;
+  size_t NOps = IRCall.getNumArgOperands(), Size;
   int64_t MaxOffset;
   std::vector<unsigned> Regs;
   std::vector<unsigned>::const_iterator CurReg;
@@ -159,7 +159,7 @@ X86Values::getMarshaledArguments(const CallInst *IRCall,
 
   for(size_t i = 0; i < NOps; i++) {
     // Structs passed by value *must* be passed on the stack
-    if(IRCall->paramHasAttr(i + 1, Attribute::ByVal)) {
+    if(IRCall.paramHasAttr(i + 1, Attribute::ByVal)) {
       assert(CurOffset != Offsets.end() && "Invalid argument marshal");
       if(NextOffset == Offsets.end()) Size = MaxOffset - *CurOffset;
       else Size = *NextOffset - *CurOffset;

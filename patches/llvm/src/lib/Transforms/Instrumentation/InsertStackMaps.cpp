@@ -4,6 +4,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Analysis/LiveValues.h"
 #include "llvm/Analysis/PopcornUtil.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/InstIterator.h"
@@ -46,6 +47,24 @@ struct ValueComp
     }
   }
 };
+
+static const Value *stripBitcasts(const Value *V)
+{
+  while(isa<BitCastInst>(V)) V = cast<BitCastInst>(V)->getOperand(0);
+  return V;
+}
+
+static bool isAlloca(const Value *V)
+{
+  const GetElementPtrInst *GEP;
+
+  V = stripBitcasts(V);
+  if(isa<AllocaInst>(V)) return true;
+  else if((GEP = dyn_cast<GetElementPtrInst>(V)) &&
+          isa<AllocaInst>(stripBitcasts(GEP->getPointerOperand())))
+    return true;
+  else return false;
+}
 
 /**
  * This class instruments equivalence points in the IR with LLVM's stackmap
@@ -91,6 +110,7 @@ public:
   {
     bool modified = false;
 
+    Instruction *LivePoint, *InsertPoint;
     std::set<const Value *> *live;
     std::set<const Value *, ValueComp> sortedLive;
     InstHidingMap hiddenInst;
@@ -135,11 +155,15 @@ public:
             CallSite CS(i);
             if(CS.isInvoke())
             {
-              DEBUG(dbgs() << "WARNING: unhandled invoke:"; CS->dump());
-              continue;
+              const InvokeInst *II = cast<InvokeInst>(CS.getInstruction());
+              LivePoint = InsertPoint = II->getNormalDest()->getFirstInsertionPt();
+            }
+            else {
+              LivePoint = CS.getInstruction();
+              InsertPoint = CS->getNextNode();
             }
 
-            IRBuilder<> builder(CS->getNextNode());
+            IRBuilder<> builder(InsertPoint);
             std::vector<Value *> args(2);
             args[0] = ConstantInt::getSigned(Type::getInt64Ty(M.getContext()),
                                              this->callSiteID++);
@@ -152,7 +176,7 @@ public:
               continue;
             }
 
-            live = liveVals.getLiveValues(&*i);
+            live = liveVals.getLiveValues(LivePoint);
             for(const Value *val : *live) sortedLive.insert(val);
             for(const auto &pair : hiddenInst) {
               /*
@@ -204,6 +228,12 @@ public:
             builder.CreateCall(this->SMFunc, ArrayRef<Value*>(args));
             sortedLive.clear();
             this->numInstrumented++;
+          }
+          else if(isa<StoreInst>(&*i)) {
+            // TODO if storing pointer-to-alloca to another alloca, add
+            // metadata to fix up
+            const Value *StoreVal = i->getOperand(0);
+            if(isAlloca(StoreVal)) warnEscapingAllocaRef(*&i);
           }
         }
       }
@@ -334,6 +364,20 @@ private:
         }
       }
     }
+  }
+
+  void warnEscapingAllocaRef(const Instruction *I) const {
+    const Function *F = I->getParent()->getParent();
+    std::string Warning("Inserting stackmaps");
+    if(F->hasName()) {
+      Warning += " in function '";
+      Warning += F->getName();
+      Warning += "'";
+    }
+    Warning += ": storing reference to stack-allocated variable into an "
+               "unhandled location (can't reify at transform time)";
+    DiagnosticInfoOptimizationFailure DI(*F, I->getDebugLoc(), Warning);
+    I->getContext().diagnose(DI);
   }
 };
 

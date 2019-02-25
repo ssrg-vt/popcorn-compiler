@@ -14,7 +14,7 @@ namespace llvm {
 class X86Values final : public TargetValues {
 public:
   X86Values() {}
-  virtual void getMarshaledArguments(const CallInst *IRCall,
+  virtual void getMarshaledArguments(const ImmutableCallSite &IRCall,
                                      const MachineInstr *MICall,
                                      std::vector<MachineLiveLocPtr> &Locs) const;
   virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,

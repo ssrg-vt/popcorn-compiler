@@ -23,6 +23,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/VirtRegMap.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/CallSite.h"
 
 namespace llvm {
 
@@ -60,7 +61,7 @@ public:
 
   /// Return metadata describing the locations (registers, stack slots) of
   /// arguments marshaled for the given function call.
-  virtual void getMarshaledArguments(const CallInst *IRCall,
+  virtual void getMarshaledArguments(const ImmutableCallSite &IRCall,
                                      const MachineInstr *MICall,
                                      std::vector<MachineLiveLocPtr> &Locs) const
   { Locs.clear(); }
