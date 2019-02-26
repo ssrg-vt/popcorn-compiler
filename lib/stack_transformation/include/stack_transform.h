@@ -68,6 +68,9 @@ typedef struct slotmap {
 } slotmap;
 
 typedef struct func_rand_info {
+  /* Did we find randomization information? */
+  int found;
+
   /* Old (randomized) and new (re-randomized) stack size */
   uint64_t old_frame_size, new_frame_size;
 

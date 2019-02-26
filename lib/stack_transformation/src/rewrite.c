@@ -196,9 +196,15 @@ int st_rewrite_randomized(void* cham_handle,
    */
   // TODO how do we reify returned values which are pointer to the stack?
   if(!is_return)
+  {
+    ST_INFO("Copying argument register(s)\n");
     REGOPS(dst)->regset_copy_arg_regs(dst->acts[0].regs, dst->acts[1].regs);
+  }
   else
+  {
+    ST_INFO("Copying return register(s)\n");
     REGOPS(dst)->regset_copy_ret_regs(dst->acts[0].regs, src->acts[0].regs);
+  }
 
   /* Copy out register state for destination & clean up. */
   REGOPS(dst)->regset_copyout(dst->acts[0].regs, dst->regs);
@@ -233,7 +239,7 @@ void st_dump_stack(void* cham_handle,
     return;
   }
 
-  TIMER_START(st_rewrite_stack);
+  ST_INFO("--> Dumping stack (%s) <--\n", arch_name(handle->arch));
 
   ctx = init_src_context(handle, regset, sp_base);
   ctx->buf = sp_buf;
@@ -592,6 +598,10 @@ static bool unwind_and_size(rewrite_context src,
   }
   ACT(dest).site = ACT(src).site;
   rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
+  if(!rand_info.found) {
+    ST_WARN("no randomization information for 0x%lx\n", ACT(src).site.addr);
+    return false;
+  }
 
   ACT(src).frame_size = rand_info.old_frame_size;
   ACT(src).nslots = rand_info.num_old_slots;
@@ -625,6 +635,10 @@ static bool unwind_and_size(rewrite_context src,
     }
     ACT(dest).site = ACT(src).site;
     rand_info = src->rand_info(src->cham_handle, ACT(src).site.addr);
+    if(!rand_info.found) {
+      ST_WARN("no randomization information for 0x%lx\n", ACT(src).site.addr);
+      return false;
+    }
 
     ACT(src).frame_size = rand_info.old_frame_size;
     ACT(src).nslots = rand_info.num_old_slots;
@@ -891,6 +905,7 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
     // TODO If the code creates a pointer to an argument, is LLVM forced to
     // create an alloca and copy the argument into the local stack space?
     // Otherwise, how does LLVM understand argument/register conventions?
+    found_fixup = false;
     if(fixup_node->data.src_addr <= ACT(src).cfa) // Is fixup in this frame?
     {
       // Note: we should have resolved all fixups for this frame from frames
@@ -905,7 +920,6 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
       }
 
       // Find the same-frame data which corresponds to the fixup
-      found_fixup = false;
       src_offset = ACT(src).site.live.offset;
       dest_offset = ACT(dest).site.live.offset;
       for(i = 0, j = 0; j < ACT(dest).site.live.num; i++, j++)
