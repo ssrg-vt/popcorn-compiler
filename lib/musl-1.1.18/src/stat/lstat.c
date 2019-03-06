@@ -5,11 +5,15 @@
 
 int lstat(const char *restrict path, struct stat *restrict buf)
 {
+	int ret;
+	union stat_union stu;
 #ifdef SYS_lstat
-	return syscall(SYS_lstat, path, buf);
+	ret = syscall(SYS_lstat, path, &stu);
 #else
-	return syscall(SYS_fstatat, AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW);
+	ret = syscall(SYS_fstatat, AT_FDCWD, path, &stu, AT_SYMLINK_NOFOLLOW);
 #endif
+	translate_stat(buf, &stu);
+	return ret;
 }
 
 LFS64(lstat);

@@ -4,7 +4,10 @@
 
 int fstatat(int fd, const char *restrict path, struct stat *restrict buf, int flag)
 {
-	return syscall(SYS_fstatat, fd, path, buf, flag);
+	union stat_union stu;
+	int ret=syscall(SYS_fstatat, fd, path, &stu, flag);
+	translate_stat(buf, &stu);
+	return ret;
 }
 
 LFS64(fstatat);
