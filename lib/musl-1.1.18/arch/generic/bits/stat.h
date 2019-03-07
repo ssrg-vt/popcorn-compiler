@@ -1,18 +1,22 @@
 #ifndef _BIT_STAT_H_
 #define _BIT_STAT_H_
 
+#include <stdio.h>
+
+typedef unsigned long uint64_t;
+
 /* structure used by the user-space */
-struct stat {
-	dev_t st_dev;
-	ino_t st_ino;
-	mode_t st_mode;
-	nlink_t st_nlink;
-	uid_t st_uid;
-	gid_t st_gid;
-	dev_t st_rdev;
+struct __attribute__((packed))  stat {
+	uint64_t st_dev;
+	uint64_t st_ino;
+	uint64_t st_mode;
+	uint64_t st_nlink;
+	uint64_t st_uid;
+	uint64_t st_gid;
+	uint64_t st_rdev;
 	off_t st_size;
-	blksize_t st_blksize;
-	blkcnt_t st_blocks;
+	off_t st_blksize;
+	off_t st_blocks;
 	struct timespec st_atim;
 	struct timespec st_mtim;
 	struct timespec st_ctim;
@@ -75,7 +79,28 @@ union stat_union {
 	#error "usuported architecture"
 #endif
 
-void translate_stat(struct stat *st, union stat_union *stu);
+
+static inline void translate_stat(struct stat *st, union stat_union *stu)
+{
+	st->st_dev = stu->carch.st_dev;
+	st->st_ino = stu->carch.st_ino;
+	st->st_mode = stu->carch.st_mode;
+	st->st_nlink = stu->carch.st_nlink;
+	st->st_uid = stu->carch.st_uid;
+	st->st_gid = stu->carch.st_gid;
+	st->st_rdev = stu->carch.st_rdev;
+	st->st_size = stu->carch.st_size;
+	st->st_blksize = stu->carch.st_blksize;
+	st->st_blocks = stu->carch.st_blocks;
+	st->st_atim = stu->carch.st_atim;
+	st->st_mtim = stu->carch.st_mtim;
+	st->st_ctim = stu->carch.st_ctim;
+	printf("%s: arch size %ld\n", __func__, sizeof(*stu));
+	printf("%s: arch x86_64 size %ld\n", __func__, sizeof(stu->x86_64));
+	printf("%s: arch x86_64 size %ld\n", __func__, sizeof(stu->aarch64));
+	printf("%s: -->common size %ld\n", __func__, sizeof(*st));
+	printf("%s: -->common size %ld\n", __func__, sizeof(struct stat));
+}
 
 #endif
 
