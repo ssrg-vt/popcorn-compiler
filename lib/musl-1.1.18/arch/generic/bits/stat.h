@@ -1,5 +1,6 @@
 #ifndef _BIT_STAT_H_
 #define _BIT_STAT_H_
+
 /* structure used by the user-space */
 struct stat {
 	dev_t st_dev;
@@ -61,6 +62,18 @@ union stat_union {
 	struct stat_aarch64 aarch64;
 };
 
+
+/* Copy values over from arch specific stat to generic stat so include
+ * from application side can use the translation layer irrespective of
+ * architecture. There may be a better more generic way of doing this
+ * but doing a direct member to member copy will suffice for now. */
+#ifdef __x86_64__
+	#define carch x86_64
+#elif __aarch64__
+	#define carch aarch64
+#else
+	#error "usuported architecture"
+#endif
 
 void translate_stat(struct stat *st, union stat_union *stu);
 

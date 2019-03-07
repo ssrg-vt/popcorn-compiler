@@ -1,18 +1,6 @@
 #include <sys/stat.h>
 #include <stdio.h>
 
-/* Copy values over from arch specific stat to generic stat so include
- * from application side can use the translation layer irrespective of
- * architecture. There may be a better more generic way of doing this
- * but doing a direct member to member copy will suffice for now. */
-#ifdef __x86_64__
-	#define carch x86_64
-#elif __aarch64__
-	#define carch aarch64
-#else
-	#error "usuported architecture"
-#endif
-
 void translate_stat(struct stat *st, union stat_union *stu)
 {
 	st->st_dev = stu->carch.st_dev;
@@ -28,4 +16,8 @@ void translate_stat(struct stat *st, union stat_union *stu)
 	st->st_atim = stu->carch.st_atim;
 	st->st_mtim = stu->carch.st_mtim;
 	st->st_ctim = stu->carch.st_ctim;
+	printf("%s: arch size %ld\n", __func__, sizeof(*stu));
+	printf("%s: arch x86_64 size %ld\n", __func__, sizeof(stu->x86_64));
+	printf("%s: arch x86_64 size %ld\n", __func__, sizeof(stu->aarch64));
+	printf("%s: common size %ld\n", __func__, sizeof(*st));
 }

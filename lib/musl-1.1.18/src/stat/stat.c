@@ -8,9 +8,9 @@ int stat(const char *restrict path, struct stat *restrict buf)
 	int ret;
 	union stat_union stu;
 #ifdef SYS_stat
-	ret = syscall(SYS_stat, path, &stu);
+	ret = syscall(SYS_stat, path, &stu. carch);
 #else
-	ret = syscall(SYS_fstatat, AT_FDCWD, path, &stu, 0);
+	ret = syscall(SYS_fstatat, AT_FDCWD, path, &stu. carch, 0);
 #endif
 	translate_stat(buf, &stu);
 	return ret;

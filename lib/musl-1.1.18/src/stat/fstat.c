@@ -9,7 +9,7 @@ void __procfdname(char *, unsigned);
 int fstat(int fd, struct stat *st)
 {
 	union stat_union stu;
-	int ret = __syscall(SYS_fstat, fd, &stu);
+	int ret = __syscall(SYS_fstat, fd, &stu. carch);
 	if (ret != -EBADF || __syscall(SYS_fcntl, fd, F_GETFD) < 0)
 	{
 		translate_stat(st, &stu);
@@ -19,9 +19,9 @@ int fstat(int fd, struct stat *st)
 	char buf[15+3*sizeof(int)];
 	__procfdname(buf, fd);
 #ifdef SYS_stat
-	ret=syscall(SYS_stat, buf, &stu);
+	ret=syscall(SYS_stat, buf, &stu. carch);
 #else
-	ret=syscall(SYS_fstatat, AT_FDCWD, buf, &stu, 0);
+	ret=syscall(SYS_fstatat, AT_FDCWD, buf, &stu. carch, 0);
 #endif
 	translate_stat(st, &stu);
 	return ret;
