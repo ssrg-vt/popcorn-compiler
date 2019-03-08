@@ -1,0 +1,221 @@
+#!/bin/bash
+set -e
+#set -x
+
+#echo $0: called with "$*"
+
+POPCORN=/usr/local/popcorn
+LD="$POPCORN/bin/ld.gold"
+ALIGN="$POPCORN/bin/pyalign"
+POST_PROCESS=$POPCORN/bin/gen-stackinfo
+X86_64_POPCORN="$POPCORN/x86_64"
+ARM64_POPCORN="$POPCORN/aarch64"
+
+
+#CFLAGS
+CFLAGS="-nostdinc" 
+
+###LDFLAGS
+LIBS="/lib/crt1.o /lib/libc.a /lib/libmigrate.a /lib/libstack-transform.a 
+	/lib/libelf.a  /lib/libpthread.a  /lib/libc.a  /lib/libm.a"
+X86_64_LIBS=
+ARM64_LIBS=
+for lib in $LIBS; do
+	X86_64_LIBS+="$X86_64_POPCORN/$lib "
+	ARM64_LIBS+="$ARM64_POPCORN/$lib "
+done
+
+
+
+#filter options
+options=()  # the buffer array for the parameters
+eoo=0       # end of options reached
+OBJS=()
+PRINT_VERSION=0
+_USR_LIBRARY_PATH=()
+_USR_LIBS=()
+STANDARD_USR_LIBS=()
+
+#filter "-o" options and "*.o" files
+while [[ $1 ]]
+do
+    if ! ((eoo)); then
+	case "$1" in
+	  -o)
+	      BIN=$2
+	      #echo found -o is: $BIN
+	      shift
+	      shift
+	      ;;
+	  --version|-v|-V)
+	      PRINT_VERSION=1
+	      shift
+	      ;;
+	  -lm)
+  	      STANDARD_USR_LIBS+=("$1")
+	      shift
+		;;
+
+	  -l*)
+  	      _USR_LIBS+=("$1")
+	      shift
+		;;
+	  #skip this option sent by clang when calling the default ld.
+	  #Can we do this skipping in the actual build of clang/llvm?
+	  #This is may become a real problem in -L option (see below)
+	  
+	  #Another solution will be to modify popcorn-clang, such that 
+	  #it always  compiles -c then links?
+	  -dynamic-linker)
+	      shift
+	      shift
+		;;
+	  #skip default option sent by clang (when called without -c)
+	  -m)
+	      shift
+	      shift
+		;;
+          #also skip
+	  --hash-style=*)
+	      shift
+	      shift
+		;;
+          #also skip
+	  --eh-frame-hdr)# This one is deadly as it leads to a segfault on ARM
+		shift
+		;;
+          #skip some: FIXME
+	  -L*)
+	      #This is an ugly hack to avoid the default library given by clang
+              #Which are all absolute
+
+              #As long as the popcorn-clang user use -L with only relative paths
+              #This sould work (otherwise we will skip real user path)
+	      if [ "${1:2:1}" != "/" ] #add only relative path 
+	      then
+		echo adding $1 third char is ${1:2:1}
+  	      	_USR_LIBRARY_PATH+=("$1")
+              fi
+	      shift
+		;;
+#	  -L*)
+#	      #skip: refuse all -L options!?
+#	      #this is necesary since clang add default libraries even
+#	      #when compiled wiht -nostdlib option! The fix should be
+#	      #there not here. We should allow the user to add custom
+#	      #librarie
+#		echo $1 skipped
+#	      shift
+#		;;
+#	  *lib*)
+#	      #skip
+#		echo $1 skipped
+#	      shift
+#		;;
+	  *.o)
+	      OBJS+=("$1")
+	      shift
+	      ;;
+	  *gcc*)
+	      #skip
+	      shift
+	      ;;
+	  --)
+	      eoo=1
+	      options+=("$1")
+		#echo "--$options"
+	      shift
+	      ;;
+	  *)
+	      options+=("$1")
+		#echo "*$options"
+	      shift
+	      ;;
+	esac
+    else
+	options+=("$1")
+		#echo "else$options"
+	# Another (worse) way of doing the same thing:
+	# options=("${options[@]}" "$1")
+	shift
+    fi
+done
+	
+if [ $PRINT_VERSION = "1" ]; then	
+	$LD --version $*
+	exit
+fi
+
+#echo OPTIONS: ${options[@]}
+#echo OBJS: ${OBJS[@]}
+#echo USER_LIBS: ${_USR_LIBS[@]}
+#echo STANDARD_USR_LIBS: ${STANDARD_USR_LIBS[@]}
+
+ALL_OBJS="${OBJS[@]}"
+ARM64_OBJ="$ALL_OBJS" #arms obj have no extension
+X86_64_OBJ="${ALL_OBJS//.o/_x86_64.o}"
+OBJ_PREFIX="${ALL_OBJS//.o/_}"
+OBJ_PREFIX=$(echo $OBJ_PREFIX | tr -d ' ') #trim white space
+#ARGS_WO_OBJS=$(echo $ARGS | sed -n "s/[a-zA-Z0-9]*.o//gp") # The filter is better?
+  	      
+USR_LIBRARY_PATH=${_USR_LIBRARY_PATH[@]}
+USR_LIBS="${_USR_LIBS[@]}"
+USR_LIBS_ARM64="$USR_LIBS $STANDARD_USR_LIBS"
+if [ -z "$USR_LIBS" ]; then
+	_USR_LIBS_x86_64=""
+else
+	_USR_LIBS_x86_64="${USR_LIBS/%/_x86_64}" 
+fi
+USR_LIBS_x86_64="$_USR_LIBS_x86_64 $STANDARD_USR_LIBS" 
+
+
+#LIBGCC="--start-group -lc -lgcc -lgcc_eh --end-group"
+ALL_LIBS_ARM="--start-group $USR_LIBS_ARM64 -lc -lgcc -lgcc_eh --end-group"
+ARM64_LIBGCC=$(dirname $(aarch64-linux-gnu-gcc -print-libgcc-file-name))
+
+LDFLAGS="-z relro --hash-style=gnu --build-id -static"
+X86_64_LDFLAGS="$LDFLAGS -m elf_x86_64 -L$X86_64_POPCORN/lib $X86_64_LIBS $USR_LIBRARY_PATH --start-group -lc $USR_LIBS_x86_64 --end-group"
+ARM64_LDFLAGS="$LDFLAGS -m aarch64linux -L$ARM64_POPCORN/lib -L$ARM64_LIBGCC $ARM64_LIBS $USR_LIBRARY_PATH $ALL_LIBS_ARM"
+
+
+BIN_X86="$BIN"_x86-64
+BIN_ARM="$BIN"_aarch64
+BIN_X86_VANILLA="$BIN_X86"_VANILLA
+BIN_ARM_VANILLA="$BIN_ARM"_VANILLA
+
+ARM64_MAP="$OBJ_PREFIX"arm64_map.txt
+X86_64_MAP="$OBJ_PREFIX"x86_64_map.txt
+
+NLD=aarch64-linux-gnu-ld
+#### Create the maps and the vanilla binaries
+#$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
+$LD -o $BIN_ARM_VANILLA $ARM64_OBJ $ARM64_LDFLAGS -Map $ARM64_MAP ${options[@]}
+#$NLD -o $BIN_ARM_VANILLA $ARM64_OBJ $ARM64_LDFLAGS -Map $ARM64_MAP ${options[@]}
+#@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
+$LD -o $BIN_X86_VANILLA $X86_64_OBJ $X86_64_LDFLAGS -Map $X86_64_MAP ${options[@]}
+
+ARM64_LD_SCRIPT="$BIN"_arm_ldscript
+X86_64_LD_SCRIPT="$BIN"_x86_ldscript
+### Input = maps; Output = LDSCRIPTS
+$ALIGN --x86-bin $BIN_X86_VANILLA --arm-bin $BIN_ARM_VANILLA \
+		--x86-map $X86_64_MAP --arm-map $ARM64_MAP \
+		--output-x86-ls $X86_64_LD_SCRIPT --output-arm-ls $ARM64_LD_SCRIPT
+
+ARM64_ALIGNED_MAP="$OBJ_PREFIX"arm64_aligned_map.txt
+X86_64_ALIGNED_MAP="$OBJ_PREFIX"x86_64_aligned_map.txt
+### Input = LDSCRIPTS; Output = the pre-final binaries 
+#@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_ALIGNED_MAP) -T $<
+$LD -o $BIN_ARM $ARM64_OBJ $ARM64_LDFLAGS -Map $ARM64_ALIGNED_MAP -T $ARM64_LD_SCRIPT ${options[@]}
+#@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_ALIGNED_MAP) -T $<
+$LD -o $BIN_X86 $X86_64_OBJ $X86_64_LDFLAGS -Map $X86_64_ALIGNED_MAP -T $X86_64_LD_SCRIPT ${options[@]}
+
+#TODO: check aligned maps?
+
+### Pre-finale binaries =>(post-process)=> final binaries
+#@$(POST_PROCESS) -f $(ARM64_ALIGNED)
+#@$(POST_PROCESS) -f $(X86_64_ALIGNED)
+$POST_PROCESS -f $BIN_ARM
+$POST_PROCESS -f $BIN_X86
+
+## COPY the BIN_X86 version to BIN (TODO: do the same for arm? using scp?)
+cp $BIN_X86 $BIN
