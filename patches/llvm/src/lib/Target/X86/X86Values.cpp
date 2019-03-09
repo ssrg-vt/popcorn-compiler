@@ -19,6 +19,19 @@
 
 using namespace llvm;
 
+unsigned X86Values::getSubRegSize(const MachineOperand &MO) const {
+  assert(MO.isReg() && "Invalid operand for getSubRegSize");
+  switch(MO.getSubReg()) {
+  default: return 0;
+  case X86::sub_8bit: return 1;
+  case X86::sub_8bit_hi: /* fall-through */
+  case X86::sub_16bit: return 2;
+  case X86::sub_32bit: return 4;
+  case X86::sub_xmm: return 16;
+  case X86::sub_ymm: return 32;
+  }
+}
+
 static void
 getArgRegs(const MachineInstr *MICall, std::vector<unsigned> &regs) {
   size_t opIt;

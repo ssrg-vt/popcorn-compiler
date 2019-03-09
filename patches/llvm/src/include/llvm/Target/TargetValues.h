@@ -59,6 +59,10 @@ public:
   void operator=(const TargetValues &) = delete;
   virtual ~TargetValues() {};
 
+  /// Get the size in bytes of sub-registers of a register operand, or 0 if the
+  /// operand doesn't have sub-registers.
+  virtual unsigned getSubRegSize(const MachineOperand &MO) const { return 0; }
+
   /// Return metadata describing the locations (registers, stack slots) of
   /// arguments marshaled for the given function call.
   virtual void getMarshaledArguments(const ImmutableCallSite &IRCall,

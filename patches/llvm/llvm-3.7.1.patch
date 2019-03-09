@@ -1575,7 +1575,7 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 ===================================================================
 --- include/llvm/CodeGen/StackTransformTypes.h	(nonexistent)
 +++ include/llvm/CodeGen/StackTransformTypes.h	(working copy)
-@@ -0,0 +1,620 @@
+@@ -0,0 +1,629 @@
 +//===------- StackTransformTypes.h - Stack Transform Types ------*- C++ -*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2044,8 +2044,10 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +/// number as an architecture-specific physical register.
 +class MachineLiveReg : public MachineLiveLoc {
 +public:
-+  MachineLiveReg(unsigned Reg, bool Ptr = false) : MachineLiveLoc(Reg, Ptr) {}
-+  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C) {}
++  MachineLiveReg(unsigned Reg, bool Ptr = false, unsigned SubRegSize = 0)
++    : MachineLiveLoc(Reg, Ptr), SubRegSize(SubRegSize) {}
++  MachineLiveReg(const MachineLiveReg &C)
++    : MachineLiveLoc(C), SubRegSize(C.SubRegSize) {}
 +  virtual MachineLiveLoc *copy() const { return new MachineLiveReg(*this); }
 +  virtual bool operator==(const MachineLiveLoc &RHS) const;
 +
@@ -2059,6 +2061,13 @@ Index: include/llvm/CodeGen/StackTransformTypes.h
 +    if(Ptr) os << " (is a pointer)";
 +    os << "\n";
 +  }
++
++  unsigned getSubRegSize() const { return SubRegSize; }
++  void setSubRegSize(unsigned SubRegSize) { this->SubRegSize = SubRegSize; }
++
++private:
++  /// Size of any sub-registers in MachineOperand that originated the register
++  unsigned SubRegSize;
 +};
 +
 +/// MachineLiveStackAddr - a live value stored at a known stack address.  Can
@@ -2551,7 +2560,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,106 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2612,6 +2621,10 @@ Index: include/llvm/Target/TargetValues.h
 +  TargetValues(const TargetValues &) = delete;
 +  void operator=(const TargetValues &) = delete;
 +  virtual ~TargetValues() {};
++
++  /// Get the size in bytes of sub-registers of a register operand, or 0 if the
++  /// operand doesn't have sub-registers.
++  virtual unsigned getSubRegSize(const MachineOperand &MO) const { return 0; }
 +
 +  /// Return metadata describing the locations (registers, stack slots) of
 +  /// arguments marshaled for the given function call.
@@ -7291,7 +7304,7 @@ Index: lib/CodeGen/StackMaps.cpp
    if (MOI->isReg()) {
      // Skip implicit registers (this includes our scratch registers)
      if (MOI->isImplicit())
-@@ -134,17 +285,18 @@
+@@ -134,17 +285,25 @@
  
      assert(TargetRegisterInfo::isPhysicalRegister(MOI->getReg()) &&
             "Virtreg operands should have been rewritten before now.");
@@ -7304,11 +7317,18 @@ Index: lib/CodeGen/StackMaps.cpp
 -    unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
 -    if (SubRegIdx)
 -      Offset = TRI->getSubRegIdxOffset(SubRegIdx);
++    // It's possible this is a pointer-to-alloca but getPointerInfo() didn't
++    // mark it as a pointer - isPtr is false if the underlying alloca type is
++    // not a pointer.  For direct memory references, the isPtr and isAlloca
++    // flags are semantically different, but for registers we *must* set the
++    // pointer flag if it points to an alloca.
++    if(isAlloca) isPtr = true;
+ 
+-    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
 +    size_t ValSize = DL.getTypeAllocSize(IROp->getType());
 +    unsigned Offset, DwarfRegNum;
 +    getRegLocation(MOI->getReg(), DwarfRegNum, Offset);
- 
--    Locs.emplace_back(Location::Register, RC->getSize(), DwarfRegNum, Offset);
++
 +    // Note: getPointerInfo() may have found a suitable alloca for this
 +    // operand, but the backend didn't actually turn it into one.
 +    Locs.emplace_back(Location::Register, ValSize, DwarfRegNum, Offset,
@@ -7318,7 +7338,7 @@ Index: lib/CodeGen/StackMaps.cpp
      return ++MOI;
    }
  
-@@ -161,6 +313,7 @@
+@@ -161,6 +320,7 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7326,7 +7346,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
      OS << WSMP << "callsite " << CSI.ID << "\n";
      OS << WSMP << "  has " << CSLocs.size() << " locations\n";
-@@ -194,7 +347,7 @@
+@@ -194,7 +354,7 @@
            OS << TRI->getName(Loc.Reg);
          else
            OS << Loc.Reg;
@@ -7335,7 +7355,7 @@ Index: lib/CodeGen/StackMaps.cpp
          break;
        case Location::Constant:
          OS << "Constant " << Loc.Offset;
-@@ -203,8 +356,16 @@
+@@ -203,8 +363,16 @@
          OS << "Constant Index " << Loc.Offset;
          break;
        }
@@ -7354,7 +7374,7 @@ Index: lib/CodeGen/StackMaps.cpp
        Idx++;
      }
  
-@@ -221,6 +382,87 @@
+@@ -221,6 +389,87 @@
           << LO.Size << "]\n";
        Idx++;
      }
@@ -7442,7 +7462,7 @@ Index: lib/CodeGen/StackMaps.cpp
    }
  }
  
-@@ -277,6 +519,185 @@
+@@ -277,6 +526,187 @@
    return LiveOuts;
  }
  
@@ -7543,7 +7563,7 @@ Index: lib/CodeGen/StackMaps.cpp
 +
 +/// Add architecture-specific locations for the stackmap
 +void StackMaps::addArchLiveVals(const CallInst *SM, ArchValues &AV) {
-+  unsigned Offset, DwarfReg;
++  unsigned Offset, DwarfReg, SRS;
 +  unsigned PtrSize = AP.MF->getDataLayout().getPointerSizeInBits() / 8;
 +  const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
 +  const TargetRegisterInfo *TRI = AP.MF->getSubtarget().getRegisterInfo();
@@ -7567,8 +7587,10 @@ Index: lib/CodeGen/StackMaps.cpp
 +          TRI->getMinimalPhysRegClass(MR.getReg());
 +        getRegLocation(MR.getReg(), DwarfReg, Offset);
 +
++        SRS = MR.getSubRegSize();
++        assert(SRS < RC->getSize() && "Sub-register bigger than register?");
 +        Loc.Type = Location::Register;
-+        Loc.Size = RC->getSize();
++        Loc.Size = SRS ? SRS : RC->getSize();
 +        Loc.Reg = DwarfReg;
 +        Loc.Offset = Offset;
 +      }
@@ -7628,7 +7650,7 @@ Index: lib/CodeGen/StackMaps.cpp
  void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
                                      MachineInstr::const_mop_iterator MOI,
                                      MachineInstr::const_mop_iterator MOE,
-@@ -285,21 +706,70 @@
+@@ -285,21 +715,70 @@
    MCContext &OutContext = AP.OutStreamer->getContext();
    MCSymbol *MILabel = OutContext.createTempSymbol();
    AP.OutStreamer->EmitLabel(MILabel);
@@ -7701,7 +7723,7 @@ Index: lib/CodeGen/StackMaps.cpp
    // Move large constants into the constant pool.
    for (auto &Loc : Locations) {
      // Constants are encoded as sign-extended integers.
-@@ -323,12 +793,21 @@
+@@ -323,12 +802,21 @@
  
    // Create an expression to calculate the offset of the callsite from function
    // entry.
@@ -7726,7 +7748,7 @@ Index: lib/CodeGen/StackMaps.cpp
  
    // Record the stack size of the current function.
    const MachineFrameInfo *MFI = AP.MF->getFrameInfo();
-@@ -382,7 +861,7 @@
+@@ -382,7 +870,7 @@
  /// Emit the stackmap header.
  ///
  /// Header {
@@ -7735,7 +7757,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint8  : Reserved (expected to be 0)
  ///   uint16 : Reserved (expected to be 0)
  /// }
-@@ -417,7 +896,7 @@
+@@ -417,7 +905,7 @@
    DEBUG(dbgs() << WSMP << "functions:\n");
    for (auto const &FR : FnStackSize) {
      DEBUG(dbgs() << WSMP << "function addr: " << FR.first
@@ -7744,7 +7766,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitSymbolValue(FR.first, 8);
      OS.EmitIntValue(FR.second, 8);
    }
-@@ -439,14 +918,21 @@
+@@ -439,14 +927,21 @@
  ///
  /// StkMapRecord[NumRecords] {
  ///   uint64 : PatchPoint ID
@@ -7770,7 +7792,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   }
  ///   uint16 : Padding
  ///   uint16 : NumLiveOuts
-@@ -455,6 +941,26 @@
+@@ -455,6 +950,26 @@
  ///     uint8  : Reserved
  ///     uint8  : Size in Bytes
  ///   }
@@ -7797,7 +7819,7 @@ Index: lib/CodeGen/StackMaps.cpp
  ///   uint32 : Padding (only if required to align to 8 byte)
  /// }
  ///
-@@ -470,23 +976,32 @@
+@@ -470,23 +985,32 @@
    for (const auto &CSI : CSInfos) {
      const LocationVec &CSLocs = CSI.Locations;
      const LiveOutVec &LiveOuts = CSI.LiveOuts;
@@ -7831,7 +7853,7 @@ Index: lib/CodeGen/StackMaps.cpp
      OS.EmitValue(CSI.CSOffsetExpr, 4);
  
      // Reserved for flags.
-@@ -494,10 +1009,14 @@
+@@ -494,10 +1018,14 @@
      OS.EmitIntValue(CSLocs.size(), 2);
  
      for (const auto &Loc : CSLocs) {
@@ -7847,7 +7869,7 @@ Index: lib/CodeGen/StackMaps.cpp
      }
  
      // Num live-out registers and padding to align to 4 byte.
-@@ -509,6 +1028,31 @@
+@@ -509,6 +1037,31 @@
        OS.EmitIntValue(0, 1);
        OS.EmitIntValue(LO.Size, 1);
      }
@@ -7905,7 +7927,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1563 @@
+@@ -0,0 +1,1566 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9250,7 +9272,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    // spilled to the stack should have been converted to frame index
 +    // references by now.
 +    for(unsigned i = 0, numVregs = MRI->getNumVirtRegs(); i < numVregs; i++) {
-+      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
++      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i), SRS;
 +      MachineLiveValPtr MLV;
 +      MachineLiveReg MLR(0);
 +
@@ -9313,6 +9335,9 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +                dbgs() << "      Value: " << MLV->toString() << "\n");
 +
 +          MLR.setReg(VRM->getPhys(Vreg));
++          // TODO getSubRegSize is only implemented in X86Values
++          SRS = TVG->getSubRegSize(MLV->getDefiningInst()->getOperand(0));
++          MLR.setSubRegSize(SRS);
 +          MF->addSMArchSpecificLocation(IRSM, MLR, *MLV);
 +          CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
 +        }
@@ -10911,7 +10936,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,395 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -10932,6 +10957,19 @@ Index: lib/Target/X86/X86Values.cpp
 +#define DEBUG_TYPE "stacktransform"
 +
 +using namespace llvm;
++
++unsigned X86Values::getSubRegSize(const MachineOperand &MO) const {
++  assert(MO.isReg() && "Invalid operand for getSubRegSize");
++  switch(MO.getSubReg()) {
++  default: return 0;
++  case X86::sub_8bit: return 1;
++  case X86::sub_8bit_hi: /* fall-through */
++  case X86::sub_16bit: return 2;
++  case X86::sub_32bit: return 4;
++  case X86::sub_xmm: return 16;
++  case X86::sub_ymm: return 32;
++  }
++}
 +
 +static void
 +getArgRegs(const MachineInstr *MICall, std::vector<unsigned> &regs) {
@@ -11298,7 +11336,7 @@ Index: lib/Target/X86/X86Values.h
 ===================================================================
 --- lib/Target/X86/X86Values.h	(nonexistent)
 +++ lib/Target/X86/X86Values.h	(working copy)
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -11315,6 +11353,7 @@ Index: lib/Target/X86/X86Values.h
 +class X86Values final : public TargetValues {
 +public:
 +  X86Values() {}
++  virtual unsigned getSubRegSize(const MachineOperand &MO) const;
 +  virtual void getMarshaledArguments(const ImmutableCallSite &IRCall,
 +                                     const MachineInstr *MICall,
 +                                     std::vector<MachineLiveLocPtr> &Locs) const;

@@ -466,8 +466,10 @@ protected:
 /// number as an architecture-specific physical register.
 class MachineLiveReg : public MachineLiveLoc {
 public:
-  MachineLiveReg(unsigned Reg, bool Ptr = false) : MachineLiveLoc(Reg, Ptr) {}
-  MachineLiveReg(const MachineLiveReg &C) : MachineLiveLoc(C) {}
+  MachineLiveReg(unsigned Reg, bool Ptr = false, unsigned SubRegSize = 0)
+    : MachineLiveLoc(Reg, Ptr), SubRegSize(SubRegSize) {}
+  MachineLiveReg(const MachineLiveReg &C)
+    : MachineLiveLoc(C), SubRegSize(C.SubRegSize) {}
   virtual MachineLiveLoc *copy() const { return new MachineLiveReg(*this); }
   virtual bool operator==(const MachineLiveLoc &RHS) const;
 
@@ -481,6 +483,13 @@ public:
     if(Ptr) os << " (is a pointer)";
     os << "\n";
   }
+
+  unsigned getSubRegSize() const { return SubRegSize; }
+  void setSubRegSize(unsigned SubRegSize) { this->SubRegSize = SubRegSize; }
+
+private:
+  /// Size of any sub-registers in MachineOperand that originated the register
+  unsigned SubRegSize;
 };
 
 /// MachineLiveStackAddr - a live value stored at a known stack address.  Can

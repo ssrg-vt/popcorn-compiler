@@ -1342,7 +1342,7 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
     // spilled to the stack should have been converted to frame index
     // references by now.
     for(unsigned i = 0, numVregs = MRI->getNumVirtRegs(); i < numVregs; i++) {
-      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i);
+      unsigned Vreg = TargetRegisterInfo::index2VirtReg(i), SRS;
       MachineLiveValPtr MLV;
       MachineLiveReg MLR(0);
 
@@ -1405,6 +1405,9 @@ void StackTransformMetadata::findArchSpecificLiveVals() {
                 dbgs() << "      Value: " << MLV->toString() << "\n");
 
           MLR.setReg(VRM->getPhys(Vreg));
+          // TODO getSubRegSize is only implemented in X86Values
+          SRS = TVG->getSubRegSize(MLV->getDefiningInst()->getOperand(0));
+          MLR.setSubRegSize(SRS);
           MF->addSMArchSpecificLocation(IRSM, MLR, *MLV);
           CurVregs.emplace(Vreg, ValueVecPtr(nullptr));
         }

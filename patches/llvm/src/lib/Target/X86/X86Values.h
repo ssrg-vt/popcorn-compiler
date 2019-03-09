@@ -14,6 +14,7 @@ namespace llvm {
 class X86Values final : public TargetValues {
 public:
   X86Values() {}
+  virtual unsigned getSubRegSize(const MachineOperand &MO) const;
   virtual void getMarshaledArguments(const ImmutableCallSite &IRCall,
                                      const MachineInstr *MICall,
                                      std::vector<MachineLiveLocPtr> &Locs) const;
