@@ -26,15 +26,15 @@ IMPH = src/internal/stdio_impl.h src/internal/pthread_impl.h src/internal/libc.h
 LDFLAGS = 
 LIBCC = -lgcc
 CPPFLAGS =
-CFLAGS = -O0 -pipe -g
-CFLAGS_C99FSE =  -ffreestanding -nostdinc 
-#-std=c99
+CFLAGS = -Os -pipe -g -fPIC
+CFLAGS_C99FSE =  -ffreestanding -nostdinc -std=c99
 
 CFLAGS_ALL = $(CFLAGS_C99FSE)
 CFLAGS_ALL += -D_XOPEN_SOURCE=700 -I./arch/$(ARCH) -I./src/internal -I./include  -I$(prefix)/include #last is for stack_trans lib
 CFLAGS_ALL += $(CPPFLAGS) $(CFLAGS)
 CFLAGS_ALL_STATIC = $(CFLAGS_ALL)
-CFLAGS_ALL_SHARED = $(CFLAGS_ALL) -fPIC -DSHARED
+CFLAGS_ALL_SHARED = $(CFLAGS_ALL) -fPIC 
+#-DSHARED
 
 AR      = $(CROSS_COMPILE)ar
 RANLIB  = $(CROSS_COMPILE)ranlib
