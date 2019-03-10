@@ -679,9 +679,12 @@ static bool unwind_and_size(rewrite_context src,
   fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
   ASSERT(fn, "Could not find function address of outermost frame\n");
   REGOPS(dest)->set_pc(ACT(dest).regs, fn);
+  memset(dest->stack_base - stack_size, 0, stack_size);
 #else
   fn = REGOPS(src)->pc(ACT(src).regs);
   REGOPS(dest)->set_pc(ACT(dest).regs, fn);
+  memset(child_to_chameleon(dest, dest->stack_base - stack_size), 0,
+         stack_size - (src->stack_base - src->acts[src->num_acts - 1].cfa));
 #endif
 
   ST_INFO("Top of new stack: %p\n", dest->stack);

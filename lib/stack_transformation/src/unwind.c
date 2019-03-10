@@ -16,11 +16,14 @@
  * Set up the register set for activation ACT (copies initial registers from
  * ACT - 1).
  */
-static inline void setup_regset(rewrite_context ctx, int act)
+static inline void setup_regset(rewrite_context ctx, int act, bool clone)
 {
   ASSERT(act > 0, "Cannot set up outermost activation using this function\n");
   ctx->acts[act].regs = &ctx->regset_pool[act * REGOPS(ctx)->regset_size];
-  REGOPS(ctx)->regset_clone(ctx->acts[act - 1].regs, ctx->acts[act].regs);
+  if(clone)
+    REGOPS(ctx)->regset_clone(ctx->acts[act - 1].regs, ctx->acts[act].regs);
+  else
+    REGOPS(ctx)->regset_clear(ctx->acts[act].regs);
 }
 
 /*
@@ -187,7 +190,7 @@ void pop_frame(rewrite_context ctx, bool setup_bounds)
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  setup_regset(ctx, next_frame);
+  setup_regset(ctx, next_frame, !setup_bounds);
   setup_callee_saved_bits(ctx, next_frame);
   restore_callee_saved_regs(ctx, next_frame);
 
@@ -218,7 +221,7 @@ void pop_frame_funcentry(rewrite_context ctx, bool setup_bounds)
   TIMER_FG_START(pop_frame);
   ST_INFO("Popping frame (CFA = %p)\n", ACT(ctx).cfa);
 
-  setup_regset(ctx, next_frame);
+  setup_regset(ctx, next_frame, !setup_bounds);
   setup_callee_saved_bits(ctx, next_frame);
 
   /*

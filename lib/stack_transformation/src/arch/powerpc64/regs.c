@@ -23,6 +23,7 @@ static void* regset_default_powerpc64(void);
 static void* regset_init_powerpc64(const void* regs);
 static void regset_free_powerpc64(void* regset);
 static void regset_clone_powerpc64(const void* src, void* dest);
+static void regset_clear_powerpc64(void* regset);
 static void regset_copyin_powerpc64(void* regset, const void* regs);
 static void regset_copy_arg_regs_powerpc64(void* regset, const void* regs);
 static void regset_copyout_powerpc64(const void* regset, void* regs);
@@ -56,6 +57,7 @@ const struct regops_t regs_powerpc64 = {
   .regset_init = regset_init_powerpc64,
   .regset_free = regset_free_powerpc64,
   .regset_clone = regset_clone_powerpc64,
+  .regset_clear = regset_clear_powerpc64,
   .regset_copyin = regset_copyin_powerpc64,
   .regset_copy_arg_regs = regset_copy_arg_regs_powerpc64,
   .regset_copy_ret_regs = regset_copy_arg_regs_powerpc64,
@@ -105,6 +107,11 @@ static void regset_clone_powerpc64(const void* src, void* dest)
   const struct regset_powerpc64* srcregs = (const struct regset_powerpc64*)src;
   struct regset_powerpc64* destregs = (struct regset_powerpc64*)dest;
   *destregs = *srcregs;
+}
+
+static void regset_clear_powerpc64(void *regs)
+{
+  memset(regs, 0, sizeof(struct regset_powerpc64));
 }
 
 static void regset_copyin_powerpc64(void* in, const void* out)

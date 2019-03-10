@@ -17,6 +17,7 @@ static void* regset_default_x86_64(void);
 static void* regset_init_x86_64(const void* regs);
 static void regset_free_x86_64(void* regset);
 static void regset_clone_x86_64(const void* src, void* dest);
+static void regset_clear_x86_64(void* regset);
 static void regset_copyin_x86_64(void* regset, const void* regs);
 static void regset_copy_arg_regs_x86_64(void* regset, const void* regs);
 static void regset_copy_ret_regs_x86_64(void* regset, const void* regs);
@@ -51,6 +52,7 @@ const struct regops_t regs_x86_64 = {
   .regset_init = regset_init_x86_64,
   .regset_free = regset_free_x86_64,
   .regset_clone = regset_clone_x86_64,
+  .regset_clear = regset_clear_x86_64,
   .regset_copyin = regset_copyin_x86_64,
   .regset_copy_arg_regs = regset_copy_arg_regs_x86_64,
   .regset_copy_ret_regs = regset_copy_ret_regs_x86_64,
@@ -100,6 +102,11 @@ static void regset_clone_x86_64(const void* src, void* dest)
   const struct regset_x86_64* srcregs = (const struct regset_x86_64*)src;
   struct regset_x86_64* destregs = (struct regset_x86_64*)dest;
   *destregs = *srcregs;
+}
+
+static void regset_clear_x86_64(void *regs)
+{
+  memset(regs, 0, sizeof(struct regset_x86_64));
 }
 
 static void regset_copyin_x86_64(void* in, const void* out)

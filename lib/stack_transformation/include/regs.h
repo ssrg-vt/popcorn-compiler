@@ -48,6 +48,9 @@ struct regops_t
   /* Copy an existing register set. Note: does not allocate memory. */
   void (*regset_clone)(const void* src, void* dest);
 
+  /* Clear the register set */
+  void (*regset_clear)(void *regs);
+
   /*
    * Copy outside struct to internal regset.  Similar to regset_init except
    * does not allocate memory.
