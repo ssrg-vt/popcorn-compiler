@@ -20,3 +20,12 @@ Example for a two x86_64 configuration file use the following:
 Example for a two heterogeneous system use the following:
 10.1.1.32;X86_64
 10.1.1.51;AARCH64
+
+To run on the local machine use the following:
+127.0.0.1;X86_64
+127.0.0.1;X86_64
+
+
+# Notes
+The server need to be started on both machines (specified in the configuration file)
+The server expect that the executable has the same path on both machines
