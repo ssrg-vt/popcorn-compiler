@@ -1037,9 +1037,7 @@ static bool isRegReallyCopy(const MachineRegisterInfo *MRI, unsigned Vreg) {
       start++) {
     for(auto op : start->operands()) {
       if(op.isReg() && op.getReg() == Vreg &&
-         op.isUse() && !start->isCopyLike()) {
-        return false;
-      }
+         op.isUse() && !start->isCopyLike()) return false;
     }
   }
   return true;
@@ -1065,6 +1063,29 @@ StackTransformMetadata::searchStackSlotCopies(int SS,
     for(Copy = CL->begin(), CE = CL->end(); Copy != CE; Copy++) {
       unsigned Vreg = (*Copy)->Vreg;
       const MachineInstr *Instr = (*Copy)->Instr;
+
+      // Avoid traversing invalid copy chains
+      switch((*Copy)->getType()) {
+      case CopyLoc::STACK_STORE:
+        // We're coming from a store to a stack slot, don't traverse other
+        // stores to the same slot as they're not necessarily copies
+        if(!TraverseDefs) {
+          DEBUG(dbgs() << "  -> skipping stack store from vreg"
+                       << TargetRegisterInfo::virtReg2Index(Vreg) << "\n");
+          continue;
+        }
+        break;
+      case CopyLoc::STACK_LOAD:
+        // We're coming from a load from a stack slot, don't traverse other
+        // registers filled from the slot who are not actually copies
+        if(!isRegReallyCopy(MRI, Vreg)) {
+          DEBUG(dbgs() << "  -> skipping search of sibling non-copy vreg"
+                       << TargetRegisterInfo::virtReg2Index(Vreg) <<"\n");
+          continue;
+        }
+        break;
+      default: llvm_unreachable("Unhandled stack copy type"); break;
+      }
 
       if(!Visited.count(Instr)) {
         addVregMetadata(Vreg, IRVals, SM);
@@ -1183,7 +1204,7 @@ StackTransformMetadata::findAlternateVregLocs(const SMInstBundle &SM) {
           vreg = RCL->Vreg;
           addVregMetadata(vreg, IRVals, SM);
           Visited.insert(&*instr);
-          work.emplace(vreg, false);
+          if(isRegReallyCopy(MRI, vreg)) work.emplace(vreg, false);
           break;
         case CopyLoc::STACK_STORE:
           SCL = (StackCopyLoc *)loc.get();
