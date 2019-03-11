@@ -379,9 +379,9 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
 
     with open(os.devnull, 'wb') as FNULL:
 
-        =====================================================
-         CONFIGURE & INSTALL MUSL
-        =====================================================
+        #=====================================================
+        # CONFIGURE & INSTALL MUSL
+        #=====================================================
         os.chdir(os.path.join(base_path, 'lib/musl-1.1.10'))
 
         if os.path.isfile('Makefile'):
