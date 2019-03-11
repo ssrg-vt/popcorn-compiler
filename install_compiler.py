@@ -520,7 +520,6 @@ def install_libraries(base_path, install_path, num_threads, st_debug,
                 print('Make failed.')
                 sys.exit(1)
 
-        return
         try:
             rv = subprocess.check_call(['make', 'distclean'])
         except Exception as e:
