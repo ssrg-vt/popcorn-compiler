@@ -25,11 +25,13 @@ void region_init_pages(region_t* map, int present)
 	map->region_nb_pages = map->length/DSM_PAGE_SIZE;
 	map->region_pages = pcalloc(map->region_nb_pages, sizeof(char));
 	memset(map->region_pages, present, map->region_nb_pages);//we can avoid memset
+	up_log("%s: Initializing region %p; nbpage %d\n", __func__, map, map->region_nb_pages);
 }
 
 void region_extend_pages(region_t* map, int present)
 {
-	struct page_s *old = map->region_pages;
+	//struct page_s *old = map->region_pages;
+	char *old = map->region_pages;
 	uint64_t old_nb = map->region_nb_pages;
 	assert(map->region_pages);
 
@@ -37,6 +39,7 @@ void region_extend_pages(region_t* map, int present)
 	map->region_pages = pcalloc(map->region_nb_pages, sizeof(char));
 	memset(map->region_pages+old_nb, present, map->region_nb_pages);//we can avoid memset?
 	memcpy(map->region_pages, old, old_nb);
+	up_log("%s: Initializing region %p; nbpage %d\n", __func__, map, map->region_nb_pages);
 }
 
 

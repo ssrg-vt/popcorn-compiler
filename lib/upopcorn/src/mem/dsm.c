@@ -125,9 +125,11 @@ int dsm_get_remote_page(void* raddr, void* buffer, int page_size)
 
 int dsm_check_page_locally(region_t *map, void* addr, int page_size)
 {
-	if(region_is_page_present(map, addr, page_size))
+	if((!map->prot.is_w && !map->remote) || 
+		/*read and not remote*/ (region_is_page_present(map, addr, page_size)))
 	{
 		local_fault_cnt++;
+		printf("%s: fetching page locally\n", __func__);
 		ERR_CHECK(mprotect(addr, page_size, PROT_READ | PROT_WRITE));
 	}
 	return -1;
