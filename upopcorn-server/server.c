@@ -64,7 +64,7 @@ void __process(int fd, struct sockaddr_in *clientaddr){
 	if(chdir(dir_path))
 		perror("chdir...");
 
-	printf("-->path %s\n", bin_path);
+	//printf("-->path %s\n", bin_path);
 	execl(bin_path, bin_path, NULL);
 	//execl("/usr/bin/gdb", "-iex \"set auto-load safe-path /\"", "-ex run", "--args", exec_path, NULL);
 

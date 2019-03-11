@@ -136,7 +136,7 @@ static int get_ctxt(char* arg, int size, void* data)
 void load_context();
 int mig_back(char* arg, int size, void* data)
 {
-	printf("%s!\n", __func__);
+	up_log("%s!\n", __func__);
 	dsm_control_access(1,0,0);
 	stack_use_original();/* can be avoided by either creating a stack per 
 				node (with a guard between them) or protect 

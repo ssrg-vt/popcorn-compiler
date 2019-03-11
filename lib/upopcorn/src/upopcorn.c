@@ -32,7 +32,7 @@ static void read_config()
 	if(ret == PATH_MAX)
 		perror(__func__);
 
-	//printf("popcorn config path is %s\n", path);
+	//up_log("popcorn config path is %s\n", path);
 
 	file = fopen(path, "r");
 	if(!file)
@@ -115,7 +115,7 @@ __upopcorn_init(void)
 
 	system_page_size = sysconf(_SC_PAGE_SIZE);
 
-	//printf("%s start\n", __func__);
+	//up_log("%s start\n", __func__);
 	if(start_remote)
                 remote = atoi(start_remote);
         else
@@ -145,7 +145,7 @@ char** __cp_argv(int argc, char **argv)
 	int i;
 	char** __argvs__;
 	__argvs__ = malloc((argc+1)*sizeof(char**));
-	printf("argvs new addr %p; old %p\n", __argvs__, argv);
+	up_log("argvs new addr %p; old %p\n", __argvs__, argv);
 	for(i=0; i<argc; i++)
 	{
 		int size=strlen(argv[i])+1;
@@ -162,7 +162,7 @@ int __upopcorn_main(int argc, char **argv, char **envp)
 {
 	int ret;
 	assert(remote!=-1);
-	printf("%s\n", __func__);
+	up_log("%s\n", __func__);
 	ret=migrate_init(remote); /* no return if remote */
 	if(ret)
 		perror("comm_init");
@@ -179,7 +179,7 @@ __upopcorn_destroy(void)
 {
 	if(remote)
 	{
-		//printf("sending exit...");
+		//up_log("sending exit...");
 		send_cmd(SND_EXIT, 0, NULL);
 	}
 }

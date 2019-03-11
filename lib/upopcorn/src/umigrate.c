@@ -17,7 +17,7 @@
 		clock_gettime(CLOCK_MONOTONIC, &end);	\
 		start_ns = start.tv_sec * 1000000000 + start.tv_nsec;	\
 		end_ns = end.tv_sec * 1000000000 + end.tv_nsec;		\
-		printf("Stack transformation time: %ldns\n", end_ns - start_ns);
+		up_log("Stack transformation time: %ldns\n", end_ns - start_ns);
 #else
 #define TIME_REWRITE_START() /**/
 #define TIME_REWRITE_END() /**/
@@ -214,9 +214,9 @@ int main(int argc, char* argv[])
 	regs_t regs_src;
 	register int test=0xdacadac;
 
-	printf("%s: before test %x\n", __func__, test);
+	up_log("%s: before test %x\n", __func__, test);
 	GET_LOCAL_REGSET(regs_src);
 	SET_REGS_PTR(&regs_src);
-	printf("%s: after test %x\n", __func__, test);
+	up_log("%s: after test %x\n", __func__, test);
 }
 #endif

@@ -30,7 +30,7 @@ void* get_new_stack(unsigned long len)
 	static unsigned long stack_base=ALL_STACK_BASE;
 
 	//len=PAGE_ALIGN(len+(len-1)) & ~(len-1);
-	printf("%s len %lu\n", __func__, len);
+	up_log("%s len %lu\n", __func__, len);
 	ERR_CHECK((__mmap((void*)stack_base, len, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)==MAP_FAILED));
 	ret=stack_base;
@@ -76,12 +76,12 @@ int switch_stack(void* stack_base, void *new_stack_base, unsigned long len)
 
         GET_FRAME(bp,sp);
 
-        printf("%s: stack_base %p stack frame %p and base %p\n", __func__,stack_base,(void*)bp,(void*)sp);
+        up_log("%s: stack_base %p stack frame %p and base %p\n", __func__,stack_base,(void*)bp,(void*)sp);
 
         bp_offset = (unsigned long)stack_end - bp;
         sp_offset = (unsigned long)stack_end - sp;
 
-        printf("%s: stack_end %p stack frame off %p and base off %p\n", __func__,stack_end,(void*)bp_offset,(void*)sp_offset);
+        up_log("%s: stack_end %p stack frame off %p and base off %p\n", __func__,stack_end,(void*)bp_offset,(void*)sp_offset);
 
         memcpy(new_stack_base, stack_base, len);//TODO: copy up to sp
 
@@ -91,7 +91,7 @@ int switch_stack(void* stack_base, void *new_stack_base, unsigned long len)
         new_sp = (unsigned long)new_stack_end-sp_offset;
 
 
-        printf("%s: new stack base %p; new stack end %p; new stack frame %p and sp %p\n", __func__,new_stack_base,new_stack_end,(void*)new_bp,(void*)new_sp);
+        up_log("%s: new stack base %p; new stack end %p; new stack frame %p and sp %p\n", __func__,new_stack_base,new_stack_end,(void*)new_bp,(void*)new_sp);
 
         SET_FRAME(new_bp,new_sp);
 
@@ -106,21 +106,21 @@ void upopcorn_get_stack_base_and_size(uintptr_t* upopcorn_stack_base, uintptr_t*
 {
 	*upopcorn_stack_base = _upopcorn_stack_base;
 	*upopcorn_stack_size = _upopcorn_stack_size;
-	printf("%s: pthread stack %lx; stack_size %lu\n", __func__, _upopcorn_stack_base, _upopcorn_stack_size);
+	up_log("%s: pthread stack %lx; stack_size %lu\n", __func__, _upopcorn_stack_base, _upopcorn_stack_size);
 }
 
 int set_thread_stack(void *base, unsigned long len)
 {
 	_upopcorn_stack_base = (uintptr_t)base;
 	_upopcorn_stack_size = (uintptr_t)len;
-	printf("%s: pthread stack %lx; stack_size %lu\n", __func__, _upopcorn_stack_base, _upopcorn_stack_size);
+	up_log("%s: pthread stack %lx; stack_size %lu\n", __func__, _upopcorn_stack_base, _upopcorn_stack_size);
 	return -1;
 }
 
 uintptr_t new_arg_addr(uintptr_t arg, uintptr_t old_end, uintptr_t new_end)
 {
 	uintptr_t offset=(old_end-arg);
-	printf("End: old %lx, new %lx; old %lx, new %lx, offset %lu\n", old_end, new_end, arg, new_end-offset, offset);
+	up_log("End: old %lx, new %lx; old %lx, new %lx, offset %lu\n", old_end, new_end, arg, new_end-offset, offset);
 	arg=new_end-offset;
 	return arg;
 }
@@ -130,13 +130,13 @@ void print_stack_info()
 	int dummy=22;
 	dummy+=1;
 
-	printf("stack arg addr %p\n", &dummy);
+	up_log("stack arg addr %p\n", &dummy);
 }
 
 
 void print_info(char **argv, char **envp)
 {
-	printf("argv %p; envp %p\n", argv, envp);
+	up_log("argv %p; envp %p\n", argv, envp);
 
 	{
 		void *stack;
@@ -148,14 +148,14 @@ void print_info(char **argv, char **envp)
 		ret |= pthread_attr_getstack(&attr, &stack, &stack_size);
 		if(ret == 0)
 		{
-			printf("pthread stack %p; stack_size %lu\n", stack, stack_size);
+			up_log("pthread stack %p; stack_size %lu\n", stack, stack_size);
 		}
 	}
 
 	{
 
 		region_t *map = get_stack_pmp();
-		printf("map stack %p; stack_size %lu\n", map->addr_start, map->length);
+		up_log("map stack %p; stack_size %lu\n", map->addr_start, map->length);
 	}
 
 }
@@ -163,7 +163,7 @@ void print_info(char **argv, char **envp)
 int stack_move()
 {
 #if 1
-	printf("%s:%d\n", __func__, __LINE__);
+	up_log("%s:%d\n", __func__, __LINE__);
 	region_t *map = get_stack_pmp();
 
 
@@ -187,7 +187,7 @@ int stack_move()
 #if 1
 int stack_use_original()
 {
-	printf("%s:%d\n", __func__, __LINE__);
+	up_log("%s:%d\n", __func__, __LINE__);
 	region_t *map = get_stack_pmp();
 
 	assert(_upopcorn_stack_base);

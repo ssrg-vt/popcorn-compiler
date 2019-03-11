@@ -129,7 +129,7 @@ int dsm_check_page_locally(region_t *map, void* addr, int page_size)
 		/*read and not remote*/ (region_is_page_present(map, addr, page_size)))
 	{
 		local_fault_cnt++;
-		printf("%s: fetching page locally\n", __func__);
+		up_log("%s: fetching page locally\n", __func__);
 		ERR_CHECK(mprotect(addr, page_size, PROT_READ | PROT_WRITE));
 	}
 	return -1;
@@ -687,7 +687,7 @@ int dsm_init_remote()
 
 int dsm_init_local()
 {
-	//printf("%s:%d\n", __func__, __LINE__);
+	//up_log("%s:%d\n", __func__, __LINE__);
 	region_db_init();
 	dsm_control_access(0, 1, 1);
 	return 0;
