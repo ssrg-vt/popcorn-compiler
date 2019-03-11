@@ -1,0 +1,38 @@
+#!/bin/bash
+
+all="$*"
+
+LCC=/usr/local/popcorn/bin/clang
+#LCC=${CC:-/usr/local/popcorn/clang}
+
+while [ "$#" -gt 0 ]
+do
+        case "$1" in
+        -o)
+                object="$2"
+
+                # Jump over <file>, in case "-" is a valid input file
+                # (keyword to standard input). Jumping here prevents reaching
+                # "-*)" case when parsing <file>
+                shift
+                ;;
+        # an option argument, continue
+        *)      ;;
+        esac
+        shift
+done
+
+echo "CMD: $LCC $all"
+$LCC -fno-common $all
+
+echo object: $object
+if [ "$object" == "/dev/null" ]; then                                            
+        exit 0;                                                                  
+fi  
+aarch64-linux-gnu-objdump -h -w $object | awk '{print $2}' | grep "\..*" > $object.sec
+while read p; do
+        lp="${p/.bss/.tbss}"
+        lp="${lp/.data/.tdata}"
+        aarch64-linux-gnu-objcopy --rename-section $p=$lp $object
+done <$object.sec
+#exit -1
