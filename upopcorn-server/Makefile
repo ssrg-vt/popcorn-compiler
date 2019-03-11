@@ -1,2 +1,2 @@
 all:
-	gcc -g -static server.c -o server 
+	gcc -g server.c -o server 
