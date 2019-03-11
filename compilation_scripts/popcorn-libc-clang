@@ -1,0 +1,63 @@
+#!/bin/bash
+set -e
+
+
+all="$*"
+echo "$0: called with $*"
+export POPCORN_COMPILATION_SCRIPTS=3 #2 for popcorn-lib-ld
+export TARGET_MACHINE="x86_64"
+
+POPCORN=/usr/local/popcorn
+ARM64_POPCORN=$POPCORN/aarch64
+CC=$POPCORN/bin/clang
+HET_CFLAGS="-nostdinc -nostdlib -fno-common -ftls-model=initial-exec"
+ARM64_INC="-isystem $ARM64_POPCORN/include"
+
+compile_only=0
+object=""
+src=""
+while [ "$#" -gt 0 ]
+do
+        case "$1" in
+        -c)
+		compile_only=1
+		shift
+		;;
+	*.c)
+	     	src="$1"
+	      	;;
+        -o)
+                object="$2"
+
+                # Jump over <file>, in case "-" is a valid input file
+                # (keyword to standard input). Jumping here prevents reaching
+                # "-*)" case when parsing <file>
+                shift
+                ;;
+        # an option argument, continue
+        *)      ;;
+        esac
+        shift
+done
+
+
+$CC $HET_CFLAGS $ARM64_INC $all
+
+echo object: $object
+if [ "$object" == "/dev/null" ]; then                                            
+        exit 0;                                                                  
+fi  
+
+if [ $compile_only == "1" ]
+then
+	if [ -z "$object" ]
+	then
+		object=${src//.c/.o}	
+	fi
+	objdump -h -w $object | awk '{print $2}' | grep "\..*" > $object.sec
+	while read p; do
+		lp="${p/.bss/.tbss}"
+		lp="${lp/.data/.tdata}"
+		objcopy --rename-section $p=$lp $object
+	done <$object.sec
+fi

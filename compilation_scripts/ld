@@ -1,0 +1,20 @@
+#!/bin/bash
+#set -x
+
+POPCORN=/usr/local/popcorn/bin
+
+#This script is necessary, since some Makefiles (Phoenix) links using 
+#popcorn-clang. Which leads to this file being called.
+
+if  [ "$POPCORN_COMPILATION_SCRIPTS" = "1" ]
+then
+	$POPCORN/popcorn-ld $*
+elif  [ "$POPCORN_COMPILATION_SCRIPTS" = "2" ]
+then
+	$POPCORN/popcorn-lib-ld $*
+elif  [ "$POPCORN_COMPILATION_SCRIPTS" = "3" ]
+then
+	$POPCORN/popcorn-libc-ld $*
+else
+	$POPCORN/ld.gold $*
+fi

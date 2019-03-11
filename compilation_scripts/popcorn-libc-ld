@@ -1,0 +1,159 @@
+#!/bin/bash
+set -e
+set -x
+
+#echo $0: called with "$*"
+machine=$TARGET_MACHINE
+
+POPCORN=/usr/local/popcorn
+LD="$POPCORN/bin/ld.gold"
+ALIGN="$POPCORN/bin/pyalign"
+POST_PROCESS=$POPCORN/bin/gen-stackinfo
+X86_64_POPCORN="$POPCORN/x86_64"
+ARM64_POPCORN="$POPCORN/aarch64"
+
+
+#CFLAGS
+LFLAGS="-nostdinc -nostdlib" 
+
+###LDFLAGS
+LIBS="/lib/crt1.o /lib/libc.a /lib/libpthread.a /lib/libm.a"
+X86_64_LIBS=
+ARM64_LIBS=
+for lib in $LIBS; do
+	X86_64_LIBS+="$X86_64_POPCORN/$lib "
+	ARM64_LIBS+="$ARM64_POPCORN/$lib "
+done
+
+#filter options
+options=()  # the buffer array for the parameters
+eoo=0       # end of options reached
+OBJS=()
+PRINT_VERSION=0
+_USR_LIBRARY_PATH=()
+_USR_LIBS=()
+STANDARD_USR_LIBS=()
+
+#filter "-o" options and "*.o" files
+while [[ $1 ]]
+do
+    if ! ((eoo)); then
+	case "$1" in
+	  -o)
+	      BIN=$2
+	      #echo found -o is: $BIN
+	      shift
+	      shift
+	      ;;
+	  --version|-v|-V)
+	      PRINT_VERSION=1
+	      shift
+	      ;;
+	  -lm)
+  	      STANDARD_USR_LIBS+=("$1")
+	      shift
+		;;
+
+	  -l*)
+  	      _USR_LIBS+=("$1")
+	      shift
+		;;
+	  #skip this option sent by clang when calling the default ld.
+	  #Can we do this skipping in the actual build of clang/llvm?
+	  #This is may become a real problem in -L option (see below)
+	  
+	  #Another solution will be to modify popcorn-clang, such that 
+	  #it always  compiles -c then links?
+	  -dynamic-linker)
+	      shift
+	      shift
+		;;
+	  #skip default option sent by clang (when called without -c)
+	  -m)
+	      shift
+	      shift
+		;;
+          #also skip
+	  --hash-style=*)
+	      shift
+	      shift
+		;;
+          #also skip
+	  --eh-frame-hdr)# This one is deadly as it leads to a segfault on ARM
+		shift
+		;;
+          #skip some: FIXME
+	  -L*)
+	      #This is an ugly hack to avoid the default library given by clang
+              #Which are all absolute
+
+              #As long as the popcorn-clang user use -L with only relative paths
+              #This sould work (otherwise we will skip real user path)
+	      if [ "${1:2:1}" != "/" ] #add only relative path 
+	      then
+		echo adding $1 third char is ${1:2:1}
+  	      	_USR_LIBRARY_PATH+=("$1")
+              fi
+	      shift
+		;;
+#	  -L*)
+#	      #skip: refuse all -L options!?
+#	      #this is necesary since clang add default libraries even
+#	      #when compiled wiht -nostdlib option! The fix should be
+#	      #there not here. We should allow the user to add custom
+#	      #librarie
+#		echo $1 skipped
+#	      shift
+#		;;
+#	  *lib*)
+#	      #skip
+#		echo $1 skipped
+#	      shift
+#		;;
+	  *.o)
+	      OBJS+=("$1")
+	      shift
+	      ;;
+	  *gcc*)
+	      #skip
+	      shift
+	      ;;
+	  --)
+	      eoo=1
+	      options+=("$1")
+		#echo "--$options"
+	      shift
+	      ;;
+	  *)
+	      options+=("$1")
+		#echo "*$options"
+	      shift
+	      ;;
+	esac
+    else
+	options+=("$1")
+		#echo "else$options"
+	# Another (worse) way of doing the same thing:
+	# options=("${options[@]}" "$1")
+	shift
+    fi
+done
+	
+if [ $PRINT_VERSION = "1" ]; then	
+	$LD --version $*
+	exit
+fi
+
+ALL_OBJS="${OBJS[@]}"
+ARM64_OBJ="$ALL_OBJS" #arms obj have no extension
+X86_64_OBJ="$ALL_OBJS"
+
+X86_64_LDFLAGS="$LDFLAGS -m elf_x86_64 -L$X86_64_POPCORN/lib $X86_64_LIBS $USR_LIBRARY_PATH --start-group -lc $USR_LIBS_x86_64 --end-group"
+ARM64_LDFLAGS="$LDFLAGS -m aarch64linux -L$ARM64_POPCORN/lib -L$ARM64_LIBGCC $ARM64_LIBS $USR_LIBRARY_PATH $ALL_LIBS_ARM"
+
+if [ $machine = "x86_64" ]
+then
+	$LD -o $BIN $X86_64_OBJ $X86_64_LDFLAGS ${options[@]}
+else
+	$LD -o $BIN $ARM64_OBJ $ARM64_LDFLAGS ${options[@]}
+fi
