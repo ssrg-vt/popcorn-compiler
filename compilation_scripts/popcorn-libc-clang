@@ -41,7 +41,7 @@ do
 done
 
 
-$CC $HET_CFLAGS $ARM64_INC $all
+$CC -fno-common $HET_CFLAGS $ARM64_INC $all
 
 echo object: $object
 if [ "$object" == "/dev/null" ]; then                                            

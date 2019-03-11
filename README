@@ -116,10 +116,6 @@ recommended that applications be built on x86-64.
   - On Ubuntu 14.04 & higher, x86-64, install the following packages:
       flex
       bison
-+ OpenJDK, version 1.7 or higher
-  - On Ubuntu 14.04 & higher, x86-64, install the following packages:
-      default-jre
-      default-jdk
 + Python, v2.7 and v3
   - v2 is needed for installation script
   - v3 is needed for scripts in util/scripts
@@ -140,4 +136,15 @@ Applications must be written in C (although anything for which LLVM IR can be
 generated should be supported), and inline assembly is not supported.  All
 optimizations except auto-vectorization and frame-pointer elimination (required
 by stackmap intrinsic) are supported.
+
+-------------------
+Hello-world Example
+-------------------
+To be able to run a hello-world example, use the following three steps:
+1) Install the compiler and libraries (see INSTALL file)
+2) Configure the upopcorn-server/ (see README in the given directory)
+3) Compile and run the hello world application (see README in tests/hello/)
+
+
+
 

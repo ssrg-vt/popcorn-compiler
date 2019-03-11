@@ -37,4 +37,25 @@ between components, so components should be installed in the following order:
 
 See the INSTALL file in each subdirectory for more details.
 
-# TODO installation script
+-------------------
+Installation Script
+-------------------
+
+To install the compiler and all necessary libraries use the following command:
+$ ./install_compiler.py
+
+The default installation directory is "/usr/local/popcorn/"
+
+WARNINIG: It's not recommanded to use alternative paths. Even if the script supports it, 
+since some tools still depends on the default path.
+
+-----------------
+User Mode Install
+-----------------
+
+To avoid compiling as root, one create a symbolic link folder. For example:
+$ mkdir $(pwd)/install
+$ sudo ln -s $(pwd)/install /usr/local/popcorn
+
+This will install everything under the "$(pwd)/install" directory.
+

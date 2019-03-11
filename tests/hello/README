@@ -1,0 +1,27 @@
+---------
+Compiling
+---------
+Compile using the command:
+$ make
+This will create two binaries test_x86-64 and test_aarch64
+
+
+-------
+INSTALL
+-------
+Install in local machine:
+$ cp test_x86-64 test
+
+Install on remote machine:
+$ scp test_* REMOTE-MACHINE-IP:$(pwd)
+$ scp test_aarch64 REMOTE-MACHINE-IP:$(pwd)/test
+
+
+Note: "$(pwd)" is supposed to exist on remote machine
+
+---
+RUN
+---
+$ ./test
+
+Note: make sure that the server is running on the remote machines.

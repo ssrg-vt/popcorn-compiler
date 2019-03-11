@@ -126,16 +126,6 @@ def _check_for_prerequisite(prereq):
         out = out.split('\n')[0]
         return out
 
-def _check_javac():
-    try:
-        out = subprocess.check_output(['javac', '-version'],
-                    stderr=subprocess.STDOUT)
-    except Exception:
-        print('javac not found!')
-        return None
-    else:
-        out = out.split('\n')[0]
-        return out
 
 def check_for_prerequisites():
     success = True
@@ -161,9 +151,6 @@ def check_for_prerequisites():
         out = _check_for_prerequisite(prereq)
         if not out:
             success = False
-
-    #if not _check_javac():
-    #    success = False
 
     return success
 
@@ -709,34 +696,6 @@ def install_tools(base_path, install_path, num_threads):
         # INSTALL ALIGNMENT TOOL
         #=====================================================
         
-		# 1. Old java tool, TODO remove it later
-        #os.chdir(os.path.join(base_path, 'tool/alignment/old-alignment'))
-
-        #print('Making java alignment tool...')
-        #try:
-        #    print('Running Make...')
-        #    rv = subprocess.check_call(['make', '-j', str(num_threads),
-        #                                'POPCORN={}'.format(install_path)])
-        #    tmp = install_path.replace('/', '\/')
-        #    sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_armObjs.sh".format(tmp)
-        #    rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-        #    sed_cmd = "sed -i -e 's/^POPCORN=.*/POPCORN=\"{}\"/g' ./scripts/mlink_x86Objs.sh".format(tmp)
-        #    rv = subprocess.check_call(sed_cmd, stderr=subprocess.STDOUT,shell=True)
-        #    rv = subprocess.check_call(['make', 'install',
-        #                                'POPCORN={}'.format(install_path)])
-        #except Exception as e:
-        #    print('Could not run Make ({})!'.format(e))
-        #    sys.exit(1)
-        #else:
-        #    if rv != 0:
-        #        print('Make failed.')
-        #        sys.exit(1)
-
-        #os.chdir(cur_dir)
-
-	#	# 2. Pyalign
-        #os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
-
         print('Making pyalign...')
         try:
             print('Running Make...')
