@@ -694,7 +694,7 @@ def install_tools(base_path, install_path, num_threads):
         #=====================================================
         # INSTALL ALIGNMENT TOOL
         #=====================================================
-        
+	os.chdir(os.path.join(base_path, 'tool/alignment/pyalign'))
         print('Making pyalign...')
         try:
             print('Running Make...')
