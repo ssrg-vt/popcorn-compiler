@@ -237,9 +237,10 @@ struct rewrite_context
   void* callee_saved_pool; /* Callee-saved registers (bitmaps) */
 
 #ifdef CHAMELEON
-  void *cham_handle; /* opaque handle for Chameleon */
+  void* cham_handle; /* opaque handle for Chameleon */
   get_rand_info rand_info; /* function returning randomization information */
-  void *buf; /* stack data buffer in Chameleon's address space */
+  void* first_frame_cfa; /* first frame's CFA, highest stack address */
+  void* buf; /* stack data buffer in Chameleon's address space */
 #endif
 };
 

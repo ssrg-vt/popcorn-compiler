@@ -257,7 +257,12 @@ void* points_to_stack(const rewrite_context ctx,
 
     /* Check if we're within the stack's bounds.  If not, wipe the pointer */
     ST_INFO(" -> Found pointer %p\n", stack_addr);
-    if(stack_addr < ctx->stack || ctx->stack_base <= stack_addr)
+    if(stack_addr < ctx->stack ||
+#ifndef CHAMELEON
+       ctx->stack_base <= stack_addr)
+#else
+       ctx->first_frame_cfa <= stack_addr)
+#endif
       stack_addr = NULL;
   }
 

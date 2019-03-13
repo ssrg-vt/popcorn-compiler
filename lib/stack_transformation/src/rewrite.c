@@ -194,7 +194,7 @@ int st_rewrite_randomized(void* cham_handle,
    *    copy them from the source register set, which prepared them prior to
    *    being interrupted
    */
-  // TODO how do we reify returned values which are pointer to the stack?
+  // TODO how do we reify returned values which are pointers to the stack?
   if(!is_return)
   {
     ST_INFO("Copying argument register(s)\n");
@@ -652,6 +652,7 @@ static bool unwind_and_size(rewrite_context src,
   }
 
   // Account for other stuff above the stack, e.g., TLS, environment variables
+  src->first_frame_cfa = ACT(src).cfa;
   stack_size += src->stack_base - ACT(src).cfa;
 #endif /* CHAMELEON */
 
@@ -679,12 +680,12 @@ static bool unwind_and_size(rewrite_context src,
   fn = get_function_address(src->handle, REGOPS(src)->pc(ACT(src).regs));
   ASSERT(fn, "Could not find function address of outermost frame\n");
   REGOPS(dest)->set_pc(ACT(dest).regs, fn);
-  memset(dest->stack_base - stack_size, 0, stack_size);
+  memset(dest->stack, 0, stack_size);
 #else
   fn = REGOPS(src)->pc(ACT(src).regs);
   REGOPS(dest)->set_pc(ACT(dest).regs, fn);
-  memset(child_to_chameleon(dest, dest->stack_base - stack_size), 0,
-         stack_size - (src->stack_base - src->acts[src->num_acts - 1].cfa));
+  memset(child_to_chameleon(dest, dest->stack), 0,
+         stack_size - (src->stack_base - src->first_frame_cfa));
 #endif
 
   ST_INFO("Top of new stack: %p\n", dest->stack);
@@ -941,7 +942,8 @@ fixup_local_pointers(rewrite_context src, rewrite_context dest)
         while(dest->handle->live_vals[j + 1 + dest_offset].is_duplicate) j++;
 
         /* Can only have stack pointers to allocas */
-        if(!val_src->is_alloca || !val_dest->is_alloca) continue;
+        if(!val_src->is_alloca || val_src->is_temporary ||
+           !val_dest->is_alloca || val_dest->is_temporary) continue;
 
         if((stack_addr = points_to_data(src, val_src,
                                         dest, val_dest,
