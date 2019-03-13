@@ -1538,8 +1538,7 @@ void StackTransformMetadata::warnUnhandled() const {
   const Function *CalledFunc;
   bool unhandled;
 
-  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
-  {
+  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
     const MachineInstr *MISM = getMISM(*S);
     const MachineInstr *MICall = getMICall(*S);
     const RegValsMap &CurVregs = SMRegs.at(MISM);
@@ -1582,6 +1581,27 @@ void StackTransformMetadata::warnUnhandled() const {
     }
 
     if(unhandled) MF->setSMHasUnhandled(getIRSM(*S));
+  }
+
+  // TODO the following is only implemented for X86Values, need to implement
+  // for other architectures
+  if(EmitMetadata) {
+    const Function *F = MF->getFunction();
+    const std::string &Triple = F->getParent()->getTargetTriple();
+    std::string Prefix(F->getName()), Msg, Buf;
+
+    // Yell if there will be problems randomizing the stack layout because of
+    // any instruction(s) in the function
+    Prefix += " (" + Triple + ") Chameleon: ";
+    for(const auto &MBB : *MF) {
+      for(const auto &I : MBB) {
+        if(TVG->getRandomizeRestrictions(&I, Msg)) {
+          Buf = Prefix + Msg;
+          DiagnosticInfoOptimizationFailure DI(*F, DebugLoc(), Buf);
+          F->getContext().diagnose(DI);
+        }
+      }
+    }
   }
 }
 

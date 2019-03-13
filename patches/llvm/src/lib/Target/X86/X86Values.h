@@ -21,6 +21,8 @@ public:
   virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
                                               const VirtRegMap *VRM) const;
   virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
+  virtual bool
+  getRandomizeRestrictions(const MachineInstr *MI, std::string &Msg) const;
 
 private:
   MachineLiveVal *genLEAInstructions(const MachineInstr *LEA) const;

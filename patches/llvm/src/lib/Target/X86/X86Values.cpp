@@ -393,3 +393,29 @@ MachineLiveValPtr X86Values::getMachineValue(const MachineInstr *MI) const {
   return MachineLiveValPtr(Val);
 }
 
+bool X86Values::getRandomizeRestrictions(const MachineInstr *MI,
+                                         std::string &Msg) const {
+  size_t I, DispIdx, NOps;
+
+  if(MI->getOpcode() == TargetOpcode::STACKMAP) return false;
+
+  NOps = MI->getNumOperands();
+  for(I = 0; I < NOps; I++) {
+    const MachineOperand &MO = MI->getOperand(I);
+    if(MO.isFI()) {
+      DispIdx = I + X86::AddrDisp;
+      if(DispIdx < NOps) {
+        const MachineOperand &Disp = MI->getOperand(DispIdx);
+        assert(Disp.isImm() && "Unhandled memory access operand");
+        if(Disp.getImm() < 0) {
+          Msg = "memory access uses negative offset, may miss detecting slot "
+                "in analysis";
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+

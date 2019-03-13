@@ -2560,7 +2560,7 @@ Index: include/llvm/Target/TargetValues.h
 ===================================================================
 --- include/llvm/Target/TargetValues.h	(nonexistent)
 +++ include/llvm/Target/TargetValues.h	(working copy)
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,112 @@
 +//===----- llvm/Target/TargetValues.h - Value Properties ----*- C++ -----*-===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -2649,6 +2649,12 @@ Index: include/llvm/Target/TargetValues.h
 +                                         const MachineInstr *MIStackMap,
 +                                         const CallInst *IRStackMap) const
 +  { return; }
++
++  /// Chameleon only: return a message describing any found limitations or
++  /// potential randomization issues with the specified instruction.
++  virtual bool
++  getRandomizeRestrictions(const MachineInstr *MI, std::string &Msg) const
++  { return false; }
 +
 +protected:
 +  TargetValues() {}
@@ -7927,7 +7933,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 ===================================================================
 --- lib/CodeGen/StackTransformMetadata.cpp	(nonexistent)
 +++ lib/CodeGen/StackTransformMetadata.cpp	(working copy)
-@@ -0,0 +1,1587 @@
+@@ -0,0 +1,1607 @@
 +//=== llvm/CodeGen/StackTransformMetadata.cpp - Stack Transformation Metadata ===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -9468,8 +9474,7 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +  const Function *CalledFunc;
 +  bool unhandled;
 +
-+  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++)
-+  {
++  for(auto S = SM.begin(), SE = SM.end(); S != SE; S++) {
 +    const MachineInstr *MISM = getMISM(*S);
 +    const MachineInstr *MICall = getMICall(*S);
 +    const RegValsMap &CurVregs = SMRegs.at(MISM);
@@ -9512,6 +9517,27 @@ Index: lib/CodeGen/StackTransformMetadata.cpp
 +    }
 +
 +    if(unhandled) MF->setSMHasUnhandled(getIRSM(*S));
++  }
++
++  // TODO the following is only implemented for X86Values, need to implement
++  // for other architectures
++  if(EmitMetadata) {
++    const Function *F = MF->getFunction();
++    const std::string &Triple = F->getParent()->getTargetTriple();
++    std::string Prefix(F->getName()), Msg, Buf;
++
++    // Yell if there will be problems randomizing the stack layout because of
++    // any instruction(s) in the function
++    Prefix += " (" + Triple + ") Chameleon: ";
++    for(const auto &MBB : *MF) {
++      for(const auto &I : MBB) {
++        if(TVG->getRandomizeRestrictions(&I, Msg)) {
++          Buf = Prefix + Msg;
++          DiagnosticInfoOptimizationFailure DI(*F, DebugLoc(), Buf);
++          F->getContext().diagnose(DI);
++        }
++      }
++    }
 +  }
 +}
 +
@@ -10957,7 +10983,7 @@ Index: lib/Target/X86/X86Values.cpp
 ===================================================================
 --- lib/Target/X86/X86Values.cpp	(nonexistent)
 +++ lib/Target/X86/X86Values.cpp	(working copy)
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,421 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -11353,11 +11379,37 @@ Index: lib/Target/X86/X86Values.cpp
 +  return MachineLiveValPtr(Val);
 +}
 +
++bool X86Values::getRandomizeRestrictions(const MachineInstr *MI,
++                                         std::string &Msg) const {
++  size_t I, DispIdx, NOps;
++
++  if(MI->getOpcode() == TargetOpcode::STACKMAP) return false;
++
++  NOps = MI->getNumOperands();
++  for(I = 0; I < NOps; I++) {
++    const MachineOperand &MO = MI->getOperand(I);
++    if(MO.isFI()) {
++      DispIdx = I + X86::AddrDisp;
++      if(DispIdx < NOps) {
++        const MachineOperand &Disp = MI->getOperand(DispIdx);
++        assert(Disp.isImm() && "Unhandled memory access operand");
++        if(Disp.getImm() < 0) {
++          Msg = "memory access uses negative offset, may miss detecting slot "
++                "in analysis";
++          return true;
++        }
++      }
++    }
++  }
++
++  return false;
++}
++
 Index: lib/Target/X86/X86Values.h
 ===================================================================
 --- lib/Target/X86/X86Values.h	(nonexistent)
 +++ lib/Target/X86/X86Values.h	(working copy)
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +//===--------- X86TargetValues.cpp - X86 specific value generator ---------===//
 +//
 +//                     The LLVM Compiler Infrastructure
@@ -11381,6 +11433,8 @@ Index: lib/Target/X86/X86Values.h
 +  virtual TemporaryValuePtr getTemporaryValue(const MachineInstr *MI,
 +                                              const VirtRegMap *VRM) const;
 +  virtual MachineLiveValPtr getMachineValue(const MachineInstr *MI) const;
++  virtual bool
++  getRandomizeRestrictions(const MachineInstr *MI, std::string &Msg) const;
 +
 +private:
 +  MachineLiveVal *genLEAInstructions(const MachineInstr *LEA) const;

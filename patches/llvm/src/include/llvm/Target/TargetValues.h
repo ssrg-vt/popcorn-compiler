@@ -87,6 +87,12 @@ public:
                                          const CallInst *IRStackMap) const
   { return; }
 
+  /// Chameleon only: return a message describing any found limitations or
+  /// potential randomization issues with the specified instruction.
+  virtual bool
+  getRandomizeRestrictions(const MachineInstr *MI, std::string &Msg) const
+  { return false; }
+
 protected:
   TargetValues() {}
 
