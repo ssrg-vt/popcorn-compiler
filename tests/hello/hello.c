@@ -18,6 +18,7 @@ int main(int argc, char* argv[])
 	{
 		printf("%d: before migrate\n", getpid());
 		new_migrate(1);
+		printf("%d: hello world remote\n", getpid());
 		new_migrate(0);
 		printf("%d: after migrate\n", getpid());
 	}
