@@ -1,0 +1,61 @@
+#!/bin/bash
+
+POPCORN=/usr/local/popcorn
+ARM64_POPCORN=$POPCORN/aarch64
+x86_64_POPCORN=$POPCORN/x86_64
+CC=$POPCORN/bin/clang
+
+HET_CFLAGS="-nostdinc -nostdlib -fno-common -ftls-model=initial-exec"
+ARM64_INC="-isystem $ARM64_POPCORN/include"
+x86_64_INC="-isystem $x86_64_POPCORN/include"
+
+#filter "-o" options and "*.o" files
+options=()  # the buffer array for the parameters
+eoo=0       # end of options reached
+BIN=""
+COMPILE_ONLY=0
+LINK_ONLY=0
+OBJS=()
+while [[ $1 ]]
+do
+    if ! ((eoo)); then
+	case "$1" in
+	  -o)
+	      BIN=$2
+	      shift
+	      shift
+	      ;;
+	  *.o)
+	      OBJS+=("$1")
+	      LINK_ONLY=1
+	      shift
+	      ;;
+	  -c)
+	      COMPILE_ONLY=1
+	      shift
+	      ;;
+	  *)
+	      options+=("$1")
+	      shift
+	      ;;
+	  --)
+	      eoo=1
+	      options+=("$1")
+	      shift
+	      ;;
+	esac
+    else
+	options+=("$1")
+	shift
+    fi
+done
+
+ALL_OBJS="${OBJS[@]}"
+echo ALL OBJS: ${OBJS[@]}
+
+X86_BIN="${BIN//.o/_x86_64.o}" 
+AARCH_BIN="${BIN//.o/_aarch64.o}" 
+
+
+$CC $HET_CFLAGS -target aarch64-linux-gnu -popcorn-libc -c $ARM64_INC ${options[@]} -o $AARCH_BIN
+$CC $HET_CFLAGS -target x86_64-linux-gnu  -popcorn-libc -c $x86_64_INC ${options[@]} -o $X86_BIN
