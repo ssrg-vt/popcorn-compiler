@@ -5,7 +5,8 @@ ARM64_POPCORN=$POPCORN/aarch64
 x86_64_POPCORN=$POPCORN/x86_64
 CC=$POPCORN/bin/clang
 
-HET_CFLAGS="-nostdinc -nostdlib -fno-common -ftls-model=initial-exec"
+HET_CFLAGS="-nostdinc -nostdlib -fno-common -ftls-model=initial-exec -popcorn-alignment"
+HET_CFLAGS+=" -std=c99 -nostdinc -ffreestanding -Wa,--noexecstack -pipe -fno-unwind-tables -fno-asynchronous-unwind-tables -Werror=implicit-function-declaration -Werror=implicit-int -Werror=pointer-sign -Werror=pointer-arith -Qunused-arguments -Wall -Wno-parentheses -Wno-uninitialized -Wno-missing-braces -Wno-unused-value -Wno-unknown-pragmas -Wno-pointer-to-int-cast"
 ARM64_INC="-isystem $ARM64_POPCORN/include"
 x86_64_INC="-isystem $x86_64_POPCORN/include"
 
