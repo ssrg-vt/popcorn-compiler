@@ -44,14 +44,43 @@ typedef union epoll_data {
 	uint64_t u64;
 } epoll_data_t;
 
+struct epoll_event_x86_64 {
+	uint32_t events;
+	epoll_data_t data;
+} __attribute__ ((__packed__));
+
+struct epoll_event_common {
+	uint32_t events;
+	epoll_data_t data;
+};
+
 struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
-}
+};
+
+union epoll_event_union {
+	struct epoll_event_x86_64 x86_64;
+	struct epoll_event_common common;
+};
+
 #ifdef __x86_64__
-__attribute__ ((__packed__))
+	#define epoll_arch x86_64
+#else
+	#define epoll_arch common
 #endif
-;
+
+static inline void translate_epoll_event(struct epoll_event *usr, union epoll_event_union *kus)
+{
+	usr->events=kus->epoll_arch.events;
+	usr->data=kus->epoll_arch.data;
+}
+
+static inline void translate_epoll_event_rev(struct epoll_event *usr, union epoll_event_union *kus)
+{
+	kus->epoll_arch.events=usr->events;
+	kus->epoll_arch.data=usr->data;
+}
 
 
 int epoll_create(int);
