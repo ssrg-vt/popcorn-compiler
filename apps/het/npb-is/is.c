@@ -405,8 +405,6 @@ void full_verify( void )
 {
     INT_TYPE    i, j;
 
-	printf("full verification!!! %d", passed_verification);
-
 /*  Now, finally, sort the keys:  */
 
 #ifdef USE_BUCKETS
@@ -435,7 +433,6 @@ void full_verify( void )
 
     if( j != 0 )
    	{
-		printf("fuuuuuuuuck\n");
         printf( "Full_verify: number of keys out of sort: %ld\n",
                 (long)j );
 		fflush(stdout);
