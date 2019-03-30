@@ -8,7 +8,8 @@
  1. Debian packages
 ```
 apt update
-apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils subversion
+apt install -y build-essential nasm texinfo zip zlib1g-dev gcc-aarch64-linux-gnu \
+ g++-aarch64-linux-gnu python python3 flex bison wget bsdmainutils subversion git
 ```
 
  2. Cmake
