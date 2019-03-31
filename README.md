@@ -5,9 +5,9 @@
 - Recommended machines: for x86, any relatively recent Intel processor should be
   supported. For arm64, our system has only been tested on the
   [librecomputer potato](https://libre.computer/products/boards/aml-s905x-cc/)
-  board
+  board.
 - Recomended distribution: debian 9
-- Software dependencies:
+- Software dependencies - on the host (x86 machine):
 
  1. Debian packages
 ```
@@ -28,6 +28,9 @@ If the folder is not present on your system, create it as follows:
 sudo ln -s /usr/include/asm-generic /usr/include/asm
 ```
 
+- Software dependencies - on the arm64 board: the only dependency is that the
+board needs to run a kernel with KVM enabled.
+
 ## Installation
 First clone this repo and checkout the `hermit-master` branch:
 ```
@@ -45,12 +48,74 @@ Then simply launch the installation script:
 ## Compiling applications
 
 ### Migration points
-The application needs to be instrumented with migration points 
+The application needs to be instrumented with migration points. They can be
+inserted by editing the code:
+```C
+/* This header must be inserted : */
+#include <hermit/migration.h>
 
-- Use `util/hermit/Makefile` in your source directory. Type `make` to compile,
-`make test-x86` to run locally on the host.
+/* ... */
 
-TODO heterogeneous stuff.
+/* Insert this line to create a migration point: */
+popcorn_check_migrate();
+
+```
+
+Alternatively the migration point insertion can be fully automated by adding
+the `-finstrument-functions` compiler flag, which will then insert a call to
+`popcorn_check_migrate()` at the beginning and end of each function.
+
+In order to trigger migration, a flag first needs to be raised then upon
+reaching the next migration point the application will be checkpointed for
+migration to the board (if it is running on the server) or to the server (if it
+is running on the board). To raise that flag, a signal `SIGUSR1` must be sent
+to the hypervisor running on the host.
+
+### Application compilation and test
+We strongly advise to use our template `Makefile`, `util/hermit/Makefile`, that
+can be copy-pasted or symlinked in your source directory. Running make will
+compile the unikernel for both architectures. This makefile is supposed to be
+run on the host and never on the board.
+
+You may need to edit the `POPHERMIT` variable in that makefile if you selected
+a custom install folder during installation. Other interesting variables to
+edit in this file are:
+
+- `MEM`: memory given to the VM (on each architecture)
+- `VERBOSE`: set to `1` to enable kernel logging, useful for debugging
+- `CPUS`: set the number of vCPUs, for now we support only 1
+- `ARGS`: application command line arguments
+- `MIGTEST=x`: automatically send a `SIGUSR1` migration signal to the
+  hypervisor after `x` seconds of execution. Useful for development.
+- `RESUME`: indicate that the `make test-xxx` target should reload a checkpoint
+  rather than be an initial execution
+- `PORT`: port to open for post-copy server after migration signal is received,
+  also used on the client side to connect to the server
+- `SERVER`: the ip of the post-copy server when resuming on the client
+- `FULL_CHECKPOINT_SAVE`: set to 1 for saving a full checkpoint and exiting upon
+  migration (checkpoint/restart mode), as opposed to post-copy migration (0)
+- `FULL_CHECKPOINT_RESTORE`: set to 1 for restoring a full checkpoint when
+  resuming (checkpoint/restart mode), as opposed to post-copy resuming (0)
+- `ARM_TARGET_IP`: IP of the board, used for various makefile targets
+- `ARM_TARGET_HOME`: working directory on the board
+
+
+Interesting targets for this template Makefile include:
+
+- `make test-x86`: start execution on the x86 machine
+- `make test-arm`: start execution on the board
+- `make transfer-full-checkpoint-to-arm`: transfer a checkpoint
+  (checkpoint/restore mode) from the x86 machine to the board
+- `make transfer-full-checkpoint-from-arm`: transfer a checkpoint
+  (checkpoint/restore mode) from the board to the x86 machine
+- `make transfer-checkpoint-to-arm`: same as above but for post-copy-mode
+- `make transfer-checkpoint-from-arm`: same as above but for post-copy-mode
+
+Each variable can be edited in the makefile but also set from the command line,
+for example:
+```
+RESUME=1 make test-arm
+```
 
 ## Modifying toolchain components
 
