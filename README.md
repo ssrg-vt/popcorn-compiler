@@ -143,7 +143,7 @@ cd apps/npb-is
 ln -sf npbparams-B.h npbparams.h
 make
 ```
-
+#### Running in C/R mode
 Once the binaries are compiled, let's run HEXO in checkpoint/restart mode first.
 Make sure that in the makefile both of these variables are set to 1:
 - `FULL_CHKPT_SAVE`
@@ -205,7 +205,7 @@ ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1 \
         10
 # results output here
 ```
-
+#### Running in post-copy mode
 To try post-copy transfer, update the makefile to set the two following
 variables to 0:
 - `FULL_CHKPT_SAVE`
