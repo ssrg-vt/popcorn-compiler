@@ -1,4 +1,4 @@
-# Heterogeneous HermitCore toolchain
+# HEXO - Heterogeneous EXecution Offloading
 
 ## Dependencies
 
@@ -92,9 +92,9 @@ edit in this file are:
 - `PORT`: port to open for post-copy server after migration signal is received,
   also used on the client side to connect to the server
 - `SERVER`: the ip of the post-copy server when resuming on the client
-- `FULL_CHECKPOINT_SAVE`: set to 1 for saving a full checkpoint and exiting upon
+- `FULL_CHKPT_SAVE`: set to 1 for saving a full checkpoint and exiting upon
   migration (checkpoint/restart mode), as opposed to post-copy migration (0)
-- `FULL_CHECKPOINT_RESTORE`: set to 1 for restoring a full checkpoint when
+- `FULL_CHKPT_RESTORE`: set to 1 for restoring a full checkpoint when
   resuming (checkpoint/restart mode), as opposed to post-copy resuming (0)
 - `ARM_TARGET_IP`: IP of the board, used for various makefile targets
 - `ARM_TARGET_HOME`: working directory on the board
@@ -115,6 +115,95 @@ Each variable can be edited in the makefile but also set from the command line,
 for example:
 ```
 RESUME=1 make test-arm
+```
+
+### An example: migrating NPB IS
+
+Make sure that the toolchain is installed, that the board and the x86 machine
+are connected on the same network, and that the board's kernel has KVM enabled
+(there should be a `/dev/KVM` file). Note that all the commands in this guide
+will run on the server: the template makefile executes remote commands  on the
+board through ssh. Thus, you need to have ssh access to a user on the board. We
+advise you setup passwordless connection with `ssh-copy-id` between the user on
+the x86 machine and the one on the board. Finally, it is also important that the
+user on the board can access `/dev/kvm`.
+
+Edit the template makefile and set the following variables:
+- `POPHERMIT` should be set to the toolchain's install folder (leave the
+  default value if you did not specify anything particular when launching the
+  install script)
+- `ARM_TARGET_IP` should be set to the board IP
+- `SERVER` should be set to the x96 machine IP
+
+
+Then go to NPB IS folder and compile the binaries after having set the dataset
+size for IS (we will use B) with a symlink:
+```
+cd apps/npb-is
+ln -sf npbparams-B.h npbparams.h
+make
+```
+
+Once the binaries are compiled, let's run HEXO in checkpoint/restart mode first.
+Make sure that in the makefile both of these variables are set to 1:
+- `FULL_CHKPT_SAVE`
+- `FULL_CHKPT_RESTORE`
+
+Then we start the execution of IS and checkpoint after 5 seconds (you may want
+to set a different value here accordign to the speed of your machine):
+```
+MIGTEST=5 make test-x86
+HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1 \
+	HERMIT_VERBOSE=0 HERMIT_MIGTEST=5 \
+	HERMIT_MIGRATE_RESUME=0 HERMIT_DEBUG=0 \
+	HERMIT_NODE_ID=0 ST_AARCH64_BIN=prog_aarch64_aligned \
+	ST_X86_64_BIN=prog_x86-64_aligned \
+	HERMIT_MIGRATE_PORT=5050 HERMIT_MIGRATE_SERVER=192.168.1.2 \
+	HERMIT_FULL_CHKPT_SAVE=1 \
+	HERMIT_FULL_CHKPT_RESTORE=1 \
+	/home/pierre/hermit-popcorn/x86_64-host//bin/proxy prog_x86-64_aligned 
+
+
+ NAS Parallel Benchmarks (NPB3.3-SER) - IS Benchmark
+
+ Size:  33554432  (class B)
+ Iterations:   10
+
+   iteration
+        1
+        2
+        3
+        4
+        5
+Uhyve: exiting
+```
+
+Next let's transfer the checkpoint to the board:
+```
+make transfer-full-checkpoint-to-arm
+rsync --no-whole-file *.bin stack.bin.* tls.bin.* \
+	potato:/home/pierre
+```
+
+Finally we can resume and finish the execution on the board:
+```
+RESUME=1 make test-arm
+rsync --no-whole-file /home/pierre/hermit-popcorn/aarch64-hermit//bin/proxy prog_aarch64_aligned prog_x86-64_aligned potato:/home/pierre/
+ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1 \
+	HERMIT_VERBOSE=0 HERMIT_MIGTEST=0 \
+	HERMIT_MIGRATE_RESUME=1 HERMIT_DEBUG=0 \
+	HERMIT_NODE_ID=1 ST_AARCH64_BIN=prog_aarch64_aligned \
+	ST_X86_64_BIN=prog_x86-64_aligned \
+	HERMIT_MIGRATE_PORT=5050 HERMIT_MIGRATE_SERVER=192.168.1.2 \
+	HERMIT_FULL_CHKPT_SAVE=1 \
+	HERMIT_FULL_CHKPT_RESTORE=1 \
+	/home/pierre/proxy /home/pierre/prog_aarch64_aligned 
+        6
+        7
+        8
+        9
+        10
+# results output here
 ```
 
 ## Modifying toolchain components
