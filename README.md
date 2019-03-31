@@ -25,6 +25,12 @@ sudo ln -s /usr/include/asm-generic /usr/include/asm
 ```
 
 ## Installation
+First clone this repo and checkout the `hermit-master` branch:
+```
+git clone https://github.com/ssrg-vt/popcorn-compiler.git
+cd popcorn-compiler
+```
+Then simply launch the installation script:
 ```
 ./install_compiler.py
 ```
