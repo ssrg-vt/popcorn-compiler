@@ -206,6 +206,19 @@ ssh potato HERMIT_ISLE=uhyve HERMIT_MEM=2G HERMIT_CPUS=1 \
 # results output here
 ```
 
+To try post-copy transfer, update the makefile to set the two following
+variables to 0:
+- `FULL_CHKPT_SAVE`
+- `FULL_CHKPT_RESTORE`
+
+Then issue these commands:
+```
+MIGTEST=5 make test-x86
+# you need a new terminal window here
+make transfer-checkpoint-to-arm
+RESUME=1 make test-arm
+```
+
 ## Modifying toolchain components
 
 ### Repositories and branches
