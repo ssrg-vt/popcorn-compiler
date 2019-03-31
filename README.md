@@ -2,8 +2,12 @@
 
 ## Dependencies
 
-- Recommneded distribution: debian 9
-- Dependencies:
+- Recommended machines: for x86, any relatively recent Intel processor should be
+  supported. For arm64, our system has only been tested on the
+  [librecomputer potato](https://libre.computer/products/boards/aml-s905x-cc/)
+  board
+- Recomended distribution: debian 9
+- Software dependencies:
 
  1. Debian packages
 ```
@@ -33,6 +37,10 @@ sudo ln -s /usr/include/asm-generic /usr/include/asm
 - You can the `--help` option to list all the possible options
 
 ## Compiling applications
+
+### Migration points
+The application needs to be instrumented with migration points 
+
 - Use `util/hermit/Makefile` in your source directory. Type `make` to compile,
 `make test-x86` to run locally on the host.
 
