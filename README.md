@@ -245,15 +245,13 @@ Concerning branches, there is a stable branch for each repository. Because of
 various reasons there are generally not named `master`. The list of stable
 branches is as follows:
 
-- **popcorn-compiler**: `hermit-master`
-- **llvm**: `hermit-popcorn-master`
-- **clang**: `hermit-popcorn-master`
-- **HermitCore**:
-  - `hermit-popcorn-master`
-- **newlib**:
-  - `hermit-popcorn-master`
-- **binutils**: `hermit-popcorn-master`
-- **pte**: `hermit-popcorn-master`
+- **popcorn-compiler**: `hermit-master` ([link](https://github.com/ssrg-vt/popcorn-compiler/tree/hermit-master))
+- **llvm**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/llvm/tree/hermit-popcorn-master))
+- **clang**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/clang/tree/hermit-popcorn-master))
+- **HermitCore**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/HermitCore/tree/hermit-popcorn-master))
+- **newlib**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/newlib/tree/hermit-popcorn-master))
+- **binutils**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/binutils/tree/hermit-popcorn-master))
+- **pte**: `hermit-popcorn-master` ([link](https://github.com/ssrg-vt/pthread-embedded/tree/hermit-popcorn-master))
 
 ### Installation folder organization
 - After installation, here is how the installation folder looks like:
