@@ -280,7 +280,7 @@ installation_dir/
    the source folder, `make` then `make install` will recompile and reinstall.
    Note that for both HermitCore and Newlib there is two build folders, one for
    aarch64 and one for x86-64
-   - For pte, directly in the source folder you cna use `make` and 
+   - For pte, directly in the source folder you can use `make` and 
    `make install`
 
 
