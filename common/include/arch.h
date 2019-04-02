@@ -16,5 +16,7 @@ enum arch {
   NUM_ARCHES
 };
 
+enum arch popcorn_get_current_arch();
+
 #endif /* _ARCH_H */
 

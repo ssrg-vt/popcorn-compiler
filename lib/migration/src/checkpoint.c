@@ -71,6 +71,7 @@ union {
 	struct regset_powerpc64 powerpc;
 	struct regset_x86_64 x86;
 } regs_dst;
+
 void* tls_dst=0x0;
 
 /* Generate a call site to get rewriting metadata for outermost frame. */
@@ -116,11 +117,11 @@ __migrate_shim_internal(enum arch dst_arch, void (*callback) (void *), void *cal
 			fprintf(stderr, "Could not rewrite stack!\n");
 			return;
 		}
-		fprintf(stdout, "dest arch is %d\n", dst_arch);
+		//fprintf(stdout, "dest arch is %d\n", dst_arch);
       		tls_dst = get_thread_pointer(GET_TLS_POINTER, dst_arch);
-		fprintf(stdout, "%s %d\n", __func__, __LINE__);
+		//fprintf(stdout, "%s %d\n", __func__, __LINE__);
 		set_restore_context(1);
-		fprintf(stdout, "%s %d\n", __func__, __LINE__);
+		//fprintf(stdout, "%s %d\n", __func__, __LINE__);
 		clear_migrate_flag();
 		signal(SIGALRM, dummy);
 		sigset_t old_sig_set;
@@ -131,7 +132,7 @@ __migrate_shim_internal(enum arch dst_arch, void (*callback) (void *), void *cal
 		sigprocmask(SIG_UNBLOCK, &new_sig_set, &old_sig_set);
 		raise(SIGALRM); /* wil be catched by ptrace */
 		sigprocmask(SIG_SETMASK, &old_sig_set, NULL);
-		fprintf(stdout, "%s raising done %d\n", __func__, __LINE__);
+		//fprintf(stdout, "%s raising done %d\n", __func__, __LINE__);
 		//while(1);
 		return;
 	}
@@ -149,7 +150,12 @@ void check_migrate(void (*callback) (void *), void *callback_data)
 {
 	enum arch dst_arch = do_migrate(NULL);
 	if (dst_arch >= 0)
+	{
+#if _DEBUG == 1
+		fprintf(stderr, "Starting migration to node %d\n", dst_arch);
+#endif
 		__migrate_shim_internal(dst_arch, callback, callback_data);
+	}
 }
 
 /* Invoke migration to a particular node if we're not already there. */

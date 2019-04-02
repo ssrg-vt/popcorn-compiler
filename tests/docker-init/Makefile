@@ -14,7 +14,7 @@ ARM64_LIBGCC := $(shell dirname \
                 $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
-BIN := hello
+BIN := pinit
 
 # FIXME specify source files
 SRC := $(shell ls *.c)
