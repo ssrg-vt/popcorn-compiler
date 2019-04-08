@@ -73,8 +73,9 @@ int translate_signal(int signum) {
 void forward_signal(int signum) {
     signum = translate_signal(signum);
     if (signum != 0) {
-        kill(use_setsid ? -child_pid : child_pid, signum);
-        DEBUG("Forwarded signal %d to children.\n", signum);
+        //kill(use_setsid ? -child_pid : child_pid, signum);
+        kill(-1, signum);
+        DEBUG("Forwarded signal %d to all children.\n", signum);
     } else {
         DEBUG("Not forwarding signal %d to children (ignored).\n", signum);
     }

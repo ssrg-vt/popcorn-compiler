@@ -79,8 +79,10 @@ LIB_ARM     := $(BUILD_ARM)/$(LIB)
 LIB_POWERPC := $(BUILD_POWERPC)/$(LIB)
 LIB_X86     := $(BUILD_X86)/$(LIB)
 
+POPCORN_NOTIFY := $(popcorn-notify)/popcorn-notify
+
 # $(LIB_POWERPC)
-all: $(LIB_ARM) $(LIB_X86)
+all: $(LIB_ARM) $(LIB_X86) $(POPCORN_NOTIFY)
 
 %/.dir:
 	@echo " [MKDIR] $*"
@@ -174,6 +176,10 @@ install: $(LIB_ARM) $(LIB_X86)
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
 	@cp $(LIB_X86) $(POPCORN_X86)/lib
 	@cp include/migrate.h $(POPCORN_X86)/include
+	make -C popcorn-notify install
+
+$(POPCORN_NOTIFY):
+	make -C popcorn-notify
 
 clean:
 	@echo " [RM] $(BUILD)"

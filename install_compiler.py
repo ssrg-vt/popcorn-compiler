@@ -37,6 +37,8 @@ clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 # Binutils 2.27 URL
 binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2'
 
+default_install_path="/usr/local/popcorn"
+
 #================================================
 # ARGUMENT PARSING
 #================================================
@@ -53,7 +55,7 @@ def setup_argument_parsing():
                         dest="base_path")
     config_opts.add_argument("--install-path",
                         help="Install path of Popcorn compiler",
-                        default="/usr/local/popcorn",
+                        default=default_install_path,
                         dest="install_path")
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",
@@ -607,6 +609,27 @@ def install_utils(base_path, install_path, num_threads):
         s = os.path.join('./util', 'scripts', item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
         if item != 'README':
+            shutil.copy(s, d)
+
+    #=====================================================
+    # COPY COMPILATION SCRIPTS
+    #=====================================================
+    #TODO: support != installation path
+    if install_path != default_install_path:
+    	print("WARNING: compilation scripts don't support alternative path other than the default")
+    print("backing up default ld {}/bin/ld...".format(install_path))
+    s = os.path.join(os.path.join(install_path, 'bin'), 'ld')
+    d = os.path.join(os.path.join(install_path, 'bin'), 'ld.default')
+    try:
+    	shutil.copy(s, d)
+        os.remove(s)
+    except:
+        pass
+    print("Copying compilation_scripts/ to {}/bin...".format(install_path))
+    for item in os.listdir('./compilation_scripts/'):
+        if not item.startswith('.'): #don't copy hidden files
+            s = os.path.join('./compilation_scripts/', item)
+            d = os.path.join(os.path.join(install_path, 'bin'), item)
             shutil.copy(s, d)
 
 def build_namespace(base_path):
