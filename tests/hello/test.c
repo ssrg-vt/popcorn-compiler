@@ -12,7 +12,6 @@ int main(int argc, char *argv[])
 
 	while(1) {
 		print_iteration();
-		sleep(1);
 	}
 
 	return 0;

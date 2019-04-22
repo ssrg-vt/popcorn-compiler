@@ -1,6 +1,15 @@
 #ifndef _STDARG_H
 #define _STDARG_H
 
+
+#ifdef POPCORN
+
+#include <bits/alltypes.h>
+#include <popcorn-vaarg.h>
+
+
+#else
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,6 +25,8 @@ extern "C" {
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
 
 #endif

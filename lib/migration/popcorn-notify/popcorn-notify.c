@@ -8,21 +8,25 @@
 #include <sys/user.h>
 #include <sys/reg.h>
 
+#define MAXPATH 2048
+static char binary_path[MAXPATH];
 #define MIGRATION_GBL_VARIABLE "__migrate_gb_variable"
-static char* get_binary_path(int pid)
+
+static char* get_binary_path(int pid, char* root)
 {
         ssize_t ret;
-        #define MAXPATH 2048
-        static char binary_path[MAXPATH];
+        static char tmp_path[MAXPATH];
         static char exe_path[64];
 
         sprintf(exe_path, "/proc/%d/exe", pid);
-        //pr_info("%s: proc exec path is %s\n", __func__, exe_path);
         printf("%s: proc exec path is %s\n", __func__, exe_path);
-        ret = readlink(exe_path, binary_path, MAXPATH);
+        ret = readlink(exe_path, tmp_path, MAXPATH);
         if(ret<=0)
                 return NULL;
-        binary_path[ret]='\0';
+        tmp_path[ret]='\0';
+
+        sprintf(binary_path, "%s%s", root, tmp_path);
+
         return binary_path;
 }
 
@@ -75,19 +79,26 @@ int main(int argc, char *argv[])
 {   
 	pid_t traced_process;
 	char *target_arch;
+	char* root;
 	siginfo_t si;
 	long ret_data;
 	long addr;
 	int ret;
 	if(argc != 3) {
-		printf("Usage: %s pid arch\n",
+		printf("Usage: %s pid arch [root]\n",
 		   argv[0]);
 		exit(1);
 	}
+
 	/* args*/
 	traced_process = atoi(argv[1]);
 	target_arch = argv[2];
-	char* bin_path = get_binary_path(traced_process);
+	if(argc > 3)
+		root = argv[3];
+	else
+		root = "/";
+
+	char* bin_path = get_binary_path(traced_process, root);
 	addr = get_sym_addr(bin_path, MIGRATION_GBL_VARIABLE);
 	int pid=traced_process;
 
