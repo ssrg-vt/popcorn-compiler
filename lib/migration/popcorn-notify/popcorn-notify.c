@@ -75,24 +75,37 @@ long get_sym_addr(char* bin_file, char* sym)
 	return -1;
 }
 
+int get_target_id(char* target_str)
+{
+	if(!strcmp(target_str, "aarch64"))
+		return 0;
+	if(!strcmp(target_str, "x86_64"))
+		return 1;
+	printf("WARN: Unknown architecture %s. defaulting to aarch64\n", target_str);
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {   
 	pid_t traced_process;
-	char *target_arch;
+	char *target_arch_str;
+	int target_arch;
 	char* root;
 	siginfo_t si;
 	long ret_data;
 	long addr;
 	int ret;
-	if(argc != 3) {
-		printf("Usage: %s pid arch [root]\n",
-		   argv[0]);
+	if(argc < 3) {
+		printf("Usage (number of arg given is %d): %s pid arch [root]\n",
+		   argc, argv[0]);
 		exit(1);
 	}
 
 	/* args*/
 	traced_process = atoi(argv[1]);
-	target_arch = argv[2];
+	printf("argv2: %s\n", argv[2]);
+	target_arch_str = argv[2];
+	printf("argv3: %s\n", argv[3]);
 	if(argc > 3)
 		root = argv[3];
 	else
@@ -101,6 +114,7 @@ int main(int argc, char *argv[])
 	char* bin_path = get_binary_path(traced_process, root);
 	addr = get_sym_addr(bin_path, MIGRATION_GBL_VARIABLE);
 	int pid=traced_process;
+	target_arch = get_target_id(target_arch_str);
 
 	/* attach */
 	if(ptrace(PTRACE_SEIZE, traced_process, NULL, NULL)==-1)
@@ -152,7 +166,7 @@ int main(int argc, char *argv[])
 			printf("The process stopped a first time %d, %lx\n", traced_process, addr);
 
 			/* Put one in the variable */
-			putdata(traced_process, addr, 0);
+			putdata(traced_process, addr, target_arch);
 			//sleep(2);
 			//ret_data = getdata(traced_process, addr);
 			//printf("ret data %ld\n", ret_data);

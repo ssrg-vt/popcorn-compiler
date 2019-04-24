@@ -64,24 +64,6 @@ union epoll_event_union {
 	struct epoll_event_common common;
 };
 
-#ifdef __x86_64__
-	#define epoll_arch x86_64
-#else
-	#define epoll_arch common
-#endif
-
-static inline void translate_epoll_event(struct epoll_event *usr, union epoll_event_union *kus)
-{
-	usr->events=kus->epoll_arch.events;
-	usr->data=kus->epoll_arch.data;
-}
-
-static inline void translate_epoll_event_rev(struct epoll_event *usr, union epoll_event_union *kus)
-{
-	kus->epoll_arch.events=usr->events;
-	kus->epoll_arch.data=usr->data;
-}
-
 
 int epoll_create(int);
 int epoll_create1(int);
