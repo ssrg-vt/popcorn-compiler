@@ -2,7 +2,7 @@
 
 General information about HEXO can be found in the related HPDC'19
 [paper](https://www.ssrg.ece.vt.edu/papers/hpdc19.pdf) and
-[poster] (http://popcornlinux.org/images/publications/hexo-poster.pdf).
+[poster](http://popcornlinux.org/images/publications/hexo-poster.pdf).
 
 ## Dependencies
 
