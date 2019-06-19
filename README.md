@@ -1,5 +1,9 @@
 # HEXO - Heterogeneous EXecution Offloading
 
+General information about HEXO can be found in the related HPDC'19
+[paper](https://www.ssrg.ece.vt.edu/papers/hpdc19.pdf) and
+[poster] (http://popcornlinux.org/images/publications/hexo-poster.pdf).
+
 ## Dependencies
 
 - Recommended machines: for x86, any relatively recent Intel processor should be
