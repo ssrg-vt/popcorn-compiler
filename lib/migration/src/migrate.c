@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stack_transform.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include "platform.h"
 #include "migrate.h"
 #include "config.h"
@@ -22,6 +24,7 @@
 
 #if _ENV_SELECT_MIGRATE == 1
 
+#define __MYDEBUG__
 /*
  * The user can specify at which point a thread should migrate by specifying
  * program counter address ranges via environment variables.
@@ -95,6 +98,7 @@ __init_migrate_testing(void)
 static inline int do_migrate(void *addr)
 {
   int retval = -1;
+
 #ifdef __aarch64__
   if(start_aarch64 && !pthread_getspecific(num_migrated_aarch64)) {
     if(start_aarch64 <= addr && addr < end_aarch64) {
@@ -120,7 +124,49 @@ static inline int do_migrate(void *addr)
   return retval;
 }
 
-#else /* _ENV_SELECT_MIGRATE */
+#elif _FILE_SELECT_MIGRATE == 1
+
+#ifdef _RANDOMIZE_MIGRATION
+
+#ifdef __x86_64__
+unsigned int mig_percentage = 30;
+#else
+unsigned int mig_percentage = 70;
+#endif
+
+static inline bool randomize_migration(unsigned chance)
+{
+	bool migrate = false;
+	migrate = ((rand() % 100) <= chance);
+	//printf("Do we migrate? %u\n", (unsigned)migrate);
+	return migrate;
+}
+
+#endif
+
+static inline int do_migrate(void *addr)
+{
+	struct popcorn_thread_status status;
+	int sys_ret;
+	int retval = -1;
+
+#ifdef _RANDOMIZE_MIGRATION
+	if (migration_point_active(addr) && randomize_migration(mig_percentage)){
+		sys_ret = popcorn_getthreadinfo(&status);
+		if (sys_ret) return -1;
+		retval = (status.current_nid) ? 0 : 1;
+	}
+#else
+	if (migration_point_active(addr)){
+		sys_ret = popcorn_getthreadinfo(&status);
+		if (sys_ret) return -1;
+		retval = status.proposed_nid;
+	}
+#endif
+	return retval;
+}
+
+#else /* Not _ENV_SELECT_MIGRATE nor _FILE_SELECT_MIGRATE*/
 
 // TODO remove this in future versions
 static inline int do_migrate(void __attribute__((unused)) *fn)
@@ -244,12 +290,23 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #if _TIME_REWRITE == 1
     TIMESTAMP(start);
 #endif
+//printf("Entered do_migrate, before rewrite stack \n");
     if(REWRITE_STACK(regs_src, regs_dst, dst_arch))
     {
 #if _TIME_REWRITE == 1
       TIMESTAMP(end);
       printf("Stack transformation time: %lluns\n", TIMESTAMP_DIFF(start, end));
 #endif
+//	printf("Entered do_migrate, successfully rewriting stack \n");
+//#ifdef __MYDEBUG__
+//#ifdef __x86_64__
+//      {
+//	void *self; /* TODO: REMOVE*/
+//	__asm__ __volatile__ ("mov %%fs:0,%0" : "=r" (self) );
+//	printf("[Origin] Data_ptr: %p,  Self: %p\n", data_ptr, self);
+//      }
+//#endif
+//#endif
       data.callback = callback;
       data.callback_data = callback_data;
       data.regset = &regs_dst;
@@ -289,7 +346,6 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #if _CLEAN_CRASH == 1
       if(cur_nid != origin_nid) remote_debug_cleanup(cur_nid);
 #endif
-
       // Translate between architecture-specific thread descriptors
       // Note: TLS is now invalid until after migration!
       __set_thread_area(get_thread_pointer(GET_TLS_POINTER, dst_arch));
@@ -306,6 +362,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       // Note that when migration fails, we resume after the syscall and
       // err is set to 1.
       MIGRATE(err);
+
       if(err)
       {
         perror("Could not migrate to node");
@@ -326,6 +383,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
   // Hold until we can attach post-migration
   while(__hold);
 #endif
+
 #if _CLEAN_CRASH == 1
   if(cur_nid != origin_nid) remote_debug_init(cur_nid);
 #endif
