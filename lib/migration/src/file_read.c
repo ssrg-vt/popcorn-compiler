@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include "config.h"
+#include "migrate.h"
 
 #if _FILE_SELECT_MIGRATE == 1
 
@@ -18,20 +18,21 @@ int num_active_x86_check_migrates = 0;
 int active_arm64_check_migrates[MAX_ACTIVE_CHECK_MIGRATES];
 int num_active_arm64_check_migrates = 0;
 
-void randomize_migration()
-{
-	//printf("Randomize migration called \n");
-}
+#ifdef _RANDOMIZE_MIGRATION
+#define RANDOMIZE_MIGRATE_CONFIG		"random.conf"
+unsigned int mig_percentage_x86 = 0;
+unsigned int mig_percentage_arm64 = 0;
+#endif
 
-bool migration_point_active(void* addr)
+int migration_point_active(void* addr)
 {
 	uint64_t address_value = (uint64_t) addr;
-	bool retval = false;
+	int retval = 0;
 	int i;
 #ifdef __x86_64__
 	for (i = 0; i < num_active_x86_check_migrates; ++i) {
 		if (address_value == active_x86_check_migrates[i]) {
-			retval = true;
+			retval = 1;
 			break;
 		}
 	}
@@ -39,7 +40,7 @@ bool migration_point_active(void* addr)
 #elif defined(__aarch64__)
 	for (i = 0; i < num_active_arm64_check_migrates; ++i) {
 		if (address_value == active_arm64_check_migrates[i]) {
-			retval = true;
+			retval = 1;
 			break;
 		}
 	}
@@ -52,6 +53,8 @@ void __attribute__((constructor)) __load_migration_points()
 {
         FILE *fp_x86;
         FILE *fp_arm64;
+	FILE *fp_random;
+	int random_iterator=0;
 	char line[1024];
 
         fp_x86 = fopen(CHECK_MIGRATE_CONFIG_X86, "r"); // read mode
@@ -96,6 +99,38 @@ void __attribute__((constructor)) __load_migration_points()
 	}
 	printf("Total number active arm check migrates: %d\n",
 	       num_active_arm64_check_migrates);
+
+#ifdef _RANDOMIZE_MIGRATION
+        fp_random = fopen(RANDOMIZE_MIGRATE_CONFIG, "r"); // read mode
+
+	if (fp_random == NULL) {
+		perror("Error while opening the random config file.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Read in the random migration probabilities */
+	while (fgets(line, 1024, fp_random)) {
+		const char* tok;
+		for (tok = strtok(line, ",");
+		        tok && *tok;
+		        tok = strtok(NULL, ",\n"),
+			random_iterator++) {
+			if (random_iterator == 0)
+				mig_percentage_x86 = (int)strtoul(tok, NULL, 10);
+			else if(random_iterator == 1)
+				mig_percentage_arm64 = (int)strtoul(tok, NULL,
+								    10);
+		}
+	}
+	printf("Percentage of migrate from x86 to arm: %d\n",
+	       mig_percentage_x86);
+	printf("Percentage of migrate from arm to x86: %d\n",
+	       mig_percentage_arm64);
+
+
+
+
+#endif
 
 	fclose(fp_arm64);
 }

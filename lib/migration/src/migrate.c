@@ -128,16 +128,13 @@ static inline int do_migrate(void *addr)
 
 #ifdef _RANDOMIZE_MIGRATION
 
-#ifdef __x86_64__
-unsigned int mig_percentage = 30;
-#else
-unsigned int mig_percentage = 70;
-#endif
+extern unsigned int mig_percentage_x86;
+extern unsigned int mig_percentage_arm64;
 
 static inline bool randomize_migration(unsigned chance)
 {
 	bool migrate = false;
-	migrate = ((rand() % 100) <= chance);
+	migrate = ((rand() % 100) < chance);
 	//printf("Do we migrate? %u\n", (unsigned)migrate);
 	return migrate;
 }
@@ -151,13 +148,33 @@ static inline int do_migrate(void *addr)
 	int retval = -1;
 
 #ifdef _RANDOMIZE_MIGRATION
-	if (migration_point_active(addr) && randomize_migration(mig_percentage)){
+#ifdef __x86_64__
+	if (!!migration_point_active(addr) &&
+	    randomize_migration(mig_percentage_x86)){
 		sys_ret = popcorn_getthreadinfo(&status);
 		if (sys_ret) return -1;
 		retval = (status.current_nid) ? 0 : 1;
 	}
+//	if (randomize_migration(mig_percentage_x86)){
+//		sys_ret = popcorn_getthreadinfo(&status);
+//		if (sys_ret) return -1;
+//		retval = (status.current_nid) ? 0 : 1;
+//	}
 #else
-	if (migration_point_active(addr)){
+	if (!!migration_point_active(addr) &&
+	    randomize_migration(mig_percentage_arm64)){
+		sys_ret = popcorn_getthreadinfo(&status);
+		if (sys_ret) return -1;
+		retval = (status.current_nid) ? 0 : 1;
+	}
+//	if (randomize_migration(mig_percentage_arm64)){
+//		sys_ret = popcorn_getthreadinfo(&status);
+//		if (sys_ret) return -1;
+//		retval = (status.current_nid) ? 0 : 1;
+//	}
+#endif
+#else
+	if (!!migration_point_active(addr)){
 		sys_ret = popcorn_getthreadinfo(&status);
 		if (sys_ret) return -1;
 		retval = status.proposed_nid;

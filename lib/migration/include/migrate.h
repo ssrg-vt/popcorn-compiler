@@ -67,6 +67,11 @@ void migrate_schedule(size_t region,
                       void (*callback)(void*),
                       void *callback_data);
 
+/**
+ * Check if the particular migration point has been activated
+ */
+int migration_point_active(void* addr);
+
 #ifdef __cplusplus
 }
 #endif

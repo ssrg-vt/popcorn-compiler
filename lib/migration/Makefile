@@ -7,7 +7,7 @@ POPCORN_X86     := $(POPCORN)/x86_64
 CC         := $(POPCORN)/bin/clang
 CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -c -g -popcorn-alignment \
               -Wno-unused-variable -D_GNU_SOURCE -mllvm -no-sm-warn
-OPT_LEVEL  := 
+OPT_LEVEL  := -O3
 ifneq ($(findstring env_select,$(type)),)
 CFLAGS     += -D_ENV_SELECT_MIGRATE=1
 endif
