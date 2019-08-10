@@ -1223,7 +1223,7 @@ extern void popcorn_set_het_workshare (bool);
 extern void popcorn_get_page_faults (unsigned long long *,
                                      unsigned long long *);
 
-extern void hierarchy_hybrid_barrier_final (int, const char *);
+extern void hierarchy_hybrid_barrier_final (int);
 
 /* Shorthand to select between hierarchical & normal barriers */
 static inline void gomp_team_barrier_wait_final_select (gomp_barrier_t *bar)
@@ -1232,7 +1232,7 @@ static inline void gomp_team_barrier_wait_final_select (gomp_barrier_t *bar)
   if (popcorn_hybrid_barrier())
     {
       thr = gomp_thread ();
-      hierarchy_hybrid_barrier_final (thr->popcorn_nid, "End parallel");
+      hierarchy_hybrid_barrier_final (thr->popcorn_nid);
     }
   else
     gomp_team_barrier_wait_final (bar);

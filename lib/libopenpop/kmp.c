@@ -587,10 +587,12 @@ void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
   case GFS_STATIC: /* Fall through */                                         \
   case GFS_DYNAMIC: GOMP_loop_end(); break;                                   \
   case GFS_HIERARCHY_STATIC:                                                  \
-    hierarchy_loop_end(thr->popcorn_nid, loc, false);                         \
+    hierarchy_loop_end(thr->popcorn_nid, loc->psource, false);                \
     break;                                                                    \
   case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
-  case GFS_HETPROBE: hierarchy_loop_end(thr->popcorn_nid, loc, true); break;  \
+  case GFS_HETPROBE:                                                          \
+    hierarchy_loop_end(thr->popcorn_nid, loc->psource, true);                 \
+    break;                                                                    \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
   }                                                                           \
@@ -824,8 +826,7 @@ int32_t __kmpc_cancel_barrier(ident_t* loc, int32_t gtid)
   DEBUG("__kmpc_cancel_barrier: %s %d\n", loc->psource, gtid);
 
   if(popcorn_global.hybrid_barrier)
-    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid,
-                                           loc->psource);
+    return hierarchy_hybrid_cancel_barrier(gomp_thread()->popcorn_nid);
   else return GOMP_barrier_cancel();
 }
 
@@ -839,7 +840,7 @@ void __kmpc_barrier(ident_t *loc, int32_t global_tid)
   DEBUG("__kmpc_barrier: %s %d\n", loc->psource, global_tid);
 
   if(popcorn_global.hybrid_barrier)
-    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid, loc->psource);
+    hierarchy_hybrid_barrier(gomp_thread()->popcorn_nid);
   else GOMP_barrier();
 }
 
