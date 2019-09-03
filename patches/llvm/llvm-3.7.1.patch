@@ -10803,6 +10803,37 @@ Index: lib/Target/X86/CMakeLists.txt
    )
  
  if( CMAKE_CL_64 )
+Index: lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
+===================================================================
+--- lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp	(revision 320332)
++++ lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp	(working copy)
+@@ -22,6 +22,7 @@
+ #include "llvm/MC/MCRegisterInfo.h"
+ #include "llvm/MC/MCSubtargetInfo.h"
+ #include "llvm/MC/MCSymbol.h"
++#include "llvm/Support/CommandLine.h"
+ #include "llvm/Support/raw_ostream.h"
+ 
+ using namespace llvm;
+@@ -28,6 +29,9 @@
+ 
+ #define DEBUG_TYPE "mccodeemitter"
+ 
++cl::opt<bool> ForceFullDisplacements("full-displacements", cl::init(false),
++  cl::desc("Force 4-byte displacements for all memory operands"));
++
+ namespace {
+ class X86MCCodeEmitter : public MCCodeEmitter {
+   X86MCCodeEmitter(const X86MCCodeEmitter &) = delete;
+@@ -177,7 +181,7 @@
+ /// isDisp8 - Return true if this signed displacement fits in a 8-bit
+ /// sign-extended field.
+ static bool isDisp8(int Value) {
+-  return Value == (signed char)Value;
++  return (Value == (signed char)Value) && !ForceFullDisplacements;
+ }
+ 
+ /// isCDisp8 - Return true if this signed displacement fits in a 8-bit
 Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
 --- lib/Target/X86/X86AsmPrinter.cpp	(revision 320332)
@@ -10892,6 +10923,47 @@ Index: lib/Target/X86/X86AsmPrinter.h
  };
  
  } // end namespace llvm
+Index: lib/Target/X86/X86FrameLowering.cpp
+===================================================================
+--- lib/Target/X86/X86FrameLowering.cpp	(revision 320332)
++++ lib/Target/X86/X86FrameLowering.cpp	(working copy)
+@@ -37,6 +37,9 @@
+ // FIXME: completely move here.
+ extern cl::opt<bool> ForceStackAlign;
+ 
++cl::opt<uint32_t> EmitNopsForChameleon("chameleon-nops", cl::init(0),
++  cl::desc("Emit nops in prologue/epilogue for instrumentation in Chameleon"));
++
+ X86FrameLowering::X86FrameLowering(const X86Subtarget &STI,
+                                    unsigned StackAlignOverride)
+     : TargetFrameLowering(StackGrowsDown, StackAlignOverride,
+@@ -697,6 +700,12 @@
+     MFI->setStackSize(StackSize);
+   }
+ 
++  // Add nops to prologue to allow Chameleon to replace the normal stack
++  // setup sequence with a more flexible & higher-entropy alternative
++  for(size_t i = 0; i < EmitNopsForChameleon; i++) {
++    BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
++  }
++
+   // Insert stack pointer adjustment for later moving of return addr.  Only
+   // applies to tail call optimized functions where the callee argument stack
+   // size is bigger than the callers.
+@@ -1058,6 +1067,13 @@
+   }
+   uint64_t SEHStackAllocAmt = NumBytes;
+ 
++  // Add nops to epilogue to allow Chameleon to replace the normal stack
++  // teardown sequence with a more flexible & higher-entropy alternative
++  for(size_t i = 0; i < EmitNopsForChameleon; i++) {
++    BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
++    MBBI--;
++  }
++
+   // Skip the callee-saved pop instructions.
+   while (MBBI != MBB.begin()) {
+     MachineBasicBlock::iterator PI = std::prev(MBBI);
 Index: lib/Target/X86/X86ISelLowering.cpp
 ===================================================================
 --- lib/Target/X86/X86ISelLowering.cpp	(revision 320332)
