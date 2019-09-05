@@ -50,6 +50,7 @@ CFLAGS_ALL += -D_XOPEN_SOURCE=700 -I$(srcdir)/arch/$(ARCH) -I$(srcdir)/arch/gene
 CFLAGS_ALL += $(CPPFLAGS) $(CFLAGS_AUTO) $(CFLAGS)
 
 LDFLAGS_ALL = $(LDFLAGS_AUTO) $(LDFLAGS)
+KERVER =
 
 AR      = $(CROSS_COMPILE)ar
 RANLIB  = $(CROSS_COMPILE)ranlib
@@ -97,8 +98,20 @@ obj/include/bits/alltypes.h: $(srcdir)/arch/$(ARCH)/bits/alltypes.h.in $(srcdir)
 	sed -f $(srcdir)/tools/mkalltypes.sed $(srcdir)/arch/$(ARCH)/bits/alltypes.h.in $(srcdir)/include/alltypes.h.in > $@
 
 obj/include/bits/syscall.h: $(srcdir)/arch/$(ARCH)/bits/syscall.h.in
+ifeq ($(KERVER),POPCORN_4_4)
+	cp $< $@
+	cat $(srcdir)/arch/$(ARCH)/bits/popcorn-4_4.in >> $@
+	sed -n -e s/__NR_/SYS_/p < $< >> $@
+	sed -n -e s/__NR_/SYS_/p < $(srcdir)/arch/$(ARCH)/bits/popcorn-4_4.in >> $@
+else ifeq($KERVER),POPCORN_5_2)
+	cp $< $@
+	cat $(srcdir)/arch/$(ARCH)/bits/popcorn-5_2.in >> $@
+	sed -n -e s/__NR_/SYS_/p < $< >> $@
+	sed -n -e s/__NR_/SYS_/p < $(srcdir)/arch/$(ARCH)/bits/popcorn-5_2.in >> $@
+else
 	cp $< $@
 	sed -n -e s/__NR_/SYS_/p < $< >> $@
+endif
 
 obj/src/internal/version.h: $(wildcard $(srcdir)/VERSION $(srcdir)/.git)
 	printf '#define VERSION "%s"\n' "$$(cd $(srcdir); sh tools/version.sh)" > $@

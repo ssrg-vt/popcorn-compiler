@@ -330,8 +330,3 @@
 #define __NR_pkey_mprotect			329
 #define __NR_pkey_alloc				330
 #define __NR_pkey_free				331
-#define __NR_sched_migrate				330
-#define __NR_propose_migration				331
-#define __NR_get_thread_status				332
-#define __NR_get_node_info				333
-

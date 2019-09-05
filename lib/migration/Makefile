@@ -38,9 +38,13 @@ INC_POWERPC := $(INC) -I$(POPCORN_POWERPC)/include
 INC_X86     := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := $(POPCORN)/bin/opt
-OPT_FLAGS := $(OPT_LEVEL) -disable-loop-vectorization \
+OPT_FLAGS := $(OPT_LEVEL) \
              -disable-slp-vectorization -insert-stackmaps \
              -no-live-vals
+
+ifeq ($(LLVM_VERSION), 3.7)
+OPT_FLAGS += -disable-loop-vectorization
+endif
 
 AS_ARM           := aarch64-linux-gnu-as
 AS_POWERPC       := powerpc64le-linux-gnu-as

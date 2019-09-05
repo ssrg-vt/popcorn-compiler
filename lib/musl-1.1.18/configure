@@ -183,6 +183,7 @@ CPPFLAGS=*) CPPFLAGS=${arg#*=} ;;
 LDFLAGS=*) LDFLAGS=${arg#*=} ;;
 CROSS_COMPILE=*) CROSS_COMPILE=${arg#*=} ;;
 LIBCC=*) LIBCC=${arg#*=} ;;
+KERVER=*) KERVER=${arg#*=} ;;
 *=*) ;;
 *) build=$arg ; target=$arg ;;
 esac
@@ -767,6 +768,7 @@ OPTIMIZE_GLOBS = $OPTIMIZE_GLOBS
 ALL_TOOLS = $tools
 TOOL_LIBS = $tool_libs
 ADD_CFI = $ADD_CFI
+KERVER = $KERVER
 EOF
 test "x$static" = xno && echo "STATIC_LIBS ="
 test "x$shared" = xno && echo "SHARED_LIBS ="

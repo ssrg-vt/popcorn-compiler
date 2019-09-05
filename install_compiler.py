@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 from __future__ import print_function
 
@@ -10,7 +10,9 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib
+import urllib.request
+import re
+import pathlib
 
 #================================================
 # GLOBALS
@@ -29,13 +31,50 @@ llvm_targets = {
     'x86_64' : 'X86'
 }
 
-# LLVM 3.7.1 SVN URL
-llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
-llvm_revision = '320332'
-# Clang SVN URL
-clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
-# Binutils 2.27 URL
-binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2'
+linux_targets = {
+    'aarch64' : 'arm64',
+    'x86_64' : 'x86'
+}
+
+# The installation directory for the cross compilers
+cross_dir = shutil.which("x86_64-linux-gnu-gcc")
+if (cross_dir is None):
+    print("Error: missing x86_64-linux-gnu-gcc toolchain")
+    sys.exit(1);
+
+cross_path = os.path.dirname(os.path.dirname(cross_dir))
+
+# Popcorn kernel version. Needed to adjust Musl system calls.
+kernel_version = 4.4
+
+# LLVM URL
+llvm_url = 'https://github.com/llvm/llvm-project.git'
+llvm_version = 9
+
+# Binutils 2.32 URL
+binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.32.tar.bz2'
+
+
+# GNU libc (glibc)
+
+# NOTE 1: The glibc version must match the version installed
+# on the host operating system in order to allow the Popcorn
+# application to use 3rd party libraries linked against the glibc
+# provided by the system.
+
+# NOTE 2: There's nothing prevention each node from using different
+# versions of glibc. Also, the alignment tool is capable of allowing
+# one node to glibc and another to use musl libc.
+
+glibc_version = "2.27" # Ubuntu 18.04
+#glibc_version = "2.31" # Fedora 31
+glibc_url = "git://sourceware.org/git/glibc.git"
+
+gcc_version = "9.3.0"
+gcc_url = "git://gcc.gnu.org/git/gcc.git"
+
+linux_url = "https://github.com/ssrg-vt/popcorn-kernel.git"
+
 
 #================================================
 # ARGUMENT PARSING
@@ -80,6 +119,11 @@ def setup_argument_parsing():
                         help="Install binutils",
                         action="store_true",
                         dest="binutils_install")
+
+    process_opts.add_argument("--install-gcc-glibc",
+                        help="Install GCC and GLIBC",
+                        action="store_true",
+                        dest="gcc_glibc_install")
 
     process_opts.add_argument("--install-musl",
                         help="Install musl-libc",
@@ -143,11 +187,23 @@ def setup_argument_parsing():
                         action="store_true",
                         dest="enable_libmigration_timing")
 
+    process_opts.add_argument("--with-llvm-3_7",
+                        help="Use LLVM-3.7 instead of LLVM-9",
+                        action="store_true",
+                        dest="use_llvm37")
+
+    process_opts.add_argument("--with-popcorn-kernel-5_2",
+                        help="Use Popcorn Kernel version 5.2 instead of 4.4",
+                        action="store_true",
+                        dest="use_kernel_52")
+
     return parser
 
 def postprocess_args(args):
     global supported_targets
     global llvm_targets
+    global kernel_version
+    global llvm_version
 
     # Clean up paths
     args.base_path = os.path.abspath(args.base_path)
@@ -171,18 +227,32 @@ def postprocess_args(args):
         args.llvm_targets += llvm_targets[target] + ";"
     args.llvm_targets = args.llvm_targets[:-1]
 
+    # Implicitly build binutils with gcc-glibc
+    if args.gcc_glibc_install:
+        args.binutils_install = True
+
+    if args.use_llvm37:
+        llvm_version = 3.7
+
+    if args.use_kernel_52:
+        kernel_version = 5.2
+
     # Turn on all components for installation if requested
     if args.install_all:
         args.llvm_clang_install = True
         args.binutils_install = True
+        args.gcc_glibc_install = True
         args.musl_install = True
         args.libelf_install = True
-        args.libopenpop_install = True
+        args.libopenpop_install = False
         args.stacktransform_install = True
         args.migration_install = True
         args.stackdepth_install = True
         args.tools_install = True
         args.utils_install = True
+
+    # Add install_path to the PATH environment variable
+    os.environ["PATH"] = args.install_path + "/bin:" + os.environ["PATH"]
 
 def warn_stupid(args):
     if len(args.install_targets) < 2:
@@ -199,7 +269,7 @@ def warn_stupid(args):
 def _check_for_prerequisite(prereq):
     try:
         out = subprocess.check_output([prereq, '--version'],
-                                      stderr=subprocess.STDOUT)
+                                      stderr=subprocess.STDOUT).decode("utf-8")
     except Exception:
         print('{} not found!'.format(prereq))
         return None
@@ -219,7 +289,14 @@ def check_for_prerequisites(args):
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
         if out:
-            major, minor, micro = [int(v) for v in out.split()[3].split('.')]
+            # GCC version string format:
+            # $CC (name of compiler) x.y.z.
+            #
+            # split() won't work on Ubuntu compilers because of the central
+            # (Ubuntu <version>) gets concatenated into separate strings.
+            gcc_version = re.findall("\) (\d+\.\d+\.\d+)", out)
+
+            major, minor, micro = [int(v) for v in gcc_version[0].split('.')]
             version = major * 10 + minor
             if not (version >= 48):
                 print('{} 4.8 or higher required to continue'.format(prereq))
@@ -261,50 +338,57 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     clang_download_path = os.path.join(llvm_download_path, 'tools', 'clang')
 
     patch_base = os.path.join(base_path, 'patches', 'llvm')
-    llvm_patch_path = os.path.join(patch_base, 'llvm-3.7.1.patch')
-    clang_patch_path = os.path.join(patch_base, 'clang-3.7.1.patch')
+    llvm_patch_path = os.path.join(patch_base,
+                                   'llvm-{}.patch'.format(llvm_version))
 
-    cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
-                   '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
-                   '-DCMAKE_BUILD_TYPE=Debug',
-                   '-DLLVM_ENABLE_RTTI=ON',
-                   '-DBUILD_SHARED_LIBS=ON']
+    if llvm_version == 3.7:
+        cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
+                       '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
+                       '-DCMAKE_BUILD_TYPE=Debug',
+                       '-DLLVM_ENABLE_RTTI=ON',
+                       '-DBUILD_SHARED_LIBS=ON']
+    else:
+        cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
+                       '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
+                       '-DCMAKE_BUILD_TYPE=Debug',
+                       '-DLLVM_ENABLE_RTTI=ON',
+                       '-DBUILD_SHARED_LIBS=ON',
+                       '-DLLVM_EXTERNAL_PROJECTS="clang;"',
+                       '-DLLVM_EXTERNAL_CLANG_SOURCE_DIR={}'
+                       .format(llvm_download_path + "/clang")]
 
     #=====================================================
     # DOWNLOAD LLVM
     #=====================================================
     print('Downloading LLVM source...')
-    args = ['svn', 'co', llvm_url, llvm_download_path, '-r', llvm_revision]
-    run_cmd('download LLVM source', args)
 
-    #=====================================================
-    # DOWNLOAD CLANG
-    #=====================================================
-    print('Downloading Clang source...')
-    args = ['svn', 'co', clang_url, clang_download_path, '-r', llvm_revision]
-    run_cmd('download Clang source', args)
+    run_cmd('clearing toolchain', ['rm', '-rf', install_path])
+    run_cmd('create install_path', ['mkdir', '-p', install_path + '/src'])
+
+    args = ['git', 'clone', "--depth", "1", "-b",
+            "release/{}.x".format(llvm_version), llvm_url,
+            llvm_download_path]
+    run_cmd('download LLVM source', args)
 
     #=====================================================
     # PATCH LLVM
     #=====================================================
     with open(llvm_patch_path, 'r') as patch_file:
         print('Patching LLVM...')
-        args = ['patch', '-p0', '-d', llvm_download_path]
+        args = ['patch', '-p1', '-d', llvm_download_path]
         run_cmd('patch LLVM', args, patch_file)
-
-    #=====================================================
-    # PATCH CLANG
-    #=====================================================
-    with open(clang_patch_path, 'r') as patch_file:
-        print("Patching clang...")
-        args = ['patch', '-p0', '-d', clang_download_path]
-        run_cmd('patch Clang', args, patch_file)
-
+        
+    # LLVM-3.7's build system needs clang inside llvm/tools
+    if llvm_version == 3.7:
+        clang_src = os.path.join(llvm_download_path, 'clang')
+        clang_dst = os.path.join(llvm_download_path, 'llvm', 'tools')
+        shutil.move(clang_src, clang_dst)
+    
     #=====================================================
     # BUILD AND INSTALL LLVM
     #=====================================================
     cur_dir = os.getcwd()
-    os.chdir(llvm_download_path)
+    os.chdir(llvm_download_path + '/llvm')
     os.mkdir('build')
     os.chdir('build')
 
@@ -314,6 +398,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
 
     print('Running Make...')
+    if llvm_version > 3.7:
+        args = ['make', '-j', str(num_threads), 'install-llvm-headers']
+        run_cmd('run Make headers', args)
+
     args = ['make', '-j', str(num_threads)]
     run_cmd('run Make', args)
     args += ['install']
@@ -321,27 +409,29 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     os.chdir(cur_dir)
 
-def install_binutils(base_path, install_path, num_threads):
+def install_binutils(base_path, install_path, num_threads, target):
 
-    binutils_install_path = os.path.join(install_path, 'src', 'binutils-2.27')
+    binutils_install_path = os.path.join(install_path, 'src', 'binutils-2.32')
 
     patch_path = os.path.join(base_path, 'patches', 'binutils-gold',
-                              'binutils-2.27-gold.patch')
+                              'binutils-2.32.patch')
 
     configure_flags = ['--prefix={}'.format(install_path),
+                       '--target={}'.format(target + '-popcorn-linux-gnu'),
                        '--enable-gold',
-                       '--disable-ld',
+                       '--enable-ld',
                        '--disable-libquadmath',
                        '--disable-libquadmath-support',
-                       '--disable-libstdcxx']
+                       '--disable-libstdcxx',
+                       '--disable-werror']
 
     #=====================================================
     # DOWNLOAD BINUTILS
     #=====================================================
     print('Downloading binutils source...')
     try:
-        urllib.urlretrieve(binutils_url, 'binutils-2.27.tar.bz2')
-        with tarfile.open('binutils-2.27.tar.bz2', 'r:bz2') as f:
+        urllib.request.urlretrieve(binutils_url, 'binutils-2.32.tar.bz2')
+        with tarfile.open('binutils-2.32.tar.bz2', 'r:bz2') as f:
             f.extractall(path=os.path.join(install_path, 'src'))
     except Exception as e:
         print('Could not download/extract binutils source ({})!'.format(e))
@@ -352,19 +442,23 @@ def install_binutils(base_path, install_path, num_threads):
     #=====================================================
     print("Patching binutils...")
     with open(patch_path, 'r') as patch_file:
-        args = ['patch', '-p0', '-d', binutils_install_path]
+        args = ['patch', '-p1', '-d', binutils_install_path]
         run_cmd('patch binutils', args, patch_file)
 
     #=====================================================
     # BUILD AND INSTALL BINUTILS
     #=====================================================
     cur_dir = os.getcwd()
+
     os.chdir(binutils_install_path)
-    os.mkdir('build')
-    os.chdir('build')
+    shutil.rmtree(binutils_install_path
+                  + "/build.{}".format(target), ignore_errors=True)
+    os.mkdir('build.{}'.format(target))
+    os.chdir('build.{}'.format(target))
 
     print("Configuring binutils...")
-    args = ['../configure'] + configure_flags
+    args = ['../configure'] + configure_flags \
+        + ["--target={}-popcorn-linux-gnu".format(target)];
     run_cmd('configure binutils', args)
 
     print('Making binutils...')
@@ -387,6 +481,11 @@ def install_musl(base_path, install_path, target, num_threads):
     if os.path.isfile('Makefile'):
         run_cmd('clean musl', ['make', 'distclean'])
 
+    if kernel_version == 4.4:
+        kernel_arg = "POPCORN_4_4"
+    elif kernel_version == 5.2:
+        kernel_arg = "POPCORN_5_2"
+
     print("Configuring musl ({})...".format(target))
     args = ' '.join(['./configure',
                      '--prefix={}'.format(target_install_path),
@@ -398,7 +497,9 @@ def install_musl(base_path, install_path, target, num_threads):
                      '--disable-shared',
                      'CC={}/bin/clang'.format(install_path),
                      'CFLAGS="-target {}-linux-gnu -popcorn-libc"' \
-                     .format(target)])
+                     .format(target),
+                     'KERVER="{}"'.format(kernel_arg)])
+    print(args)
     run_cmd('configure musl-libc ({})'.format(target), args, use_shell=True)
 
     print('Making musl ({})...'.format(target))
@@ -408,6 +509,316 @@ def install_musl(base_path, install_path, target, num_threads):
     run_cmd('install musl-libc ({})'.format(target), args)
 
     os.chdir(cur_dir)
+
+def install_gcc_glibc(base_path, install_path, install_targets, num_threads):
+    cur_dir = os.getcwd()
+
+    gcc_download_path = os.path.join(install_path, 'src', 'gcc')
+    glibc_download_path = os.path.join(install_path, 'src', 'glibc')
+    linux_download_path = os.path.join(install_path, 'src', 'popcorn-kernel')
+
+    #TODO: Check whether 'install_path'/src exists.
+
+    args = ['rm', '-rf', gcc_download_path, glibc_download_path,
+            linux_download_path]
+    run_cmd('cleanup gcc and glibc sources', args)
+
+    args = ['git', 'clone', '--depth', '1', '-b', 'releases/gcc-' + gcc_version, gcc_url,
+            gcc_download_path]
+    run_cmd('download GCC source', args)
+
+    # Download GCC prerequisites
+    os.chdir(gcc_download_path)
+    args = [ 'contrib/download_prerequisites' ]
+    run_cmd('Download GCC prerequisites', args)
+    os.chdir(cur_dir)
+
+    args = ['git', 'clone', '--depth', '1', '-b', "glibc-" + glibc_version,
+             glibc_url, glibc_download_path]
+    run_cmd('download GCC source', args)
+
+    # Patch GLIBC
+    glibc_patch_path = os.path.join(base_path, 'patches', 'glibc',
+                                    'glibc-{}.patch'.format(glibc_version))
+    with open(glibc_patch_path, 'r') as patch_file:
+        print('Patching GLIBC...')
+        args = ['patch', '-p1', '-d', glibc_download_path]
+        run_cmd('patch GLIBC', args, patch_file)
+
+    args = ['git', 'clone', '--depth', '1', linux_url, linux_download_path]
+    run_cmd('download Popcorn Kernel source', args)
+
+    for target in install_targets:
+        target_path = os.path.join(install_path, target + '-popcorn-linux-gnu')
+        sysroot = os.path.join(install_path, target_path, 'sysroot')
+        sysroot_usr = os.path.join(sysroot, 'usr')
+        libdir_path = os.path.join(install_path, target_path, 'lib')
+
+        # Prepare the sysroot
+        args = ['rm', '-rf', sysroot]
+        run_cmd('cleanup sysroot for ' + target, args)
+        os.makedirs(sysroot, exist_ok=True)
+        os.chdir(linux_download_path)
+        args = ['make', 'ARCH={}'.format(linux_targets[target]),
+                'INSTALL_HDR_PATH="{}"'.format(sysroot), 'headers_install']
+        run_cmd('Install Linux headers', args)
+        shutil.copytree(sysroot, sysroot_usr)
+
+        # GCC Stage 1
+        gcc_stage_1_dir = "build-gcc-stage-1." + target
+        os.chdir(gcc_download_path)
+        args = ['rm', '-rf', gcc_stage_1_dir]
+        run_cmd('clean ' + gcc_stage_1_dir, args)
+        os.mkdir(gcc_stage_1_dir)
+        os.chdir(gcc_stage_1_dir)
+
+        args = [gcc_download_path + '/configure',
+                '--prefix={}'.format(install_path),
+                '--target={}-popcorn-linux-gnu'.format(target),
+                '--with-sysroot={}'.format(sysroot),
+                '--enable-languages=c',
+                '--with-newlib',
+                '--without-headers',
+                '--disable-shared',
+                '--disable-threads',
+                '--enable-__cxa_atexit',
+                '--enable-languages=c',
+                '--disable-libatomic',
+                '--disable-libmudflap',
+                '--disable-libssp',
+                '--disable-libquadmath',
+                '--disable-libgomp',
+                '--disable-nls',
+                '--disable-bootstrap',
+                '--disable-multilib',
+                '--with-libdir={}/lib'.format(sysroot),
+                "CFLAGS_FOR_TARGET='-ffunction-sections -fdata-sections'"]
+        run_cmd('Configure GCC Stage 1 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'inhibit-libc=true',
+                'all-gcc']
+        run_cmd('Build GCC Stage 1 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'inhibit-libc=true',
+                'install-gcc']
+        run_cmd('Install GCC Stage 1 for ' + target, args)
+
+        # glibc Stage 1
+        glibc_stage_1_dir = os.path.join(glibc_download_path,
+                                         "build-glibc-stage-1." + target)
+        os.chdir(glibc_download_path)
+        args = ['rm', '-rf', glibc_stage_1_dir]
+        run_cmd('clean ' + glibc_stage_1_dir, args)
+        os.mkdir(glibc_stage_1_dir)
+        os.chdir(glibc_stage_1_dir)
+
+        args = [glibc_download_path + '/configure',
+                '--prefix=/usr',
+                '--target={}-popcorn-linux-gnu'.format(target),
+                '--host={}-linux-gnu'.format(target),
+                '--enable-shared',
+                '--with-headers={}/include'.format(sysroot),
+                '--disable-multilib',
+                '--disable-werror',
+                '--enable-kernel=4.4',
+                '--with-__thread',
+                '--with-tls',
+                '--enable-addons=no',
+                '--without-cvs',
+                '--disable-profile',
+                '--without-gd']
+        run_cmd('Configure glibc Stage 1 for ' + target, args)
+
+        args = ['make', 'install-bootstrap-headers=yes', 'install-headers',
+                'install_root={}'.format(sysroot)]
+        run_cmd('Build glibc Stage 1 for ' + target, args)
+
+        stubs_h = os.path.join(sysroot, 'usr', 'include', 'gnu', 'stubs.h')
+        pathlib.Path(stubs_h).touch()
+
+        src = os.path.join(glibc_download_path, "include", "features.h")
+        dst = os.path.join(sysroot, 'usr', 'include', "features.h")
+        shutil.copyfile(src, dst)
+
+        src = os.path.join(glibc_stage_1_dir, 'bits', 'stdio_lim.h')
+        dst = os.path.join(sysroot, 'usr', 'include', 'bits', 'stdio_lim.h')
+        shutil.copyfile(src, dst)
+
+        args = ['make', 'csu/subdir_lib']
+        run_cmd('make csu/subdir_lib for ' + target, args)
+
+        sysroot_lib = os.path.join(sysroot, 'lib')
+        shutil.rmtree(sysroot_lib, ignore_errors=True)
+        os.mkdir(sysroot_lib)
+
+        src = os.path.join(glibc_stage_1_dir, 'csu')
+        dst = os.path.join(sysroot, 'lib')
+        for i in ['crt1.o', 'crti.o', 'crtn.o']:
+            shutil.copyfile(os.path.join(src, i), os.path.join(dst, i))
+
+        args = ['{}-linux-gnu-gcc'.format(target),
+                '-o', '{}/lib/libc.so'.format(sysroot),
+                '-nostdlib', '-nostartfiles', '-shared', '-x', 'c',
+                '/dev/null']
+        run_cmd('Build dummy libc.so for ' + target, args)
+
+        # GCC Stage 2
+        gcc_stage_2_dir = "build-gcc-stage-2." + target
+        os.chdir(gcc_download_path)
+        args = ['rm', '-rf', gcc_stage_2_dir]
+        run_cmd('clean ' + gcc_stage_2_dir, args)
+        os.mkdir(gcc_stage_2_dir)
+        os.chdir(gcc_stage_2_dir)
+
+        args = [gcc_download_path + '/configure',
+                '--prefix={}'.format(install_path),
+                '--target={}-popcorn-linux-gnu'.format(target),
+                '--with-sysroot={}'.format(sysroot),
+                '--with-local-prefix={}'.format(sysroot),
+                '--enable-languages=c',
+                '--enable-shared',
+                '--enable-__cxa_atexit',
+                '--disable-initfini-array',
+                '--disable-libgomp',
+                '--disable-libmudflap',
+                '--disable-libmpx',
+                '--disable-libssp',
+                '--disable-libquadmath',
+                '--disable-libquadmath-support',
+                "--with-host-libstdcxx='-static-libgcc -Wl,-Bstatic,-lstdc++,-Bdynamic -lm'",
+                '--with-glibc-version={}'.format(glibc_version),
+                '--disable-nls',
+                '--disable-multilib',
+                '--disable-bootstrap',
+                '--with-libdir={}/lib'.format(sysroot),
+                'CFLAGS_FOR_TARGET={}'.format("-ffunction-sections -fdata-sections")]
+        run_cmd('Configure GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'configure-gcc',
+                'configure-libcpp', 'configure-build-libiberty']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                'all-libcpp', 'all-build-libiberty']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'configure-libdecnumber']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                '-C', 'libdecnumber', 'libdecnumber.a']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'configure-libbacktrace']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                '-C', 'libbacktrace']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                '-C', 'gcc', 'libgcc.mvars']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                'all-gcc', 'all-target-libgcc']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads),
+                'install-gcc', 'install-target-libgcc']
+        run_cmd('Build GCC Stage 2 for ' + target, args)
+
+        # glibc Stage 2 (final)
+        glibc_stage_2_dir = os.path.join(glibc_download_path,
+                                         "build-glibc-stage-2." + target)
+        os.chdir(glibc_download_path)
+        args = ['rm', '-rf', glibc_stage_2_dir]
+        run_cmd('clean ' + glibc_stage_2_dir, args)
+        os.mkdir(glibc_stage_2_dir)
+        os.chdir(glibc_stage_2_dir)
+
+        for i in ['libc.so', 'crt1.o', 'crti.o', 'crtn.o']:
+            f = os.path.join(sysroot, 'lib', i)
+            if os.path.exists(f):
+                os.remove(f)
+
+        args = [glibc_download_path + '/configure',
+                '--prefix=/usr',
+                '--libdir=/usr/lib',
+                '--with-libdir={}'.format(libdir_path),
+                '--target={}-popcorn-linux-gnu'.format(target),
+                '--host={}-linux-gnu'.format(target),
+                '--disable-werror',
+                '--enable-shared',
+                '--enable-obsolete-rpc',
+                '--with-headers={}/include'.format(sysroot),
+                '--disable-multilib',
+                '--enable-kernel=4.4',
+                '--with-__thread',
+                '--with-tls',
+                '--without-cvs',
+                '--enable-addons=no',
+                '--disable-profile',
+                '--without-gd',
+                'libc_cv_slibdir=/lib',
+                'libc_cv_rtlddir=/lib']
+        run_cmd('Configure glibc Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads)]
+        run_cmd('Build glibc Stage 2 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'install',
+                'install_root={}'.format(sysroot)]
+        run_cmd('Build glibc Stage 2 for ' + target, args)
+
+        # GCC Stage 3 (final)
+        gcc_stage_3_dir = "build-gcc-stage-3." + target
+        os.chdir(gcc_download_path)
+        args = ['rm', '-rf', gcc_stage_3_dir]
+        run_cmd('clean ' + gcc_stage_3_dir, args)
+        os.mkdir(gcc_stage_3_dir)
+        os.chdir(gcc_stage_3_dir)
+
+        args = [gcc_download_path + '/configure',
+                '--target={}-popcorn-linux-gnu'.format(target),
+                '--with-sysroot={}'.format(sysroot),
+                '--with-local-prefix={}'.format(sysroot),
+                '--enable-languages={}'.format("c,c++"),
+                '--enable-__cxa_atexit',
+                '--disable-initfini-array',
+                '--enable-shared',
+                '--enable-threads=posix',
+                '--disable-libmudflap',
+                '--disable-libssp',
+                '--disable-libquadmath',
+                '--disable-libsanitizer',
+                '--disable-nls',
+                '--disable-multilib',
+                '--disable-bootstrap',
+                '--with-libdir={}'.format(libdir_path) ]
+
+        if target == 'x86_64':
+            bindir = os.path.join(install_path, 'bin')
+            as_path = os.path.join(bindir, target + '-popcorn-linux-gnu-as')
+            ld_path = os.path.join(bindir, target + '-popcorn-linux-gnu-ld')
+            args.append('--prefix={}'.format(sysroot))
+            args.append('--bindir={}'.format(bindir))
+            args.append('--with-as={}'.format(as_path))
+            args.append('--with-ld={}'.format(ld_path))
+        else:
+            args.append('--prefix={}'.format(install_path))
+
+        args.append('CFLAGS_FOR_TARGET={}'.format("-ffunction-sections -fdata-sections"))
+
+        run_cmd('Configure GCC Stage 3 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'all']
+        run_cmd('Build GCC Stage 3 for ' + target, args)
+
+        args = ['make', '-j{}'.format(num_threads), 'install']
+        run_cmd('Build GCC Stage 3 for ' + target, args)
+
+        os.chdir(cur_dir)
 
 def install_libelf(base_path, install_path, target, num_threads):
     cur_dir = os.getcwd()
@@ -423,16 +834,25 @@ def install_libelf(base_path, install_path, target, num_threads):
 
     print("Configuring libelf ({})...".format(target))
     compiler = os.path.join(target_install_path, 'bin', 'musl-clang')
+    libelf_cflags = "-O3 -popcorn-alignment"
+
+#    # This is necessary for shared libraries
+#    if target == "x86_64":
+#        compiler = os.path.join(install_path, 'bin',
+#                                target + '-popcorn-linux-gnu-gcc')
+#        libelf_cflags = "-O3"
+
     args = ' '.join(['CC={}'.format(compiler),
-                     'CFLAGS="-O3 -popcorn-alignment"',
+                     'CFLAGS="{}"'.format(libelf_cflags),
                      'LDFLAGS="-static"',
                      './configure',
-                     '--build={}-linux-gnu'.format(platform.machine()),
-                     '--host={}-linux-gnu'.format(target),
+                     '--build={}-popcorn-linux-gnu'.format(platform.machine()),
+                     '--host={}-popcorn-linux-gnu'.format(target),
                      '--prefix={}'.format(target_install_path),
                      '--enable-compat',
                      '--enable-elf64',
                      '--disable-shared',
+                     '--disable-nls',
                      '--enable-extended-format'])
     run_cmd('configure libelf ({})'.format(target), args, use_shell=True)
 
@@ -473,12 +893,12 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
     lib_dir = os.path.join(target_install_path, 'lib')
 
     args = ' '.join(['CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-linux-gnu -O2 -g -Wall -fno-common ' \
+                     'CFLAGS="-target {}-popcorn-linux-gnu -O2 -g -Wall -fno-common ' \
                              '-nostdinc -isystem {} ' \
                              '-popcorn-metadata ' \
                              '-popcorn-target={}-linux-gnu"' \
-                             .format(host, include_dir, target),
-                     'LDFLAGS="-nostdlib -L{}"'.format(lib_dir),
+                             .format(target, include_dir, target),
+                     'LDFLAGS="-nostdlib -L{} -B{}"'.format(lib_dir, cross_path, install_path),
                      'LIBS="{}/crt1.o -lc {}"'.format(lib_dir, libgcc),
                      './configure',
                      '--prefix={}'.format(target_install_path),
@@ -525,7 +945,10 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
     run_cmd('clean libmigration', ['make', 'clean'])
 
     print('Making libmigration...')
-    args = ['make', '-j', str(num_threads), 'POPCORN={}'.format(install_path)]
+    args = ['make',
+            '-j', str(num_threads),
+            'POPCORN={}'.format(install_path),
+            'LLVM_VERSION={}'.format(llvm_version)]
     if libmigration_type or enable_libmigration_timing:
         flags = 'type='
         if libmigration_type and enable_libmigration_timing:
@@ -629,7 +1052,13 @@ def main(args):
                            args.llvm_targets)
 
     if args.binutils_install:
-        install_binutils(args.base_path, args.install_path, args.threads)
+        for target in args.install_targets:
+            install_binutils(args.base_path, args.install_path, args.threads,
+                             target)
+
+    if args.gcc_glibc_install:
+        install_gcc_glibc(args.base_path, args.install_path,
+                          args.install_targets, args.threads)
 
     for target in args.install_targets:
         if args.musl_install:

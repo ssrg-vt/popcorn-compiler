@@ -1,0 +1,9 @@
+/* NOTE: These values must be kept in sync with Linux kernel.  */
+
+/* popcorn-kernel: arch/x86/entry/syscalls/syscall_64.tbl  */
+
+/* Popcorn Linux 4.4.137.  */
+#define __NR_sched_migrate				330
+#define __NR_propose_migration				331
+#define __NR_get_thread_status				332
+#define __NR_get_node_info				333
