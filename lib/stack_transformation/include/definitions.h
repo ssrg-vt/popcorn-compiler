@@ -67,6 +67,8 @@
 
 #ifdef _DEBUG
 
+extern FILE* __log;
+
 # ifdef _LOG
 
 /* Log file descriptor.  Defined in src/init.c. */

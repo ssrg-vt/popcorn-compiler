@@ -32,6 +32,8 @@ static const char *env_start_aarch64 = "AARCH64_MIGRATE_START";
 static const char *env_end_aarch64 = "AARCH64_MIGRATE_END";
 static const char *env_start_powerpc64 = "POWERPC64_MIGRATE_START";
 static const char *env_end_powerpc64 = "POWERPC64_MIGRATE_END";
+static const char *env_start_riscv64 = "RISCV64_MIGRATE_START";
+static const char *env_end_riscv64 = "RISCV64_MIGRATE_END";
 static const char *env_start_x86_64 = "X86_64_MIGRATE_START";
 static const char *env_end_x86_64 = "X86_64_MIGRATE_END";
 
@@ -40,12 +42,15 @@ static void *start_aarch64 = NULL;
 static void *end_aarch64 = NULL;
 static void *start_powerpc64 = NULL;
 static void *end_powerpc64 = NULL;
+static void *start_riscv64 = NULL;
+static void *end_riscv64 = NULL;
 static void *start_x86_64 = NULL;
 static void *end_x86_64 = NULL;
 
 /* TLS keys indicating if the thread has previously migrated */
 static pthread_key_t num_migrated_aarch64 = 0;
 static pthread_key_t num_migrated_powerpc64 = 0;
+static pthread_key_t num_migrated_riscv64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
 /* Read environment variables to setup migration points. */
@@ -75,6 +80,16 @@ __init_migrate_testing(void)
     if(start_powerpc64 && end_powerpc64)
       pthread_key_create(&num_migrated_powerpc64, NULL);
   }
+#elif defined(__riscv64__)
+  start = getenv(env_start_riscv64);
+  end = getenv(env_end_riscv64);
+  if(start && end)
+  {
+    start_riscv64 = (void *)strtoll(start, NULL, 16);
+    end_riscv64 = (void *)strtoll(end, NULL, 16);
+    if(start_riscv64 && end_riscv64)
+      pthread_key_create(&num_migrated_riscv64, NULL);
+  }  
 #else
   start = getenv(env_start_x86_64);
   end = getenv(env_end_x86_64);
@@ -106,6 +121,13 @@ static inline int do_migrate(void *addr)
   if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
     if(start_powerpc64 <= addr && addr < end_powerpc64) {
       pthread_setspecific(num_migrated_powerpc64, (void *)1);
+      retval = 1;
+    }
+  }
+#elif defined(__riscv64__)
+  if(start_riscv64 && !pthread_getspecific(num_migrated_riscv64)) {
+    if(start_riscv64 <= addr && addr < end_riscv64) {
+      pthread_setspecific(num_migrated_riscv64, (void *)1);
       retval = 1;
     }
   }
@@ -198,6 +220,7 @@ static inline void *get_thread_pointer(void *raw_tls, enum arch dest)
   {
   case ARCH_AARCH64: return raw_tls - 16;
   case ARCH_POWERPC64: return raw_tls + 0x7000; // <- TODO verify
+  case ARCH_RISCV64: return raw_tls - 16;
   case ARCH_X86_64: return raw_tls - MUSL_PTHREAD_DESCRIPTOR_SIZE;
   default: assert(0 && "Unsupported architecture!"); return NULL;
   }
@@ -206,6 +229,10 @@ static inline void *get_thread_pointer(void *raw_tls, enum arch dest)
 /* Generate a call site to get rewriting metadata for outermost frame. */
 static void* __attribute__((noinline))
 get_call_site() { return __builtin_return_address(0); };
+
+// Temporary workaround for TLS migration arguments
+void *popcorn_migrate_args = NULL;
+int migrate_lock = 1;
 
 /* Check & invoke migration if requested. */
 // Note: a pointer to data necessary to bootstrap execution after migration is
@@ -226,7 +253,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     return;
   }
 
-  data_ptr = pthread_get_migrate_args();
+  data_ptr = popcorn_migrate_args;
   if(!data_ptr) // Invoke migration
   {
     unsigned long sp = 0, bp = 0;
@@ -234,6 +261,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     union {
        struct regset_aarch64 aarch;
        struct regset_powerpc64 powerpc;
+       struct regset_riscv64 riscv;
        struct regset_x86_64 x86;
     } regs_src, regs_dst;
 #if _TIME_REWRITE == 1
@@ -253,7 +281,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       data.callback = callback;
       data.callback_data = callback_data;
       data.regset = &regs_dst;
-      pthread_set_migrate_args(&data);
+      popcorn_migrate_args = &data;
 #if _SIG_MIGRATION == 1
       clear_migrate_flag();
 #endif
@@ -274,6 +302,15 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #if _LOG == 1
         dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE);
 #endif
+        break;
+      case ARCH_RISCV64:
+        regs_dst.riscv.pc = __migrate_fixup_riscv64;
+        sp = (unsigned long)regs_dst.riscv.x[2];
+        bp = (unsigned long)regs_dst.riscv.x[8];
+#if _LOG == 1
+        dump_regs_riscv64(&regs_dst.riscv, LOG_FILE);
+#endif
+	fflush(stdout);
         break;
       case ARCH_X86_64:
         regs_dst.x86.rip = __migrate_fixup_x86_64;
@@ -306,13 +343,15 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       // Note that when migration fails, we resume after the syscall and
       // err is set to 1.
       MIGRATE(err);
+      assert(err == 0);
       if(err)
       {
         perror("Could not migrate to node");
         pthread_set_migrate_args(NULL);
+	popcorn_migrate_args = NULL;
         return;
       }
-      data_ptr = pthread_get_migrate_args();
+      data_ptr = popcorn_migrate_args;
     }
     else
     {
@@ -331,7 +370,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 #endif
   if(data_ptr->callback) data_ptr->callback(data_ptr->callback_data);
 
-  pthread_set_migrate_args(NULL);
+  popcorn_migrate_args = NULL;
 }
 
 /* Check if we should migrate, and invoke migration. */
@@ -359,3 +398,66 @@ void migrate_schedule(size_t region,
   if (nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 }
+
+
+//
+// Popcorn Linux System Calls
+//
+
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <errno.h>
+
+#ifdef __x86_64
+#define SYS_get_thread_status 332
+#define SYS_get_node_info 333
+#else
+#define SYS_get_thread_status 287
+#define SYS_get_node_info 288
+#endif
+
+int popcorn_getnid() {
+  struct popcorn_thread_status status;
+  if (syscall(SYS_get_thread_status, &status)) return -1;
+  return status.current_nid;
+}
+
+int popcorn_getthreadinfo(struct popcorn_thread_status *status) {
+  return syscall(SYS_get_thread_status, status);
+}
+
+int popcorn_getnodeinfo(int *origin,
+                        struct popcorn_node_status status[MAX_POPCORN_NODES]) {
+  int ret, i;
+
+  if (!origin || !status) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  ret = syscall(SYS_get_node_info, origin, status);
+  if (ret) {
+    for (i = 0; i < MAX_POPCORN_NODES; i++) {
+      status[i].status = 0;
+      status[i].arch = ARCH_UNKNOWN;
+      status[i].distance = -1;
+    }
+    *origin = -1;
+  }
+  return ret;
+}
+
+int __libc_start_main_popcorn (int (*main) (int, char **, char **),
+			       int argc, char **argv, char **environ);
+
+
+int dummy (int argc, char **argv, char **environ)
+{
+  return 0;
+}
+
+//void __attribute__((constructor))
+//setup_popcorn_migration()
+//{
+//  __libc_start_main_popcorn(dummy, 0, NULL, NULL);
+//}

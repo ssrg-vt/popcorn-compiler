@@ -1,0 +1,230 @@
+diff --git a/Makeconfig b/Makeconfig
+index f252842979..1af6a571b8 100644
+--- a/Makeconfig
++++ b/Makeconfig
+@@ -358,7 +358,7 @@ real-static-start-installed-name = $(static-start-installed-name)
+ endif
+ 
+ ifeq (yesyes,$(build-shared)$(have-z-combreloc))
+-combreloc-LDFLAGS = -Wl,-z,combreloc
++combreloc-LDFLAGS = -Wl,-z,combreloc -Wl,--allow-shlib-undefined
+ LDFLAGS.so += $(combreloc-LDFLAGS)
+ LDFLAGS-rtld += $(combreloc-LDFLAGS)
+ endif
+diff --git a/Makerules b/Makerules
+index 1e9c18f0d8..eeb1854103 100644
+--- a/Makerules
++++ b/Makerules
+@@ -538,7 +538,7 @@ lib%.so: lib%_pic.a $(+preinit) $(+postinit) $(link-libc-deps)
+ 
+ define build-shlib-helper
+ $(LINK.o) -shared -static-libgcc -Wl,-O1 $(sysdep-LDFLAGS) \
+-	  $(if $($(@F)-no-z-defs)$(no-z-defs),,-Wl,-z,defs) $(rtld-LDFLAGS) \
++	  $(if $($(@F)-no-z-defs)$(no-z-defs),,) $(rtld-LDFLAGS) \
+ 	  $(extra-B-$(@F:lib%.so=%).so) -B$(csu-objpfx) \
+ 	  $(extra-B-$(@F:lib%.so=%).so) $(load-map-file) \
+ 	  -Wl,-soname=lib$(libprefix)$(@F:lib%.so=%).so$($(@F)-version) \
+@@ -597,7 +597,7 @@ endef
+ 
+ define build-module-helper
+ $(LINK.o) -shared -static-libgcc $(sysdep-LDFLAGS) $(rtld-LDFLAGS) \
+-	  $(if $($(@F)-no-z-defs)$(no-z-defs),,-Wl,-z,defs) \
++	  $(if $($(@F)-no-z-defs)$(no-z-defs),,) \
+ 	  -B$(csu-objpfx) $(load-map-file) \
+ 	  $(LDFLAGS.so) $(LDFLAGS-$(@F:%.so=%).so) \
+ 	  -L$(subst :, -L,$(rpath-link)) -Wl,-rpath-link=$(rpath-link)
+diff --git a/csu/Versions b/csu/Versions
+index 43010c3443..509cdf13e2 100644
+--- a/csu/Versions
++++ b/csu/Versions
+@@ -8,6 +8,6 @@ libc {
+     gnu_get_libc_release; gnu_get_libc_version;
+   }
+   GLIBC_PRIVATE {
+-    errno;
++    errno; __popcorn_stack_base;
+   }
+ }
+diff --git a/csu/libc-start.c b/csu/libc-start.c
+index 12468c5a89..8be12a274e 100644
+--- a/csu/libc-start.c
++++ b/csu/libc-start.c
+@@ -122,6 +122,12 @@ STATIC int LIBC_START_MAIN (int (*main) (int, char **, char **
+      __attribute__ ((noreturn));
+ 
+ 
++/* Store the highest stack address dedicated to function activations. */
++void *__popcorn_stack_base = NULL;
++
++int __libc_start_main_popcorn (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
++			       int, char **, char **) __attribute__((weak));
++
+ /* Note: the fini parameter is ignored here for shared library.  It
+    is registered with __cxa_atexit.  This had the disadvantage that
+    finalizers were called in more than one place.  */
+@@ -138,6 +144,7 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
+   /* Result of the 'main' function.  */
+   int result;
+ 
++  __popcorn_stack_base = argv;
+   __libc_multiple_libcs = &_dl_starting_up && !_dl_starting_up;
+ 
+ #ifndef SHARED
+@@ -305,7 +312,14 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
+       THREAD_SETMEM (self, cleanup_jmp_buf, &unwind_buf);
+ 
+       /* Run the program.  */
++#ifdef SHARED
++      if (__libc_start_main_popcorn)
++	result = __libc_start_main_popcorn (main, argc, argv, __environ MAIN_AUXVEC_PARAM);
++      else	
++	result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
++#else
+       result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
++#endif
+     }
+   else
+     {
+diff --git a/nptl/Makefile b/nptl/Makefile
+index 584e0ffd96..580b86a400 100644
+--- a/nptl/Makefile
++++ b/nptl/Makefile
+@@ -146,7 +146,8 @@ libpthread-routines = nptl-init nptlfreeres vars events version pt-interp \
+ 		      mtx_trylock mtx_unlock call_once cnd_broadcast \
+ 		      cnd_destroy cnd_init cnd_signal cnd_timedwait cnd_wait \
+ 		      tss_create tss_delete tss_get tss_set pthread_mutex_conf \
+-		      libpthread-compat
++		      libpthread-compat \
++		      pthread_migrate __set_thread_area arch_crash
+ #		      pthread_setuid pthread_seteuid pthread_setreuid \
+ #		      pthread_setresuid \
+ #		      pthread_setgid pthread_setegid pthread_setregid \
+diff --git a/nptl/Versions b/nptl/Versions
+index ff6fc06002..0a294a9c9f 100644
+--- a/nptl/Versions
++++ b/nptl/Versions
+@@ -287,5 +287,8 @@ libpthread {
+     __pthread_barrier_init; __pthread_barrier_wait;
+     __shm_directory;
+     __libpthread_freeres;
++    pthread_set_migrate_args; pthread_get_migrate_args;
++    __set_thread_area;
++    crash_aarch64; crash_powerpc64; crash_riscv64; crash_x86_64;
+   }
+ }
+diff --git a/nptl/__set_thread_area.c b/nptl/__set_thread_area.c
+new file mode 100644
+index 0000000000..d1b962cd13
+--- /dev/null
++++ b/nptl/__set_thread_area.c
+@@ -0,0 +1,6 @@
++#include "pthreadP.h"
++
++int __set_thread_area(void *p)
++{
++  return TLS_INIT_TP(p);
++}
+diff --git a/nptl/arch_crash.c b/nptl/arch_crash.c
+new file mode 100644
+index 0000000000..21af9f8a67
+--- /dev/null
++++ b/nptl/arch_crash.c
+@@ -0,0 +1,64 @@
++#include <stdbool.h>
++
++/* Only crash if we're executing on aarch64 */
++bool crash_aarch64(long a, long b, long c, long d)
++{
++#ifdef __aarch64__
++  __asm__ __volatile__("mov x0, %0;"
++                       "mov x1, %1;"
++                       "mov x2, %2;"
++                       "mov x3, %3;"
++                       "mov x4, xzr; ldr x4, [x4]" ::
++    "r"(a), "r"(b), "r"(c), "r"(d) : "x0", "x1", "x2", "x3", "x4");
++  return true;
++#else
++  return false;
++#endif
++}
++
++/* Only crash if we're executing on powerpc64 */
++bool crash_powerpc64(long a, long b, long c, long d)
++{
++#ifdef __powerpc64__
++  __asm__ __volatile__("mr 0, %0;"
++                       "mr 1, %1;"
++                       "mr 2, %2;"
++                       "mr 3, %3;"
++                       ".long 0" ::
++    "r"(a), "r"(b), "r"(c), "r"(d) : "r0", "r1", "r2", "r3");
++  return true;
++#else
++  return false;
++#endif
++}
++
++/* Only crash if we're executing on riscv64 */
++bool crash_riscv64(long a, long b, long c, long d)
++{
++#ifdef __riscv64__
++  __asm__ __volatile__("addi x1, %0, 0;"
++                       "addi x2, %1, 0;"
++                       "addi x3, %2, 0;"
++                       "addi x4, %3, 0;" ::
++    "r"(a), "r"(b), "r"(c), "r"(d) : "x1", "x2", "x3", "x4");
++  return true;
++#else
++  return false;
++#endif
++}
++
++/* Only crash if we're executing on x86-64 */
++bool crash_x86_64(long a, long b, long c, long d)
++{
++#ifdef __x86_64__
++  __asm__ __volatile__("mov %0, %%rax;"
++                       "mov %1, %%rbx;"
++                       "mov %2, %%rcx;"
++                       "mov %3, %%rdx;"
++                       "hlt" ::
++    "r"(a), "r"(b), "r"(c), "r"(d) : "rax", "rbx", "rcx", "rdx");
++  return true;
++#else
++  return false;
++#endif
++}
+diff --git a/nptl/descr.h b/nptl/descr.h
+index 9dcf480bdf..f23355e0cd 100644
+--- a/nptl/descr.h
++++ b/nptl/descr.h
+@@ -394,6 +394,9 @@ struct pthread
+   /* Indicates whether is a C11 thread created by thrd_creat.  */
+   bool c11;
+ 
++  /* Popcorn Linux Migration Arguments.  */
++  void *popcorn_migrate;
++
+   /* This member must be last.  */
+   char end_padding[];
+ 
+diff --git a/nptl/pthread_migrate.c b/nptl/pthread_migrate.c
+new file mode 100644
+index 0000000000..0a5be18df3
+--- /dev/null
++++ b/nptl/pthread_migrate.c
+@@ -0,0 +1,14 @@
++#include "pthreadP.h"
++
++void pthread_set_migrate_args(void *args)
++{
++  struct pthread *self = THREAD_SELF;
++  THREAD_SETMEM (self, popcorn_migrate, args);
++}
++
++void *pthread_get_migrate_args()
++{
++  struct pthread *self = THREAD_SELF;
++  void *args = THREAD_GETMEM (self, popcorn_migrate);
++  return args;
++}

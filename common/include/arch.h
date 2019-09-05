@@ -13,6 +13,7 @@ enum arch {
   ARCH_AARCH64,
   ARCH_X86_64,
   ARCH_POWERPC64,
+  ARCH_RISCV64,
   NUM_ARCHES
 };
 

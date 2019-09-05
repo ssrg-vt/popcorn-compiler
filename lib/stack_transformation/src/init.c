@@ -28,7 +28,7 @@ __st_ctor(void)
 {
 #ifdef _LOG
 #ifndef _PER_LOG_OPEN
-  __log = fopen(LOG_FILE, "a");
+  __log = fopen(LOG_FILE, "w");
   ASSERT(__log, "could not open log file\n");
 #endif
   ST_RAW_INFO("\n");

@@ -249,21 +249,24 @@ void hierarchy_init_thread(int nid);
 /*
  * Execute a hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  */
-void hierarchy_hybrid_barrier(int nid);
+void hierarchy_hybrid_barrier(int nid, const char *desc);
 
 /*
  * Execute a cancellable hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  * @return true if cancelled or false otherwise
  */
-bool hierarchy_hybrid_cancel_barrier(int nid);
+bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc);
 
 /*
  * Execute the end-of-parallel-region hybrid barrier.
  * @param nid the node in which to participate.
+ * @param desc an optional description of the barrier location
  */
-void hierarchy_hybrid_barrier_final(int nid);
+void hierarchy_hybrid_barrier_final(int nid, const char *desc);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Reductions
@@ -288,7 +291,7 @@ bool hierarchy_reduce(int nid,
 
 /* TODO descriptions */
 void hierarchy_init_statistics(int nid);
-void hierarchy_log_statistics(int nid, const char *ident);
+void hierarchy_log_statistics(int nid, const void *ident);
 
 /*
  * Initialize work-sharing construct for static scheduling.

@@ -13,6 +13,11 @@
 /* Enable verbose debugging output, including information & warnings. */
 //#define _DEBUG 1
 
+#ifdef __aarch64__
+#undef _DEBUG
+#undef _LOG
+#endif
+
 /*
  * Log stack transformation output to file rather than stdout/stderr (requires
  * debugging be enabled).
@@ -49,7 +54,7 @@
 #define _TLS_IMPL COMPILER_TLS
 
 /* Select either global or per-thread malloc implementation */
-#define PER_NODE_MALLOC 1
+//#define PER_NODE_MALLOC 1
 #ifdef PER_NODE_MALLOC
 # define MALLOC popcorn_malloc_cur
 #else
@@ -86,6 +91,7 @@
  */
 #define ENV_AARCH64_BIN "ST_AARCH64_BIN"
 #define ENV_POWERPC64_BIN "ST_POWERPC64_BIN"
+#define ENV_RISCV64_BIN "ST_RISCV64_BIN"
 #define ENV_X86_64_BIN "ST_X86_64_BIN"
 
 /*

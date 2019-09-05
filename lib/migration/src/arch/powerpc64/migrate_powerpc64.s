@@ -1,6 +1,11 @@
 .extern pthread_get_migrate_args
 .extern crash_powerpc64
 
+/* Specify GNU-stack to allow the linker to automatically set
+ * noexecstack.  The Popcorn kernel forbids pages set with the
+ * execute bit from migrating.  */
+.section .note.GNU-stack,"",%progbits
+
 .section .text.__migrate_fixup_powerpc64, "ax"
 .globl __migrate_fixup_powerpc64
 .type __migrate_fixup_powerpc64,@function
@@ -105,5 +110,11 @@ __migrate_fixup_powerpc64:
   ld 5, 0(1)
   bl crash_powerpc64
 
+.else
+	nop
+	nop
+	nop
+	nop
+	
 .endif
 

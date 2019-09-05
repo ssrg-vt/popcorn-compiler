@@ -14,6 +14,8 @@
 #define inline inline __attribute__((always_inline))
 #endif
 
+int popcorn_getnid_musl();
+
 void *__mmap(void *, size_t, int, int, int, off_t);
 int __munmap(void *, size_t);
 void *__mremap(void *, size_t, size_t, int, ...);
@@ -432,7 +434,7 @@ void *__popcorn_malloc0(size_t n, int nid)
 
 void *popcorn_malloc_cur(size_t n)
 {
-  return popcorn_malloc(n, popcorn_getnid());
+  return popcorn_malloc(n, popcorn_getnid_musl());
 }
 
 int popcorn_get_arena(void *);
@@ -528,7 +530,7 @@ copy_realloc:
 
 void *popcorn_realloc_cur(void *p, size_t n)
 {
-  return popcorn_realloc(p, n, popcorn_getnid());
+  return popcorn_realloc(p, n, popcorn_getnid_musl());
 }
 
 void popcorn_free(void *p)

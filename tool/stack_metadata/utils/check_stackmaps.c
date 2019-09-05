@@ -21,7 +21,7 @@
 // Configuration
 ///////////////////////////////////////////////////////////////////////////////
 
-static const char *args = "ha:x:p:";
+static const char *args = "ha:x:p:r:";
 static const char *help =
 "check-stackmaps - check LLVM stackmap sections for matching metadata across "
 "binaries\n\n\
@@ -32,12 +32,14 @@ Options:\n\
 \t-a file : name of AArch64 executable\n\
 \t-x file : name of x86-64 executable\n\n\
 \t-p file : name of PowerPC64 executable\n\n\
+\t-r file : name of RISCV64 executable\n\n\
 \
 Note: this tool assumes binaries have been through the alignment tool, as it \
 checks stackmaps based on function addresses";
 
 static const char *bin_aarch64_fn = NULL;
 static const char *bin_powerpc64_fn = NULL;
+static const char *bin_riscv64_fn = NULL;
 static const char *bin_x86_64_fn = NULL;
 bool verbose = false;
 
@@ -71,6 +73,9 @@ static void parse_args(int argc, char **argv)
     case 'p':
       bin_powerpc64_fn = optarg;
       break;
+    case 'r':
+      bin_riscv64_fn = optarg;
+      break;
     default:
       fprintf(stderr, "Unknown argument '%c'\n", arg);
       break;
@@ -79,6 +84,7 @@ static void parse_args(int argc, char **argv)
 
   count += (bin_aarch64_fn ? 1 : 0);
   count += (bin_powerpc64_fn ? 1 : 0);
+  count += (bin_riscv64_fn ? 1 : 0);
   count += (bin_x86_64_fn ? 1 : 0);
   if(count < 2)
     die("please specify at least 2 binaries "
@@ -278,9 +284,9 @@ ret_t check_stackmaps(bin *a, stack_map_section *sm_a, size_t num_sm_a,
 int main(int argc, char **argv)
 {
   ret_t ret;
-  bin *bin_aarch64 = NULL, *bin_powerpc64 = NULL, *bin_x86_64 = NULL;
-  stack_map_section *sm_aarch64 = NULL, *sm_powerpc64 = NULL, *sm_x86_64 = NULL;
-  size_t num_sm_aarch64 = 0, num_sm_powerpc64 = 0, num_sm_x86_64 = 0, i, j, num;
+  bin *bin_aarch64 = NULL, *bin_powerpc64 = NULL, *bin_riscv64 = NULL, *bin_x86_64 = NULL;
+  stack_map_section *sm_aarch64 = NULL, *sm_powerpc64 = NULL, *sm_riscv64 = NULL, *sm_x86_64 = NULL;
+  size_t num_sm_aarch64 = 0, num_sm_powerpc64 = 0, num_sm_riscv64 = 0, num_sm_x86_64 = 0, i, j, num;
   char buf[1024];
 
   parse_args(argc, argv);
@@ -304,6 +310,14 @@ int main(int argc, char **argv)
     if(ret != SUCCESS) die("could not read stackmaps (powerpc64)", ret);
   }
 
+  if(bin_riscv64_fn)
+  {
+    ret = init_elf_bin(bin_riscv64_fn, &bin_riscv64);
+    if(ret != SUCCESS) die("could not initialize the binary (riscv64)", ret);
+    ret = init_stackmap(bin_riscv64, &sm_riscv64, &num_sm_riscv64);
+    if(ret != SUCCESS) die("could not read stackmaps (riscv64)", ret);
+  }
+
   if(bin_x86_64_fn)
   {
     ret = init_elf_bin(bin_x86_64_fn, &bin_x86_64);
@@ -312,9 +326,9 @@ int main(int argc, char **argv)
     if(ret != SUCCESS) die("could not read stackmaps (x86-64)", ret);
   }
 
-  bin *binaries[] = { bin_aarch64, bin_powerpc64, bin_x86_64 };
-  stack_map_section *stackmaps[] = { sm_aarch64, sm_powerpc64, sm_x86_64 };
-  size_t num_stackmaps[] = { num_sm_aarch64, num_sm_powerpc64, num_sm_x86_64 };
+  bin *binaries[] = { bin_aarch64, bin_powerpc64, bin_riscv64, bin_x86_64 };
+  stack_map_section *stackmaps[] = { sm_aarch64, sm_powerpc64, sm_riscv64, sm_x86_64 };
+  size_t num_stackmaps[] = { num_sm_aarch64, num_sm_powerpc64, num_sm_riscv64, num_sm_x86_64 };
   num = sizeof(binaries) / sizeof(bin *);
 
   for(i = 0; i < num; i++)
@@ -345,6 +359,12 @@ int main(int argc, char **argv)
   {
     free_stackmaps(sm_powerpc64, num_sm_powerpc64);
     free_elf_bin(bin_powerpc64);
+  }
+
+  if(bin_riscv64_fn)
+  {
+    free_stackmaps(sm_riscv64, num_sm_riscv64);
+    free_elf_bin(bin_riscv64);
   }
 
   if(bin_x86_64_fn)

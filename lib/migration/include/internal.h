@@ -16,6 +16,7 @@
 
 void __migrate_fixup_aarch64(void);
 void __migrate_fixup_powerpc64(void);
+void __migrate_fixup_riscv64(void);
 void __migrate_fixup_x86_64(void);
 
 #endif /* _INTERNAL_H */

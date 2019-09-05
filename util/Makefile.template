@@ -11,7 +11,7 @@ POPCORN := /usr/local/popcorn
 
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := $(shell dirname \
-                $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
+                $(shell $(POPCORN)/bin/aarch64-popcorn-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
 BIN := test
@@ -25,28 +25,35 @@ APP_DIR := $(shell pwd)
 #                  Compiler toolchain & command-line flags                    #
 ###############################################################################
 
+# Use -popcorn-metadata when the application makes explicit calls to
+# migrate, and -popcorn-migratable otherwise.
+
 # Compiler
 CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
 CFLAGS     := -O0 -Wall -nostdinc -g
-HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
+HET_CFLAGS := $(CFLAGS) -popcorn-metadata -fno-common \
               -ftls-model=initial-exec
 
 IR := $(SRC:.c=.ll)
 
 # Linker
-LD      := $(POPCORN)/bin/ld.gold
-LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
-LIBS    := /lib/crt1.o \
-           /lib/libc.a \
-           /lib/libopenpop.a \
-           /lib/libmigrate.a \
-           /lib/libstack-transform.a \
-           /lib/libelf.a \
-           /lib/libpthread.a \
-           /lib/libc.a \
-           /lib/libm.a
-LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
+LD            := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-gcc
+ARM64_LD      := $(POPCORN)/bin/aarch64-popcorn-linux-gnu-ld.bfd
+LDFLAGS_GLIBC := -lm -lpthread -ldl -Wl,-u,__libc_start_main_popcorn
+LIBS_GLIBC    := /lib/libmigrate.a \
+                 /lib/libstack-transform.a \
+                 /lib/libelf.a
+LDFLAGS_MUSL  := -z noexecstack -z relro --hash-style=gnu --build-id -static
+LIBS_MUSL     := /lib/crt1.o \
+                 /lib/libc.a \
+                 /lib/libmigrate.a \
+                 /lib/libstack-transform.a \
+                 /lib/libelf.a \
+                 /lib/libpthread.a \
+                 /lib/libc.a \
+                 /lib/libm.a
+LIBGCC        := --start-group -lgcc -lgcc_eh --end-group
 
 # Alignment
 ALIGN          := $(POPCORN)/bin/pyalign
@@ -77,7 +84,7 @@ ARM64_ALIGNED_MAP := $(ARM64_BUILD)/aligned_map.txt
 ARM64_TARGET  := aarch64-linux-gnu
 ARM64_INC     := -isystem $(ARM64_POPCORN)/include
 ARM64_LDFLAGS := -m aarch64linux -L$(ARM64_POPCORN)/lib -L$(ARM64_LIBGCC) \
-                 $(addprefix $(ARM64_POPCORN),$(LIBS)) $(LIBGCC)
+                 $(addprefix $(ARM64_POPCORN),$(LIBS_MUSL)) $(LIBGCC)
 
 ##########
 # x86-64 #
@@ -101,9 +108,10 @@ X86_64_ALIGNED_MAP := $(X86_64_BUILD)/aligned_map.txt
 # Flags
 X86_64_TARGET  := x86_64-linux-gnu
 X86_64_INC     := -isystem $(X86_64_POPCORN)/include
-X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
-                  $(addprefix $(X86_64_POPCORN),$(LIBS)) \
-                  --start-group --end-group
+X86_64_LDFLAGS := -L$(X86_64_POPCORN)/lib \
+                  $(addprefix $(X86_64_POPCORN),$(LIBS_GLIBC)) $(LDFLAGS_GLIBC) \
+		  -Wl,-rpath,/home/popcorn/lib \
+		  -Wl,--dynamic-linker,/home/popcorn/lib/ld-linux-x86-64.so.2
 
 ###############################################################################
 #                                 Recipes                                     #
@@ -123,6 +131,8 @@ post_process: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [POST_PROCESS] $^"
 	@$(POST_PROCESS) -f $(ARM64_ALIGNED)
 	@$(POST_PROCESS) -f $(X86_64_ALIGNED)
+	@$(POPCORN)/bin/aarch64-popcorn-linux-gnu-objdump -D $(ARM64_ALIGNED) > a.s
+	@objdump -D $(X86_64_ALIGNED) > x.s 
 
 compress: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
 	@echo " [COMPRESS] $(ARM64_ALIGNED)"
@@ -170,7 +180,8 @@ clean:
 
 $(ARM64_VANILLA): $(ARM64_BUILD)/.dir $(ARM64_OBJ)
 	@echo " [LD] $@ (vanilla)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map $(ARM64_MAP)
+	@$(ARM64_LD) -o $@ $(ARM64_OBJ) $(ARM64_LDFLAGS) \
+		-Map $(ARM64_MAP) $(LDFLAGS_MUSL)
 
 $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA) 
 	@echo " [ALIGN] $@"
@@ -181,8 +192,8 @@ $(ARM64_LD_SCRIPT): $(ARM64_VANILLA) $(X86_64_VANILLA)
 
 $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(ARM64_OBJ) $(LDFLAGS) $(ARM64_LDFLAGS) -Map \
-		$(ARM64_ALIGNED_MAP) -T $<
+	@$(ARM64_LD) -o $@ $(ARM64_OBJ) $(ARM64_LDFLAGS) $(LDFLAGS_MUSL) \
+		-Map $(ARM64_ALIGNED_MAP) -T $<
 
 ##########
 # x86-64 #
@@ -192,15 +203,16 @@ $(ARM64_ALIGNED): $(ARM64_LD_SCRIPT)
 
 $(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
 	@echo " [LD] $@ (vanilla)"
-	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
+	@$(LD) -o $@ $(X86_64_OBJ) $(X86_64_LDFLAGS) \
+		-Wl,-Map,$(X86_64_MAP)
 
 $(X86_64_LD_SCRIPT): $(ARM64_LD_SCRIPT)
 	@echo " [ALIGN] $@"
 
 $(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
 	@echo " [LD] $@ (aligned)"
-	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) \
-		-Map $(X86_64_ALIGNED_MAP) -T $<
+	@$(LD) -o $@ $(X86_64_OBJ) $(X86_64_LDFLAGS) \
+		-Wl,-Map,$(X86_64_ALIGNED_MAP) -T $<
 
 # Stack-depth builds
 $(X86_64_SD_BUILD)/%.o: %.c

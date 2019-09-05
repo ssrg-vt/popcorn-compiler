@@ -26,9 +26,13 @@
  * possible.  We only need to declare a pair of each as each thread will only
  * ever use 2 at a time.
  */
-static __thread struct rewrite_context src_ctx, dest_ctx;
-static __thread char src_regs[REGSET_POOL], dest_regs[REGSET_POOL];
-static __thread char src_callee[CALLEE_POOL], dest_callee[CALLEE_POOL];
+// FIXME: disabling TLS for shared libraries
+//static __thread struct rewrite_context src_ctx, dest_ctx;
+//static __thread char src_regs[REGSET_POOL], dest_regs[REGSET_POOL];
+//static __thread char src_callee[CALLEE_POOL], dest_callee[CALLEE_POOL];
+static struct rewrite_context src_ctx, dest_ctx;
+static char src_regs[REGSET_POOL], dest_regs[REGSET_POOL];
+static char src_callee[CALLEE_POOL], dest_callee[CALLEE_POOL];
 
 #endif
 

@@ -29,8 +29,11 @@ install: bin
 
 tests: bin
 	@# 2 archs: x86-arm
+	@#make -C $(TEST_2_ARCHS) clean
+	@#make -C $(TEST_2_ARCHS) MODE=arm check ALIGN=$(PWD)/$(BINARY)
+	@# 2 archs: x86-riscv
 	make -C $(TEST_2_ARCHS) clean
-	make -C $(TEST_2_ARCHS) MODE=arm check ALIGN=$(PWD)/$(BINARY)
+	make -C $(TEST_2_ARCHS) MODE=riscv check ALIGN=$(PWD)/$(BINARY)
 	@# 2 archs: x86-ppc - Enable when ppc is merged for the compiler
 	@# make -C $(TEST_2_ARCHS) clean
 	@# make -C $(TEST_2_ARCHS) MODE=ppc check ALIGN=$(PWD)/$(BINARY)

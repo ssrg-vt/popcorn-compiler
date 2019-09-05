@@ -3,19 +3,25 @@
 #include "platform.h"
 #include "arch.h"
 
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+/* Moved to libmigration to accomodate glibc.  */
 
-int popcorn_getnid() {
+#if defined __aarch64__ || defined __powerpc64__ || defined __riscv64__ || defined __x86_64__
+
+int popcorn_getnid() __attribute__((weak));
+int popcorn_getthreadinfo(struct popcorn_thread_status *a) __attribute__((weak));
+int popcorn_getnodeinfo(int *a, struct popcorn_node_status *b) __attribute__((weak));
+
+int popcorn_getnid_musl() {
   struct popcorn_thread_status status;
   if (syscall(SYS_get_thread_status, &status)) return -1;
   return status.current_nid;
 }
 
-int popcorn_getthreadinfo(struct popcorn_thread_status *status) {
+int popcorn_getthreadinfo_musl(struct popcorn_thread_status *status) {
   return syscall(SYS_get_thread_status, status);
 }
 
-int popcorn_getnodeinfo(int *origin,
+int popcorn_getnodeinfo_musl(int *origin,
                         struct popcorn_node_status status[MAX_POPCORN_NODES]) {
   int ret, i;
 
@@ -44,9 +50,9 @@ int popcorn_getnodeinfo(int *origin,
     return -1; \
   } while(0);
 
-int popcorn_getnid() { RETURN_ERROR }
-int popcorn_getthreadinfo(struct popcorn_thread_status *) { RETURN ERROR }
-int popcorn_getnodeinfo(int *, struct popcorn_node_status *) { RETURN_ERROR }
+int popcorn_getnid_musl() { RETURN_ERROR }
+int popcorn_getthreadinfo_musl(struct popcorn_thread_status *a) { RETURN_ERROR }
+int popcorn_getnodeinfo_musl(int *a, struct popcorn_node_status *b) { RETURN_ERROR }
 
 #endif
 

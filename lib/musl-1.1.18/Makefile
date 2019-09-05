@@ -42,7 +42,7 @@ LDFLAGS_AUTO =
 LIBCC = -lgcc
 CPPFLAGS =
 CFLAGS =
-CFLAGS_AUTO = -Os -pipe
+CFLAGS_AUTO = -O0 -pipe
 CFLAGS_C99FSE = -std=c99 -ffreestanding -nostdinc 
 
 CFLAGS_ALL = $(CFLAGS_C99FSE)
@@ -130,7 +130,7 @@ NOSSP_SRCS = $(wildcard crt/*.c) \
 	src/string/memset.c src/string/$(ARCH)/memset.c \
 	src/string/memcpy.c src/string/$(ARCH)/memcpy.c \
 	ldso/dlstart.c ldso/dynlink.c
-$(NOSSP_SRCS:%.c=obj/%.o) $(NOSSP_SRCS:%.c=obj/%.lo): CFLAGS_ALL += $(CFLAGS_NOSSP)
+$(NOSSP_SRCS:%.c=obj/%.o) $(NOSSP_SRCS:%.c=obj/%.lo): CFLAGS_ALL += $(CFLAGS_NOSSP) -O1
 
 $(CRT_OBJS): CFLAGS_ALL += -DCRT
 

@@ -287,6 +287,141 @@ get_call_site() { return __builtin_return_address(0); }
       fprintf(stderr, "Invalid stack transformation handle\n"); \
   })
 
+#ifdef __riscv64__
+
+/* Times rewriting the entire stack (riscv64) */
+#define TIME_REWRITE( riscv64_bin, x86_64_bin ) \
+  ({ \
+    int ret; \
+    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct regset_riscv64 regset; \
+    struct regset_x86_64 regset_dest; \
+    stack_bounds bounds = get_stack_bounds(); \
+    READ_REGS_RISCV64(regset); \
+    regset.pc = get_call_site(); \
+    clock_gettime(CLOCK_MONOTONIC, &start); \
+    st_handle src = st_init(riscv64_bin); \
+    st_handle dest = st_init(x86_64_bin); \
+    clock_gettime(CLOCK_MONOTONIC, &init); \
+    if(src && dest) \
+    { \
+      ret = st_rewrite_stack(src, &regset, bounds.high, dest, &regset_dest, bounds.low); \
+      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
+      st_destroy(src); \
+      st_destroy(dest); \
+      if(ret) \
+        fprintf(stderr, "Couldn't re-write the stack\n"); \
+      else \
+      { \
+        clock_gettime(CLOCK_MONOTONIC, &end); \
+        printf("[ST] Setup time: %lu\n", \
+              (init.tv_sec * 1000000000 + init.tv_nsec) - \
+              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+        printf("[ST] Transform time: %lu\n", \
+              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
+              (init.tv_sec * 1000000000 + init.tv_nsec)); \
+        printf("[ST] Cleanup time: %lu\n", \
+              (end.tv_sec * 1000000000 + end.tv_nsec) - \
+              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
+        printf("[ST] Total elapsed time: %lu\n", \
+              (end.tv_sec * 1000000000 + end.tv_nsec) - \
+              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+      } \
+    } \
+    else \
+    { \
+      fprintf(stderr, "Couldn't open ELF information\n"); \
+      if(src) st_destroy(src); \
+      if(dest) st_destroy(dest); \
+    } \
+  })
+
+/*
+ * Times rewriting the entire stack (riscv64).  After rewriting, switches to
+ * the re-written stack to check for correctness.
+ */
+#define TIME_AND_TEST_REWRITE( riscv64_bin, func ) \
+  ({ \
+    int ret; \
+    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec init = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec rewrite = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct regset_riscv64 regset, regset_dest; \
+    stack_bounds bounds = get_stack_bounds(); \
+    READ_REGS_RISCV64(regset); \
+    regset.pc = get_call_site(); \
+    clock_gettime(CLOCK_MONOTONIC, &start); \
+    st_handle src = st_init(riscv64_bin); \
+    clock_gettime(CLOCK_MONOTONIC, &init); \
+    if(src) \
+    { \
+      ret = st_rewrite_stack(src, &regset, bounds.high, src, &regset_dest, bounds.low); \
+      clock_gettime(CLOCK_MONOTONIC, &rewrite); \
+      st_destroy(src); \
+      if(ret) \
+        fprintf(stderr, "Couldn't re-write the stack\n"); \
+      else \
+      { \
+        clock_gettime(CLOCK_MONOTONIC, &end); \
+        printf("[ST] Setup time: %lu\n", \
+              (init.tv_sec * 1000000000 + init.tv_nsec) - \
+              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+        printf("[ST] Transform time: %lu\n", \
+              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec) - \
+              (init.tv_sec * 1000000000 + init.tv_nsec)); \
+        printf("[ST] Cleanup time: %lu\n", \
+              (end.tv_sec * 1000000000 + end.tv_nsec) - \
+              (rewrite.tv_sec * 1000000000 + rewrite.tv_nsec)); \
+        printf("[ST] Total elapsed time: %lu\n", \
+              (end.tv_sec * 1000000000 + end.tv_nsec) - \
+              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+        post_transform = 1; \
+        SET_REGS_RISCV64(regset_dest); \
+        SET_FRAME_RISCV64(regset_dest.x[29], regset_dest.sp); \
+        SET_PC_IMM(func); \
+      } \
+    } \
+    else fprintf(stderr, "Couldn't open ELF information\n"); \
+  })
+
+/*
+ * Time & test the re-write with a previously initialized handle.  Useful for
+ * testing multi-threaded applications which all use the same handle.
+ */
+#define TIME_AND_TEST_NO_INIT( riscv64_handle, func ) \
+  ({ \
+    int ret; \
+    struct timespec start = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct timespec end = { .tv_sec = 0, .tv_nsec = 0 }; \
+    struct regset_riscv64 regset, regset_dest; \
+    stack_bounds bounds = get_stack_bounds(); \
+    READ_REGS_RISCV64(regset); \
+    regset.pc = get_call_site(); \
+    if(riscv64_handle) \
+    { \
+      clock_gettime(CLOCK_MONOTONIC, &start); \
+      ret = st_rewrite_stack(riscv64_handle, &regset, bounds.high, \
+                             riscv64_handle, &regset_dest, bounds.low); \
+      if(ret) fprintf(stderr, "Couldn't re-write the stack\n"); \
+      else \
+      { \
+        clock_gettime(CLOCK_MONOTONIC, &end); \
+        printf("[ST] Transform time: %lu\n", \
+              (end.tv_sec * 1000000000 + end.tv_nsec) - \
+              (start.tv_sec * 1000000000 + start.tv_nsec)); \
+        post_transform = 1; \
+        SET_REGS_RISCV64(regset_dest); \
+        SET_FRAME_RISCV64(regset_dest.x[29], regset_dest.sp); \
+        SET_PC_IMM(func); \
+      } \
+    } \
+    else fprintf(stderr, "Invalid stack transformation handle\n"); \
+  })
+
 #elif defined __x86_64__
 
 /* Times rewriting the entire stack (x86-64) */

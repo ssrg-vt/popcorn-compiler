@@ -23,12 +23,13 @@ LIB_HDR      := $(shell ls $(INC)/*.h)
 LIB_SRC      := $(shell ls $(SRC)/*.c)
 LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
                 $(shell ls $(SRC)/arch/powerpc64/*.c) \
+		$(shell ls $(SRC)/arch/riscv64/*.c) \
                 $(shell ls $(SRC)/arch/x86_64/*.c)
 
 ifeq ($(type),debug)
 CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
 else
-CFLAGS += -O3
+CFLAGS += -O1
 endif
 
 ###############################################################################
@@ -141,29 +142,30 @@ install-powerpc64: $(LIB_POWERPC64)
 
 build/aarch64/arch/aarch64/%.o: src/arch/aarch64/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+	$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 build/aarch64/arch/powerpc64/%.o: src/arch/powerpc64/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+	$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 build/aarch64/arch/x86_64/%.o: src/arch/x86_64/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+	$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 build/aarch64/%.o: src/%.c $(LIB_HDR)
 	@echo " [CC-aarch64] $<"
-	@$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
+	$(CC_AARCH64) $(CFLAGS) $(LOC_AARCH64) -o $@ -c $<
 
 $(LIB_OBJ_AARCH64): $(BUILD_AARCH64)/.dir
 $(LIB_ARCH_OBJ_AARCH64): $(BUILD_AARCH64)/arch/powerpc64/.dir \
                          $(BUILD_AARCH64)/arch/x86_64/.dir \
+			 $(BUILD_AARCH64)/arch/riscv64/.dir \
                          $(BUILD_AARCH64)/arch/aarch64/.dir
 
 $(LIB_AARCH64): $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
 	@echo " [AR-aarch64] $@"
 	@rm -f $(LIB_AARCH64)
-	@$(AR) -cq $(LIB_AARCH64) $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
+	$(AR) -cq $(LIB_AARCH64) $(LIB_OBJ_AARCH64) $(LIB_ARCH_OBJ_AARCH64)
 
 install-aarch64: $(LIB_AARCH64)
 	@echo " [INSTALL] $< to $(POPCORN_AARCH64)/lib"
@@ -174,9 +176,11 @@ install-aarch64: $(LIB_AARCH64)
 	@cp $(COMMON)/include/arch.h $(POPCORN_AARCH64)/include
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/aarch64
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/powerpc64
+	@mkdir -p $(POPCORN_AARCH64)/include/arch/riscv64
 	@mkdir -p $(POPCORN_AARCH64)/include/arch/x86_64
 	@cp $(INC)/arch/aarch64/regs.h $(POPCORN_AARCH64)/include/arch/aarch64
 	@cp $(INC)/arch/powerpc64/regs.h $(POPCORN_AARCH64)/include/arch/powerpc64
+	@cp $(INC)/arch/riscv64/regs.h $(POPCORN_AARCH64)/include/arch/riscv64
 	@cp $(INC)/arch/x86_64/regs.h $(POPCORN_AARCH64)/include/arch/x86_64
 
 # x86-64
@@ -200,6 +204,7 @@ build/x86_64/%.o: src/%.c $(LIB_HDR)
 $(LIB_OBJ_X86_64): $(BUILD_X86_64)/.dir
 $(LIB_ARCH_OBJ_X86_64): $(BUILD_X86_64)/arch/powerpc64/.dir \
                         $(BUILD_X86_64)/arch/x86_64/.dir \
+                        $(BUILD_X86_64)/arch/riscv64/.dir \
                         $(BUILD_X86_64)/arch/aarch64/.dir
 
 $(LIB_X86_64): $(LIB_OBJ_X86_64) $(LIB_ARCH_OBJ_X86_64)
@@ -216,9 +221,11 @@ install-x86_64: $(LIB_X86_64)
 	@cp $(COMMON)/include/arch.h $(POPCORN_X86_64)/include
 	@mkdir -p $(POPCORN_X86_64)/include/arch/aarch64
 	@mkdir -p $(POPCORN_X86_64)/include/arch/powerpc64
+	@mkdir -p $(POPCORN_X86_64)/include/arch/riscv64
 	@mkdir -p $(POPCORN_X86_64)/include/arch/x86_64
 	@cp $(INC)/arch/aarch64/regs.h $(POPCORN_X86_64)/include/arch/aarch64
 	@cp $(INC)/arch/powerpc64/regs.h $(POPCORN_X86_64)/include/arch/powerpc64
+	@cp $(INC)/arch/riscv64/regs.h $(POPCORN_X86_64)/include/arch/riscv64
 	@cp $(INC)/arch/x86_64/regs.h $(POPCORN_X86_64)/include/arch/x86_64
 
 # install-powerpc64

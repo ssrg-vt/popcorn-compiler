@@ -21,25 +21,31 @@ class Symbol:
 		# Symbol name
 		self._name = name
 		# Symbol address for each arch
-		self._addresses = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
+		self._addresses = { Arch.X86 : -1, Arch.ARM : -1,
+                                    Arch.POWER : -1, Arch.RISCV : -1 }
 		self._addresses[arch] = address
 		# Symbol size for each arch
-		self._sizes = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
+		self._sizes = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1,
+                                Arch.RISCV : -1 }
 		self._sizes[arch] = size
 		# Alignemt rule for each arch
-		self._alignments = { Arch.X86 : -1, Arch.ARM : -1, Arch.POWER : -1 }
+		self._alignments = { Arch.X86 : -1, Arch.ARM : -1,
+                                     Arch.POWER : -1, Arch.RISCV : -1 }
 		self._alignments[arch] = alignment
 		# Which architecture are referencing this symbol?
 		self._isReferenced = { Arch.X86 : False, Arch.ARM : False,
-			Arch.POWER : False }
+			               Arch.POWER : False, Arch.RISCV : False }
 		self._isReferenced[arch] = True
 		# padding to add before and after the symbol in the produced linker
 		# script, for each architecture
-		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
-		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0, Arch.POWER : 0 }
+		self._paddingBefore = { Arch.X86 : 0, Arch.ARM : 0,
+                                        Arch.POWER : 0, Arch.RISCV : 0 }
+		self._paddingAfter = { Arch.X86 : 0, Arch.ARM : 0,
+                                       Arch.POWER : 0, Arch.RISCV : 0 }
 		# Object file the symbol initially comes from
 		self._objectFiles =  { Arch.X86 : "NULL", Arch.ARM : "NULL",
-			Arch.POWER : "NULL" }
+			               Arch.POWER : "NULL",
+                                       Arch.RISCV : "NULL" }
 
 		if not symbolObjectFileSanityCheck(objectFile):
 			er("Failed sanity check on object file during symbol instance " +
@@ -53,28 +59,34 @@ class Symbol:
 				", addressX86=" + str(hex(self.getAddress(Arch.X86))) +
 				", addressArm=" + str(hex(self.getAddress(Arch.ARM))) +
 				", addressPower=" + str(hex(self.getAddress(Arch.POWER))) +
+				", addressRISCV=" + str(hex(self.getAddress(Arch.RISCV))) +
 				", sizeX86=" + str(hex(self.getSize(Arch.X86))) +
 				", sizeArm=" + str(hex(self.getSize(Arch.ARM))) +
 				", sizePower=" + str(hex(self.getSize(Arch.POWER))) +
+				", sizeRISCV=" + str(hex(self.getSize(Arch.RISCV))) +
 				", alignmentX86=" + str(hex(self.getAlignment(Arch.X86))) +
 				", alignmentArm=" + str(hex(self.getAlignment(Arch.ARM))) +
 				", alignmentPower=" + str(hex(self.getAlignment(Arch.POWER))) +
+				", alignmentRISCV=" + str(hex(self.getAlignment(Arch.RISCV))) +
 				", referencedX86=" + str(self.getReference(Arch.X86)) +
 				", referencedARM=" + str(self.getReference(Arch.ARM)) +
 				", referencedPOWER=" + str(self.getReference(Arch.POWER)) +
+				", referencedRISCV=" + str(self.getReference(Arch.RISCV)) +
 			", paddingBeforeX86=" + str(hex(self.getPaddingBefore(Arch.X86))) +
 			", paddingBeforeARM=" + str(hex(self.getPaddingBefore(Arch.ARM))) +
 			", paddingBeforePOWER=" + str(hex(self.getPaddingBefore(Arch.POWER))) +
+			", paddingBeforeRISCV=" + str(hex(self.getPaddingBefore(Arch.RISCV))) +
 			", paddingAfterX86=" + str(hex(self.getPaddingAfter(Arch.X86))) +
 			", paddingAfterARM=" + str(hex(self.getPaddingAfter(Arch.ARM))) +
 			", paddingAfterPOWER=" + str(hex(self.getPaddingAfter(Arch.POWER)))+
+			", paddingAfterRISCV=" + str(hex(self.getPaddingAfter(Arch.RISCV)))+
 			", objX86=" + self.getObjectFile(Arch.X86) +
 			", objARM=" + self.getObjectFile(Arch.ARM) +
-			", objPOWER=" + self.getObjectFile(Arch.POWER))
-
+			", objPOWER=" + self.getObjectFile(Arch.POWER) +
+			", objRISCV=" + self.getObjectFile(Arch.RISCV))
 
 	def getObjectFile(self, arch):
-		return self._objectFiles[arch]
+                return self._objectFiles[arch]
 
 	def setObjectFile(self, obj, arch):
 		if not symbolObjectFileSanityCheck(obj):
@@ -187,6 +199,7 @@ class Symbol:
 		res = None
 		otherObjs = [   anotherSymbol.getObjectFile(Arch.X86),
 						anotherSymbol.getObjectFile(Arch.ARM),
+                                		anotherSymbol.getObjectFile(Arch.RISCV),
 						anotherSymbol.getObjectFile(Arch.POWER)]
 		for objf1 in self._objectFiles.values():
 			for objf2 in otherObjs:
@@ -216,6 +229,10 @@ class Symbol:
 							# s2 is ppc
 							res = True
 							continue
+						elif (s1_base == cmpstr2.replace("_riscv64.o", "")):
+							# s2 is riscv
+							res = True
+							continue
 
 					elif cmpstr1.endswith("_aarch64.o"):   # s1 is arm (v1)
 						s1_base = cmpstr1.replace("_aarch64.o", "")
@@ -225,6 +242,25 @@ class Symbol:
 							continue
 						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
 							# s2 is ppc
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_riscv64.o", "")):
+							# s2 is riscv
+							res = True
+							continue
+
+					elif cmpstr1.endswith("_riscv64.o"):   # s1 is arm (v1)
+						s1_base = cmpstr1.replace("_riscv64.o", "")
+						if (s1_base == cmpstr2.replace("_x86_64.o", "")):
+							# s2 is x86
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
+							# s2 is ppc
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_aarch64.o", "")):
+							# s2 is riscv
 							res = True
 							continue
 
@@ -242,6 +278,10 @@ class Symbol:
 							# s2 is arm (v2)
 							res = True
 							continue
+						elif (s1_base == cmpstr2.replace("_riscv64.o", "")):
+							# s2 is riscv
+							res = True
+							continue
 
 					elif cmpstr1.endswith(".o"):   # s1 is arm (v2)
 						s1_base = cmpstr1.replace(".o", "")
@@ -251,6 +291,10 @@ class Symbol:
 							continue
 						elif (s1_base == cmpstr2.replace("_powerpc64le.o", "")):
 							# s2 is ppc
+							res = True
+							continue
+						elif (s1_base == cmpstr2.replace("_riscv64.o", "")):
+							# s2 is riscv
 							res = True
 							continue
 

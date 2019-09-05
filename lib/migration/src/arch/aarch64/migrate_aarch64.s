@@ -1,5 +1,11 @@
-.extern pthread_get_migrate_args
+.extern popcorn_migrate_args
 .extern crash_aarch64
+.extern migrate_lock
+
+/* Specify GNU-stack to allow the linker to automatically set
+ * noexecstack.  The Popcorn kernel forbids pages set with the
+ * execute bit from migrating.  */
+.section .note.GNU-stack,"",%progbits
 
 .section .text.__migrate_fixup_aarch64, "ax"
 .globl __migrate_fixup_aarch64
@@ -21,7 +27,18 @@ __migrate_fixup_aarch64:
    * as the destination at which we return to normal execution.
    */
   str x30, [sp,#-16]! /* Don't clobber the link register */
-  bl pthread_get_migrate_args
+
+.Llock:
+/*
+  adrp	x0, migrate_lock
+  ldr	w0, [x0, :lo12:migrate_lock]
+  cbnz	w0, .Llock
+*/
+
+  adrp x0, popcorn_migrate_args
+  ldr x0, [x0, :lo12:popcorn_migrate_args]
+  /*add x0, x0, :lo12:popcorn_migrate_args */
+
   cbz x0, .Lcrash
   ldr x1, [x0,#16] /* Get regset pointer */
   cbz x1, .Lcrash
@@ -75,5 +92,14 @@ __migrate_fixup_aarch64:
   ldr x2, [sp]
   bl crash_aarch64
 
+//.LEF0:
+//  .comm migrate_lock,4,4
+
+.else
+	nop
+	nop
+	nop
+	nop
+	
 .endif
 

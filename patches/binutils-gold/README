@@ -9,3 +9,12 @@ This patch is for binutils' gold ld linker, v2.27.  It achieves two things:
    in the generated binaries.
 
 # TODO add information about how the layout is changed, i.e., is it inverted?
+
+
+Binutils 2.32
+
+This patch introduces a new --popcorn-tls argument to LD to force the
+x86_64 target to a common TLS model with ARM64. This is necessary
+because that TLS model is not compatible glibc at present. When
+linking with musl, be sure to add --popcorn-tls to ensure backwards
+compatibility with TLS.

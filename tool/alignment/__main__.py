@@ -2,7 +2,7 @@
 Program entry point
 """
 import argparse, os, sys
-import X86, Arm, Power, Linker, Globals
+import X86, Arm, Power, RISCV, Linker, Globals
 from Arch import Arch
 from Globals import er
 
@@ -11,10 +11,12 @@ from Globals import er
 x86_obj = X86.X86()
 arm_obj = Arm.Arm()
 power_obj = Power.Power()
+riscv_obj = RISCV.RISCV()
 
 archs = {	Arch.X86 : x86_obj,
-			Arch.ARM : arm_obj,
-			Arch.POWER : power_obj}
+		Arch.ARM : arm_obj,
+		Arch.POWER : power_obj,
+                Arch.RISCV: riscv_obj }
 
 considered_archs = [] # filled by setConsideredArchs
 considered_sections = [".text", ".data", ".bss", ".rodata", ".tdata",
@@ -32,12 +34,17 @@ def buildArgParser():
 	res.add_argument("--arm-bin", help="Path to the input ARM executable")
 	res.add_argument("--ppc-bin", help = "Path to the input PPC64 " +
 	    "executable")
+	res.add_argument("--riscv-bin", help = "Path to the input RISCV64 " +
+	    "executable")
 	res.add_argument("--x86-map", help="Path to the x86 memory map file " +
 		"corresponding to the x86 binary (generated through ld -MAP)")
 	res.add_argument("--arm-map", help="Path to the ARM memory map file " +
 		"corresponding to the ARM binary (generated through ld -MAP)")
 	res.add_argument("--ppc-map", help="Path to the PPC64 memory map "
                 "file corresponding to the PPC64 binary (generated through " +
+                "ld -MAP)")
+	res.add_argument("--riscv-map", help="Path to the RISCV64 memory map "
+                "file corresponding to the RISCV64 binary (generated through " +
                 "ld -MAP)")
 	res.add_argument("--work-dir", help="Temporary work directory",
 		default="align")
@@ -49,6 +56,8 @@ def buildArgParser():
 	"script", default="linker_script_arm.x")
 	res.add_argument("--output-ppc-ls", help="Path to the output PPC64 " +
 	    "linker script", default="linker_script_ppc.x")
+	res.add_argument("--output-riscv-ls", help="Path to the output RISCV64 " +
+	    "linker script", default="linker_script_riscv.x")
 
 	return res
 
@@ -65,25 +74,37 @@ def parseAndCheckArgs(parser):
 	""" Parse command line arguments and perform some sanity checks """
 	args = parser.parse_args()
 
-	if args.x86_bin and args.arm_bin and not args.ppc_bin:
+	if args.x86_bin and args.arm_bin and not args.ppc_bin and not args.riscv_bin:
 		if (not args.x86_map) or (not args.arm_map):
 			er("Mapfile parameter missing for some/all archs\n")
 			sys.exit(-1)
 		filesToCheck = [args.x86_bin, args.x86_map, args.arm_bin, args.arm_map]
 
-	elif args.x86_bin and args.ppc_bin and not args.arm_bin:
+	elif args.x86_bin and args.ppc_bin and not args.arm_bin and not args.risv_bin:
 		if (not args.x86_map) or (not args.ppc_map):
 			er("Mapfile parameter missing for some/all archs\n")
 			sys.exit(-1)
 		filesToCheck = [args.x86_bin, args.x86_map, args.ppc_bin, args.ppc_map]
 
-	elif args.arm_bin and args.ppc_bin and not args.x86_bin:
+	elif args.x86_bin and args.riscv_bin and not args.arm_bin and not args.ppc_bin:
+		if (not args.x86_map) or (not args.riscv_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.x86_bin, args.x86_map, args.riscv_bin, args.riscv_map]
+
+	elif args.arm_bin and args.ppc_bin and not args.x86_bin and not args.riscv_bin:
 		if (not args.arm_map) or (not args.ppc_map):
 			er("Mapfile parameter missing for some/all archs\n")
 			sys.exit(-1)
 		filesToCheck = [args.arm_bin, args.arm_map, args.ppc_bin, args.ppc_map]
 
-	elif args.arm_bin and args.ppc_bin and args.x86_bin:
+	elif args.arm_bin and args.riscv_bin and not args.x86_bin and not args.ppc_bin:
+		if (not args.arm_map) or (not args.riscv_map):
+			er("Mapfile parameter missing for some/all archs\n")
+			sys.exit(-1)
+		filesToCheck = [args.arm_bin, args.arm_map, args.riscv_bin, args.riscv_map]
+
+	elif args.arm_bin and args.ppc_bin and args.x86_bin and not args.riscv_bin:
 		if (not args.arm_map) or (not args.ppc_map) or (not args.x86_map):
 			er("Mapfile parameter missing for some/all archs\n")
 			sys.exit(-1)
@@ -91,7 +112,7 @@ def parseAndCheckArgs(parser):
 			args.x86_bin, args.x86_map]
 
 	else:
-		er("Please provide at least 2 of --x86-bin/--arm-bin/--ppc-bin\n")
+		er("Please provide at least 2 of --x86-bin/--arm-bin/--ppc-bin/--riscv-bin\n")
 		exit(-1)
 
 	checkFilesExistence(filesToCheck)
@@ -109,17 +130,20 @@ def setConsideredArchs(args):
 	if args.ppc_bin:
 		considered_archs.append(archs[Arch.POWER])
 
+	if args.riscv_bin:
+		considered_archs.append(archs[Arch.RISCV])
+
 	return considered_archs
 
 def setInputOutputs(args):
 	""" Fill internal data structures with info about input and ouput files """
 
 	bins = {Arch.X86 : args.x86_bin, Arch.ARM : args.arm_bin,
-		Arch.POWER : args.ppc_bin}
+		Arch.POWER : args.ppc_bin, Arch.RISCV : args.riscv_bin }
 	maps = {Arch.X86 : args.x86_map, Arch.ARM : args.arm_map,
-		Arch.POWER : args.ppc_map}
+		Arch.POWER : args.ppc_map, Arch.RISCV : args.riscv_map }
 	lss = {Arch.X86 : args.output_x86_ls, Arch.ARM : args.output_arm_ls,
-		Arch.POWER : args.output_ppc_ls}
+		Arch.POWER : args.output_ppc_ls, Arch.RISCV : args.output_riscv_ls }
 
 	for k, arch in archs.iteritems():
 		if arch in considered_archs:

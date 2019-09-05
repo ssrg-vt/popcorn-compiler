@@ -15,6 +15,8 @@
 #include "arch/aarch64/regs.h"
 #include "arch/powerpc64/internal.h"
 #include "arch/powerpc64/regs.h"
+#include "arch/riscv64/internal.h"
+#include "arch/riscv64/regs.h"
 #include "arch/x86_64/internal.h"
 #include "arch/x86_64/regs.h"
 

@@ -8,6 +8,8 @@
 #include "atomic.h"
 #include "syscall.h"
 
+#pragma clang optimize off
+
 int __init_tp(void *p)
 {
 	pthread_t td = p;
@@ -30,7 +32,7 @@ static struct builtin_tls {
 
 static struct tls_module main_tls;
 
-void *__copy_tls(unsigned char *mem)
+void  __attribute__((optimize("O0"))) *__copy_tls(unsigned char *mem)
 {
 	pthread_t td;
 	struct tls_module *p;
@@ -74,7 +76,7 @@ typedef Elf64_Phdr Phdr;
 __attribute__((__weak__, __visibility__("hidden")))
 extern const size_t _DYNAMIC[];
 
-static void static_init_tls(size_t *aux)
+static void  __attribute__((optimize("O0"))) static_init_tls(size_t *aux)
 {
 	unsigned char *p;
 	size_t n;
@@ -101,11 +103,12 @@ static void static_init_tls(size_t *aux)
 		libc.tls_head = &main_tls;
 	}
 
+	// Add some alignment padding!!!
 	main_tls.size += (-main_tls.size - (uintptr_t)main_tls.image)
 		& (main_tls.align-1);
 	if (main_tls.align < MIN_TLS_ALIGN) main_tls.align = MIN_TLS_ALIGN;
 #ifndef TLS_ABOVE_TP
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+#if defined __aarch64__ || defined __powerpc64__ || defined __riscv64__ || defined __x86_64__
 #error Popcorn: all TLS must be *above* the stack pointer!
 #endif
 	main_tls.offset = main_tls.size;

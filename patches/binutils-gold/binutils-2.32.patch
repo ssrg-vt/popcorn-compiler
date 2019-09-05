@@ -1,0 +1,393 @@
+diff --git a/bfd/elf64-x86-64.c b/bfd/elf64-x86-64.c
+index 6a4b366fdd..d123f88ad3 100644
+--- a/bfd/elf64-x86-64.c
++++ b/bfd/elf64-x86-64.c
+@@ -2407,6 +2407,35 @@ error_return:
+   return FALSE;
+ }
+ 
++static bfd_vma popcorn_vma_offset (struct bfd_link_info *info)
++{
++  if (!info->popcorn_tls)
++    return 0;
++
++  /* Popcorn: TLS starts at the end of the thread descriptor.  musl-libc's
++     pthread descriptor is 288 bytes.  */
++  const int bits = 64;
++  const int tcb_size = bits / 8 * 2; // Match aarch64
++  const int musl_pthread_size = 288;
++
++  /* Popcorn: create a uniform TLS layout which places TLS *above* the
++     thread pointer (rather than below like normal x86-64).  */
++
++  bfd_vma tls_align;
++  /* If tls_sec is NULL, we should have signalled an error already.  */
++  if (elf_hash_table (info)->tls_sec == NULL)
++    tls_align = 0;
++  else
++    tls_align = 1 << elf_hash_table (info)->tls_sec->alignment_power;
++
++  bfd_vma aligned_tcb_size = 0;
++
++  if (tls_align != 0)
++    aligned_tcb_size = (tcb_size + tls_align - 1) &~ (tls_align - 1);
++
++  return aligned_tcb_size + tcb_size + musl_pthread_size;
++}
++
+ /* Return the relocation value for @tpoff relocation
+    if STT_TLS virtual address is ADDRESS.  */
+ 
+@@ -2423,7 +2452,8 @@ elf_x86_64_tpoff (struct bfd_link_info *info, bfd_vma address)
+ 
+   /* Consider special static TLS alignment requirements.  */
+   static_tls_size = BFD_ALIGN (htab->tls_size, bed->static_tls_alignment);
+-  return address - static_tls_size - htab->tls_sec->vma;
++  return address - static_tls_size - htab->tls_sec->vma
++    + popcorn_vma_offset(info);
+ }
+ 
+ /* Relocate an x86_64 ELF section.  */
+@@ -3536,7 +3566,8 @@ direct:
+ 				     + htab->sgotplt_jump_table_size);
+ 		  sreloc = htab->elf.srelplt;
+ 		  if (indx == 0)
+-		    outrel.r_addend = relocation - _bfd_x86_elf_dtpoff_base (info);
++		    outrel.r_addend = relocation - _bfd_x86_elf_dtpoff_base (info)
++		      + popcorn_vma_offset(info);
+ 		  else
+ 		    outrel.r_addend = 0;
+ 		  elf_append_rela (output_bfd, sreloc, &outrel);
+@@ -3558,7 +3589,8 @@ direct:
+ 	      outrel.r_addend = 0;
+ 	      if ((dr_type == R_X86_64_TPOFF64
+ 		   || dr_type == R_X86_64_TLSDESC) && indx == 0)
+-		outrel.r_addend = relocation - _bfd_x86_elf_dtpoff_base (info);
++		outrel.r_addend = relocation - _bfd_x86_elf_dtpoff_base (info)
++		  + popcorn_vma_offset(info);
+ 	      outrel.r_info = htab->r_info (indx, dr_type);
+ 
+ 	      elf_append_rela (output_bfd, sreloc, &outrel);
+@@ -3569,7 +3601,8 @@ direct:
+ 		    {
+ 		      BFD_ASSERT (! unresolved_reloc);
+ 		      bfd_put_64 (output_bfd,
+-				  relocation - _bfd_x86_elf_dtpoff_base (info),
++				  relocation - _bfd_x86_elf_dtpoff_base (info)
++				  + popcorn_vma_offset(info),
+ 				  htab->elf.sgot->contents + off + GOT_ENTRY_SIZE);
+ 		    }
+ 		  else
+@@ -3824,7 +3857,8 @@ direct:
+ 	case R_X86_64_DTPOFF32:
+ 	  if (!bfd_link_executable (info)
+ 	      || (input_section->flags & SEC_CODE) == 0)
+-	    relocation -= _bfd_x86_elf_dtpoff_base (info);
++	    relocation -= _bfd_x86_elf_dtpoff_base (info)
++	      - popcorn_vma_offset(info);
+ 	  else
+ 	    relocation = elf_x86_64_tpoff (info, relocation);
+ 	  break;
+@@ -3835,9 +3869,11 @@ direct:
+ 	  relocation = elf_x86_64_tpoff (info, relocation);
+ 	  break;
+ 
+-	case R_X86_64_DTPOFF64:
++	case
++	  R_X86_64_DTPOFF64:
+ 	  BFD_ASSERT ((input_section->flags & SEC_CODE) == 0);
+-	  relocation -= _bfd_x86_elf_dtpoff_base (info);
++	  relocation -= _bfd_x86_elf_dtpoff_base (info)
++	    - popcorn_vma_offset(info);
+ 	  break;
+ 
+ 	default:
+diff --git a/bfd/merge.c b/bfd/merge.c
+index fb7c0858be..6ce3f3a46f 100644
+--- a/bfd/merge.c
++++ b/bfd/merge.c
+@@ -798,11 +798,14 @@ _bfd_merge_sections (bfd *abfd,
+ 	  secinfo->sec->size = size;
+ 	}
+ 
+-	/* Finally remove all input sections which have not made it into
+-	   the hash table at all.  */
++	/* Finally remove all input sections which have not made it
++	   into the hash table at all.  POPCORN: Don't prune out
++	   entries as they may be used in other ISAs.  */
++      /*
+ 	for (secinfo = sinfo->chain; secinfo; secinfo = secinfo->next)
+ 	  if (secinfo->first_str == NULL)
+ 	    secinfo->sec->flags |= SEC_EXCLUDE | SEC_KEEP;
++      */
+     }
+ 
+   return TRUE;
+diff --git a/gold/errors.h b/gold/errors.h
+index c26b558637..ac681e965b 100644
+--- a/gold/errors.h
++++ b/gold/errors.h
+@@ -24,6 +24,7 @@
+ #define GOLD_ERRORS_H
+ 
+ #include <cstdarg>
++#include <string>
+ 
+ #include "gold-threads.h"
+ 
+diff --git a/gold/mapfile.cc b/gold/mapfile.cc
+index 907df97d04..e7d9306420 100644
+--- a/gold/mapfile.cc
++++ b/gold/mapfile.cc
+@@ -264,9 +264,10 @@ Mapfile::print_input_section(Relobj* relobj, unsigned int shndx)
+   snprintf(sizebuf, sizeof sizebuf, "0x%llx",
+ 	   static_cast<unsigned long long>(size));
+ 
+-  fprintf(this->map_file_, "0x%0*llx %10s %s\n",
++  fprintf(this->map_file_, "0x%0*llx %10s 0x%lx %s\n",
+ 	  parameters->target().get_size() / 4,
+ 	  static_cast<unsigned long long>(addr), sizebuf,
++	  (unsigned long) relobj->section_addralign(shndx),
+ 	  relobj->name().c_str());
+ 
+   if (os != NULL)
+diff --git a/gold/x86_64.cc b/gold/x86_64.cc
+index c06a282247..c5bf4ed5a7 100644
+--- a/gold/x86_64.cc
++++ b/gold/x86_64.cc
+@@ -695,6 +695,14 @@ template<int size>
+ class Target_x86_64 : public Sized_target<size, false>
+ {
+  public:
++  // Popcorn: TLS starts at the end of the thread descriptor.  musl-libc's
++  // pthread descriptor size is 288 bytes.
++  const static int TCB_SIZE = size / 8 * 2; // Match aarch64
++  const static int MUSL_PTHREAD_SIZE = 288;
++  unsigned int tcb_size() const { return Target_x86_64<size>::TCB_SIZE; }
++  unsigned int pthread_size() const
++  { return Target_x86_64<size>::MUSL_PTHREAD_SIZE; }
++
+   // In the x86_64 ABI (p 68), it says "The AMD64 ABI architectures
+   // uses only Elf64_Rela relocation entries with explicit addends."
+   typedef Output_data_reloc<elfcpp::SHT_RELA, true, size, false> Reloc_section;
+@@ -5232,7 +5240,14 @@ Target_x86_64<size>::Relocate::relocate_tls(
+ 			  || issue_undefined_symbol_error(gsym));
+ 	      return;
+ 	    }
+-	  value -= tls_segment->memsz();
++	  // Popcorn: create a uniform TLS layout which places TLS *above* the
++	  // thread pointer (rather than below like normal x86-64).
++	  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++	      align_address(target->tcb_size(),
++			    tls_segment->maximum_alignment());
++	  value += aligned_tcb_size +
++		   target->pthread_size() -
++		   target->tcb_size();
+ 	}
+       Relocate_functions<size, false>::rela32(view, value, addend);
+       break;
+@@ -5247,7 +5262,14 @@ Target_x86_64<size>::Relocate::relocate_tls(
+ 			  || issue_undefined_symbol_error(gsym));
+ 	      return;
+ 	    }
+-	  value -= tls_segment->memsz();
++	  // Popcorn: create a uniform TLS layout which places TLS *above* the
++	  // thread pointer (rather than below like normal x86-64).
++	  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++	      align_address(target->tcb_size(),
++			    tls_segment->maximum_alignment());
++	  value += aligned_tcb_size +
++		   target->pthread_size() -
++		   target->tcb_size();
+ 	}
+       Relocate_functions<size, false>::rela64(view, value, addend);
+       break;
+@@ -5313,7 +5335,11 @@ Target_x86_64<size>::Relocate::relocate_tls(
+ 		      || issue_undefined_symbol_error(gsym));
+ 	  return;
+ 	}
+-      value -= tls_segment->memsz();
++      // Popcorn: create a uniform TLS layout which places TLS *above* the
++      // thread pointer (rather than below like normal x86-64).
++      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++          align_address(target->tcb_size(), tls_segment->maximum_alignment());
++      value += aligned_tcb_size + target->pthread_size() - target->tcb_size();
+       Relocate_functions<size, false>::rela32(view, value, addend);
+       break;
+     }
+@@ -5437,7 +5463,16 @@ Target_x86_64<size>::Relocate::tls_gd_to_le(
+ 	     15);
+     }
+ 
+-  value -= tls_segment->memsz();
++  // Popcorn: create a uniform TLS layout which places TLS *above* the
++  // thread pointer (rather than below like normal x86-64).
++  // TODO if we support different thread descriptor sizes then the target
++  // (which defines which libc we're supporting) must be passed in here
++  typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++      align_address(Target_x86_64<size>::TCB_SIZE,
++		    tls_segment->maximum_alignment());
++  value += aligned_tcb_size +
++	   Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	   Target_x86_64<size>::TCB_SIZE;
+   Relocate_functions<size, false>::rela32(view + 8, value, 0);
+ 
+   // The next reloc should be a PLT32 reloc against __tls_get_addr.
+@@ -5508,7 +5543,16 @@ Target_x86_64<size>::Relocate::tls_desc_gd_to_le(
+ 		     view[-3] == 0x48 && view[-2] == 0x8d && view[-1] == 0x05);
+       view[-2] = 0xc7;
+       view[-1] = 0xc0;
+-      value -= tls_segment->memsz();
++      // Popcorn: create a uniform TLS layout which places TLS *above* the
++      // thread pointer (rather than below like normal x86-64).
++      // TODO if we support different thread descriptor sizes then the target
++      // (which defines which libc we're supporting) must be passed in here
++      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++	  align_address(Target_x86_64<size>::TCB_SIZE,
++			tls_segment->maximum_alignment());
++      value += aligned_tcb_size +
++	       Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	       Target_x86_64<size>::TCB_SIZE;
+       Relocate_functions<size, false>::rela32(view, value, 0);
+     }
+   else
+@@ -5643,7 +5687,18 @@ Target_x86_64<size>::Relocate::tls_ie_to_le(
+     }
+ 
+   if (tls_segment != NULL)
+-    value -= tls_segment->memsz();
++    {
++      // Popcorn: create a uniform TLS layout which places TLS *above* the
++      // thread pointer (rather than below like normal x86-64).
++      // TODO if we support different thread descriptor sizes then the target
++      // (which defines which libc we're supporting) must be passed in here
++      typename elfcpp::Elf_types<size>::Elf_Addr aligned_tcb_size =
++	  align_address(Target_x86_64<size>::TCB_SIZE,
++			tls_segment->maximum_alignment());
++      value += aligned_tcb_size +
++	       Target_x86_64<size>::MUSL_PTHREAD_SIZE -
++	       Target_x86_64<size>::TCB_SIZE;
++    }
+   Relocate_functions<size, false>::rela32(view, value, 0);
+ }
+ 
+diff --git a/include/bfdlink.h b/include/bfdlink.h
+index bad52f9c50..2b4f92de5e 100644
+--- a/include/bfdlink.h
++++ b/include/bfdlink.h
+@@ -447,6 +447,10 @@ struct bfd_link_info
+   /* TRUE if ok to have prohibit multiple definition of absolute symbols.  */
+   unsigned int prohibit_multiple_definition_absolute: 1;
+ 
++  /* True if the TLS relocations should be adjusted for Popcorn Linux
++     variant 1 for Musl C.  */
++  unsigned int popcorn_tls: 1;
++
+   /* TRUE if ok to have version with no definition.  */
+   unsigned int allow_undefined_version: 1;
+ 
+diff --git a/ld/ld.texi b/ld/ld.texi
+index 0dea3643c0..134e34eb51 100644
+--- a/ld/ld.texi
++++ b/ld/ld.texi
+@@ -1593,6 +1593,10 @@ targets.
+ Do not allow multiple definitions with symbols included
+ in filename invoked by -R or --just-symbols
+ 
++@kindex --popcorn-tls
++@item --popcorn-tls
++Adjust the TLS alignment for variant 1 for Popcorn Linux with Musl C.
++
+ @kindex --fatal-warnings
+ @kindex --no-fatal-warnings
+ @item --fatal-warnings
+diff --git a/ld/ldlang.c b/ld/ldlang.c
+index 33f6bda292..dcbfb62c98 100644
+--- a/ld/ldlang.c
++++ b/ld/ldlang.c
+@@ -44,6 +44,8 @@
+ #include "plugin.h"
+ #endif /* ENABLE_PLUGINS */
+ 
++#include <signal.h>
++
+ #ifndef offsetof
+ #define offsetof(TYPE, MEMBER) ((size_t) & (((TYPE*) 0)->MEMBER))
+ #endif
+@@ -4401,6 +4403,7 @@ print_input_section (asection *i, bfd_boolean is_discarded)
+   bfd_size_type size = i->size;
+   int len;
+   bfd_vma addr;
++  unsigned int sec_align = 1 << i->alignment_power;
+ 
+   init_opb ();
+ 
+@@ -4420,16 +4423,16 @@ print_input_section (asection *i, bfd_boolean is_discarded)
+     }
+ 
+   if (i->output_section != NULL
+-      && i->output_section->owner == link_info.output_bfd)
++      && i->output_section->owner == link_info.output_bfd) {
+     addr = i->output_section->vma + i->output_offset;
+-  else
++  } else
+     {
+       addr = print_dot;
+       if (!is_discarded)
+ 	size = 0;
+     }
+ 
+-  minfo ("0x%V %W %pB\n", addr, size, i->owner);
++  minfo ("0x%V %W 0x%v %pB\n", addr, size, sec_align, i->owner);
+ 
+   if (size != i->rawsize && i->rawsize != 0)
+     {
+diff --git a/ld/ldlex.h b/ld/ldlex.h
+index 32853debe4..ea550b1a6a 100644
+--- a/ld/ldlex.h
++++ b/ld/ldlex.h
+@@ -144,6 +144,7 @@ enum option_values
+   OPTION_PUSH_STATE,
+   OPTION_POP_STATE,
+   OPTION_DISABLE_MULTIPLE_DEFS_ABS,
++  OPTION_POPCORN_TLS,
+   OPTION_PRINT_MEMORY_USAGE,
+   OPTION_REQUIRE_DEFINED_SYMBOL,
+   OPTION_ORPHAN_HANDLING,
+diff --git a/ld/ldmain.c b/ld/ldmain.c
+index 77cdbd0dd2..5ebb4b2aca 100644
+--- a/ld/ldmain.c
++++ b/ld/ldmain.c
+@@ -282,6 +282,7 @@ main (int argc, char **argv)
+   link_info.combreloc = TRUE;
+   link_info.strip_discarded = TRUE;
+   link_info.prohibit_multiple_definition_absolute = FALSE;
++  link_info.popcorn_tls = FALSE;
+   link_info.emit_hash = DEFAULT_EMIT_SYSV_HASH;
+   link_info.emit_gnu_hash = DEFAULT_EMIT_GNU_HASH;
+   link_info.callbacks = &link_callbacks;
+diff --git a/ld/lexsup.c b/ld/lexsup.c
+index 88e85c73f4..455689ab4d 100644
+--- a/ld/lexsup.c
++++ b/ld/lexsup.c
+@@ -319,6 +319,10 @@ static const struct ld_option ld_options[] =
+     '\0', NULL, N_("Do not allow multiple definitions with symbols included\n"
+ 		   "           in filename invoked by -R or --just-symbols"),
+     TWO_DASHES},
++  { {"popcorn-tls", no_argument, NULL,
++     OPTION_POPCORN_TLS},
++    '\0', NULL, N_("Use Popcorn TLS variant 1 alignment for Musl C\n"),
++    TWO_DASHES },
+   { {"embedded-relocs", no_argument, NULL, OPTION_EMBEDDED_RELOCS},
+     '\0', NULL, N_("Generate embedded relocs"), TWO_DASHES},
+   { {"fatal-warnings", no_argument, NULL, OPTION_WARN_FATAL},
+@@ -1167,6 +1171,9 @@ parse_args (unsigned argc, char **argv)
+ 	case OPTION_DISABLE_MULTIPLE_DEFS_ABS:
+ 	  link_info.prohibit_multiple_definition_absolute = TRUE;
+ 	  break;
++	case OPTION_POPCORN_TLS:
++	  link_info.popcorn_tls = TRUE;
++	  break;
+ 	case OPTION_SHARED:
+ 	  if (config.has_shared)
+ 	    {

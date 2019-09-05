@@ -3,6 +3,7 @@ Part of the code responsible for the generation of the linker scripts
 """
 from Arch import Arch
 import Globals
+import re
 
 class Linker:
 
@@ -40,8 +41,35 @@ class Linker:
 					# FIXME: We rely on this super coarse-grain alignment
 					# to have the sections start at the same offset on each
 					# architecture -> there is probably a more intelligent way
-					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
+
+                                        # TEXT and RODATA require special alignment when linking DSOs in
+                                        # one ISA and static libraries in the other
+                                        if section == ".text":
+                                                output_buffer.append(".text 0x700000: ALIGN(0x100000)\n")
+                                        elif section == ".rodata":
+                                                output_buffer.append(".rodata 0x900000: ALIGN(0x100000)\n")
+                                        else:
+					        output_buffer.append(section + "\t: ALIGN(0x100000)\n")
 					output_buffer.append("{\n")
+
+                                        # Correct TBSS
+                                        if section == ".tbss" and not symbolsList[section]:
+                                                output_buffer.append("\t*(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)\n")
+                                                output_buffer.append("}\n")
+                                                break;
+
+                                        # Correct TDATA
+                                        if section == ".tdata":
+                                                output_buffer.append("\tPROVIDE_HIDDEN (__tdata_start = .);\n")
+                                                output_buffer.append("\t*(.tdata .tdata.* .gnu.linkonce.td.*);\n")
+                                                if not symbolsList[section]:
+                                                        output_buffer.append("}\n")
+                                                        break;
+
+                                        # Correct BSS
+                                        if section == ".bss" and archEnum == Arch.X86:
+                                                output_buffer.append("\t*(.dynbss)\n")
+                                                #output_buffer.append("\t*(.bss .bss.* .gnu.linkonce.b.*)\n")
 
 					# FIXME: sometimes the linker fills the start of some
 					# sections (at least .data) with something named **common,
@@ -57,7 +85,6 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
@@ -74,7 +101,7 @@ class Linker:
 								"); /* align for " + symbol.getName() + " */\n")
 
 							output_buffer.append("\t\"" +
-							symbol.getObjectFile(archEnum) + "\"(" +
+							getObjectFileFromSymbol(symbol, archEnum) + "\"(" +
 							symbol.getName() + "); /* size " +
 							hex(symbol.getSize(archEnum)) +	" */\n")
 
@@ -99,3 +126,18 @@ class Linker:
 			with open(arch.getLinkerScript(), "w") as f:
 				for line in output_buffer:
 					f.write(line)
+
+def getObjectFileFromSymbol(symbol, archEnum):
+	# When specifying individual object files inside library
+	# archives, LD.BFD expects the form 'Library:ObjectFile',
+	# rather than Library(ObjectFile).
+	file = symbol.getObjectFile(archEnum)
+	
+	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
+	lib = re.match(reLib, file)
+
+	if (not lib):
+	        return file
+	
+	#print (lib.group(1) + ":" + lib.group(2))
+	return lib.group(1) + ":" + lib.group(2)

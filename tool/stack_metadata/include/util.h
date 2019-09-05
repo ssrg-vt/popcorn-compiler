@@ -129,6 +129,7 @@ static inline const char *elf_arch_name(Elf *e)
   case EM_AARCH64: return "aarch64";
   case EM_PPC64: return "powerpc64";
   case EM_X86_64: return "x86_64";
+  case EM_RISCV: return "riscv64";
   default: return "unsupported";
   }
 }

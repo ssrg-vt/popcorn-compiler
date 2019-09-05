@@ -48,7 +48,8 @@ static void __attribute__((constructor)) __init_malloc()
 #define SIZE_ALIGN (4*sizeof(size_t))
 #define SIZE_MASK (-SIZE_ALIGN)
 #define OVERHEAD (2*sizeof(size_t))
-#define MMAP_THRESHOLD (0x1c00*SIZE_ALIGN)
+//#define MMAP_THRESHOLD (0x1c00*SIZE_ALIGN)
+#define MMAP_THRESHOLD 0
 #define DONTCARE 16
 #define RECLAIM 163840
 

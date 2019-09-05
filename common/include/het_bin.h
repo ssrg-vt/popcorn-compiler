@@ -14,8 +14,14 @@
 /* Section name postfix for unwinding information. */
 #define SECTION_UNWIND "unwind"
 
+/* SH_ENTSIZE for SECTION_UNWIND. */
+#define SECTION_UNWIND_SIZE 4
+
 /* Section name postfix for unwinding address range information. */
 #define SECTION_UNWIND_ADDR "unwind_arange"
+
+/* SH_ENTSIZE for SECTION_UNWIND_ADDR. */
+#define SECTION_UNWIND_ADDR_SIZE 16
 
 /*
  * Section name postfix for call site sections -- sorted by ID & address,
