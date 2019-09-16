@@ -10927,17 +10927,36 @@ Index: lib/Target/X86/X86FrameLowering.cpp
 ===================================================================
 --- lib/Target/X86/X86FrameLowering.cpp	(revision 320332)
 +++ lib/Target/X86/X86FrameLowering.cpp	(working copy)
-@@ -37,6 +37,9 @@
+@@ -37,6 +37,10 @@
  // FIXME: completely move here.
  extern cl::opt<bool> ForceStackAlign;
  
++extern cl::opt<bool> ForceFullDisplacements;
 +cl::opt<uint32_t> EmitNopsForChameleon("chameleon-nops", cl::init(0),
 +  cl::desc("Emit nops in prologue/epilogue for instrumentation in Chameleon"));
 +
  X86FrameLowering::X86FrameLowering(const X86Subtarget &STI,
                                     unsigned StackAlignOverride)
      : TargetFrameLowering(StackGrowsDown, StackAlignOverride,
-@@ -697,6 +700,12 @@
+@@ -98,7 +102,7 @@
+ 
+ static unsigned getSUBriOpcode(unsigned IsLP64, int64_t Imm) {
+   if (IsLP64) {
+-    if (isInt<8>(Imm))
++    if (isInt<8>(Imm) && !ForceFullDisplacements)
+       return X86::SUB64ri8;
+     return X86::SUB64ri32;
+   } else {
+@@ -110,7 +114,7 @@
+ 
+ static unsigned getADDriOpcode(unsigned IsLP64, int64_t Imm) {
+   if (IsLP64) {
+-    if (isInt<8>(Imm))
++    if (isInt<8>(Imm) && !ForceFullDisplacements)
+       return X86::ADD64ri8;
+     return X86::ADD64ri32;
+   } else {
+@@ -697,6 +701,12 @@
      MFI->setStackSize(StackSize);
    }
  
@@ -10950,7 +10969,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    // Insert stack pointer adjustment for later moving of return addr.  Only
    // applies to tail call optimized functions where the callee argument stack
    // size is bigger than the callers.
-@@ -1058,6 +1067,13 @@
+@@ -1058,6 +1068,13 @@
    }
    uint64_t SEHStackAllocAmt = NumBytes;
  
