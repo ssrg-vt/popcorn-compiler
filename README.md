@@ -40,6 +40,7 @@ First clone this repo and checkout the `hermit-master` branch:
 ```
 git clone https://github.com/ssrg-vt/popcorn-compiler.git
 cd popcorn-compiler
+git checkout hermit-master
 ```
 Then simply launch the installation script:
 ```
