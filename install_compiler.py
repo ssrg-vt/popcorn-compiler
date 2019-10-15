@@ -817,7 +817,8 @@ def install_binutils(base_path, install_path, threads):
             '--disable-libssp', '--enable-tls', '--enable-lto',
             '--enable-plugin'])
 
-        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'CFLAGS=-Wno-format-overflow',
+            '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
 
     except Exception as e:
@@ -838,7 +839,8 @@ def install_binutils(base_path, install_path, threads):
             '--disable-libssp', '--enable-tls', '--enable-lto',
             '--enable-plugin'])
 
-        rv = subprocess.check_call(['make', '-j', str(threads)])
+        rv = subprocess.check_call(['make', 'CFLAGS=-Wno-format-overflow',
+            '-j', str(threads)])
         rv = subprocess.check_call(['make', 'install', '-j', str(threads)])
 
     except Exception as e:
