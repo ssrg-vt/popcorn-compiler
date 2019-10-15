@@ -111,10 +111,12 @@ RESUME?=0
 DEBUG?=0
 PORT?=5050
 SERVER?=0
-FULL_CHKPT_SAVE?=0
-FULL_CHKPT_RESTORE?=0
+FULL_CHKPT_SAVE?=1
+FULL_CHKPT_RESTORE?=1
+ARM_TARGET_USER?=$(USER)
 ARM_TARGET_IP?=potato
-ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET_IP) "pwd")
+ARM_TARGET?=$(ARM_TARGET_USER)@$(ARM_TARGET_IP)
+ARM_TARGET_HOME ?= $(shell ssh $(ARM_TARGET) "pwd")
 
 # Transfer method can be 'rsync --no-whole-file' or scp -C
 TRANFER_METHOD=rsync --no-whole-file
@@ -193,9 +195,9 @@ test-x86: $(PROG_X86_ALIGNED) $(PROG_ARM_ALIGNED)
 		$(PROXY_X86) $(PROG_X86_ALIGNED) $(ARGS)
 
 test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
-	@ssh $(ARM_TARGET_IP) "rm -rf $(ARM_TARGET_HOME)/proxy && killall -q -9 proxy; true"
-	$(TRANFER_METHOD) $(PROXY_ARM) $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED) $(ARM_TARGET_IP):$(ARM_TARGET_HOME)/
-	ssh $(ARM_TARGET_IP) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
+	@ssh $(ARM_TARGET) "rm -rf $(ARM_TARGET_HOME)/proxy && killall -q -9 proxy; true"
+	$(TRANFER_METHOD) $(PROXY_ARM) $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED) $(ARM_TARGET):$(ARM_TARGET_HOME)/
+	ssh $(ARM_TARGET) HERMIT_ISLE=uhyve HERMIT_MEM=$(MEM) HERMIT_CPUS=$(CPUS) \
 		HERMIT_VERBOSE=$(VERBOSE) HERMIT_MIGTEST=$(MIGTEST) \
 		HERMIT_MIGRATE_RESUME=$(RESUME) HERMIT_DEBUG=$(DEBUG) \
 		HERMIT_NODE_ID=1 ST_AARCH64_BIN=$(PROG_ARM_ALIGNED) \
@@ -208,22 +210,22 @@ test-arm: $(PROG_ARM_ALIGNED) $(PROG_X86_ALIGNED)
 # Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-to-arm:
 	$(TRANFER_METHOD) fds.bin mdata.bin stack.bin.* tls.bin.* \
-		$(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+		$(ARM_TARGET):$(ARM_TARGET_HOME)
 
 # Transfer only minimal state to restart, used with remote page server
 transfer-checkpoint-from-arm:
 	$(TRANFER_METHOD) \
-		'$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/fds.bin mdata.bin \
+		'$(ARM_TARGET):$(ARM_TARGET_HOME)/fds.bin mdata.bin \
 			stack.bin.* tls.bin.*' .
 
 # Full checkpoint transfer
 transfer-full-checkpoint-to-arm:
 	$(TRANFER_METHOD) *.bin stack.bin.* tls.bin.* \
-		$(ARM_TARGET_IP):$(ARM_TARGET_HOME)
+		$(ARM_TARGET):$(ARM_TARGET_HOME)
 
 # Full checkpoint transfer
 transfer-full-checkpoint-from-arm:
-	$(TRANFER_METHOD) '$(ARM_TARGET_IP):$(ARM_TARGET_HOME)/*.bin stack.bin.* tls.bin.*' .
+	$(TRANFER_METHOD) '$(ARM_TARGET):$(ARM_TARGET_HOME)/*.bin stack.bin.* tls.bin.*' .
 
 objdump-x86:
 	objdump --source $(PROG_X86_ALIGNED) > /tmp/objdump-x86.txt && \
@@ -247,7 +249,7 @@ dump-llvm-stackmaps-arm:
 
 clean-status:
 	rm -rf .status
-	ssh $(ARM_TARGET_IP) rm -rf .status
+	ssh $(ARM_TARGET) rm -rf .status
 
 clean:
 	rm -rf *.o *.bc $(PROG_X86) $(PROG_ARM)	$(PROG_X86_ALIGNED) \
