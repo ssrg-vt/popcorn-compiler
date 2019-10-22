@@ -7,9 +7,9 @@ General information about HEXO can be found in the related HPDC'19
 ## Dependencies
 
 - Recommended machines: for x86, any relatively recent Intel processor should be
-  supported. For arm64, our system has only been tested on the
-  [librecomputer potato](https://libre.computer/products/boards/aml-s905x-cc/)
-  board.
+  supported. For arm64, our system has been tested on the
+  Librecomputer [potato](https://libre.computer/products/boards/aml-s905x-cc/)
+  and [renegade](https://libre.computer/products/boards/roc-rk3328-cc/) boards.
 - Recomended distribution: debian 9
 - Software dependencies - on the host (x86 machine):
 
