@@ -25,7 +25,8 @@ in the Waterhouse 3 room_.
       - https://www.cs.stevens.edu/~txing1/QEMU_EFI.fd
     - For non-Linux users, one VM VirtualBox image
       - https://www.cs.stevens.edu/~txing1/popcorn-box.ova
+      - https://www.cs.stevens.edu/~txing1/arm.img.zip.md5
   - [Instruction sheet for HEXO tutorial](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-instructions.pdf)
 
 - Project websites: [Popcorn Linux](http://popcornlinux.org), [Popcorn HEXO](http://popcornlinux.org/index.php/hexo)
-- Software sources on GitHub: [Popcorn Linux](), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/tree/hermit-master)
+- Software sources on GitHub: [Popcorn Linux](https://github.com/systems-nuts/popcorn-kernel) [Popcorn Compiler](https://github.com/systems-nuts/popcorn-compiler), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/tree/hermit-master)
