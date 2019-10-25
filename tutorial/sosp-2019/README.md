@@ -15,7 +15,17 @@ in the Waterhouse 3 room_.
 ## Links
 
 - Tutorial materials:
-  - Slides: [Popcorn Linux](), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-slides.pdf)
+  - Slides: [Popcorn Linux](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/popcorn-slides.pdf), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-slides.pdf)
+  - Downloads for Popcorn Linux's tutorial:
+    - For Linux users, two VM images:
+      - https://www.cs.stevens.edu/~txing1/x86.img.zip
+      - https://www.cs.stevens.edu/~txing1/x86.img.zip.md5
+      - https://www.cs.stevens.edu/~txing1/arm.img.zip
+      - https://www.cs.stevens.edu/~txing1/arm.img.zip.md5
+      - https://www.cs.stevens.edu/~txing1/QEMU_EFI.fd
+    - For non-Linux users, one VM VirtualBox image
+      - https://www.cs.stevens.edu/~txing1/popcorn-box.ova
   - [Instruction sheet for HEXO tutorial](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-instructions.pdf)
+
 - Project websites: [Popcorn Linux](http://popcornlinux.org), [Popcorn HEXO](http://popcornlinux.org/index.php/hexo)
 - Software sources on GitHub: [Popcorn Linux](), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/tree/hermit-master)
