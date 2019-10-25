@@ -1,7 +1,9 @@
-# Popcorn Linux Tutorial @SOSP 2019
+# Popcorn Linux Tutorial @[ACM SOSP](https://sosp19.rcs.uwaterloo.ca/) 2019
 
 The tutorial will take place on _Sunday, October 27 from 9:00 AM to 12:30 AM,
 in the Waterhouse 3 room_.
+
+Please see also the [SOSP Tutorials web page](https://sosp19.rcs.uwaterloo.ca/tutorials.html).
 
 ## Agenda
 
