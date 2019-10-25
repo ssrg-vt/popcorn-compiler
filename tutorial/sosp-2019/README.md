@@ -15,7 +15,7 @@ in the Waterhouse 3 room_.
 ## Links
 
 - Tutorial materials:
-  - Slides: [Popcorn Linux](), [Popcorn HEXO]()
-  - [Instruction sheet for HEXO tutorial]()
+  - Slides: [Popcorn Linux](), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-slides.pdf)
+  - [Instruction sheet for HEXO tutorial](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-instructions.pdf)
 - Project websites: [Popcorn Linux](http://popcornlinux.org), [Popcorn HEXO](http://popcornlinux.org/index.php/hexo)
 - Software sources on GitHub: [Popcorn Linux](), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/tree/hermit-master)
