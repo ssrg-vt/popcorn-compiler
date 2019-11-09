@@ -20,14 +20,11 @@ Please see also the [SOSP Tutorials web page](https://sosp19.rcs.uwaterloo.ca/tu
   - Slides: [Popcorn Linux](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/popcorn-slides.pdf), [Popcorn HEXO](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-slides.pdf)
   - Downloads for Popcorn Linux's tutorial:
     - For Linux users, two VM images:
-      - https://www.cs.stevens.edu/~txing1/x86.img.zip
-      - https://www.cs.stevens.edu/~txing1/x86.img.zip.md5
-      - https://www.cs.stevens.edu/~txing1/arm.img.zip
-      - https://www.cs.stevens.edu/~txing1/arm.img.zip.md5
-      - https://www.cs.stevens.edu/~txing1/QEMU_EFI.fd
+      - [x86.img.zip](https://drive.google.com/a/vt.edu/file/d/1wi4uisN6CEHcoxdEpzlCFnYSne6Gk-sJ/view?usp=sharing) (~7GB)  [md5](https://drive.google.com/a/vt.edu/file/d/1j0-_sM8LF9SSuSLoljWOBPQU3SgvFSeM/view?usp=sharing)
+      - [arm.img.zip](https://drive.google.com/a/vt.edu/file/d/1j3PAaqD-5wY4vvdeyDg7wEOnU8Ivvghl/view?usp=sharing) (~6GB) [md5](https://drive.google.com/a/vt.edu/file/d/1Ho6u3tGfHdVTYugP6SJNThMb6DawLu1P/view?usp=sharing)
+      - [QEMU_EFI.fd](https://drive.google.com/a/vt.edu/file/d/11KJAtSlCZMRzIf6bLau2gF4YRF33WTgL/view?usp=sharing)
     - For non-Linux users, one VM VirtualBox image
-      - https://www.cs.stevens.edu/~txing1/popcorn-box.ova
-      - https://www.cs.stevens.edu/~txing1/arm.img.zip.md5
+      - [popcorn-box.ova](https://drive.google.com/a/vt.edu/file/d/1mhpsQ2xia2NuYxyt2G1F5HYxkP7CtHOc/view?usp=sharing) (~22GB) [md5](https://drive.google.com/a/vt.edu/file/d/1yThw-ev1u_6e6oqnA4wg49lARbRBQCtw/view?usp=sharing)
   - [Instruction sheet for HEXO tutorial](https://github.com/ssrg-vt/popcorn-compiler/raw/master/tutorial/sosp-2019/materials/hexo-instructions.pdf)
 
 - Project websites: [Popcorn Linux](http://popcornlinux.org), [Popcorn HEXO](http://popcornlinux.org/index.php/hexo)
