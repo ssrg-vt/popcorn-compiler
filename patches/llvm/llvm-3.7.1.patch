@@ -10956,28 +10956,57 @@ Index: lib/Target/X86/X86FrameLowering.cpp
        return X86::ADD64ri8;
      return X86::ADD64ri32;
    } else {
-@@ -697,6 +701,12 @@
+@@ -551,6 +555,22 @@
+   MI->getOperand(3).setIsDead();
+ }
+ 
++size_t getNumNopsToReplacePushInstrs(const MachineFunction& MF) {
++  size_t num = 7; // RBP is not maintained in the CSR set
++  for(const auto &CSR : MF.getFrameInfo()->getCalleeSavedInfo()) {
++    switch(CSR.getReg()) {
++    case X86::RBX: // 1 byte
++      num += 7;
++      break;
++    case X86::R12: case X86::R13: case X86::R14: case X86::R15: // 2 bytes
++      num += 6;
++      break;
++    default: llvm_unreachable("Unknown register for push operation"); break;
++    }
++  }
++  return num;
++}
++
+ /// emitPrologue - Push callee-saved registers onto the stack, which
+ /// automatically adjust the stack pointer. Adjust the stack pointer to allocate
+ /// space for local variables. Also emit labels used by the exception handler to
+@@ -697,6 +717,15 @@
      MFI->setStackSize(StackSize);
    }
  
 +  // Add nops to prologue to allow Chameleon to replace the normal stack
 +  // setup sequence with a more flexible & higher-entropy alternative
-+  for(size_t i = 0; i < EmitNopsForChameleon; i++) {
-+    BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
++  if(EmitNopsForChameleon) {
++    size_t numNops = EmitNopsForChameleon + getNumNopsToReplacePushInstrs(MF);
++    for(size_t i = 0; i < numNops; i++) {
++      BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
++    }
 +  }
 +
    // Insert stack pointer adjustment for later moving of return addr.  Only
    // applies to tail call optimized functions where the callee argument stack
    // size is bigger than the callers.
-@@ -1058,6 +1068,13 @@
+@@ -1058,6 +1087,16 @@
    }
    uint64_t SEHStackAllocAmt = NumBytes;
  
 +  // Add nops to epilogue to allow Chameleon to replace the normal stack
 +  // teardown sequence with a more flexible & higher-entropy alternative
-+  for(size_t i = 0; i < EmitNopsForChameleon; i++) {
-+    BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
-+    MBBI--;
++  if(EmitNopsForChameleon) {
++    size_t numNops = EmitNopsForChameleon + getNumNopsToReplacePushInstrs(MF);
++    for(size_t i = 0; i < numNops; i++) {
++      BuildMI(MBB, MBBI, DL, TII.get(X86::NOOP));
++      MBBI--;
++    }
 +  }
 +
    // Skip the callee-saved pop instructions.
