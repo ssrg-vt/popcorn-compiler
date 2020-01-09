@@ -10932,7 +10932,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
  extern cl::opt<bool> ForceStackAlign;
  
 +extern cl::opt<bool> ForceFullDisplacements;
-+cl::opt<uint32_t> EmitNopsForChameleon("chameleon-nops", cl::init(0),
++cl::opt<bool> EmitNopsForChameleon("chameleon-nops", cl::init(false),
 +  cl::desc("Emit nops in prologue/epilogue for instrumentation in Chameleon"));
 +
  X86FrameLowering::X86FrameLowering(const X86Subtarget &STI,
@@ -10956,25 +10956,31 @@ Index: lib/Target/X86/X86FrameLowering.cpp
        return X86::ADD64ri8;
      return X86::ADD64ri32;
    } else {
-@@ -254,6 +258,8 @@
+@@ -254,6 +258,9 @@
        // load the offset into a register and do one sub/add
        unsigned Reg = 0;
  
-+      assert(EmitNopsForChameleon == 0 && "Not yet supported for Chameleon");
++      assert(EmitNopsForChameleon == false &&
++             "Not yet supported for Chameleon");
 +
        if (isSub && !isEAXLiveIn(*MBB.getParent()))
          Reg = (unsigned)(Is64Bit ? X86::RAX : X86::EAX);
        else
-@@ -551,6 +557,19 @@
+@@ -551,6 +558,24 @@
    MI->getOperand(3).setIsDead();
  }
  
 +size_t getNumNopsToReplacePushInstrs(const MachineFunction& MF) {
-+  size_t num = 7; // RBP is not maintained in the CSR set
++  // Start at 7 because RBP is not maintained in the CSR set.  Saving RBP
++  // requires an extra nop compared to other callee-saved registers because it
++  // needs to be offset from %rsp (new %rbp can *only* be set up/used after
++  // saving the old one).  Offsetting from %rsp instead of %rbp requires an
++  // extra byte in the instruction encoding.
++  size_t num = 7;
 +  for(const auto &CSR : MF.getFrameInfo()->getCalleeSavedInfo()) {
 +    switch(CSR.getReg()) {
 +    case X86::RBX: case X86::R12: case X86::R13: case X86::R14: case X86::R15:
-+      num += 7;
++      num += 6; // convert push %reg into movq %reg, x(%rbp)
 +      break;
 +    default: llvm_unreachable("Unknown register for push operation"); break;
 +    }
@@ -10985,7 +10991,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
  /// emitPrologue - Push callee-saved registers onto the stack, which
  /// automatically adjust the stack pointer. Adjust the stack pointer to allocate
  /// space for local variables. Also emit labels used by the exception handler to
-@@ -903,6 +922,20 @@
+@@ -903,6 +928,20 @@
      emitSPUpdate(MBB, MBBI, -(int64_t)NumBytes, /*InEpilogue=*/false);
    }
  
@@ -11006,7 +11012,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    if (NeedsWinCFI && NumBytes)
      BuildMI(MBB, MBBI, DL, TII.get(X86::SEH_StackAlloc))
          .addImm(NumBytes)
-@@ -1002,6 +1035,19 @@
+@@ -1002,6 +1041,19 @@
      if (PushedRegs)
        emitCalleeSavedFrameMoves(MBB, MBBI, DL);
    }
@@ -11015,10 +11021,10 @@ Index: lib/Target/X86/X86FrameLowering.cpp
 +  // setup sequence with a more flexible & higher-entropy alternative
 +  if(EmitNopsForChameleon) {
 +    auto It = MBB.begin();
-+    size_t numNops = EmitNopsForChameleon +
++    size_t numNops = 11 /* add movq (%rsp), %rax and movq %rax, x(%rsp) */ +
 +                     getNumNopsToReplacePushInstrs(MF) +
 +                     FrameSetupNops +
-+                     5 /* setup FBP w/o push instructions */;
++                     5 /* convert movq %rsp, %rbp into lea x(%rsp), %rbp */;
 +    for(size_t i = 0; i < numNops; i++) {
 +      BuildMI(MBB, It, DL, TII.get(X86::NOOP));
 +    }
@@ -11026,7 +11032,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
  }
  
  bool X86FrameLowering::canUseLEAForSPInEpilogue(
-@@ -1040,6 +1086,8 @@
+@@ -1040,6 +1092,8 @@
    unsigned CSSize = X86FI->getCalleeSavedFrameSize();
    uint64_t NumBytes = 0;
  
@@ -11035,7 +11041,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    if (hasFP(MF)) {
      // Calculate required stack adjustment.
      uint64_t FrameSize = StackSize - SlotSize;
-@@ -1113,6 +1161,19 @@
+@@ -1113,6 +1167,19 @@
      --MBBI;
    }
  
@@ -11055,7 +11061,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    // Windows unwinder will not invoke function's exception handler if IP is
    // either in prologue or in epilogue.  This behavior causes a problem when a
    // call immediately precedes an epilogue, because the return address points
-@@ -1132,6 +1193,18 @@
+@@ -1132,6 +1199,18 @@
      Offset += mergeSPUpdates(MBB, MBBI, true);
      emitSPUpdate(MBB, MBBI, Offset, /*InEpilogue=*/true);
    }
@@ -11063,7 +11069,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
 +  // Add nops to epilogue to allow Chameleon to replace the normal stack
 +  // teardown sequence with a more flexible & higher-entropy alternative
 +  if(EmitNopsForChameleon) {
-+    size_t numNops = EmitNopsForChameleon +
++    size_t numNops = 11 /* add movq x(%rsp), %rax and movq %rax, (%rsp) */ +
 +                     FrameTeardownNops +
 +                     getNumNopsToReplacePushInstrs(MF);
 +    for(size_t i = 0; i < numNops; i++) {
