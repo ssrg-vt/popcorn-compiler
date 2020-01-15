@@ -10825,15 +10825,48 @@ Index: lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
  namespace {
  class X86MCCodeEmitter : public MCCodeEmitter {
    X86MCCodeEmitter(const X86MCCodeEmitter &) = delete;
-@@ -177,7 +181,7 @@
+@@ -176,13 +180,15 @@
+ 
  /// isDisp8 - Return true if this signed displacement fits in a 8-bit
  /// sign-extended field.
- static bool isDisp8(int Value) {
+-static bool isDisp8(int Value) {
 -  return Value == (signed char)Value;
-+  return (Value == (signed char)Value) && !ForceFullDisplacements;
++static bool isDisp8(int Value, bool IgnoreForceFull = false) {
++  if(IgnoreForceFull) return (Value == (signed char)Value);
++  else return (Value == (signed char)Value) && !ForceFullDisplacements;
  }
  
  /// isCDisp8 - Return true if this signed displacement fits in a 8-bit
+ /// compressed dispacement field.
+-static bool isCDisp8(uint64_t TSFlags, int Value, int& CValue) {
++static bool isCDisp8(
++    uint64_t TSFlags, int Value, int& CValue, bool IgnoreForceFull = false) {
+   assert(((TSFlags & X86II::EncodingMask) == X86II::EVEX) &&
+          "Compressed 8-bit displacement is only valid for EVEX inst.");
+ 
+@@ -190,7 +196,7 @@
+     (TSFlags & X86II::CD8_Scale_Mask) >> X86II::CD8_Scale_Shift;
+   if (CD8_Scale == 0) {
+     CValue = Value;
+-    return isDisp8(Value);
++    return isDisp8(Value, IgnoreForceFull);
+   }
+ 
+   unsigned Mask = CD8_Scale - 1;
+@@ -538,11 +544,11 @@
+              BaseRegNo != N86::EBP) {
+     // Emit no displacement ModR/M byte
+     EmitByte(ModRMByte(0, RegOpcodeField, 4), CurByte, OS);
+-  } else if (!HasEVEX && isDisp8(Disp.getImm())) {
++  } else if (!HasEVEX && isDisp8(Disp.getImm(), true)) {
+     // Emit the disp8 encoding.
+     EmitByte(ModRMByte(1, RegOpcodeField, 4), CurByte, OS);
+     ForceDisp8 = true;           // Make sure to force 8 bit disp if Base=EBP
+-  } else if (HasEVEX && isCDisp8(TSFlags, Disp.getImm(), CDisp8)) {
++  } else if (HasEVEX && isCDisp8(TSFlags, Disp.getImm(), CDisp8, true)) {
+     // Emit the disp8 encoding.
+     EmitByte(ModRMByte(1, RegOpcodeField, 4), CurByte, OS);
+     ForceDisp8 = true;           // Make sure to force 8 bit disp if Base=EBP
 Index: lib/Target/X86/X86AsmPrinter.cpp
 ===================================================================
 --- lib/Target/X86/X86AsmPrinter.cpp	(revision 320332)
@@ -10966,7 +10999,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
        if (isSub && !isEAXLiveIn(*MBB.getParent()))
          Reg = (unsigned)(Is64Bit ? X86::RAX : X86::EAX);
        else
-@@ -551,6 +558,24 @@
+@@ -551,6 +558,28 @@
    MI->getOperand(3).setIsDead();
  }
  
@@ -10978,9 +11011,13 @@ Index: lib/Target/X86/X86FrameLowering.cpp
 +  // extra byte in the instruction encoding.
 +  size_t num = 7;
 +  for(const auto &CSR : MF.getFrameInfo()->getCalleeSavedInfo()) {
++    // convert push %reg into movq %reg, x(%rbp)
 +    switch(CSR.getReg()) {
-+    case X86::RBX: case X86::R12: case X86::R13: case X86::R14: case X86::R15:
-+      num += 6; // convert push %reg into movq %reg, x(%rbp)
++    case X86::RBX:
++      num += 6;
++      break;
++    case X86::R12: case X86::R13: case X86::R14: case X86::R15:
++      num += 5;
 +      break;
 +    default: llvm_unreachable("Unknown register for push operation"); break;
 +    }
@@ -10991,7 +11028,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
  /// emitPrologue - Push callee-saved registers onto the stack, which
  /// automatically adjust the stack pointer. Adjust the stack pointer to allocate
  /// space for local variables. Also emit labels used by the exception handler to
-@@ -903,6 +928,20 @@
+@@ -903,6 +932,20 @@
      emitSPUpdate(MBB, MBBI, -(int64_t)NumBytes, /*InEpilogue=*/false);
    }
  
@@ -11012,7 +11049,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    if (NeedsWinCFI && NumBytes)
      BuildMI(MBB, MBBI, DL, TII.get(X86::SEH_StackAlloc))
          .addImm(NumBytes)
-@@ -1002,6 +1041,19 @@
+@@ -1002,6 +1045,19 @@
      if (PushedRegs)
        emitCalleeSavedFrameMoves(MBB, MBBI, DL);
    }
@@ -11021,7 +11058,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
 +  // setup sequence with a more flexible & higher-entropy alternative
 +  if(EmitNopsForChameleon) {
 +    auto It = MBB.begin();
-+    size_t numNops = 11 /* add movq (%rsp), %rax and movq %rax, x(%rsp) */ +
++    size_t numNops = 11 /* add movq (%rsp), %reg and movq %reg, x(%rbp) */ +
 +                     getNumNopsToReplacePushInstrs(MF) +
 +                     FrameSetupNops +
 +                     5 /* convert movq %rsp, %rbp into lea x(%rsp), %rbp */;
@@ -11032,7 +11069,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
  }
  
  bool X86FrameLowering::canUseLEAForSPInEpilogue(
-@@ -1040,6 +1092,8 @@
+@@ -1040,6 +1096,8 @@
    unsigned CSSize = X86FI->getCalleeSavedFrameSize();
    uint64_t NumBytes = 0;
  
@@ -11041,7 +11078,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    if (hasFP(MF)) {
      // Calculate required stack adjustment.
      uint64_t FrameSize = StackSize - SlotSize;
-@@ -1113,6 +1167,19 @@
+@@ -1113,6 +1171,19 @@
      --MBBI;
    }
  
@@ -11061,7 +11098,7 @@ Index: lib/Target/X86/X86FrameLowering.cpp
    // Windows unwinder will not invoke function's exception handler if IP is
    // either in prologue or in epilogue.  This behavior causes a problem when a
    // call immediately precedes an epilogue, because the return address points
-@@ -1132,6 +1199,18 @@
+@@ -1132,6 +1203,18 @@
      Offset += mergeSPUpdates(MBB, MBBI, true);
      emitSPUpdate(MBB, MBBI, Offset, /*InEpilogue=*/true);
    }
