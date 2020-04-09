@@ -379,7 +379,7 @@ def install_binutils(base_path, install_path, num_threads):
 
     os.chdir(cur_dir)
 
-def install_musl(base_path, install_path, target, num_threads):
+def install_musl(base_path, install_path, target, num_threads, chameleon):
     cur_dir = os.getcwd()
 
     #=====================================================
@@ -391,6 +391,11 @@ def install_musl(base_path, install_path, target, num_threads):
     if os.path.isfile('Makefile'):
         run_cmd('clean musl', ['make', 'distclean'])
 
+    cflags = 'CFLAGS="-target {}-linux-gnu -popcorn-libc {}"'.format(target,
+        "-secure-popcorn -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer " \
+        "-mno-red-zone -mllvm -blind-copy"
+        if chameleon else "")
+
     print("Configuring musl ({})...".format(target))
     args = ' '.join(['./configure',
                      '--prefix={}'.format(target_install_path),
@@ -401,8 +406,7 @@ def install_musl(base_path, install_path, target, num_threads):
                      '--enable-wrapper=all',
                      '--disable-shared',
                      'CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-linux-gnu -popcorn-libc"' \
-                     .format(target)])
+                     cflags])
     run_cmd('configure musl-libc ({})'.format(target), args, use_shell=True)
 
     print('Making musl ({})...'.format(target))
@@ -663,7 +667,7 @@ def main(args):
     for target in args.install_targets:
         if args.musl_install:
             install_musl(args.base_path, args.install_path, target,
-                         args.threads)
+                         args.threads, args.chameleon)
 
         if args.libelf_install:
             install_libelf(args.base_path, args.install_path, target,
