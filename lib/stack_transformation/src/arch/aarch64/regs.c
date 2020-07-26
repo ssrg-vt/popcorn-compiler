@@ -50,6 +50,9 @@ const struct regops_t regs_aarch64 = {
   .num_regs = AARCH64_NUM_REGS,
   .has_ra_reg = true,
   .regset_size = sizeof(struct regset_aarch64),
+#ifdef CHAMELEON
+  .pc_regnum = AARCH64_LINK_REG,
+#endif
   .fbp_regnum = AARCH64_FBP_REG,
   .sp_regnum = SP,
 

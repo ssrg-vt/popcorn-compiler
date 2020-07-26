@@ -45,6 +45,9 @@ const struct regops_t regs_x86_64 = {
   .num_regs = X86_64_NUM_REGS,
   .has_ra_reg = false,
   .regset_size = sizeof(struct regset_x86_64),
+#ifdef CHAMELEON
+  .pc_regnum = RIP,
+#endif
   .fbp_regnum = RBP,
   .sp_regnum = RSP,
 

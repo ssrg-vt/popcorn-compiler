@@ -322,9 +322,10 @@ void set_return_address(rewrite_context ctx, void* retaddr)
 {
   void *saved_loc;
   ASSERT(retaddr, "invalid return address\n");
+#ifndef CHAMELEON
   saved_loc = ACT(ctx).cfa + PROPS(ctx)->ra_offset;
-#ifdef CHAMELEON
-  saved_loc = child_to_chameleon(ctx, saved_loc);
+#else
+  saved_loc = get_savedra_loc(ctx);
 #endif
   *(void**)saved_loc = retaddr;
 }
@@ -355,31 +356,23 @@ void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
  */
 uint64_t* get_savedfbp_loc(rewrite_context ctx)
 {
-  const unwind_loc* locs;
-  uint32_t unwind_start, unwind_end, index;
-  void* saved_loc;
-
-  locs = ctx->handle->unwind_locs;
-  unwind_start = CUR_FUNC(ctx).unwind.offset;
-  unwind_end = unwind_start + CUR_FUNC(ctx).unwind.num;
-
-  // Frame pointer is likely at the very end of unwinding records
-  for(index = unwind_end - 1; index >= unwind_start; index--)
-    if(locs[index].reg == REGOPS(ctx)->fbp_regnum) break;
-
-  ASSERT(index >= unwind_start, "no saved frame base pointer information\n");
-
+  void* addr = get_register_save_loc(ctx, &ACT(ctx), REGOPS(ctx)->fbp_regnum);
+  ASSERT(addr != NULL, "Couldn't find saved FBP location");
 #ifndef CHAMELEON
-  saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + locs[index].offset;
+  return addr;
 #else
-  int32_t offset = translate_fbp_offset(ctx, ctx->act, locs[index].offset);
-  saved_loc = REGOPS(ctx)->fbp(ACT(ctx).regs) + offset;
-  saved_loc = child_to_chameleon(ctx, saved_loc);
+  return child_to_chameleon(ctx, addr);
 #endif
-  return (uint64_t*)saved_loc;
 }
 
 #ifdef CHAMELEON
+
+uint64_t* get_savedra_loc(rewrite_context ctx)
+{
+  void* addr = get_register_save_loc(ctx, &ACT(ctx), REGOPS(ctx)->pc_regnum);
+  ASSERT(addr != NULL, "Couldn't find saved return address location");
+  return child_to_chameleon(ctx, addr);
+}
 
 static inline bool slot_contains(const slotmap *slot, int offset)
 {

@@ -274,8 +274,6 @@ void* get_register_save_loc(rewrite_context ctx, activation* act, uint16_t reg)
 #endif
 
   ASSERT(act, "invalid arguments to get_stored_loc()\n");
-  ASSERT(bitmap_is_set(act->callee_saved, reg),
-         "attempted to find register not saved in specified activation");
 
   unwind_locs = ctx->handle->unwind_locs;
   unwind_start = FUNC(ctx, (*act)).unwind.offset;

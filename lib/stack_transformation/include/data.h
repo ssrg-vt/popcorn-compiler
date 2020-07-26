@@ -116,6 +116,15 @@ uint64_t* get_savedfbp_loc(rewrite_context ctx);
 #ifdef CHAMELEON
 
 /*
+ * Get the location in the current stack frame of the saved return address.
+ *
+ * @param ctx a rewriting context
+ * @return a pointer to the location of the saved return address for the
+ *         current frame
+ */
+uint64_t* get_savedra_loc(rewrite_context ctx);
+
+/*
  * Convert an originally-encoded offset from the fbp to its randomized offset
  * from the fbp.
  *

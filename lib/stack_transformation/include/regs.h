@@ -26,6 +26,11 @@ struct regops_t
   /* Size of registers in the register set */
   size_t regset_size;
 
+#ifdef CHAMELEON
+  /* Number of program counter register */
+  uint16_t pc_regnum;
+#endif
+
   /* Number of frame-base pointer register */
   uint16_t fbp_regnum;
 
