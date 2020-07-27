@@ -10853,17 +10853,27 @@ Index: lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
    }
  
    unsigned Mask = CD8_Scale - 1;
-@@ -538,11 +544,11 @@
+@@ -519,6 +525,8 @@
+   assert(IndexReg.getReg() != X86::ESP &&
+          IndexReg.getReg() != X86::RSP && "Cannot use ESP as index reg!");
+ 
++  bool IgnoreForceFull = (BaseReg == X86::RSP || BaseReg == X86::RBP)
++                         ? false : true;
+   bool ForceDisp32 = false;
+   bool ForceDisp8  = false;
+   int CDisp8 = 0;
+@@ -538,11 +546,12 @@
               BaseRegNo != N86::EBP) {
      // Emit no displacement ModR/M byte
      EmitByte(ModRMByte(0, RegOpcodeField, 4), CurByte, OS);
 -  } else if (!HasEVEX && isDisp8(Disp.getImm())) {
-+  } else if (!HasEVEX && isDisp8(Disp.getImm(), true)) {
++  } else if (!HasEVEX && isDisp8(Disp.getImm(), IgnoreForceFull)) {
      // Emit the disp8 encoding.
      EmitByte(ModRMByte(1, RegOpcodeField, 4), CurByte, OS);
      ForceDisp8 = true;           // Make sure to force 8 bit disp if Base=EBP
 -  } else if (HasEVEX && isCDisp8(TSFlags, Disp.getImm(), CDisp8)) {
-+  } else if (HasEVEX && isCDisp8(TSFlags, Disp.getImm(), CDisp8, true)) {
++  } else if (HasEVEX &&
++             isCDisp8(TSFlags, Disp.getImm(), CDisp8, IgnoreForceFull)) {
      // Emit the disp8 encoding.
      EmitByte(ModRMByte(1, RegOpcodeField, 4), CurByte, OS);
      ForceDisp8 = true;           // Make sure to force 8 bit disp if Base=EBP
