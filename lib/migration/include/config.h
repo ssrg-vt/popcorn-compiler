@@ -46,7 +46,7 @@
 /* Read from array of variables to specify a set of functions at which to
  * migrate */
 #ifndef _FILE_SELECT_MIGRATE
-#define _FILE_SELECT_MIGRATE 0
+#define _FILE_SELECT_MIGRATE 1
 #endif
 
 /* Use signals to trigger thread migrations.  If set, which signal to use. */
@@ -57,7 +57,7 @@
 /* If this flag is set, at every do_migrate, we check if we should randomly
  * migrate.*/
 #ifndef _RANDOMIZE_MIGRATION
-#define _RANDOMIZE_MIGRATION 0
+#define _RANDOMIZE_MIGRATION 1
 #endif
 
 
