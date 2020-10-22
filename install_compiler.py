@@ -20,7 +20,8 @@ import urllib
 host = platform.machine()
 
 # Supported targets
-supported_targets = ['aarch64', 'x86_64']
+#supported_targets = ['aarch64', 'x86_64']
+supported_targets = ['x86_64']
 # LLVM names for targets
 llvm_targets = {
     'aarch64' : 'AArch64',
@@ -181,9 +182,9 @@ def postprocess_args(args):
         args.binutils_install = True
         args.musl_install = True
         args.libelf_install = True
-        args.libopenpop_install = True
+        args.libopenpop_install = False
         args.stacktransform_install = True
-        args.migration_install = True
+        args.migration_install = False
         args.stackdepth_install = True
         args.tools_install = True
         args.utils_install = True

@@ -21,9 +21,10 @@ LOC := -I$(INC) -I$(COMMON)/include
 
 LIB_HDR      := $(shell ls $(INC)/*.h)
 LIB_SRC      := $(shell ls $(SRC)/*.c)
-LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
+#LIB_ARCH_SRC := $(shell ls $(SRC)/arch/aarch64/*.c) \
                 $(shell ls $(SRC)/arch/powerpc64/*.c) \
                 $(shell ls $(SRC)/arch/x86_64/*.c)
+LIB_ARCH_SRC := $(shell ls $(SRC)/arch/x86_64/*.c)
 
 ifneq ($(findstring debug,$(type)),)
 CFLAGS += -O0 -mllvm -optimize-regalloc -D_DEBUG -D_CHECKS -D_LOG
@@ -86,7 +87,8 @@ LIB_ARCH_OBJ_X86_64 := $(subst $(SRC),$(BUILD_X86_64),$(LIB_ARCH_SRC:.c=.o))
 # Common
 
 # $(LIB_POWERPC64)
-all: $(LIB_AARCH64) $(LIB_X86_64)
+#all: $(LIB_AARCH64) $(LIB_X86_64)
+all: $(LIB_X86_64)
 
 clean:
 	@echo " [RM] $(BUILD)"
@@ -227,6 +229,7 @@ install-x86_64: $(LIB_X86_64)
 	@cp $(INC)/arch/x86_64/regs.h $(POPCORN_X86_64)/include/arch/x86_64
 
 # install-powerpc64
-install: install-aarch64 install-x86_64
+#install: install-aarch64 install-x86_64
+install: install-x86_64
 
 .PHONY: all install install-aarch64 install-powerpc64 install-x86_64 clean
