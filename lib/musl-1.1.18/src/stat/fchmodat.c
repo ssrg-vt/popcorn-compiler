@@ -12,7 +12,7 @@ int fchmodat(int fd, const char *path, mode_t mode, int flag)
 	if (flag != AT_SYMLINK_NOFOLLOW)
 		return __syscall_ret(-EINVAL);
 
-	struct stat st;
+	struct stat_internal st;
 	int ret, fd2;
 	char proc[15+3*sizeof(int)];
 
