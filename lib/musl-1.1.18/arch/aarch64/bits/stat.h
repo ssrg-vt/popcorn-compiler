@@ -1,4 +1,4 @@
-struct stat {
+struct stat_internal {
 	dev_t st_dev;
 	ino_t st_ino;
 	mode_t st_mode;
@@ -15,4 +15,25 @@ struct stat {
 	struct timespec st_mtim;
 	struct timespec st_ctim;
 	unsigned __unused[2];
+};
+
+// x86's struct stat with long st_nlink and st_blksize
+struct stat {
+	dev_t st_dev;
+	ino_t st_ino;
+	long st_nlink;
+
+	mode_t st_mode;
+	uid_t st_uid;
+	gid_t st_gid;
+	unsigned int    __pad0;
+	dev_t st_rdev;
+	off_t st_size;
+	long st_blksize;
+	blkcnt_t st_blocks;
+
+	struct timespec st_atim;
+	struct timespec st_mtim;
+	struct timespec st_ctim;
+	long __unused[3];
 };
