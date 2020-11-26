@@ -10,9 +10,8 @@ to LD_LIBRARY_PATH so that the correct compiler and libraries are used when
 building multi-ISA binaries (alternatively, hard-code these locations into your
 build procedure). You can also do:
 
-```
 $ . env.sh
-```
+
 Note: if you have a previous clang/LLVM installation or binutils installation,
 adding /usr/local/popcorn/* to environment variables may shadow previous
 installations!
