@@ -2,7 +2,7 @@
 Building applications
 ---------------------
 
-The toolchain will build multi-ISA binaries suitable from running and migrating
+The toolchain will build multi-ISA binaries suitable for running and migrating
 across heterogeneous systems running Popcorn's OS (please see "INSTALL" for
 installing the compiler toolchain).  The toolchain builds applications using
 the following procedure:

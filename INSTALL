@@ -8,7 +8,9 @@ The toolchain will be installed at /usr/local/popcorn.  After the toolchain has
 been installed, add /usr/local/popcorn/bin to PATH and /usr/local/popcorn/lib
 to LD_LIBRARY_PATH so that the correct compiler and libraries are used when
 building multi-ISA binaries (alternatively, hard-code these locations into your
-build procedure).
+build procedure). You can also do:
+
+$ . env.sh
 
 Note: if you have a previous clang/LLVM installation or binutils installation,
 adding /usr/local/popcorn/* to environment variables may shadow previous
