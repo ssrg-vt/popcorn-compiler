@@ -678,5 +678,6 @@ if __name__ == '__main__':
         if success != True:
             print('All prerequisites were not satisfied!')
             sys.exit(1)
+        print('All prerequisites were satisified :)')
 
     main(args)
