@@ -3,7 +3,7 @@
 /* popcorn-kernel: include/uapi/asm-generic/unistd.h */
 
 /* Popcorn Linux 5.2.  */
-#define __NR_sched_migrate 434
-#define __NR_propose_migration 435
-#define __NR_get_thread_status 436
-#define __NR_get_node_info 437
+#define __NR_sched_migrate 900
+#define __NR_propose_migration 901
+#define __NR_get_thread_status 902
+#define __NR_get_node_info 903
