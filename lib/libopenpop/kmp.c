@@ -40,7 +40,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Converts calls to GNU OpenMP runtime outlined regions to Intel OpenMP
+ * Converts calls to GNU OpenMP runtime outlined regions from Intel OpenMP
  * runtime outlined regions (which includes the global & bound thread ID).
  * @param data wrapped data which includes the outlined function, the global
  *        thread ID and the data to pass to the function.
