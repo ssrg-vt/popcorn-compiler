@@ -184,7 +184,7 @@ def postprocess_args(args):
         args.libelf_install = True
         args.libopenpop_install = False
         args.stacktransform_install = True
-        args.migration_install = False
+        args.migration_install = True
         args.stackdepth_install = True
         args.tools_install = True
         args.utils_install = True
@@ -549,9 +549,9 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
         elif enable_libmigration_timing:
             flags += 'timing'
         args += [flags]
-    run_cmd('make libopenpop', args)
+    run_cmd('make libmigration', args)
     args += ['install']
-    run_cmd('install libopenpop', args)
+    run_cmd('install libmigration', args)
 
     os.chdir(cur_dir)
 
