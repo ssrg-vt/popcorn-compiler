@@ -33,7 +33,7 @@
 #ifdef _KMP_DEBUG_X86
 #define DEBUG( ...) if (!gomp_thread()->popcorn_nid) fprintf(stderr, __VA_ARGS__)
 #define DEBUG_ONE( ... ) \
-  do { if(gtid == 0 && !gomp_thread()->popcorn_nid) printf(stderr, __VA_ARGS__); } while (0);
+  do { if(gtid == 0 && !gomp_thread()->popcorn_nid) fprintf(stderr, __VA_ARGS__); } while (0);
 #else
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
 # define DEBUG_ONE( ... ) \
