@@ -25,28 +25,22 @@
 
 /* Enable debugging information */
 //#define _KMP_DEBUG 1
-/* Only print messages at the x86 side (assuming that is node 0) */
-#define _KMP_DEBUG_X86 
 
 #ifdef _KMP_DEBUG
-
-#ifdef _KMP_DEBUG_X86
-#define DEBUG( ...) if (!gomp_thread()->popcorn_nid) fprintf(stderr, __VA_ARGS__)
-#define DEBUG_ONE( ... ) \
-  do { if(gtid == 0 && !gomp_thread()->popcorn_nid) fprintf(stderr, __VA_ARGS__); } while (0);
-#else
 # define DEBUG( ... ) fprintf(stderr, __VA_ARGS__)
 # define DEBUG_ONE( ... ) \
   do { if(gtid == 0) fprintf(stderr, __VA_ARGS__); } while (0);
+#else
+# define DEBUG( ... )
+# define DEBUG_ONE( ... )
 #endif
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Parallel region
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
- * Converts calls to GNU OpenMP runtime outlined regions from Intel OpenMP
+ * Converts calls to GNU OpenMP runtime outlined regions to Intel OpenMP
  * runtime outlined regions (which includes the global & bound thread ID).
  * @param data wrapped data which includes the outlined function, the global
  *        thread ID and the data to pass to the function.

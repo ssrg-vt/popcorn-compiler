@@ -1,7 +1,7 @@
 #!/bin/sh
 cc="@CC@"
 target="-target @TARGET@-linux-gnu"
-gcc="@TARGET@-popcorn-linux-gnu-gcc"
+gcc="@TARGET@-linux-gnu-gcc"
 ld="@TARGET@-popcorn-linux-gnu-ld.bfd"
 libc_lib="@LIBDIR@"
 ldso="@LDSO@"
@@ -50,7 +50,5 @@ for x ; do
             ;;
     esac
 done
-
-#exec $($cc $target -print-prog-name=ld) -nostdlib "$@" -lc -lgcc -lgcc_eh -dynamic-linker "$ldso"
 
 exec $ld -nostdlib "$@" -lc -lgcc -lgcc_eh -dynamic-linker "$ldso"

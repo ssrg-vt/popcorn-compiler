@@ -173,6 +173,7 @@ __TBSS__		/* marker for TBSS section insertion */
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
   .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
+  .llvm_pcn_stackmaps : ALIGN(0x1000) { *(.llvm_pcn_stackmaps) }
   . = ALIGN(64 / 8);
   _end = .; PROVIDE (end = .);
   . = DATA_SEGMENT_END (.);

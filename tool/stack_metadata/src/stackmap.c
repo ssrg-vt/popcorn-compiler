@@ -11,7 +11,7 @@
 #include "stackmap.h"
 #include "util.h"
 
-#define LLVM_STACKMAP_SECTION ".llvm_stackmaps"
+#define LLVM_STACKMAP_SECTION ".llvm_pcn_stackmaps"
 
 static uint64_t stackmap_records_size(void *raw_sm, unsigned num_records)
 {

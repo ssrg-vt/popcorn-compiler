@@ -369,6 +369,8 @@ static void unwind_and_size(rewrite_context src,
     dest->num_acts++;
     dest->act++;
 
+    ST_INFO("Stack Activation Number = %d\n", ACT(src).site.id);
+
     /*
      * Call site meta-data will be used to get return addresses, canonical
      * frame addresses and frame-base pointer locations.

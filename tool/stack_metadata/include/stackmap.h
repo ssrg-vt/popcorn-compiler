@@ -31,6 +31,7 @@
 typedef struct __attribute__((__packed__)) function_record {
   uint64_t func_addr;
   uint64_t stack_size;
+  uint64_t record_count;
   uint32_t num_unwind;
   uint32_t unwind_offset;
 } function_record;

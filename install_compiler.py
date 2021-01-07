@@ -187,11 +187,6 @@ def setup_argument_parsing():
                         action="store_true",
                         dest="enable_libmigration_timing")
 
-    process_opts.add_argument("--with-llvm-3_7",
-                        help="Use LLVM-3.7 instead of LLVM-9",
-                        action="store_true",
-                        dest="use_llvm37")
-
     process_opts.add_argument("--with-popcorn-kernel-5_2",
                         help="Use Popcorn Kernel version 5.2 instead of 4.4",
                         action="store_true",
@@ -231,9 +226,6 @@ def postprocess_args(args):
     if args.gcc_glibc_install:
         args.binutils_install = True
 
-    if args.use_llvm37:
-        llvm_version = 3.7
-
     if args.use_kernel_52:
         kernel_version = 5.2
 
@@ -241,7 +233,7 @@ def postprocess_args(args):
     if args.install_all:
         args.llvm_clang_install = True
         args.binutils_install = True
-        args.gcc_glibc_install = True
+        args.gcc_glibc_install = False
         args.musl_install = True
         args.libelf_install = True
         args.libopenpop_install = False
@@ -396,7 +388,6 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     args = ['cmake'] + cmake_flags + ['..']
     run_cmd('run CMake', args)
 
-
     print('Running Make...')
     if llvm_version > 3.7:
         args = ['make', '-j', str(num_threads), 'install-llvm-headers']
@@ -409,6 +400,7 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     os.chdir(cur_dir)
 
+
 def install_binutils(base_path, install_path, num_threads, target):
 
     binutils_install_path = os.path.join(install_path, 'src', 'binutils-2.32')
@@ -417,7 +409,6 @@ def install_binutils(base_path, install_path, num_threads, target):
                               'binutils-2.32.patch')
 
     configure_flags = ['--prefix={}'.format(install_path),
-                       '--target={}'.format(target + '-popcorn-linux-gnu'),
                        '--enable-gold',
                        '--enable-ld',
                        '--disable-libquadmath',
@@ -582,7 +573,6 @@ def install_gcc_glibc(base_path, install_path, install_targets, num_threads):
                 '--disable-shared',
                 '--disable-threads',
                 '--enable-__cxa_atexit',
-                '--enable-languages=c',
                 '--disable-libatomic',
                 '--disable-libmudflap',
                 '--disable-libssp',
@@ -834,20 +824,12 @@ def install_libelf(base_path, install_path, target, num_threads):
 
     print("Configuring libelf ({})...".format(target))
     compiler = os.path.join(target_install_path, 'bin', 'musl-clang')
-    libelf_cflags = "-O3 -popcorn-alignment"
-
-#    # This is necessary for shared libraries
-#    if target == "x86_64":
-#        compiler = os.path.join(install_path, 'bin',
-#                                target + '-popcorn-linux-gnu-gcc')
-#        libelf_cflags = "-O3"
-
     args = ' '.join(['CC={}'.format(compiler),
-                     'CFLAGS="{}"'.format(libelf_cflags),
+                     'CFLAGS="-O3 -popcorn-alignment"',
                      'LDFLAGS="-static"',
                      './configure',
-                     '--build={}-popcorn-linux-gnu'.format(platform.machine()),
-                     '--host={}-popcorn-linux-gnu'.format(target),
+                     '--build={}-linux-gnu'.format(platform.machine()),
+                     '--host={}-linux-gnu'.format(target),
                      '--prefix={}'.format(target_install_path),
                      '--enable-compat',
                      '--enable-elf64',
@@ -958,9 +940,9 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
         elif enable_libmigration_timing:
             flags += 'timing'
         args += [flags]
-    run_cmd('make libopenpop', args)
+    run_cmd('make libmigration', args)
     args += ['install']
-    run_cmd('install libopenpop', args)
+    run_cmd('install libmigration', args)
 
     os.chdir(cur_dir)
 

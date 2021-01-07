@@ -3,7 +3,7 @@ Overview
 --------
 
 The final step in generating multi-ISA binaries is to parse the generated
-.llvm_stackmaps section and add stack transformation metadata sections to
+.llvm_pcn_stackmaps section and add stack transformation metadata sections to
 each binary.  This information provides the return address mappings across
 binaries and the live value location information at each call site.
 
@@ -49,18 +49,18 @@ procedure:
 
 There are several generated tools:
 
-- gen-stackinfo: parse the .llvm_stackmaps section and add stack transformation
-  sections to the binary.  This is run once per binary.
+- gen-stackinfo: parse the .llvm_pcn_stackmaps section and add stack
+  transformation sections to the binary.  This is run once per binary.
 
 - dump-llvm-stackmap: print the raw LLVM-generated stackmap from
-  .llvm_stackmaps in a human-readable format
+  .llvm_pcn_stackmaps in a human-readable format
 
 - dump-stackinfo: print the generated stack transformation metadata in a
   human-readable format
 
-- check-stackmaps: check the generated .llvm_stackmaps sections of two or more
-  binaries for inconsistencies that may prevent a correct transformation, e.g.,
-  different numbers of stackmaps, different numbers of live values at
-  corresponding stackmaps, live values of different sizes, inconsistent
-  metadata, etc.
+- check-stackmaps: check the generated .llvm_pcn_stackmaps sections of
+  two or more binaries for inconsistencies that may prevent a correct
+  transformation, e.g., different numbers of stackmaps, different
+  numbers of live values at corresponding stackmaps, live values of
+  different sizes, inconsistent metadata, etc.
 

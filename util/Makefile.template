@@ -7,12 +7,11 @@
 ###############################################################################
 
 # FIXME directory of Popcorn compiler installation
-POPCORN := /usr/local/popcorn
+POPCORN := /home/ashwin/Downloads/stackmaps_compiler
 
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := $(shell dirname \
-                $(shell $(POPCORN)/bin/aarch64-popcorn-linux-gnu-gcc \
-		  -print-libgcc-file-name))
+                $(shell aarch64-linux-gnu-gcc -print-libgcc-file-name))
 
 # FIXME name of the generated executable
 BIN := test
@@ -36,10 +35,11 @@ HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
 IR := $(SRC:.c=.ll)
 
 # Linker
-LD      := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-ld.gold
+LD      := $(POPCORN)/bin/ld.gold
 LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/libc.a \
+           /lib/libopenpop.a \
            /lib/libmigrate.a \
            /lib/libstack-transform.a \
            /lib/libelf.a \

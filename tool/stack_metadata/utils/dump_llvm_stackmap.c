@@ -28,7 +28,7 @@ Options:\n\
             "(default is '.llvm_stackmaps')";
 
 static const char *thebin_fn = NULL;
-static const char *sm_section_name = ".llvm_stackmaps";
+static const char *sm_section_name = ".llvm_pcn_stackmaps";
 bool verbose = false;
 
 ///////////////////////////////////////////////////////////////////////////////

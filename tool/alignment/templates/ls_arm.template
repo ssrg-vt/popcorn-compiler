@@ -154,6 +154,7 @@ __TBSS__		/* maker for the TBSS section insertion */
   . = DATA_SEGMENT_RELRO_END (24, .);
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
   .llvm_stackmaps : ALIGN(0x1000) { *(.llvm_stackmaps) }
+  .llvm_pcn_stackmaps : ALIGN(0x1000) { *(.llvm_pcn_stackmaps) }
 /*  . = ALIGN(32 / 8);
   . = ALIGN(32 / 8);
   __end__ = . ;
