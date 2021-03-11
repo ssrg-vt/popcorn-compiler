@@ -293,7 +293,9 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         args = ['patch', '-p0', '-d', clang_download_path]
         run_cmd('patch Clang', args, patch_file)
 
+    #=====================================================
     # LLVM-3.7's build system needs clang inside llvm/tools
+    #=====================================================
     if llvm_version == 3.7:
         clang_src = os.path.join(llvm_download_path, 'clang')
         clang_dst = os.path.join(llvm_download_path, 'llvm', 'tools')
@@ -341,10 +343,14 @@ def install_binutils(base_path, install_path, num_threads):
     #=====================================================
     # DOWNLOAD BINUTILS
     #=====================================================
-    print('Downloading binutils source...')
     try:
-        urllib.request.urlretrieve(binutils_url, 'binutils-2.32.tar.bz2')
+        if not os.path.exists('binutils-2.32.tar.bz2'):
+            print('Downloading binutils source...')
+            urllib.request.urlretrieve(binutils_url, 'binutils-2.32.tar.bz2')
+        else:
+            print("Local cache found.")
         with tarfile.open('binutils-2.32.tar.bz2', 'r:bz2') as f:
+            print('Extracting binutils source...')
             f.extractall(path=os.path.join(install_path, 'src'))
     except Exception as e:
         print('Could not download/extract binutils source ({})!'.format(e))
