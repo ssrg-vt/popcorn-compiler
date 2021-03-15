@@ -34,6 +34,7 @@ llvm_targets = {
 llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
 llvm_revision = '320332'
 # Clang SVN URL
+# Link outdated, download and unpack https://releases.llvm.org/3.7.1/cfe-3.7.1.src.tar.xz
 clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
 # Binutils 2.27 URL
 binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2'
