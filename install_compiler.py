@@ -30,6 +30,7 @@ llvm_targets = {
 }
 
 # LLVM 3.7.1 SVN URL
+# Link outdated check https://releases.llvm.org/3.7.1/llvm-3.7.1.src.tar.xz
 llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
 llvm_revision = '320332'
 # Clang SVN URL
