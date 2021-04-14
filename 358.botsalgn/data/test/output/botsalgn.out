@@ -1,0 +1,38 @@
+Sequence format is Pearson
+Multiple Pairwise Alignment (20 sequences)
+Start aligning  completed!
+Output: Optimized prot. (  1:  1)=    0 
+Output: Optimized prot. (  1:  2)=   12 
+Output: Optimized prot. (  1:  3)=   14 
+Output: Optimized prot. (  1:  4)=   11 
+Output: Optimized prot. (  1:  5)=   20 
+Output: Optimized prot. (  1:  6)=    4 
+Output: Optimized prot. (  1:  7)=   10 
+Output: Optimized prot. (  1:  8)=    7 
+Output: Optimized prot. (  1:  9)=    4 
+Output: Optimized prot. (  1: 10)=   15 
+Output: Optimized prot. (  1: 11)=   14 
+Output: Optimized prot. (  1: 12)=    9 
+Output: Optimized prot. (  1: 13)=   16 
+Output: Optimized prot. (  1: 14)=    7 
+Output: Optimized prot. (  1: 15)=    9 
+Output: Optimized prot. (  1: 16)=    8 
+Output: Optimized prot. (  1: 17)=   18 
+Output: Optimized prot. (  1: 18)=    6 
+Output: Optimized prot. (  1: 19)=    8 
+Output: Optimized prot. (  1: 20)=    4 
+
+Program             = Protein alignment (For version)
+Parameters          = botsalgn
+Model               = OpenMP (using tasks)
+Embedded cut-off    = none
+Verification        = successful
+Execution Message   = 
+Architecture        = ;
+Load Avg [1:5:15]   = ;;
+Compilation Date    = 
+Compilation Message = 
+Compiler            = 
+Compiler Flags      = 
+Linker              = 
+Linker Flags        = 

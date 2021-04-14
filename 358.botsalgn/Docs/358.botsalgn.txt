@@ -1,0 +1,91 @@
+                                  358.botsalgn
+                    SPEC OMP2012 Benchmark Description File
+
+   --------------------------------------------------------------------------
+
+Benchmark Name
+
+   358.botsalgn
+
+   --------------------------------------------------------------------------
+
+Benchmark Author
+
+   Nanos Group, Barcelona Supercomputing Centre
+
+   Contact: Alex Duran (alex@bsc.es)
+
+   --------------------------------------------------------------------------
+
+Benchmark Program General Category
+
+   Protein Alignment
+
+   --------------------------------------------------------------------------
+
+Benchmark Description
+
+   All protein sequences from an input file are aligned against every other
+   sequence using the Myers and Miller algorithm. The alignments are scored
+   and the best score for each pair is provided as a result. The scoring
+   method is a full dynamic programming algorithm. It uses a weight matrix to
+   score mismatches, and assigns penalties for opening and extending gaps.
+   The output is the best score for each pair of them.
+
+   The outer loop is parallelized with an omp for worksharing directive with
+   tasks created inside this parallel loop. This allows the implementation to
+   break the iterations when the number of threads is large compared to the
+   number of iterations and when there is imbalance. To be able to use untied
+   tasks several global variables, used as temporal space, were moved to
+   local variables.
+
+   --------------------------------------------------------------------------
+
+Input Description
+
+   The program takes an input of proteins to align in the FASTA format. The
+   reference data set uses 3000 sequences, the train data set uses 100
+   sequences and the train data set uses 20 sequences.
+
+  Benchmarking
+
+   For benchmarking purposes, where the SPEC tools are used to validate the
+   solution, the computed results are only stored.
+
+   --------------------------------------------------------------------------
+
+Output Description
+
+   A portion of the matching weight file is produced.
+
+   --------------------------------------------------------------------------
+
+Programming Language
+
+   ANSI C
+
+   --------------------------------------------------------------------------
+
+Known portability issues
+
+   None
+
+   --------------------------------------------------------------------------
+
+Reference
+
+   [1]A. Duran, X. Teruel, R. Ferrer, X. Martorell and E. Ayguad*: Barcelona
+   OpenMP Tasks Suite: A Set of Benchmarks Targeting the Exploitation of Task
+   Parallelism in OpenMP , in: Proceedings of ICPP-2009, The 38th
+   International Conference on Parallel Processing, Copyright 2009 The
+   Institute of Electrical and Electronics Engineers, Inc. [2]DOI
+
+   --------------------------------------------------------------------------
+
+   Last Updated: March 15, 2012
+
+References
+
+   Visible links
+   1. BOTS_article.pdf
+   2. http://dx.doi.org/10.1109/ICPP.2009.64

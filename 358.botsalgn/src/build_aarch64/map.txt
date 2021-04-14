@@ -1,0 +1,342 @@
+Archive member included because of file (symbol)
+
+/usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                              /usr/local/popcorn/aarch64/lib/crt1.o (__libc_start_main)
+/usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o) (exit)
+/usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o) (__hwcap)
+/usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o) (memset)
+/usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o) (__environ)
+/usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o) (__init_tls)
+/usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(exit.o) (_Exit)
+/usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o) (memcpy)
+/usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+                              /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o) (__set_thread_area)
+
+Allocating common symbols
+Common symbol       size              file
+
+__libc              0x70              /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+__hwcap             0x8               /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+__sysinfo           0x8               /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+
+Discarded input sections
+
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .note.GNU-stack
+                0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+Memory map
+
+ ** file header
+                0x0000000000400000       0x40
+ ** segment headers
+                0x0000000000400040      0x118
+
+.note.gnu.build-id
+                0x0000000000400158       0x24
+ ** note header
+                0x0000000000400158       0x10
+ ** zero fill   0x0000000000400168       0x14
+
+.text           0x0000000000400180      0xafc
+ .text.exit     0x0000000000400180       0x24 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+                0x0000000000400180                exit
+ .text          0x00000000004001a4       0x1c 0x4 /usr/local/popcorn/aarch64/lib/crt1.o
+                0x00000000004001a4                _start
+ .text._start_c
+                0x00000000004001c0       0x34 0x4 /usr/local/popcorn/aarch64/lib/crt1.o
+                0x00000000004001c0                _start_c
+ .text          0x00000000004001f4        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .text.dummy    0x00000000004001f4        0x4 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x00000000004001f4                _init
+ .text.dummy1   0x00000000004001f8        0x4 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x00000000004001f8                __init_ssp
+ .text.__init_libc
+                0x00000000004001fc      0x1d8 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x00000000004001fc                __init_libc
+ .text.libc_start_init
+                0x00000000004003d4       0x40 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x00000000004003d4                __libc_start_init
+ .text.__libc_start_main
+                0x0000000000400414       0x50 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x0000000000400414                __libc_start_main
+ .text          0x0000000000400464        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .text.libc_exit_fini
+                0x0000000000400464       0x3c 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+                0x0000000000400464                __libc_exit_fini
+ .text.dummy    0x00000000004004a0        0x4 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+                0x00000000004004a0                __funcs_on_exit
+                0x00000000004004a0                __stdio_exit
+                0x00000000004004a0                _fini
+ .text          0x00000000004004a4        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .text          0x00000000004004a4        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .text.memset   0x00000000004004a4      0x158 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+                0x00000000004004a4                memset
+ .text          0x00000000004005fc        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .text          0x00000000004005fc        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .text.__init_tp
+                0x00000000004005fc       0x74 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+                0x00000000004005fc                __init_tp
+ .text.__copy_tls
+                0x0000000000400670       0x9c 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+                0x0000000000400670                __copy_tls
+ .text.static_init_tls
+                0x000000000040070c      0x158 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+                0x000000000040070c                __init_tls
+ .text          0x0000000000400864        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .text._Exit    0x0000000000400864       0x20 0x4 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+                0x0000000000400864                _Exit
+ .text          0x0000000000400884        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .text.memcpy   0x0000000000400884      0x3e0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+                0x0000000000400884                memcpy
+ .text          0x0000000000400c64        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+ .text.__set_thread_area
+                0xffffffffffffffff        0xc 0x10 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+                0x0000000000400c70                __set_thread_area
+
+.rodata         0x0000000000400c7c       0x26
+ .rodata.src_env___libc_start_main__str_
+                0x0000000000400c7c        0x1 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x0000000000400c7c                src_env___libc_start_main__str_
+ .rodata.src_env___libc_start_main___init_libc_pfd_
+                0x0000000000400c80       0x18 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x0000000000400c80                src_env___libc_start_main___init_libc_pfd_
+ .rodata.src_env___libc_start_main__str_1__dev_null_
+                0x0000000000400c98        0xa 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x0000000000400c98                src_env___libc_start_main__str_1__dev_null_
+
+.llvm_stackmaps
+                0x0000000000400ca8       0x48
+ .llvm_stackmaps
+                0x0000000000400ca8       0x48 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+
+.data.rel.ro.local
+                0x000000000041ffc8       0x28
+ .data.rel.ro.local
+                0x000000000041ffc8       0x10 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .data.rel.ro.local
+                0x000000000041ffd8       0x10 0x8 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .data.rel.ro.local
+                0x000000000041ffe8        0x8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+
+.data.rel.ro    0x000000000041fff0       0x10
+ .data.rel.ro   0x000000000041fff0       0x10 0x8 /usr/local/popcorn/aarch64/lib/crt1.o
+
+.data           0x0000000000420000        0x0
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/crt1.o
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .data          0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+.bss            0x0000000000420000      0x278
+ .bss           0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/crt1.o
+ .bss           0x0000000000420000        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .bss.__popcorn_stack_base
+                0x0000000000420000        0x8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+                0x0000000000420000                __popcorn_stack_base
+ .bss           0x0000000000420008        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .bss           0x0000000000420008        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .bss.__progname
+                0x0000000000420008        0x8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+                0x0000000000420008                __progname
+                0x0000000000420008                program_invocation_short_name
+ .bss.__progname_full
+                0x0000000000420010        0x8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+                0x0000000000420010                __progname_full
+                0x0000000000420010                program_invocation_name
+ .bss           0x0000000000420018        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .bss           0x0000000000420018        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .bss.__environ
+                0x0000000000420018        0x8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+                0x0000000000420018                ___environ
+                0x0000000000420018                __environ
+                0x0000000000420018                _environ
+                0x0000000000420018                environ
+ .bss           0x0000000000420020        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .bss.src_env___init_tls_c_main_tls
+                0x0000000000420020       0x30 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .bss.src_env___init_tls_c_builtin_tls
+                0x0000000000420050      0x1a8 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .bss           0x00000000004201f8        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .bss           0x00000000004201f8        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .bss           0x00000000004201f8        0x0 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+ ** common      0x00000000004201f8       0x80
+
+.debug_str      0x0000000000000000      0x639
+ ** merge strings
+                0x0000000000000000      0x639
+
+.debug_loc      0x0000000000000000      0xd52
+ .debug_loc     0x0000000000000000       0x36 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_loc     0x0000000000000036      0x265 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_loc     0x000000000000029b       0x6c 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_loc     0x0000000000000307        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_loc     0x0000000000000307      0x16d 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_loc     0x0000000000000474        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_loc     0x0000000000000474      0x2b7 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_loc     0x000000000000072b       0x23 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_loc     0x000000000000074e      0x604 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+
+.debug_abbrev   0x0000000000000000      0x713
+ .debug_abbrev  0x0000000000000000       0x62 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_abbrev  0x0000000000000062      0x1b0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_abbrev  0x0000000000000212       0xa0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_abbrev  0x00000000000002b2       0x96 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_abbrev  0x0000000000000348       0x82 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_abbrev  0x00000000000003ca       0x36 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_abbrev  0x0000000000000400      0x1c7 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_abbrev  0x00000000000005c7       0x8f 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_abbrev  0x0000000000000656       0x95 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .debug_abbrev  0x00000000000006eb       0x28 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+.debug_info     0x0000000000000000     0x1260
+ .debug_info    0x0000000000000000       0x8b 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_info    0x000000000000008b      0x3b5 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_info    0x0000000000000440       0xb0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_info    0x00000000000004f0      0x1d7 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_info    0x00000000000006c7      0x118 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_info    0x00000000000007df       0x45 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_info    0x0000000000000824      0x7aa 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_info    0x0000000000000fce       0xcb 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_info    0x0000000000001099      0x112 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .debug_info    0x00000000000011ab       0xb5 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+.debug_ranges   0x0000000000000000      0x140
+ .debug_ranges  0x0000000000000000        0x0 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_ranges  0x0000000000000000       0xc0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_ranges  0x00000000000000c0       0x40 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_ranges  0x0000000000000100        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_ranges  0x0000000000000100        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_ranges  0x0000000000000100        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_ranges  0x0000000000000100       0x40 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_ranges  0x0000000000000140        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_ranges  0x0000000000000140        0x0 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+
+.debug_pubnames
+                0x0000000000000000      0x264
+ .debug_pubnames
+                0x0000000000000000       0x1f 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_pubnames
+                0x000000000000001f       0xa4 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_pubnames
+                0x00000000000000c3       0x38 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_pubnames
+                0x00000000000000fb       0x5a 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_pubnames
+                0x0000000000000155       0x1d 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_pubnames
+                0x0000000000000172       0x20 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_pubnames
+                0x0000000000000192       0x8a 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_pubnames
+                0x000000000000021c       0x2b 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_pubnames
+                0x0000000000000247       0x1d 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+
+.debug_pubtypes
+                0x0000000000000000      0x3ee
+ .debug_pubtypes
+                0x0000000000000000       0x30 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_pubtypes
+                0x0000000000000030       0x74 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_pubtypes
+                0x00000000000000a4       0x3e 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_pubtypes
+                0x00000000000000e2       0x72 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_pubtypes
+                0x0000000000000154       0x86 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_pubtypes
+                0x00000000000001da       0x1b 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_pubtypes
+                0x00000000000001f5      0x161 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_pubtypes
+                0x0000000000000356       0x27 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_pubtypes
+                0x000000000000037d       0x71 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+
+.comment        0x0000000000000000       0x16
+ ** merge strings
+                0x0000000000000000       0x16
+
+.debug_frame    0x0000000000000000      0x298
+ .debug_frame   0x0000000000000000       0x38 0x8 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_frame   0x0000000000000038       0xc0 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_frame   0x00000000000000f8       0x80 0x8 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_frame   0x0000000000000178       0x30 0x8 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_frame   0x00000000000001a8       0x90 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_frame   0x0000000000000238       0x30 0x8 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_frame   0x0000000000000268       0x30 0x8 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+
+.debug_line     0x0000000000000000      0xb1b
+ .debug_line    0x0000000000000000       0x4b 0x1 /usr/local/popcorn/aarch64/lib/crt1.o
+ .debug_line    0x000000000000004b      0x275 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+ .debug_line    0x00000000000002c0       0xaa 0x1 /usr/local/popcorn/aarch64/lib/libc.a(exit.o)
+ .debug_line    0x000000000000036a       0x6c 0x1 /usr/local/popcorn/aarch64/lib/libc.a(libc.o)
+ .debug_line    0x00000000000003d6      0x110 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memset.o)
+ .debug_line    0x00000000000004e6       0x34 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__environ.o)
+ .debug_line    0x000000000000051a      0x284 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__init_tls.o)
+ .debug_line    0x000000000000079e       0x7c 0x1 /usr/local/popcorn/aarch64/lib/libc.a(_Exit.o)
+ .debug_line    0x000000000000081a      0x2ba 0x1 /usr/local/popcorn/aarch64/lib/libc.a(memcpy.o)
+ .debug_line    0x0000000000000ad4       0x47 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+.stack_transform.unwind
+                0x0000000000000000       0x18
+ .stack_transform.unwind
+                0x0000000000000000       0x18 0x4 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+
+.stack_transform.unwind_arange
+                0x0000000000000000       0x10
+ .stack_transform.unwind_arange
+                0x0000000000000000       0x10 0x8 /usr/local/popcorn/aarch64/lib/libc.a(__libc_start_main.o)
+
+.debug_aranges  0x0000000000000000       0x30
+ .debug_aranges
+                0x0000000000000000       0x30 0x1 /usr/local/popcorn/aarch64/lib/libc.a(__set_thread_area.o)
+
+.note.gnu.gold-version
+                0x0000000000000000       0x1c
+ ** note header
+                0x0000000000000000       0x10
+ ** fill        0x0000000000000010        0x9
+ ** zero fill   0x0000000000000019        0x3
+
+.symtab         0x0000000000000000     0x10b0
+ ** symtab      0x0000000000000000     0x10b0
+
+.strtab         0x0000000000000000      0x43f
+ ** string table
+                0x0000000000000000      0x43f
+
+.shstrtab       0x0000000000000000      0x154
+ ** string table
+                0x0000000000000000      0x154
