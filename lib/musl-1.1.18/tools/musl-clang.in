@@ -2,11 +2,12 @@
 cc="@CC@"
 target="@TARGET@"
 triple="${target}-linux-gnu"
+popcorn_cc="${target}-popcorn-linux-gnu-gcc"
 libc="@PREFIX@"
 libc_inc="@INCDIR@"
 libc_lib="@LIBDIR@"
 thisdir="`cd "$(dirname "$0")"; pwd`"
-libgcc="`${triple}-gcc -print-libgcc-file-name`"
+libgcc="`${popcorn_cc} -print-libgcc-file-name`"
 libgcc_dir="`dirname $libgcc`"
 crt_files="$libc_lib/crt1.o $libgcc_dir/crtbeginT.o $libgcc_dir/crtend.o"
 

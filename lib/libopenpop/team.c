@@ -419,6 +419,11 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   thr->ts.single_count = 0;
 #endif
   thr->ts.static_trip = 0;
+
+  /*GFS_HETPROBE_IRREGULAR re-probe loop */
+  thr->ts.probe_again = false;
+  thr->ts.real_ws_i = 1;
+
   thr->task = &team->implicit_task[0];
   nthreads_var = icv->nthreads_var;
   if (__builtin_expect (gomp_nthreads_var_list != NULL, 0)
@@ -748,6 +753,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  nthr->ts.single_count = 0;
 #endif
 	  nthr->ts.static_trip = 0;
+          nthr->ts.real_ws_i = 1;
+	  nthr->ts.probe_again = false;
 	  nthr->task = &team->implicit_task[i];
 	  nthr->place = place;
 	  gomp_init_task (nthr->task, task, icv);
@@ -947,6 +954,8 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
       else start_data->popcorn_created_tid = popcorn_created_tid++;
 #endif
       start_data->ts.static_trip = 0;
+      start_data->ts.real_ws_i = 1;
+      start_data->ts.probe_again = false;
       start_data->task = &team->implicit_task[i];
       /* Note: since this thread is new it's data is still on the origin, so
          no need to have per-node leaders initialize it. */

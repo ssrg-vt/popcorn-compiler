@@ -69,6 +69,8 @@ struct gomp_task_icv gomp_global_icv = {
   .dyn_var = false,
   .nest_var = false,
   .bind_var = omp_proc_bind_false,
+  .use_pctg_hetprobe = true,
+  .irr_percentage = 10,
   .target_data = NULL
 };
 
@@ -101,11 +103,13 @@ parse_schedule (void)
   unsigned long value;
 
   env = getenv ("OMP_SCHEDULE");
+
   if (env == NULL)
     return;
 
   while (isspace ((unsigned char) *env))
     ++env;
+
   if (strncasecmp (env, "static", 6) == 0)
     {
       gomp_global_icv.run_sched_var = GFS_STATIC;
@@ -131,14 +135,19 @@ parse_schedule (void)
       gomp_global_icv.run_sched_var = GFS_HETPROBE;
       env += 8;
     }
+  else if (strncasecmp (env, "het_irregular", 9) == 0)
+    {
+      gomp_global_icv.run_sched_var = GFS_HETPROBE_IRREGULAR;
+      env += 9;
+    }
   else
     goto unknown;
 
   while (isspace ((unsigned char) *env))
     ++env;
-  if (*env == '\0')
+  if (*env == '\0' || gomp_global_icv.run_sched_var == GFS_HETPROBE_IRREGULAR)
     {
-      gomp_global_icv.run_sched_chunk_size
+  gomp_global_icv.run_sched_chunk_size
 	= gomp_global_icv.run_sched_var != GFS_STATIC;
       return;
     }
@@ -189,7 +198,6 @@ parse_unsigned_long (const char *name, unsigned long *pvalue, bool allow_zero)
   env = getenv (name);
   if (env == NULL)
     return false;
-
   while (isspace ((unsigned char) *env))
     ++env;
   if (*env == '\0')
@@ -222,6 +230,7 @@ parse_int (const char *name, int *pvalue, bool allow_zero)
   unsigned long value;
   if (!parse_unsigned_long (name, &value, allow_zero))
     return false;
+
   if (value > INT_MAX)
     {
       gomp_error ("Invalid value for environment variable %s", name);
@@ -280,13 +289,13 @@ parse_unsigned_long_list (const char *name, unsigned long *p1stvalue,
   env = getenv (name);
   if (env == NULL)
     return false;
-
   while (isspace ((unsigned char) *env))
     ++env;
   if (*env == '\0')
     goto invalid;
 
   errno = 0;
+ 
   value = strtoul (env, &end, 10);
   if (errno || (long) value <= 0)
     goto invalid;
@@ -336,8 +345,7 @@ parse_unsigned_long_list (const char *name, unsigned long *p1stvalue,
 		break;
 	      if (*end != ',')
 		goto invalid;
-	    }
-	  while (1);
+	  } while (1);
 	  *p1stvalue = values[0];
 	  *pvalues = values;
 	  *pnvalues = nvalues;
@@ -1304,7 +1312,10 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
     case GFS_HETPROBE:
       fputs ("HETPROBE", stderr);
       break;
-    }
+    case GFS_HETPROBE_IRREGULAR:
+      fputs ("HETPROBE IRREGULAR", stderr);
+      break;
+}
   fputs ("'\n", stderr);
 
   fputs ("  OMP_PROC_BIND = '", stderr);
@@ -1429,6 +1440,23 @@ initialize_env (void)
   omp_check_defines ();
 
   parse_schedule ();
+  
+  /* Parse the percentage of iterations to do in between probing periods */
+  if (gomp_global_icv.run_sched_var == GFS_HETPROBE_IRREGULAR){
+
+	if (parse_int("OMP_HET_PTG",&gomp_global_icv.irr_percentage,true)){
+#ifdef IRR_DEBUG 
+	    fprintf(stderr, "DBG(%s) > HET_IRREGULAR uses percentage %d\n",
+		   __func__,gomp_global_icv.irr_percentage);
+#endif
+	}
+        
+	/* Parse alternative mode with pragma (TODO) */
+	if (!gomp_global_icv.irr_percentage){
+		gomp_global_icv.use_pctg_hetprobe = false;
+	}
+  }
+
   parse_boolean ("OMP_DYNAMIC", &gomp_global_icv.dyn_var);
   parse_boolean ("OMP_NESTED", &gomp_global_icv.nest_var);
   parse_boolean ("OMP_CANCELLATION", &gomp_cancel_var);
@@ -1448,11 +1476,14 @@ initialize_env (void)
 #endif
   gomp_init_num_threads ();
   gomp_available_cpus = gomp_global_icv.nthreads_var;
+
   if (!parse_unsigned_long_list ("OMP_NUM_THREADS",
 				 &gomp_global_icv.nthreads_var,
 				 &gomp_nthreads_var_list,
-				 &gomp_nthreads_var_list_len))
+				 &gomp_nthreads_var_list_len)){
     gomp_global_icv.nthreads_var = gomp_available_cpus;
+  }
+
   bool ignore = false;
   if (parse_bind_var ("OMP_PROC_BIND",
 		      &gomp_global_icv.bind_var,

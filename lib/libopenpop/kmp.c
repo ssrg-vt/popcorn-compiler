@@ -26,7 +26,7 @@
 /* Enable debugging information */
 //#define _KMP_DEBUG 1
 /* Only print messages at the x86 side (assuming that is node 0) */
-#define _KMP_DEBUG_X86 
+#define _KMP_DEBUG_X86
 
 #ifdef _KMP_DEBUG
 
@@ -39,6 +39,12 @@
 # define DEBUG_ONE( ... ) \
   do { if(gtid == 0) fprintf(stderr, __VA_ARGS__); } while (0);
 #endif
+
+#else
+# define DEBUG( ... )
+# define DEBUG_ONE( ... )
+#endif
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Parallel region
@@ -98,11 +104,19 @@ __kmpc_fork_call(ident_t *loc, int32_t argc, kmpc_micro microtask, void *ctx)
   //}
   //else shared_data = va_arg(ap, void *);
   //va_end(ap);
+  
   assert(argc == 1 && ctx && "Unsupported __kmpc_fork_call");
 
   wrapper_data->task = microtask;
   wrapper_data->mtid = &mtid;
   wrapper_data->data = ctx;
+
+  /* Total number of iterations completed, used by HET_IRREGULAR */
+  popcorn_global.total_irr_done = 0;
+  /* Percentage of work finished before last re-probing (0% because of the 1st probing) */
+  popcorn_global.last_probe = 0;
+  /* No fragmentation of iterations on the work. */
+  popcorn_global.num_irr_jumps = 0;
 
   /* Start workers & run the task */
 #ifdef _TIME_PARALLEL
@@ -404,7 +418,8 @@ static inline enum sched_type select_runtime_schedule()
     break;
   case GFS_DYNAMIC: schedule = kmp_sch_dynamic_chunked; break;
   case GFS_HETPROBE: schedule = kmp_sch_hetprobe; break;
-  }
+  case GFS_HETPROBE_IRREGULAR: schedule = kmp_sch_hetprobe_irregular; break; 
+ }
   return schedule;
 }
 
@@ -457,6 +472,7 @@ static inline unsigned long long calc_chunk_size_ull(unsigned long long lb,
                              STATIC_HIERARCHY_INIT,                           \
                              DYN_INIT,                                        \
                              DYN_HIERARCHY_INIT,                              \
+                             HETPROBE_IRR_INIT,                               \
                              HETPROBE_INIT)                                   \
 void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
                                  int32_t gtid,                                \
@@ -470,7 +486,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   struct gomp_team *team = thr->ts.team;                                      \
   int nthreads = team ? team->nthreads : 1;                                   \
   bool distributed = popcorn_distributed();                                   \
-                                                                              \
+                        	                                              \
   DEBUG("__kmpc_dispatch_init_"#NAME": %s %d %d"SPEC SPEC SPEC SPEC"\n",      \
         loc->psource, gtid, schedule, lb, ub, st, chunk);                     \
                                                                               \
@@ -478,26 +494,27 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
   {                                                                           \
     schedule = select_runtime_schedule();                                     \
     chunk = gomp_global_icv.run_sched_chunk_size;                             \
-    DEBUG("__kmpc_dispatch_init_"#NAME": %d %d -> %d, chunk ="SPEC"\n",       \
+    DEBUG("__kmpc_dispatch_init_"#NAME": %d %d -> sch %d, chunk ="SPEC"\n",   \
           gtid, kmp_sch_runtime, schedule, chunk);                            \
   }                                                                           \
                                                                               \
-  if(nthreads == 1) {                                                         \
+  if (nthreads == 1) {                                                        \
     st = 1;                                                                   \
     chunk = (ub + 1) - lb;                                                    \
     schedule = kmp_sch_dynamic_chunked;                                       \
     DEBUG("Single-thread team, assigning all iterations\n");                  \
   }                                                                           \
-  else if((schedule == kmp_sch_static || schedule == kmp_sch_static_chunked)  \
+  else if ((schedule == kmp_sch_static || schedule == kmp_sch_static_chunked) \
           && distributed) {                                                   \
     schedule = kmp_sch_static_hierarchy;                                      \
     DEBUG_ONE("Switching to hierarchical static scheduler\n");                \
   }                                                                           \
-  else if(schedule == kmp_sch_dynamic_chunked && distributed) {               \
+  else if (schedule == kmp_sch_dynamic_chunked && distributed) {              \
     schedule = kmp_sch_dynamic_chunked_hierarchy;                             \
     DEBUG_ONE("Switching to hierarchical dynamic scheduler\n");               \
   }                                                                           \
-  else if(schedule == kmp_sch_hetprobe)                                       \
+  else if (schedule == kmp_sch_hetprobe ||                                    \
+           schedule == kmp_sch_hetprobe_irregular)                            \
   {                                                                           \
     if(!distributed) {                                                        \
       schedule = kmp_sch_dynamic_chunked;                                     \
@@ -505,6 +522,7 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
     }                                                                         \
     else                                                                      \
     {                                                                         \
+      popcorn_global.total_irr = ub + 1;                                      \
       TYPE probe_size = nthreads * chunk * st;                                \
       if(probe_size > (TYPE)((float)(ub - lb) * 0.25)) {                      \
         schedule = kmp_sch_static_hierarchy;                                  \
@@ -542,7 +560,18 @@ void __kmpc_dispatch_init_##NAME(ident_t *loc,                                \
       chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
       DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
     }                                                                         \
+    DEBUG("__kmpc_dispatch_init_"#NAME": Calling HETPROBE_INIT...");          \
     HETPROBE_INIT(thr->popcorn_nid, loc->psource, lb, ub + 1, st, chunk);     \
+    break;                                                                    \
+  case kmp_sch_hetprobe_irregular:                                            \
+    if(chunk <= 1) /* Auto-select probe size */                               \
+    {                                                                         \
+      chunk = calc_chunk_size_##GOMP_TYPE(lb, ub, st, nthreads);              \
+      DEBUG("__kmpc_dispatch_init_"#NAME": %d chunk"SPEC"\n", gtid, chunk);   \
+    }                                                                         \
+    thr->ts.probe_again = false;                                              \
+    thr->ts.real_ws_i = 1;                                                    \
+    HETPROBE_IRR_INIT(thr->popcorn_nid, loc->psource, lb, ub + 1, st, chunk); \
     break;                                                                    \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
@@ -555,24 +584,28 @@ __kmpc_dispatch_init(4, int32_t, " %d", long,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
+                     hierarchy_init_workshare_hetprobe_irregular,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(4u, uint32_t, " %u", ull,
                      GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
+                     hierarchy_init_workshare_hetprobe_irregular_ull,
                      hierarchy_init_workshare_hetprobe_ull)
 __kmpc_dispatch_init(8, int64_t, " %ld", long,
                      GOMP_loop_static_init,
                      hierarchy_init_workshare_static,
                      GOMP_loop_dynamic_init,
                      hierarchy_init_workshare_dynamic,
+                     hierarchy_init_workshare_hetprobe_irregular,
                      hierarchy_init_workshare_hetprobe)
 __kmpc_dispatch_init(8u, uint64_t, " %lu", ull,
                      GOMP_loop_ull_static_init,
                      hierarchy_init_workshare_static_ull,
                      GOMP_loop_ull_dynamic_init,
                      hierarchy_init_workshare_dynamic_ull,
+                     hierarchy_init_workshare_hetprobe_irregular_ull,
                      hierarchy_init_workshare_hetprobe_ull)
 
 /*
@@ -595,10 +628,12 @@ void __kmpc_dispatch_fini_##NAME(ident_t *loc, int32_t gtid)                  \
     hierarchy_loop_end(thr->popcorn_nid, loc->psource, false);                \
     break;                                                                    \
   case GFS_HIERARCHY_DYNAMIC: /* Fall through */                              \
+  case GFS_HETPROBE_IRREGULAR:                                                \
+    /* TODO I think we can reuse the regular hetprobe loop end */             \
   case GFS_HETPROBE:                                                          \
     hierarchy_loop_end(thr->popcorn_nid, loc->psource, true);                 \
     break;                                                                    \
-  default:                                                                    \
+   default:                                                                   \
     assert(false && "Unknown scheduling algorithm");                          \
   }                                                                           \
 }
@@ -623,6 +658,7 @@ __kmpc_dispatch_fini(8u)
                              DYN_NEXT, DYN_LAST,                              \
                              DYN_HIERARCHY_NEXT,                              \
                              HETPROBE_NEXT,                                   \
+                             HETPROBE_IRR_NEXT,                               \
                              HIERARCHY_LAST)                                  \
 int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
                                 int32_t gtid,                                 \
@@ -673,6 +709,10 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
     ret = HETPROBE_NEXT(nid, loc->psource, &istart, &iend);                   \
     *p_last = HIERARCHY_LAST(iend);                                           \
     break;                                                                    \
+  case GFS_HETPROBE_IRREGULAR:                                                \
+    ret = HETPROBE_IRR_NEXT(nid, loc->psource, &istart, &iend);               \
+    *p_last = HIERARCHY_LAST(iend);                                           \
+    break;                                                                    \
   default:                                                                    \
     assert(false && "Unknown scheduling algorithm");                          \
     break;                                                                    \
@@ -694,22 +734,24 @@ int __kmpc_dispatch_next_##NAME(ident_t *loc,                                 \
   return ret;                                                                 \
 }
 
+/* TODO Implement this irregular functions */
+
 __kmpc_dispatch_next(4, int32_t, long, " %d",
                      GOMP_loop_dynamic_next, gomp_iter_is_last,
                      hierarchy_next_dynamic, hierarchy_next_hetprobe,
-                     hierarchy_last)
+                     hierarchy_next_hetprobe_irregular,hierarchy_last)
 __kmpc_dispatch_next(4u, uint32_t, unsigned long long, " %u",
                      GOMP_loop_ull_dynamic_next, gomp_iter_is_last_ull,
                      hierarchy_next_dynamic_ull, hierarchy_next_hetprobe_ull,
-                     hierarchy_last_ull)
+                     hierarchy_next_hetprobe_irregular_ull,hierarchy_last_ull)
 __kmpc_dispatch_next(8, int64_t, long, " %ld",
                      GOMP_loop_dynamic_next, gomp_iter_is_last,
                      hierarchy_next_dynamic, hierarchy_next_hetprobe,
-                     hierarchy_last)
+                     hierarchy_next_hetprobe_irregular,hierarchy_last)
 __kmpc_dispatch_next(8u, uint64_t, unsigned long long, " %lu",
                      GOMP_loop_ull_dynamic_next, gomp_iter_is_last_ull,
                      hierarchy_next_dynamic_ull, hierarchy_next_hetprobe_ull,
-                     hierarchy_last_ull)
+                     hierarchy_next_hetprobe_irregular_ull,hierarchy_last_ull)
 
 /*
  * Start execution of an ordered construct.

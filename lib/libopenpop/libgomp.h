@@ -73,6 +73,8 @@
 # pragma GCC visibility push(hidden)
 #endif
 
+#define IRR_DEBUG
+
 /* If we were a C++ library, we'd get this from <std/atomic>.  */
 enum memmodel
 {
@@ -139,6 +141,7 @@ enum gomp_schedule_type
   GFS_GUIDED,
   GFS_AUTO,
   GFS_HETPROBE,
+  GFS_HETPROBE_IRREGULAR,
   GFS_HIERARCHY_STATIC,
   GFS_HIERARCHY_DYNAMIC,
 };
@@ -196,12 +199,17 @@ struct gomp_work_share
       long chunk_size;
 
       /* This is the iteration end point.  If this is a SECTIONS construct,
-	 this is the number of contained sections.  */
+         this is the number of contained sections.  */
       long end;
 
       /* This is the iteration step.  If this is a SECTIONS construct, this
-	 is always 1.  */
+         is always 1.  */
       long incr;
+
+      /* For the irregular loop we don't give all the work they should have all at once.
+      */
+      long real_chunk_size;
+      long real_end;
     };
 
     struct {
@@ -209,7 +217,9 @@ struct gomp_work_share
       unsigned long long chunk_size_ull;
       unsigned long long end_ull;
       unsigned long long incr_ull;
-    };
+      unsigned long long real_chunk_size_ull;
+      unsigned long long real_end_ull;
+   };
   };
 
   union {
@@ -266,6 +276,11 @@ struct gomp_work_share
 
     /* This is the returned data structure for SINGLE COPYPRIVATE.  */
     void *copyprivate;
+  };
+
+  union {
+	long real_next;
+	unsigned long long real_next_ull;
   };
 
   union {
@@ -329,13 +344,27 @@ struct gomp_team_state
      is 1, etc.  This is unused when the compiler knows in advance that
      the loop is statically scheduled.  */
   unsigned long static_trip;
+
+  /* For GFS_HETPROBE_IRREGULAR we want to go back to the probe period again. */
+  bool probe_again;
+
+  /* We only give a portion in the irregular hetprobe so that the thread comes back. 
+     We use this iterator to know what portion to give next.
+  */
+  int real_ws_i;
+};
+
+struct het_irregular_jump 
+{
+	long long init;
+	long long end;
 };
 
 struct target_mem_desc;
 
 /* These are the OpenMP 4.0 Internal Control Variables described in
-   section 2.3.1.  Those described as having one copy per task are
-   stored within the structure; those described as having one copy
+   section 2.3.1 and some HET_IRREGULAR extra fields.  Those described as having one 
+   copy per task are stored within the structure; those described as having one copy
    for the whole program are (naturally) global variables.  */
    
 struct gomp_task_icv
@@ -348,6 +377,11 @@ struct gomp_task_icv
   bool dyn_var;
   bool nest_var;
   char bind_var;
+   
+  /* Percentage of iterations to run before repeating the probing period */
+  int irr_percentage;
+  bool use_pctg_hetprobe;
+
   /* Internal ICV.  */
   struct target_mem_desc *target_data;
 };
@@ -635,6 +669,10 @@ struct gomp_thread
 
   /* Time stamp for this thread's probe start. */
   struct timespec probe_start;
+
+  /* To help add work on the probing when a jump was detected */
+  long reprobe_init;
+  long reprobe_end;
 };
 
 

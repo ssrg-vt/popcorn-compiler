@@ -23,6 +23,8 @@
 
 typedef struct htab *htab_t;
 
+#define MAX_IRR_JUMPS (500)
+
 /* Hierarchical reduction configuration */
 #define REDUCTION_ENTRIES 48UL
 typedef union {
@@ -103,6 +105,28 @@ typedef struct {
     long split[MAX_POPCORN_NODES+1];
     unsigned long split_ull[MAX_POPCORN_NODES+1];
   };
+
+  /* Fields for the total number of iterations completed, used by HET_IRREGULAR to
+     compute the percentage of iterations (as we might need to re-probe) 
+  */
+  volatile int total_irr;
+  volatile int total_irr_done;
+
+  /* Global barrier to make the leader thread wait for the other node, either because they
+     have no work left or the other is finishing some of it before a re-probing. */
+  gomp_barrier_t ALIGN_PAGE bar_irregular;
+
+  /* Percentage of work finished when last re-probing was triggered on HET_IRREGULAR */
+  volatile int last_probe;
+
+  /* To regenerate the global and local queues when re-probing*/  
+  volatile unsigned long long other_next;
+  volatile unsigned long long other_end; 
+  volatile long long init_chunk;
+
+  volatile struct het_irregular_jump het_irregular_jumps[MAX_IRR_JUMPS];
+  volatile int num_irr_jumps;
+
 } global_info_t;
 
 #define ROUND_UP( val, round ) (((val) + ((round) - 1) & ~round))
@@ -335,6 +359,12 @@ void hierarchy_init_workshare_dynamic_ull(int nid,
                                           unsigned long long incr,
                                           unsigned long long chunk);
 
+void hierarchy_init_workshare_hetprobe_irregular(int nid,
+                                                 const void *ident,
+                                                 long long lb,
+                                                 long long ub,
+                                                 long long incr,
+                                                 long long chunk);
 /*
  * Initialize work-sharing construct using the heterogeneous probing scheduler
  * for the node.
@@ -353,6 +383,14 @@ void hierarchy_init_workshare_hetprobe(int nid,
                                        long long incr,
                                        long long chunk);
 
+/* Same idea as above but for the irregular hetprobe*/
+void hierarchy_init_workshare_hetprobe_irregular(int nid,
+                                                 const void *ident,
+                                                 long long lb,
+                                                 long long ub,
+                                                 long long incr,
+                                                 long long chunk);
+
 /* Same as above but with unsigned long long types */
 void hierarchy_init_workshare_hetprobe_ull(int nid,
                                            const void *ident,
@@ -360,6 +398,14 @@ void hierarchy_init_workshare_hetprobe_ull(int nid,
                                            unsigned long long ub,
                                            unsigned long long incr,
                                            unsigned long long chunk);
+
+/* Same idea as above but for the irregular hetprobe*/
+void hierarchy_init_workshare_hetprobe_irregular_ull(int nid,
+                                                     const void *ident,
+                                                     unsigned long long lb,
+                                                     unsigned long long ub,
+                                                     unsigned long long incr,
+                                                     unsigned long long chunk);
 
 /*
  * Grab the next batch of iterations from the local work share.  Replenish from
@@ -394,14 +440,26 @@ bool hierarchy_next_dynamic_ull(int nid,
  */
 bool hierarchy_next_hetprobe(int nid,
                              const void *ident,
-                             long *start,
+                             long *start, 
                              long *end);
+
+/* Same idea as before but for the irregular hetprobe*/
+bool hierarchy_next_hetprobe_irregular(int nid,
+                                       const void *ident,
+                                       long *start,
+                                       long *end);
 
 /* Same as above but with unsigned long long types */
 bool hierarchy_next_hetprobe_ull(int nid,
                                  const void *ident,
                                  unsigned long long *start,
                                  unsigned long long *end);
+
+/* Same idea as above but for the irregular hetprobe */
+bool hierarchy_next_hetprobe_irregular_ull(int nid,
+                                           const void *ident,
+                                           unsigned long long *start,
+                                           unsigned long long *end);
 
 /*
  * Return whether the specified iteration is the last iteration for the work

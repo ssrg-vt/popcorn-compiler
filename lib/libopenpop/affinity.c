@@ -174,6 +174,7 @@ bool popcorn_affinity_init_nodes (unsigned long *counts,
     popcorn_global.hybrid_barrier = true;
     popcorn_global.hybrid_reduce = true;
     gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
+    gomp_barrier_init(&popcorn_global.bar_irregular, popcorn_global.nodes);
   }
   else if(!quiet)
     gomp_error("No Popcorn nodes available");
@@ -205,6 +206,7 @@ popcorn_affinity_init_nodes_uniform (unsigned long count, bool quiet)
     popcorn_global.hybrid_barrier = true;
     popcorn_global.hybrid_reduce = true;
     gomp_barrier_init(&popcorn_global.bar, popcorn_global.nodes);
+    gomp_barrier_init(&popcorn_global.bar_irregular, popcorn_global.nodes);
   }
   else if(!quiet)
     gomp_error("No Popcorn nodes available");

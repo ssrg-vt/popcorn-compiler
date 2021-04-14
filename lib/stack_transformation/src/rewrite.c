@@ -369,8 +369,6 @@ static void unwind_and_size(rewrite_context src,
     dest->num_acts++;
     dest->act++;
 
-    ST_INFO("Stack Activation Number = %d\n", ACT(src).site.id);
-
     /*
      * Call site meta-data will be used to get return addresses, canonical
      * frame addresses and frame-base pointer locations.
@@ -379,10 +377,11 @@ static void unwind_and_size(rewrite_context src,
       ST_ERR(1, "could not get source call site information (address=%p)\n",
              REGOPS(src)->pc(ACT(src).regs));
 
-    if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site))
+    if(!get_site_by_id(dest->handle, ACT(src).site.id, &ACT(dest).site)) {
       ST_ERR(1, "could not get destination call site information (address=%p, ID=%ld)\n",
              REGOPS(src)->pc(ACT(src).regs), ACT(src).site.id);
-
+    } 
+    
     /* Update stack size with newly discovered stack frame's size */
     stack_size += ACT(dest).site.frame_size;
 
