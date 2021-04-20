@@ -1,0 +1,286 @@
+<?xml version="1.0"?>
+<!DOCTYPE flagsdescription SYSTEM
+       "http://www.spec.org/dtd/cpuflags2.dtd">
+
+<!-- This file defines portability flags that may be used when compiling
+     359.botsspar.
+
+  Copyright 2012 Standard Performance Evaluation Corporation
+
+  $Revision: 366 $
+  $Date: 2012-06-26 19:41:25 -0400 (Tue, 26 Jun 2012) $
+-->
+<flagsdescription>
+
+<filename>359.botsspar.flags</filename>
+<title>359.botsspar Approved Portability Flags</title>
+
+<header>
+<![CDATA[
+<p>This is the complete set of approved portability flags for 359.botsspar.</p>
+]]>
+</header>
+
+<flag name="currdir_inc" class="mandatory" regexp="-I\.(?:/omp-tasks/sparselu/sparselu_single|/common)?(?:\s+|$)">
+<example>-I. -I./omp-tasks/sparselu/sparselu_single -I./common </example>
+This flag is included automatically by Spec/object.pm.
+</flag>
+
+<flag name="DBOTS_APP_CHECK_USES_SEQ_RESULT" class="forbidden">
+Used for comparing sequential to parallel results, do not set.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_BLOCK" class="forbidden">
+Sets the default argument block, must not be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_CUTOFF" class="forbidden">
+Sets the default cutoff for for the first argument, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_CUTOFF_1" class="forbidden">
+Sets the default cutoff for for the second argument, must not be changed
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_CUTOFF_2" class="forbidden">
+Sets the default cutoff for for the third argument, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_REPETITIONS" class="forbidden">
+Defines argument repetition for BOTS if used, do not change for SPEC.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_SIZE" class="forbidden">
+Sets the default value for for the first argument, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_SIZE_1" class="forbidden">
+Sets the default value for for the second argument, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DEF_ARG_SIZE_2" class="forbidden">
+Sets the default value for for the third argument, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_BLOCK" class="forbidden">
+Describes argument block to BOTS if needed, do not set for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_CUTOFF" class="forbidden">
+Describes first argument cutoff to BOTS if needed, do not set for SPEC 
+run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_CUTOFF_1" class="forbidden">
+Describes second argument cutoff to BOTS if needed, do not set for SPEC 
+run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_CUTOFF_2" class="forbidden">
+Describes third argument cutoff to BOTS if needed, do not set for SPEC 
+run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_FILE" class="forbidden">
+Describes the argument file to BOTS if needed, do not set for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_REPETITIONS" class="forbidden">
+Describes argument repetition to BOTS if needed, do not set for SPEC 
+run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_SIZE" class="forbidden">
+Describes the value of the first argument, must not be changed for a 
+SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_SIZE_1" class="forbidden">
+Describes the value of the second argument, must not be changed for a 
+SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_DESC_ARG_SIZE_2" class="forbidden">
+Describes the value of the third argument, must not be changed for a 
+SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_FINI" class="forbidden">
+Sets the end message, cannot be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_INIT" class="forbidden">
+Sets the value init types, cannot be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_NAME" class="forbidden">
+Sets the name of what is being run, cannot be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_PARAMETERS_DESC" class="forbidden">
+Describes elements of the BOTS test, cannot be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_PARAMETERS_LIST" class="forbidden">
+Lists the paramaters of the run, cannot be changed for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_SELF_TIMING" class="forbidden">
+Tells BOTS to do self timing, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_BLOCK" class="forbidden">
+Tells BOTS how arguments are supplied, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_CUTOFF" class="forbidden">
+Tells BOTS if first cutoff is to be used, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_CUTOFF_1" class="forbidden">
+Tells BOTS if second cutoff is to be used, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_CUTOFF_2" class="forbidden">
+Tells BOTS if third cutoff is to be used, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_FILE" class="forbidden">
+Tells BOTS if argument file is used, do not change for SPEC.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_REPETITIONS" class="forbidden">
+Tells BOTS if argument repetition is used, do not change for SPEC.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_SIZE" class="forbidden">
+Tells BOTS that it is using arguments, must not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_SIZE_1" class="forbidden">
+Tells BOTS that it is using arguments, must not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_ARG_SIZE_2" class="forbidden">
+Tells BOTS that it is using arguments, must not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_APP_USES_REPETITIONS" class="forbidden">
+Tells BOTS repetition is to be used, do not change for SPEC run.
+</flag>
+
+<flag name="DBOTS_DEBUG" class="forbidden">
+Used to allow BOTS debugging, not to be set for SPEC runs.
+</flag>
+
+<flag name="DBOTS_MODEL_DESC" class="forbidden">
+This describes the model being run.  Not to be changes for a SPEC run.
+</flag>
+
+<flag name="DCC" class="forbidden">
+Sets the value of the C compiler being used, not to be set for 
+submittable benchmark run.
+</flag>
+
+<flag name="DCDATE" class="forbidden">
+Lists the date of the compile, not to be set for submittable run.
+</flag>
+
+<flag name="DCFLAGS" class="forbidden">
+Sets the values of the C compiler flags being used, not to be set for 
+submittable benchmark run.
+</flag>
+
+<flag name="DCMESSAGE" class="forbidden">
+Sets a message for a BOTS run, do not use for SPEC.
+</flag>
+
+<flag name="DFINAL_CUTOFF" class="forbidden">
+Defines a final cutoff value, not to be used for SPEC run.
+</flag>
+
+<flag name="DFORCE_TIED_TASKS" class="forbidden">
+This causes the benchmark to be run with tied tasks.  Not allowed for
+SPEC runs.
+</flag>
+
+<flag name="DIF_CUTOFF" class="forbidden">
+Defines if cutoff value, not to be changed for SPEC run.
+</flag>
+
+<flag name="DKERNEL_CALL" class="forbidden">
+Sets the name of the kernel call, must not be changed for SPEC run.
+</flag>
+
+<flag name="DKERNEL_CHECK" class="forbidden">
+Sets the name of the kernel results check call, must not be changed for 
+SPEC run.
+</flag>
+
+<flag name="DKERNEL_FINI" class="forbidden">
+Sets the name of the kernel end call, must not be changed for SPEC run.
+</flag>
+
+<flag name="DKERNEL_INIT" class="forbidden">
+Sets the name of the kernel init call, must not be changed for SPEC run.
+</flag>
+
+<flag name="DKERNEL_SEQ_CALL" class="forbidden">
+Sets the name of the sequential kernel call, must not be 
+changed for SPEC run.
+</flag>
+
+<flag name="DKERNEL_SEQ_FINI" class="forbidden">
+Sets the name of the kernel sequential end call, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DKERNEL_SEQ_INIT" class="forbidden">
+Sets the name of the kernel sequential init call, must not be changed 
+for SPEC run.
+</flag>
+
+<flag name="DLD" class="forbidden">
+Sets the value of the loader being used, not to be set for 
+submittable benchmark run.
+</flag>
+
+<flag name="DLDFLAGS" class="forbidden">
+Sets the values of the load flags being used, not to be set for 
+submittable benchmark run.
+</flag>
+
+<flag name="DMANUAL_CUTOFF" class="forbidden">
+Defines manual cutoff value, not to be changed for SPEC run.
+</flag>
+
+<flag name="DSPARSELU_H" class="forbidden">
+Include file fence, do not change for SPEC run.
+</flag>
+
+<flag name="D_BOTS_H_" class="forbidden">
+Internal to BOTS, include file guard, do not use.
+</flag>
+
+<flag name="D_COMMON_H" class="forbidden">
+Internal to BOTS include setting of define, not to be messed with for
+SPEC run.
+</flag>
+
+<flag name="D_OPENMP" class="forbidden">
+Generic definition of OPENMP define, SPEC runs will use SPEC_OMP.
+</flag>
+
+<flag name="D__linux" class="forbidden">
+Assumes that things are being done on a linux box, which causes specific
+output for linux, not to be set for benchmark on the compile line.
+</flag>
+
+
+</flagsdescription>

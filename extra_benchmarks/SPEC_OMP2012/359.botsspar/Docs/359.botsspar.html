@@ -1,0 +1,116 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>359.botsspar: OMP2012 Benchmark Description</title>
+<style type="text/css">
+<!--
+.center { text-align: center }
+.boxed {
+  padding: 1em;
+  border-width: 1px;
+  border-color: black;
+  border-style: solid;
+  background-color: #dddddd;
+  color: black;
+}
+.red { color: red; }
+-->
+</style>
+</head>
+<body>
+<div class="center">
+<h1>359.botsspar<br />
+SPEC OMP2012 Benchmark Description File</h1>
+</div>
+
+<hr />
+
+<h2>Benchmark Name</h2>
+
+<p>359.botsspar</p>
+
+<hr />
+
+<h2>Benchmark Author</h2>
+
+<p>   Nanos Group, Barcelona Supercomputing Centre<p>
+<p>   Contact: Alex Duran (alex@bsc.es)</p>
+
+<hr />
+
+<h2>Benchmark Program General Category</h2>
+
+<p>Sparse LU</p>
+
+<hr />
+
+<h2>Benchmark Description</h2>
+
+<p>
+   An LU matrix factorization over sparse matrices is computed. A first level
+   matrix is composed by pointers to small submatrices that may not be 
+   allocated. Due to the sparseness of the matrix, a lot of imbalance exists.
+   Matrix size and submatrix size can be set at execution time. While a 
+   dynamic schedule can reduce the imbalance, a solution with task-based 
+   parallelism seems to obtain better results. In each of the sparseLU phases,
+   a task is created for each block of the matrix that is not empty.
+</p>
+
+
+<hr />
+
+<h2>Input Description</h2>
+
+<p>The program takes two input size n and m from
+the command line and generates a sparse matrix with
+those sizes.
+The reference data set is 120 and 501, the train data set
+is 100 and 25, and the test data set is 50 and 25.
+</p>
+
+
+<h3>Benchmarking</h3>
+
+<p>For benchmarking purposes, where the SPEC tools are used to
+validate the solution, the computed results are only stored.</p>
+
+
+<hr />
+
+<h2>Output Description</h2>
+
+<p>A portion of the solved matrix is produced.
+</p>
+
+<hr />
+
+<h2>Programming Language</h2>
+
+<p>ANSI C</p>
+
+<hr />
+
+<h2>Known portability issues</h2>
+
+<p>None</p>
+
+<hr />
+
+<h2>Reference</h2>
+
+<p>
+   <a href="./BOTS_article.pdf">
+   A. Duran, X. Teruel, R. Ferrer, X. Martorell and E. Ayguadé: <b>Barcelona
+   OpenMP Tasks Suite: A Set of Benchmarks Targeting the Exploitation of
+   Task Parallelism in OpenMP </b>, in: Proceedings of ICPP-2009, The 38th International
+   Conference on Parallel Processing, Copyright 2009 The Institute of
+   Electrical and Electronics Engineers, Inc.
+<A HREF="http://dx.doi.org/10.1109/ICPP.2009.64">DOI</A>
+
+</p>
+<hr />
+
+<p>Last Updated: March 15, 2012</p>
+</body>
+</html>

@@ -1,0 +1,41 @@
+Computing SparseLU Factorization (100x100 matrix with 25x25 blocks)  completed!
+Output size: 100
+Output Matrix: A[0][0]=1301.000000000000 
+Output Matrix: A[0][20]=-1.964782714844 
+Output Matrix: A[20][0]=0.000153174318 
+Output Matrix: A[20][20]=1200.008789062500 
+Output Matrix: A[0][0]=0.011047363281 
+Output Matrix: A[0][20]=-1.212585449219 
+Output Matrix: A[20][0]=0.859733223915 
+Output Matrix: A[20][20]=0.842128634453 
+Output Matrix: A[0][0]=1.615539550781 
+Output Matrix: A[0][20]=-0.529968261719 
+Output Matrix: A[20][0]=0.409201532602 
+Output Matrix: A[20][20]=0.229242831469 
+Output Matrix: A[0][0]=-0.001040693955 
+Output Matrix: A[0][20]=0.000273816608 
+Output Matrix: A[20][0]=0.000615934317 
+Output Matrix: A[20][20]=0.001455212478 
+Output Matrix: A[0][0]=-0.000012972801 
+Output Matrix: A[0][20]=0.000011194048 
+Output Matrix: A[20][0]=0.000000390978 
+Output Matrix: A[20][20]=0.000016627286 
+Output Matrix: A[0][0]=-0.014309108257 
+Output Matrix: A[0][20]=0.008045035414 
+Output Matrix: A[20][0]=-0.002376758261 
+Output Matrix: A[20][20]=0.003725375049 
+
+Program             = SparseLU (Single version)
+Parameters          = S1=100x100, S2=25x25
+Model               = OpenMP (using tasks)
+Embedded cut-off    = none
+Verification        = successful
+Execution Message   = 
+Architecture        = ;
+Load Avg [1:5:15]   = ;;
+Compilation Date    = 
+Compilation Message = 
+Compiler            = 
+Compiler Flags      = 
+Linker              = 
+Linker Flags        = 

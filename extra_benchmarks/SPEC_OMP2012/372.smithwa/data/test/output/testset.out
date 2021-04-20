@@ -1,0 +1,69 @@
+
+HPCS SSCA #1 Bioinformatics Sequence Alignment Executable Specification:
+Running...
+
+Scalable data generation beginning execution...
+
+	genSimMatrix() completed execution.
+
+	genScalData() completed execution.
+
+         Length of main sequence in codons: 32931
+        Length of match sequence in codons: 32931
+        Weight for exactly matching codons: 5
+                 Weight for similar codons: 4
+              Weight for dissimilar codons: -3
+                    Penalty to start a gap: 8
+           Penalty for each codon in a gap: 1
+   Maximum length of a biological sequence: 60
+   Minimum cumulative score for a sequence: 20
+
+Kernel 1 - pairwiseAlign() beginning execution...
+
+        Match time =    0.00000 seconds
+
+	pairwiseAlign() completed execution.
+
+Kernel 2A - scanBackward() beginning execution...
+
+	scanBackward() completed execution.
+*** #define K2A_SUMMARY and K2A_REPORTS for more info ***
+
+*** End of report for verifyAlignment ***
+
+Kernel 2B - mergeAlignment() beginning execution...
+
+        Merge time =    0.00000 seconds
+
+	mergeAlignment() completed execution.
+Displaying the first 6 of them.
+
+Starting   Amino     Codon           Ending
+position   acids     bases           position
+
+verifyMergeAlignment 1, succeeded; score 57
+   3499  *SIMILARTESTS*  tgaagcataatgatactggcgaggacggagagcacgagctga     3512
+  25032  *SIMILARTESTS*  taatctattatgattttggctcgtactgaatctacttcttaa    25045
+
+verifyMergeAlignment 2, succeeded; score 56
+  26219  *PARTIALCASES*  tgaccggcgaggacgatagcgctgtgcgcgagcgagagctga    26232
+   5315  *PARTIALCASES*  taacctgctcgtactattgctttgtgtgcttctgaatcttaa     5328
+
+verifyMergeAlignment 3, succeeded; score 55
+  28695  *IDENTICAL*  tgaatagacgagaacacgatatgcgcgctgtga    28705
+   6860  *IDENTICAL*  tgaatagacgagaacacgatatgcgcgctgtga     6870
+
+verifyMergeAlignment 4, succeeded; score 54
+  13472  *MISQRMATCHES*  tgaatgataagccagaggatggcgacgtgccacgagagctga    13485
+  27347  *MISRQMATCHES*  tgaatgataagcaggcagatggcgacgtgccacgagagctga    27360
+
+verifyMergeAlignment 5, succeeded; score 53
+   9920  *STARTGAPMIDST---END*  tgaagcacggcgaggacgggggcgccgatgatagacagcacg---------gagaacgactga     9937
+  22108  *START---MIDSTGAPEND*  tgaagcacggcgaggacg---------atgatagacagcacgggggcgccggagaacgactga    22125
+
+verifyMergeAlignment 6, succeeded; score 52
+   4045  *EVENLESSWKDPALIGNS*  tgagaggtggagaacctggagagcagctggaaggacccggcgctgatagggaacagctga     4064
+  20930  *EVENLESSTVMFALIGNS*  taagaagttgaaaatttggaatcttctactgttatgtttgctttgattggtaattcttaa    20949
+
+HPCS SSCA #1 Bioinformatics Sequence Alignment Executable Specification:
+End of test.

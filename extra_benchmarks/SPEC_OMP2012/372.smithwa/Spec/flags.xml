@@ -1,0 +1,202 @@
+<?xml version="1.0"?>
+<!DOCTYPE flagsdescription SYSTEM
+       "http://www.spec.org/dtd/cpuflags2.dtd">
+
+<!-- This file defines portability flags that may be used when compiling
+     372.smithwa.
+
+  Copyright 2012 Standard Performance Evaluation Corporation
+
+  $Revision: 364 $
+  $Date: 2012-06-26 18:37:44 -0400 (Tue, 26 Jun 2012) $
+-->
+<flagsdescription>
+
+<filename>372.smithwa.flags</filename>
+<title>372.smithwa Approved Portability Flags</title>
+
+<header>
+<![CDATA[
+<p>This is the complete set of approved portability flags for 372.smithwa.</p>
+]]>
+</header>
+
+<flag name="DDOSCAN_NORMAL_ERRORS" class="forbidden">
+Internal flag for scan messages, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DDOSCAN_NORMAL_MESSAGES" class="forbidden">
+Internal flag for scan messages, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DDOSCAN_ERROR_MESSAGES" class="forbidden">
+Internal flag for error messages, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DDOSCAN_SIZET_OVERFLOW" class="forbidden">
+Internal flag for scan messages, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DENCODE_SIZE" class="forbidden">
+Setting of encode size based on SIM_SIZE and SIM_DIM, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DENABLE_DEBUG" class="forbidden">
+Set for debugging as desired,  
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DENABLE_PAUSE" class="forbidden">
+Set to add pauses in demo mode,  
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DENABLE_VERIF" class="forbidden">
+Set for build-in code verification,  
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DGAP_EXTEND" class="forbidden">
+Setting of gap-extension penalty value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DGAP_START" class="forbidden">
+Setting of gap-start penalty value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DHR_TIME" class="forbidden">
+Internal flag for using high resolution timer, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK1_MAX_REPORTS" class="forbidden">
+Set the maximum K1 scores reported value,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK1_MIN_SCORE" class="forbidden">
+Set the minimum K1 score value,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK1_MIN_SEPARATION" class="forbidden">
+Set the minimum end-point separation K1 score value,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2_MAX_DOUBLINGS" class="forbidden">
+Set the number of K2 phase maximum doublings,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2_MAX_REPORTS" class="forbidden">
+Set the maximum K2 scores reported value,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2_MIN_SEPARATION" class="forbidden">
+Set the minimum end-point separation K2 score value,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2A_DISPLAY" class="forbidden">
+Set the the number of outputs to display,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2A_REPORTS" class="forbidden">
+Set to print out K2A summary and reports,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2A_SUMMARY" class="forbidden">
+Set to print out K2A summary,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DK2B_DISPLAY" class="forbidden">
+Set the the number of outputs to display,
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DMATCH_TIME" class="forbidden">
+Flag for internal timing, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DMATCH_LIMIT" class="forbidden">
+Set the longest interesting match value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DMERGE_TIME" class="forbidden">
+Flag for internal timing, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DMPI" class="forbidden">
+Flag to use MPI version of benchmark, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSEQUENCEALIGNMENT_H" class="forbidden">
+Internal benchmark flag, must not be reset.
+</flag>
+
+<flag name="DSIM_DIM" class="forbidden">
+Setting of simulation dimension size, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSIM_DISSIMILAR" class="forbidden">
+Setting of different amino acid value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSIM_EXACT" class="forbidden">
+Setting of exact codon match value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSIM_MASK" class="forbidden">
+Setting of simulation mask size based on SIM_DIM, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSIM_SIMILAR" class="forbidden">
+Setting of amino acide match value, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSIM_SIZE" class="forbidden">
+Setting of simulation size based on SIM_DIM, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DSPEC_OMP_FLUSH" class="forbidden">
+Internal flag to use flush code, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DTRACEPATH_NORMAL_ERRORS" class="forbidden">
+Internal flag for normal stage errors, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="DTRACEPATH_NORMAL_MESSAGES" class="forbidden">
+Internal flag for normal stage errors, 
+do not change for benchmark configuration.
+</flag>
+
+<flag name="D__cplusplus" class="forbidden">
+C++ guard, do not change.
+</flag>
+
+</flagsdescription>
