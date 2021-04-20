@@ -1,0 +1,86 @@
+                                  482.sphinx3
+                       SPEC CPU2006 Benchmark Description
+
+Benchmark Name
+
+   482.sphinx3
+
+     ----------------------------------------------------------------------
+
+Benchmark Author
+
+   Sphinx Speech Group, Carnegie Mellon University. Thank you especially to
+   CMU Researchers Evandro Gouevea, Arthur Chan, and Richard Stern for their
+   assistance to SPEC in creating this version. Thanks also to Paul Lamere of
+   Sun for timely consulting on many porting questions.
+
+     ----------------------------------------------------------------------
+
+Benchmark Program General Category
+
+   Speech Recognition
+
+     ----------------------------------------------------------------------
+
+Benchmark Description
+
+   Sphinx-3 is a widely known speech recognition system from Carnegie Mellon
+   University.
+
+   This description assumes that the reader has already seen the Sphinx 3
+   introduction, which provides an excellent introduction to the inputs,
+   outputs, and operation of the code. (A copy of this file as of mid-2005 is
+   included in the SPEC CPU2006 kit, as
+   $SPEC/benchspec/CPU2006/482.sphinx3/Docs/sphinx3-intro-CMU.html.)
+
+   CMU supplies a program known as livepretend, which decodes utterances in
+   batch mode, but otherwise operates as if it were decoding a live human. In
+   particular, it starts from raw audio, not from an intermediate (cepstra)
+   format.
+
+   Although in real life IO efficiency is obviously important to any speech
+   recognition system, for SPEC CPU purposes we wish to concentrate on the
+   CPU-intensive portions of the task. Therefore, main_live_pretend.c has
+   been adapted as spec_main_live_pretend.c, which reads all the inputs
+   during initialization and then processes them repeatedly with different
+   settings for the "beams" (the probabilities that are used to prune the set
+   of active hypotheses at each recognition step).
+
+     ----------------------------------------------------------------------
+
+Input Description
+
+   The AN4 Database from CMU is used. The raw audio format files are used in
+   either big endian or little endian form (depending on the current
+   machine).
+
+     ----------------------------------------------------------------------
+
+Output Description
+
+   Correct recognition is determined by examination of which utterances were
+   recognized (see lines "FWDVIT" in the generated .log files), as well as a
+   trace of language and acoustic scores.
+
+     ----------------------------------------------------------------------
+
+Programming Language
+
+   C
+
+     ----------------------------------------------------------------------
+
+Known portability issues
+
+   None
+
+     ----------------------------------------------------------------------
+
+References
+
+     * http://www.speech.cs.cmu.edu/
+     * http://cmusphinx.sourceforge.net/sphinx3/
+
+     ----------------------------------------------------------------------
+
+   Last updated: 7 March 2006

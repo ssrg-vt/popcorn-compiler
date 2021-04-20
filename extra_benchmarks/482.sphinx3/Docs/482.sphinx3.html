@@ -1,0 +1,110 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>482.sphinx3: CPU2006 Benchmark Description</title>
+</head>
+<body style="background-color: white; color: black">
+<h1>482.sphinx3<br />
+SPEC CPU2006 Benchmark Description</h1>
+
+<h2>Benchmark Name</h2>
+
+<p>482.sphinx3</p>
+
+<hr />
+
+<h2>Benchmark Author</h2>
+
+<p>Sphinx Speech Group, Carnegie Mellon University. Thank you
+especially to CMU Researchers Evandro Gouevea, Arthur Chan, and
+Richard Stern for their assistance to SPEC in creating this
+version. Thanks also to Paul Lamere of Sun for timely consulting on
+many porting questions.</p>
+
+<hr />
+
+<h2>Benchmark Program General Category</h2>
+
+<p>Speech Recognition</p>
+
+<hr />
+
+<h2>Benchmark Description</h2>
+
+<p>Sphinx-3 is a widely known speech recognition system from
+Carnegie Mellon University.</p>
+
+<p>This description assumes that the reader has already seen the
+<a href=
+"http://cmusphinx.sourceforge.net/sphinx3/index.html">Sphinx 3
+introduction</a>, which provides an excellent introduction to the
+inputs, outputs, and operation of the code. (A copy of this file as
+of mid-2005 is included in the SPEC CPU2006 kit, as
+<tt>$SPEC/benchspec/CPU2006/482.sphinx3/Docs/sphinx3-intro-CMU.html</tt>.)</p>
+
+<p>CMU supplies a program known as <tt>livepretend</tt>, which
+decodes utterances in batch mode, but otherwise operates as if it
+were decoding a live human. In particular, it starts from raw
+audio, not from an intermediate (cepstra) format.</p>
+
+<p>Although in real life IO efficiency is obviously important to
+any speech recognition system, for SPEC CPU purposes we wish to
+concentrate on the CPU-intensive portions of the task. Therefore,
+<tt>main_live_pretend.c</tt> has been adapted as
+<tt>spec_main_live_pretend.c</tt>, which reads all the inputs
+during initialization and then processes them repeatedly with
+different settings for the "beams" (the probabilities that are used
+to prune the set of active hypotheses at each recognition
+step).</p>
+
+<hr />
+
+<h2>Input Description</h2>
+
+<p>The <a href="http://www.speech.cs.cmu.edu/databases/an4/">AN4
+Database from CMU</a> is used. The raw audio format files are used
+in either big endian or little endian form (depending on the
+current machine).</p>
+
+<hr />
+
+<h2>Output Description</h2>
+
+<p>Correct recognition is determined by examination of which
+utterances were recognized (see lines "FWDVIT" in the generated
+.log files), as well as a trace of language and acoustic
+scores.</p>
+
+<hr />
+
+<h2>Programming Language</h2>
+
+<p>C</p>
+
+<hr />
+
+<h2>Known portability issues</h2>
+
+<p>None</p>
+
+<hr />
+
+<h2>References</h2>
+
+<ul>
+<li><a href=
+"http://www.speech.cs.cmu.edu/">http://www.speech.cs.cmu.edu/</a>
+</li>
+
+<li><a href=
+"http://cmusphinx.sourceforge.net/sphinx3/">http://cmusphinx.sourceforge.net/sphinx3/</a>
+</li>
+</ul>
+
+<hr />
+
+<p>Last updated: 7 March 2006</p>
+
+</body>
+</html>

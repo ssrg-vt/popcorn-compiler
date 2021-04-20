@@ -1,0 +1,8 @@
+r2qrnk1/pp3ppb/3b1n1p/1Pp1p3/2P1P2N/P5P1/1B1NQPBP/R4RK1 w - - bm Bh3; id "LCT2-POS-08";
+12
+r3k2r/3bbp1p/p1nppp2/5P2/1p1NP3/5NP1/PPPK3P/3R1B1R b kq - bm Bf8; id "LCT2-POS-10";
+14
+8/8/p7/P6p/1B3pk1/1P6/2b2K2/8 b - - bm h4; id "CCC-ANAL-1";
+18
+rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - ; id "SIC-01";
+12

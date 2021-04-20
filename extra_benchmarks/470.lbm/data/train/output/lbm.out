@@ -1,0 +1,42 @@
+MAIN_printInfo:
+	grid size      : 100 x 100 x 130 = 1.30 * 10^6 Cells
+	nTimeSteps     : 300
+	result file    : reference.dat
+	action         : nothing
+	simulation type: channel flow
+	obstacle file  : 100_100_130_cf_b.of
+
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   1.0000 maxRho:   1.0000 mass: 1.300000e+06
+	minU: 0.000000e+00 maxU: 0.000000e+00
+
+timestep: 64
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   0.9978 maxRho:   1.0443 mass: 1.302941e+06
+	minU: 0.000000e+00 maxU: 2.545059e-02
+
+timestep: 128
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   0.9967 maxRho:   1.0313 mass: 1.305801e+06
+	minU: 0.000000e+00 maxU: 3.617795e-02
+
+timestep: 192
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   0.9983 maxRho:   1.0283 mass: 1.308637e+06
+	minU: 0.000000e+00 maxU: 4.549396e-02
+
+timestep: 256
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   0.9978 maxRho:   1.0328 mass: 1.311151e+06
+	minU: 0.000000e+00 maxU: 4.467807e-02
+
+LBM_showGridStatistics:
+	nObstacleCells:  475366 nAccelCells:       0 nFluidCells:  824634
+	minRho:   0.9985 maxRho:   1.0279 mass: 1.311114e+06
+	minU: 0.000000e+00 maxU: 4.515153e-02
+

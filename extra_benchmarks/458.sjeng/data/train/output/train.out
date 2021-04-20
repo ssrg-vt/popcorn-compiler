@@ -1,0 +1,237 @@
+
+Sjeng version SPEC 1.0, Copyright (C) 2000-2005 Gian-Carlo Pascutto
+
+SPEC Workload
+
+  +----+----+----+----+----+----+----+----+
+8 | *R |    |    | *Q | *R | *N | *K |    |
+  +----+----+----+----+----+----+----+----+
+7 | *P | *P |    |    |    | *P | *P | *B |
+  +----+----+----+----+----+----+----+----+
+6 |    |    |    | *B |    | *N |    | *P |
+  +----+----+----+----+----+----+----+----+
+5 |    |  P | *P |    | *P |    |    |    |
+  +----+----+----+----+----+----+----+----+
+4 |    |    |  P |    |  P |    |    |  N |
+  +----+----+----+----+----+----+----+----+
+3 |  P |    |    |    |    |    |  P |    |
+  +----+----+----+----+----+----+----+----+
+2 |    |  B |    |  N |  Q |  P |  B |  P |
+  +----+----+----+----+----+----+----+----+
+1 |  R |    |    |    |    |  R |  K |    |
+  +----+----+----+----+----+----+----+----+
+
+     a    b    c    d    e    f    g    h
+
+EPD: r2qrnk1/pp3ppb/3b1n1p/1Pp1p3/2P1P2N/P5P1/1B1NQPBP/R4RK1 w - - bm Bh3; id "LCT2-POS-08";
+
+Searching to 12 ply
+Middlegame phase.
+Time for move : 1000000
+ 2  0.60       169 Nf5 Qd7 
+ 2  0.60       294 Nf5 Qd7 
+ 3  0.68       654 Nf5 Qd7 Rfd1 Bxf5 exf5 
+ 3  0.68       765 Nf5 Qd7 Rfd1 Bxf5 exf5 
+ 4  0.54      1974 Nf5 Bxf5 exf5 Qd7 
+ 4  0.54      4969 Nf5 Bxf5 exf5 Qd7 
+ 5  0.64     11410 Nf5 Ne6 Nxd6 Qxd6 Rfd1 
+ 5  0.64     11720 Nf5 Ne6 Nxd6 Qxd6 Rfd1 
+ 6  0.46     20712 Nf5 Ne6 Nxd6 Qxd6 Rfd1 Nd4 
+ 6  0.47     50426 Rfd1 !
+ 6  0.46    114659 Nf5 Ne6 Nxd6 Qxd6 Rfd1 Nd4 
+ 7  0.49    131325 Nf5 Ne6 Nxd6 Qxd6 Rfd1 Nd4 Qe3 
+ 7  0.49    183701 Nf5 Ne6 Nxd6 Qxd6 Rfd1 Nd4 Qe3 
+ 8  0.35    258791 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 Raxd8 exf5 
+ 8  0.35    552304 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 Raxd8 exf5 
+ 9  0.35    649770 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 
+ 9  0.35   1403097 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 
+10  0.35   1656895 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 Raxd8 
+10  0.35   2967109 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Nxf5 Qxd8 Raxd8 
+11  0.32   3769934 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Ba5 Bc3 Ne2+ Qxe2 Bxc3 
+11  0.32   6748744 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Ba5 Bc3 Ne2+ Qxe2 Bxc3 
+12  0.30   8894883 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Bg6 Nb3 Nxf5 Qxd8 Raxd8 exf5 
+12  0.30  19572817 Nf5 Ne6 Rfe1 Nd4 Qd3 Bc7 Rad1 Bg6 Nb3 Nxf5 Qxd8 Raxd8 exf5 
+
+  +----+----+----+----+----+----+----+----+
+8 | *R |    |    |    | *K |    |    | *R |
+  +----+----+----+----+----+----+----+----+
+7 |    |    |    | *B | *B | *P |    | *P |
+  +----+----+----+----+----+----+----+----+
+6 | *P |    | *N | *P | *P | *P |    |    |
+  +----+----+----+----+----+----+----+----+
+5 |    |    |    |    |    |  P |    |    |
+  +----+----+----+----+----+----+----+----+
+4 |    | *P |    |  N |  P |    |    |    |
+  +----+----+----+----+----+----+----+----+
+3 |    |    |    |    |    |  N |  P |    |
+  +----+----+----+----+----+----+----+----+
+2 |  P |  P |  P |  K |    |    |    |  P |
+  +----+----+----+----+----+----+----+----+
+1 |    |    |    |  R |    |  B |    |  R |
+  +----+----+----+----+----+----+----+----+
+
+     a    b    c    d    e    f    g    h
+
+EPD: r3k2r/3bbp1p/p1nppp2/5P2/1p1NP3/5NP1/PPPK3P/3R1B1R b kq - bm Bf8; id "LCT2-POS-10";
+
+Searching to 14 ply
+Opening phase.
+Time for move : 1000000
+ 2  0.09       286 Ne5 Kc1 exf5 
+ 2  0.34       387 Nxd4 !
+ 2  0.35       761 O-O !
+ 2  0.36      1185 O-O fxe6 Nxd4 Nxd4 fxe6 
+ 3  0.01      1791 O-O ??
+ 3  0.02      2622 Ne5 !
+ 3  0.13      3783 Nxd4 !
+ 3  0.47      4945 Nxd4 Nxd4 Rg8 
+ 4  0.36      5628 Nxd4 Nxd4 O-O fxe6 fxe6 
+ 4  0.36      8375 Nxd4 Nxd4 O-O fxe6 fxe6 
+ 5  0.62     10625 Nxd4 Nxd4 e5 Nf3 O-O 
+ 5  0.62     11957 Nxd4 Nxd4 e5 Nf3 O-O 
+ 6  0.27     15064 Nxd4 ??
+ 6  0.15     52989 Nxd4 Nxd4 e5 Nf3 O-O Kc1 
+ 6  0.16     58101 Ne5 !
+ 6  0.27     77004 Ne5 Kc1 exf5 Nd2 fxe4 Nxe4 
+ 7 -0.02    242506 Ne5 Bh3 Nxf3+ Nxf3 Rc8 Kc1 Ba4 Nd4 
+ 7 -0.01    247495 Nxd4 !
+ 7  0.44    295253 Nxd4 Nxd4 e5 Nf3 Bc6 Bd3 O-O <Kc1> 
+ 8  0.09    320441 Nxd4 ??
+ 8  0.10    487137 O-O !
+ 8  0.10    606246 e5 !
+ 8  0.08    715745 Nxd4 Nxd4 O-O fxe6 fxe6 Kc1 Kf7 Kb1 
+ 8  0.10    715784 O-O !
+ 8  0.10    737380 e5 !
+ 8  0.08    880849 Nxd4 Nxd4 O-O fxe6 fxe6 Kc1 Kf7 Kb1 
+ 9  0.30    958978 Nxd4 Nxd4 e5 Nf3 O-O Kc1 Bc6 Bd3 d5 
+ 9  0.30   1162065 Nxd4 Nxd4 e5 Nf3 O-O Kc1 Bc6 Bd3 d5 
+10  0.25   1276353 Nxd4 Nxd4 e5 Nf3 O-O Bc4 Bc6 Ke3 <Rfe8> <h3> 
+10  0.25   2063430 Nxd4 Nxd4 e5 Nf3 O-O Bc4 Bc6 Ke3 <Rfe8> <h3> 
+11  0.28   2414756 Nxd4 Nxd4 e5 Ne2 a5 Kc1 O-O Kb1 a4 Bg2 a3 b3 
+11  0.29   3984654 e5 !
+11  0.34   7251677 e5 Nxc6 Bxc6 Ke3 O-O h3 Rfc8 Rh2 a5 Rhd2 a4 
+12  0.15  10134427 e5 Nb3 a5 Kc1 a4 Nbd2 Na5 Kb1 a3 b3 O-O h3 
+12  0.16  11732890 Nxd4 !
+12  0.28  14689112 Nxd4 Nxd4 e5 Ne2 a5 Kc1 a4 Kb1 a3 b3 O-O Bg2 
+13  0.40  16941864 Nxd4 Nxd4 e5 Ne2 a5 Kc1 a4 Kb1 a3 b3 O-O Bg2 Rfc8 
+13  0.40  21492022 Nxd4 Nxd4 e5 Ne2 a5 Kc1 a4 Kb1 a3 b3 O-O Bg2 Rfc8 
+14  0.27  25013734 Nxd4 Nxd4 e5 Ne2 a5 Kc1 a4 Kb1 a3 b3 O-O Bg2 Rfc8 h3 
+14  0.27  44470734 Nxd4 Nxd4 e5 Ne2 a5 Kc1 a4 Kb1 a3 b3 O-O Bg2 Rfc8 h3 
+
+  +----+----+----+----+----+----+----+----+
+8 |    |    |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+7 |    |    |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+6 | *P |    |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+5 |  P |    |    |    |    |    |    | *P |
+  +----+----+----+----+----+----+----+----+
+4 |    |  B |    |    |    | *P | *K |    |
+  +----+----+----+----+----+----+----+----+
+3 |    |  P |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+2 |    |    | *B |    |    |  K |    |    |
+  +----+----+----+----+----+----+----+----+
+1 |    |    |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+
+     a    b    c    d    e    f    g    h
+
+EPD: 8/8/p7/P6p/1B3pk1/1P6/2b2K2/8 b - - bm h4; id "CCC-ANAL-1";
+
+Searching to 18 ply
+Endgame phase.
+Time for move : 1000000
+ 2  3.32        70 Bxb3 Be7 
+ 2  3.33       165 f3 !
+ 2  3.53       225 f3 Bd6 Bxb3 
+ 3  3.53       287 f3 Bd6 Bxb3 
+ 3  3.53       353 f3 Bd6 Bxb3 
+ 4  3.35      1002 f3 Ke3 h4 Kd4 Bxb3 
+ 4  3.36      1200 Bxb3 !
+ 4  3.51      1700 Bxb3 Bd6 f3 Ke3 Bc4 
+ 5  3.51      2102 Bxb3 Bd6 f3 <Ke3> <Bc4> 
+ 5  3.51      2439 Bxb3 Bd6 f3 <Ke3> <Bc4> 
+ 6  3.50      4090 Bxb3 Bd6 Bc2 Be5 f3 Ke3 h4 
+ 6  3.50      4992 Bxb3 Bd6 Bc2 Be5 f3 Ke3 h4 
+ 7  3.52      6817 Bxb3 Bd6 f3 Ke3 Bc4 Be5 h4 
+ 7  3.52      7687 Bxb3 Bd6 f3 Ke3 Bc4 Be5 h4 
+ 8  3.87     23592 Bxb3 !!
+ 8  3.94     48460 Bxb3 Bd6 f3 Ke3 h4 Bh2 h3 Be5 Bc4 
+ 8  3.94     52333 Bxb3 Bd6 f3 Ke3 h4 Bh2 h3 Be5 Bc4 
+ 9  3.99     98814 Bxb3 Kg2 h4 Be7 h3+ Kf2 f3 Bd6 <Bc4> <Ke3> 
+ 9  3.99    112533 Bxb3 Kg2 h4 Be7 h3+ Kf2 f3 Bd6 <Bc4> <Ke3> 
+10  3.99    135174 Bxb3 Kg2 h4 Be7 h3+ Kf2 f3 Bd6 Bd5 Ke3 Bc4 
+10  3.99    187836 Bxb3 Kg2 h4 Be7 h3+ Kf2 f3 Bd6 Bd5 Ke3 Bc4 
+11  3.98    289705 Bxb3 Bd6 h4 Bc7 h3 Be5 f3 Ke3 Bc4 Bd6 Bd5 
+11  3.98    356894 Bxb3 Bd6 h4 Bc7 h3 Be5 f3 Ke3 Bc4 Bd6 Bd5 
+12  4.10    475293 Bxb3 Bd6 h4 Bc7 h3 Bd6 <Bd5> 
+12  4.11    680422 h4 !
+12  4.10    981956 Bxb3 Bd6 h4 Bc7 h3 Bd6 <Bd5> 
+13  4.15   1248160 Bxb3 Bd6 h4 Be5 h3 Bd4 Bd5 Kg1 f3 Be5 Kf5 Bd4 Ke4 
+13  4.15   1610479 Bxb3 Bd6 h4 Be5 h3 Bd4 Bd5 Kg1 f3 Be5 Kf5 Bd4 Ke4 
+14  4.15   2317678 Bxb3 Bd6 h4 Bc5 h3 Kg1 Be6 Kf2 Bc4 Kg1 f3 Bd6 Bd3 Kf2 
+14  4.15   3283011 Bxb3 Bd6 h4 Bc5 h3 Kg1 Be6 Kf2 Bc4 Kg1 f3 Bd6 Bd3 Kf2 
+15  4.15   3915572 Bxb3 Bd6 h4 Bc5 h3 Kg1 Bd5 Ba7 Bc4 Kf2 Bb3 Kg1 f3 Bd4 Bc4 
+15  4.15   5510596 Bxb3 Bd6 h4 Bc5 h3 Kg1 Bd5 Ba7 Bc4 Kf2 Bb3 Kg1 f3 Bd4 Bc4 
+16  4.18   8262560 Bxb3 Bd6 h4 Bc5 h3 Bb4 Bd5 Kg1 Kf5 Kh2 f3 Bc5 Kg4 <Bd4> <Be6> 
+16  4.18  12020152 Bxb3 Bd6 h4 Bc5 h3 Bb4 Bd5 Kg1 Kf5 Kh2 f3 Bc5 Kg4 <Bd4> <Be6> 
+17  4.19  19719756 Bxb3 Bd6 h4 Kg2 h3+ Kh2 Bd5 Bb4 f3 Bc5 Be6 Be3 Bf5 Kg1 Bd3 Kh1 Be4 Bd4 
+17  4.19  31866426 Bxb3 Bd6 h4 Kg2 h3+ Kh2 Bd5 Bb4 f3 Bc5 Be6 Be3 Bf5 Kg1 Bd3 Kh1 Be4 Bd4 <f2+> 
+18  4.20  38954563 Bxb3 Bd6 h4 Kg2 h3+ Kh2 Bd5 Bb4 Be6 Bc5 Kf3 Bd6 Ke4 Kg1 f3 Kf2 <Bc4> 
+18  4.20  56463409 Bxb3 Bd6 h4 Kg2 h3+ Kh2 Bd5 Bb4 Be6 Bc5 Kf3 Bd6 Ke4 Kg1 f3 Kf2 <Bc4> 
+
+  +----+----+----+----+----+----+----+----+
+8 | *R | *N | *B | *Q | *K | *B |    | *R |
+  +----+----+----+----+----+----+----+----+
+7 |    | *P |    |    | *P | *P | *P | *P |
+  +----+----+----+----+----+----+----+----+
+6 | *P |    |    | *P |    | *N |    |    |
+  +----+----+----+----+----+----+----+----+
+5 |    |    |    |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+4 |    |    |    |  N |  P |    |    |    |
+  +----+----+----+----+----+----+----+----+
+3 |    |    |  N |    |    |    |    |    |
+  +----+----+----+----+----+----+----+----+
+2 |  P |  P |  P |    |    |  P |  P |  P |
+  +----+----+----+----+----+----+----+----+
+1 |  R |    |  B |  Q |  K |  B |    |  R |
+  +----+----+----+----+----+----+----+----+
+
+     a    b    c    d    e    f    g    h
+
+EPD: rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - ; id "SIC-01";
+
+Searching to 12 ply
+Opening phase.
+Time for move : 1000000
+ 2  0.29       172 Bf4 Nc6 
+ 2  0.29       420 Bf4 Nc6 
+ 3 -0.06       972 Bf4 ??
+ 3 -0.05      1246 Rb1 !
+ 3  0.23      2052 Bd2 !
+ 3  0.24      2623 Be3 !
+ 3  0.40      3296 Bg5 !
+ 3  0.42      4850 Bg5 Qb6 Rb1 
+ 4  0.24      6881 Bg5 Nc6 Be2 Qa5 
+ 4  0.25     10673 Be2 !
+ 4  0.38     14116 Be2 e5 Nb3 Nc6 
+ 5  0.54     20637 Be2 d5 e5 Ne4 O-O Nxc3 bxc3 
+ 5  0.54     23570 Be2 d5 e5 Ne4 O-O Nxc3 bxc3 
+ 6  0.51     47225 Be2 e5 Nb3 Be7 O-O O-O 
+ 6  0.51     90035 Be2 e5 Nb3 Be7 O-O O-O 
+ 7  0.77    113025 Be2 e5 Nb3 Be7 O-O O-O Be3 
+ 7  0.77    130674 Be2 e5 Nb3 Be7 O-O O-O Be3 
+ 8  0.50    171290 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 
+ 8  0.50    338134 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 
+ 9  0.62    506747 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 Qd2 
+ 9  0.62   1323986 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 Qd2 
+10  0.45   1657131 Be2 e5 Nb3 Be7 O-O O-O Bg5 Nc6 Qd2 Be6 
+10  0.45   4925813 Be2 e5 Nb3 Be7 O-O O-O Bg5 Nc6 Qd2 Be6 
+11  0.51   5587605 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 Re1 Be6 Qd2 
+11  0.51  12494286 Be2 e5 Nb3 Be7 O-O O-O Be3 Nc6 Re1 Be6 Qd2 
+12  0.43  14733378 Be2 e5 Nb3 Be7 O-O O-O Qd3 Nc6 Qg3 Qd7 Bh6 Ng4 
+12  0.44  44310722 Bc4 !
+12  0.44  56149541 Bc4 e5 Nf5 Bxf5 exf5 Nc6 Bg5 h6 Be3 b5 Qf3 Nd4 

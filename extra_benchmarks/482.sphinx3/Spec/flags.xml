@@ -1,0 +1,711 @@
+<?xml version="1.0"?>
+<!DOCTYPE flagsdescription SYSTEM
+       "http://www.spec.org/dtd/cpuflags1.dtd">
+
+<!-- This file defines flags that appear in the sources for 482.sphinx3.
+
+  Copyright (C) 2005-2006 Standard Performance Evaluation Corporation
+
+  $Revision: 3869 $
+  $Date: 2006-02-24 10:01:32 -0500 (Fri, 24 Feb 2006) $
+-->
+<flagsdescription>
+
+<!-- Normal flags file should suggest a name for themselves -->
+<filename>482.sphinx3.flags</filename>
+
+<title>482.sphinx3 Flags</title>
+
+<header>
+<![CDATA[
+<p>These are flags that appear in the benchmark sources, categorized as to
+whether they are portability candidates, mandatory, or forbidden.
+</p>
+]]>
+</header>
+
+<flag name="currdir_inc" class="mandatory" regexp="-I(?:\.|libutil)(?:\s+|$)">
+<example>-I., -Ilibutil</example>
+This flag is included automatically by Spec/object.pm.
+</flag>
+
+<flag name="DHAVE_CONFIG_H" class="mandatory">
+<example>-DHAVE_CONFIG_H</example>
+This flag is included automatically by Spec/object.pm.
+</flag>
+
+<flag name="DCONT_AD_DEBUG" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.
+</flag>
+
+<flag name="DCONT_AD_RAWDUMP" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.
+</flag>
+
+<flag name="DE_ABORT" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.
+</flag>
+
+<flag name="DM_PI" class="forbidden">
+The mathematical constant pi.  It seems unlikely that it would 
+be useful to redefine this constant; doing so is therefore 
+forbidden.
+</flag>
+
+<flag name="DSPEC_CPU" class="mandatory">
+The SPEC version of sphinx has some additional output for 
+validation (and also omits some output that is not needed.  The 
+flag SPEC_CPU is therefore mandatory.
+</flag>
+
+<flag name="USPEC_CPU" class="forbidden">
+The SPEC version of sphinx has some additional output for 
+validation (and also omits some output that is not needed.  The 
+flag SPEC_CPU is therefore mandatory.
+</flag>
+
+<flag name="DSPEC_CPU_WINDOWS" class="mandatory">
+Sphinx has various portability tweaks for Microsoft Windows, 
+which must be used when testing on said platform.
+</flag>
+
+<flag name="DTEST" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="DTRUE" class="forbidden">
+If you want to enter upon a philosophical (or political) quest 
+in which you redefine the meaning of truth, please feel free; 
+but it seems unlikely that the SPEC version of the Sphinx 
+benchmark would be the right venue for this quest.  Therefore, 
+please don't do so here.
+</flag>
+
+<flag name="DWIN32" class="forbidden">
+For SPEC purposes, all needed portability items for Microsoft 
+Windows have been collected under SPEC_CPU_WINDOWS.  As of 
+11/2005, the only remaining uses of WIN32 are in code that is 
+not enabled when SPEC_CPU is enabled; therefore, it should not 
+be necessary to use this flag.
+</flag>
+
+<flag name="D_ABS" class="forbidden">
+The sources include a definition of _ABS; it doesn't seem 
+useful to allow it to be touched on the command line.
+</flag>
+
+<flag name="U_ABS" class="forbidden">
+The sources include a definition of _ABS; it doesn't seem 
+useful to allow it to be touched on the command line.
+</flag>
+
+<flag name="D_AD_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_AD_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="U_CHECKUNDERFLOW_" class="forbidden">
+This flag is turned on in the sources; it seems unlikely that 
+you'll get anywhere trying to turn it off.
+</flag>
+
+<flag name="D_CONT_AD_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_CONT_AD_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_CORPUS_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="U_DEBUG_GSCORE_" class="forbidden">
+This flag is turned on in the sources; it seems unlikely that 
+you'll get anywhere trying to turn it off.
+</flag>
+
+<flag name="D_DICT_MEM_LEAK_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  
+</flag>
+
+<flag name="D_DICT_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="D_HPUX_SOURCE" class="portability">
+If set, a couple of structs will be set in an HP-UXish fashion.  
+</flag>
+
+<flag name="D_LIBUTIL_BITVEC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_BITVEC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_CASE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_CASE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_CKD_ALLOC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_CKD_ALLOC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_CMD_LN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_CMD_LN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_ERR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_ERR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_FILENAME_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_FILENAME_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_GLIST_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_GLIST_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_HASH_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_HASH_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_HEAP_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_HEAP_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_IO_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_IO_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_LIBUTIL_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_LIBUTIL_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_PRIM_TYPE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_PRIM_TYPE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_PROFILE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_PROFILE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_STR2WORDS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_STR2WORDS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIBUTIL_UNLIMIT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIBUTIL_UNLIMIT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LIB_GS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_LIB_GS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_LM_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="D_LOGS3_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="D_NEW_FE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_NEW_FE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_AGC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_AGC_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_APPROXCONGAU_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_APPROXCONGAU_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_ASCR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_ASCR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_BEAM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_BEAM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_BIO_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_BIO_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_CMN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_CMN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_CMN_PRIOR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_CMN_PRIOR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_CONT_MGAU_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_CONT_MGAU_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_CORPUS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_CORPUS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_DICT2PID_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_DICT2PID_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_DICT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_DICT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_FEAT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_FEAT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_FILLPEN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_FILLPEN_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_HMM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_HMM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_HYP_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_HYP_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_KBCORE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_KBCORE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_KB_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_KB_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_LEXTREE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_LEXTREE_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_LMCLASS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_LMCLASS_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_LM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_LM_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_LOGS3_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_LOGS3_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_MDEF_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_MDEF_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_S3TYPES_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_S3TYPES_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_SUBVQ_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_SUBVQ_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_TMAT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_TMAT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_VECTOR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_VECTOR_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_VITHIST_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_VITHIST_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_S3_WID_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_S3_WID_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D_SGI_SOURCE" class="portability">
+If set, affects where errno is found.
+</flag>
+
+<flag name="D_TMAT_TEST_" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.  It defines a main routine for 
+testing purposes.
+</flag>
+
+<flag name="D_UTT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+<flag name="U_UTT_H_" class="forbidden">
+This flag indicates whether a header file has been included.  
+It seems likely that you would break the build if you tried to 
+touch it on the command line.
+</flag>
+
+<flag name="D__ALPHA_OSF1__" class="portability">
+This defines the alpha rpcc stuff.  Unlikely (hopefully, 
+exceedingly unlikely) to ever be actually called in an actual 
+SPEC run, but the flag is not forbidden, on the off chance that 
+it might be needed for a successful compile.
+</flag>
+
+<flag name="D__CYGWIN__" class="portability">
+Affects where some .h files are found.
+</flag>
+
+<flag name="D__PURIFY__" class="forbidden">
+This flag, although potentially useful for debugging, is 
+forbidden in an actual SPEC run.
+</flag>
+
+<flag name="D__cplusplus" class="portability">
+__cplusplus affects what gets marked extern.  Since the symbol 
+begins with two underscores, would presumably be defined by the 
+compiler driver?
+</flag>
+
+
+</flagsdescription>

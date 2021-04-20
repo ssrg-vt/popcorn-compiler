@@ -1,0 +1,123 @@
+INFO: spec_main_live_pretend.c(120): Processing 1 beamsets
+INFO: cmd_ln.c(276): Parsing command line:
+INFO: kbcore.c(95): Initializing core models:
+INFO: logs3.c(99): Initializing logbase: 1.000300e+00 (add table: 1)
+INFO: logs3.c(161): Log-Add table size = 29350
+INFO: feat.c(642): Initializing feature stream to type: '1s_c_d_dd', CMN='current', VARNORM='no', AGC='none'
+INFO: mdef.c(594): Reading model definition: model/hmm/hub4/hub4opensrc.6000.mdef
+INFO: mdef.c(771): 48 CI-phone, 133500 CD-phone, 3 emitstate/phone, 144 CI-sen, 6144 Sen, 32639 Sen-Seq
+INFO: dict.c(358): Reading main dictionary: model/lm/an4/an4.dict
+INFO: dict.c(361): 130 words read
+INFO: dict.c(366): Reading filler dictionary: model/lm/an4/filler.dict
+INFO: dict.c(369): 3 words read
+INFO: lm.c(739): LM read('model/lm/an4/an4.ug.lm.DMP', lw= 9.50, wip= -1188, uw= 0.70)
+INFO: lm.c(553):      107 ug
+INFO: lm.c(583):        1 bigrams [on disk]
+INFO: lm.c(613):        2 bigram prob entries
+INFO: lm.c(696):      107 word strings
+INFO: wid.c(178): 6 LM words not in dictionary; ignored
+INFO: cont_mgau.c(96): Reading mixture gaussian file 'model/hmm/hub4/means'
+INFO: cont_mgau.c(248): 6144 mixture Gaussians, 8 components, 1 streams, veclen 39
+INFO: cont_mgau.c(96): Reading mixture gaussian file 'model/hmm/hub4/variances'
+INFO: cont_mgau.c(248): 6144 mixture Gaussians, 8 components, 1 streams, veclen 39
+INFO: cont_mgau.c(269): Reading mixture weights file 'model/hmm/hub4/mixture_weights'
+INFO: cont_mgau.c(362): Read 6144 x 8 mixture weights
+INFO: cont_mgau.c(378): Removing uninitialized Gaussian densities
+ 6 7 8
+INFO: cont_mgau.c(408): 24 densities removed (3 mixtures removed entirely)
+INFO: cont_mgau.c(416): Applying variance floor
+INFO: cont_mgau.c(428): 0 variance values floored
+INFO: cont_mgau.c(474): Precomputing Mahalanobis distance invariants
+INFO: subvq.c(199): Loading Mixture Gaussian sub-VQ file 'model/hmm/hub4/8gau.6000sen.quant' (vq_eval: 3)
+INFO: subvq.c(259): Original #codebooks(states)/codewords: 6144 x 8
+INFO: subvq.c(260): Subvectors: 3, VQsize: 4096
+INFO: subvq.c(262): SV 0 feature dims(13):   0  1  2  3  4  5  6  7  8  9 10 11 12
+INFO: subvq.c(262): SV 1 feature dims(13):  13 14 15 16 17 18 19 20 21 22 23 24 25
+INFO: subvq.c(262): SV 2 feature dims(13):  26 27 28 29 30 31 32 33 34 35 36 37 38
+INFO: subvq.c(271): Reading subvq 0
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(271): Reading subvq 1
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(271): Reading subvq 2
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(103): Precomputing Mahalanobis distance invariants
+INFO: tmat.c(135): Reading HMM transition probability matrices: model/hmm/hub4/transition_matrices
+INFO: tmat.c(217): Read 48 transition matrices of size 3x4
+INFO: dict2pid.c(254): Building PID tables for dictionary
+INFO: dict2pid.c(422): 873 composite states; 324 composite sseq
+INFO: kbcore.c(225): Verifying models consistency:
+INFO: kb.c(197): Building lextrees
+INFO: kb.c(243): Creating Unigram Table
+INFO: kb.c(246): Size of word table after unigram + words in class: 99
+INFO: kb.c(263): Lextrees(3), 1428 nodes(ug)
+INFO: kb.c(291): Lextrees(3), 1 nodes(filler)
+INFO: kb.c(317): Beam= -460509, PBeam= -383758, WBeam= -268630, SVQBeam= -15350
+INFO: kb.c(322): Down Sampling Ratio = 1
+INFO: kb.c(328): Conditional Down Sampling Parameter = 0
+INFO: kb.c(333): GS map would be used for Gaussian Selection? = 1
+INFO: kb.c(336): SVQ would be used as Gaussian Score ?= 0
+INFO: kb.c(339): CI phone beam to prune the number of parent CI phones in CI-base GMM Selection = 939524096
+INFO: kb.c(341): Virtually no CI phone beam is applied now. (ci_pbeam>1000000)
+INFO: kb.c(345): Word-end pruning beam: 939524096
+INFO: kb.c(348): Phoneme look-ahead window size = 1
+INFO: kb.c(353): Phoneme look-ahead beam = -939524096
+INFO: vithist.c(77): Initializing Viterbi-history module
+64000 samples in ./an406-fcaw-b.raw will be decoded in blocks of 2000
+65600 samples in ./an407-fcaw-b.raw will be decoded in blocks of 2000
+INFO: spec_main_live_pretend.c(172): Beam= -460509, PBeam= -460509, WBeam= -230254, SVQBeam= -15350
+INFO: feat.c(971): Feature buffers initialized to 256 vectors
+INFO: cmn_prior.c(72): mean[0]= 12.00, mean[1..12]= 0.0
+
+Backtrace(an406-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   371     0    76    -1187644   -74100   -1 <sil>
+   516    77   125     -680176   -74100   -1 <sil>
+   750   126   162     -537204  -148846    0 T
+   947   163   185     -540794   -74100   -1 <sil>
+  1281   186   200     -229685  -148846    0 N
+  1935   201   284    -1552966   -74100   -1 <sil>
+  2336   285   341    -1028411   -74100   -1 <sil>
+  2700   342   365     -307116  -148846    0 U
+  3054   366   397     -458916   -74100   -1 <sil>
+  3056   398   398           0  -148846    0 </s>
+           0   398    -6522912 -1039984 (Total)
+
+FWDVIT: 'T N U ' (an406-fcaw-b)
+
+FWDXCT: an406-fcaw-b S 0 T -7562896 A -6522912 L -1039984 0 -1187644 -74100 <sil> 77 -680176 -74100 <sil> 126 -537204 -148846 T 163 -540794 -74100 <sil> 186 -229685 -148846 N 201 -1552966 -74100 <sil> 285 -1028411 -74100 <sil> 342 -307116 -148846 U 366 -458916 -74100 <sil> 398
+
+INFO: utt.c(337):  398 frm;  1703 sen,  3704 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    841 hmm,   8 wd/fr, 0.00 CPU 0.00 Clk (an406-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an406-fcaw-b): 16(4)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    29545 bg(),    29533 bo;     1 fills,        1 in mem (50.0%)
+
+Backtrace(an407-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    59     0    32     -501214   -74100   -1 <sil>
+   118    33    48     -220369  -148846    0 E
+   764    49    78     -594836  -148846    0 MAY
+  2717    79   163    -1421293  -148846    0 SIXTEEN
+  2989   164   173     -176630   -74100   -1 <sil>
+  3608   174   225    -1043477  -148846    0 Q
+  3708   226   230      -71024   -74100   -1 <sil>
+  4340   231   272     -535559  -148846    0 Q
+  4588   273   287     -328521   -74100   -1 <sil>
+  4930   288   319     -386727  -148846    0 F
+  5076   320   344     -361439   -74100   -1 <sil>
+  5638   345   385     -778904  -148846    0 SECOND(2)
+  6141   386   410     -405878   -74100   -1 <sil>
+  6143   411   411           0  -148846    0 </s>
+           0   411    -6825871 -1635368 (Total)
+
+FWDVIT: 'E MAY SIXTEEN Q Q F SECOND ' (an407-fcaw-b)
+
+FWDXCT: an407-fcaw-b S 0 T -8461239 A -6825871 L -1635368 0 -501214 -74100 <sil> 33 -220369 -148846 E 49 -594836 -148846 MAY 79 -1421293 -148846 SIXTEEN 164 -176630 -74100 <sil> 174 -1043477 -148846 Q 226 -71024 -74100 <sil> 231 -535559 -148846 Q 273 -328521 -74100 <sil> 288 -386727 -148846 F 320 -361439 -74100 <sil> 345 -778904 -148846 SECOND(2) 386 -405878 -74100 <sil> 411
+
+INFO: utt.c(337):  411 frm;  1833 sen,  4245 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    966 hmm,  15 wd/fr, 0.00 CPU 0.00 Clk (an407-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an407-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    94844 bg(),    94841 bo;     0 fills,        1 in mem (50.0%)
+INFO: live.c(354): SUMMARY:  809 fr;  1768 sen, 3978 gau/fr, 0.00 xCPU [0.00 xOvrhd];  904 hmm/fr, 11 wd/fr, 0.00 xCPU;  

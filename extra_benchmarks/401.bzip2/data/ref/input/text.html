@@ -1,0 +1,3481 @@
+<html>
+<head>
+<title>SPEC CPU2006 Config files </title>
+<!-- $Id: config.html 1694 2004-05-26 21:21:02Z cloyce $ -->
+</head>
+<body bgcolor=white>
+
+<pre>
+
+
+
+</pre>
+<center>
+<h1>SPEC CPU2006 Config Files</h1>
+
+<b>            Last updated: 23-Jan-2005 cds</b>
+
+<p> (To check for possible updates to this document, please see 
+<a href=http://www.spec.org/cpu2006/Docs/>http://www.spec.org/cpu2006/Docs/</a> ) 
+</center>
+<pre>
+
+
+</pre>
+
+
+<table border=0>
+<tr><td colspan=2><h2>Overview</h2>
+Click one of the following in order to go to the detailed
+contents about that item:</td></tr>
+
+<tr><td align=right>  I.</td><td> <a href=#Dtoc_I.><font color=blue>Introduction</font></a></td></tr>
+<tr><td align=right> II.</td><td> <a href=#Dtoc_II.><font color=blue>Config file options for runspec</font></a></td></tr>
+<tr><td align=right>III.</td><td> <a href=#Dtoc_III.><font color=blue>Config file options for specmake</font></a></td></tr>
+<tr><td align=right> IV.</td><td> <a href=#Dtoc_IV.><font color=blue>Config file options for the shell</font></a></td></tr>
+<tr><td align=right>  V.</td><td> <a href=#Dtoc_V.><font color=blue>Config file options for the reader</font></a></td></tr>
+<tr><td align=right> VI.</td><td> <a href=#Dtoc_VI.><font color=blue>Files output during a build</font></a></td></tr>
+<tr><td align=right>VII.</td><td> <a href=#Dtoc_VII.><font color=blue>Troubleshooting</font></a></td></tr>
+<tr><td align=right>  ?.</td><td> <a href=#Dtoc_pp><font color=blue>The config file preprocessor</font></a></td></tr>
+
+</table>
+
+<p><hr></p>
+
+<table border=0>
+<tr>
+<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td></tr>
+<tr><td colspan=5><h2>Detailed Contents</h2></td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_I.>
+<a href=#toc_I.><font color=blue>    <big>I. Introduction</big>                       </font></a></td></tr>
+</a>
+
+<tr><td></td><td colspan=4>
+<a href=#toc_I.A.><font color=blue>     A. What is a config file?  (Background: benchmark 
+                                           philosophy.)</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_I.B.><font color=blue>     B. What does a config file affect? </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.B.1.><font color=blue>      1. runspec                      </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.B.2.><font color=blue>      2. specmake                     </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.B.3.><font color=blue>      3. the shell                    </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.B.4.><font color=blue>      4. the reader of the results    </font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_I.C.><font color=blue>     C. Config file structure           </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.1.><font color=blue>      1. Comments and whitespace      </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.2.><font color=blue>      2. Header section               </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.3.><font color=blue>      3. Named sections               </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.3.a.><font color=blue>       a. Precedence for the benchmark specifier</font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.3.b.><font color=blue>       b. Precedence for the tuning specifier   </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.3.c.><font color=blue>       c. Precedence for the extension specifier</font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.3.d.><font color=blue>       d. Combining specifier types             </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.3.e.><font color=blue>       e. Precedence among section types        </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.4.><font color=blue>      4. MD5 section                  </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.5.><font color=blue>      5. Variable Substitution        </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.5.a.><font color=blue>       a. By runspec                </font></a></td></tr>
+<tr><td colspan=4></td><td          >
+<a href=#toc_I.C.5.a.1.><font color=blue>        (1) Example: cleaning files before 
+                                                     a training run</font></a></td></tr>
+<tr><td colspan=4></td><td          >
+<a href=#toc_I.C.5.a.2.><font color=blue>        (2) Example: submitting to multiple 
+                                                     nodes, Compaq Tru64 Unix </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.5.b.><font color=blue>       b. By the shell           </font></a></td></tr>
+<tr><td colspan=4></td><td          >
+<a href=#toc_I.C.5.b.1.><font color=blue>        (1) Protecting shell variables   </font></a></td></tr>
+<tr><td colspan=4></td><td          >
+<a href=#toc_I.C.5.b.2.><font color=blue>        (2) Example: submitting to multiple 
+                                                     nodes, SGI Origin 2000</font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.5.c.><font color=blue>       c. By specmake             </font></a></td></tr>
+<tr><td colspan=3></td><td colspan=2>
+<a href=#toc_I.C.5.d.><font color=blue>       d. Limitations on variable substitution</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.6.><font color=blue>      6. Shell-like "here documents" and continued lines</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.7.><font color=blue>      7. Included files               </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_I.C.8.><font color=blue>      8. UNsetting a variable with "%undef%"</font></a></td></tr>
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_II.>
+<a href=#toc_II.     ><font color=blue>   <big>II. Config file options for runspec</big>          </font></a></td></tr>
+</a>
+
+<tr><td></td><td colspan=4>
+<a href=#toc_II.A.><font color=blue>        A. Options for runspec that can also be 
+                                               used on the command line</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3 bgcolor=lightyellow>
+<a href=#toc_action><font color=blue>            action               </font></a> &nbsp;  &nbsp;
+<a href=#toc_delay     ><font color=blue>        delay                </font></a> &nbsp;  &nbsp;
+<a href=#toc_deletework><font color=blue>        deletework           </font></a> &nbsp;  &nbsp;
+<a href=#toc_ext><font color=blue>               ext                  </font></a> &nbsp;  &nbsp;
+<a href=#toc_feedback><font color=blue>          feedback             </font></a> &nbsp; &nbsp;
+<a href=#toc_ignore_errors><font color=blue>     ignore_errors        </font></a> &nbsp;  &nbsp;
+<a href=#toc_iterations><font color=blue>        iterations           </font></a> &nbsp;  &nbsp;
+<a href=#toc_mach><font color=blue>              mach                 </font></a> &nbsp;  &nbsp;
+<a href=#toc_make_no_clobber><font color=blue>   make_no_clobber      </font></a> &nbsp;  &nbsp;
+<a href=#toc_max_active_compares><font color=blue>max_active_compares </font></a> &nbsp;  &nbsp;
+<a href=#toc_nobuild><font color=blue>           nobuild              </font></a> &nbsp;  &nbsp;
+<a href=#toc_output_format><font color=blue>     output_format        </font></a> &nbsp;  &nbsp;
+<a href=#toc_reportable><font color=blue>        reportable           </font></a> &nbsp;  &nbsp;
+<a href=#toc_rate><font color=blue>              rate                 </font></a> &nbsp;  &nbsp;
+<a href=#toc_rebuild><font color=blue>           rebuild              </font></a> &nbsp;  &nbsp;
+<a href=#toc_runlist><font color=blue>           runlist              </font></a> &nbsp;  &nbsp;
+<a href=#toc_setprocgroup><font color=blue>      setprocgroup         </font></a> &nbsp;  &nbsp;
+<a href=#toc_size><font color=blue>              size                 </font></a> &nbsp;  &nbsp;
+<a href=#toc_table><font color=blue>             table                </font></a> &nbsp;  &nbsp;
+<a href=#toc_tune><font color=blue>              tune                 </font></a> &nbsp;  &nbsp;
+<a href=#toc_unbuffer><font color=blue>          unbuffer             </font></a> &nbsp;  &nbsp;
+<a href=#toc_users><font color=blue>             users                </font></a> &nbsp;  &nbsp;
+<a href=#toc_verbose><font color=blue>           verbose              </font></a> &nbsp;  &nbsp;
+</td></tr>
+
+<tr><td></td><td colspan=4>
+<a href=#toc_II.B.><font color=blue>        B. Options for runspec that can only be 
+                                               used in a config file </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3 bgcolor=lightyellow>
+<a href=#toc_backup_config><font color=blue>         backup_config               </font></a> &nbsp; &nbsp;
+<a href=#toc_basepeak><font color=blue>              basepeak                    </font></a> &nbsp; &nbsp;
+<a href=#toc_check_md5><font color=blue>             check_md5                   </font></a> &nbsp; &nbsp;
+<a href=#toc_command_add_redirect><font color=blue>  command_add_redirect        </font></a> &nbsp; &nbsp;
+<a href=#toc_difflines><font color=blue>             difflines                   </font></a> &nbsp; &nbsp;
+<a href=#toc_env_vars><font color=blue>              env_vars                    </font></a> &nbsp; &nbsp;
+<a href=#toc_expand_notes><font color=blue>          expand_notes                </font></a> &nbsp; &nbsp;
+<a href=#toc_ignore_sigint><font color=blue>         ignore_sigint               </font></a> &nbsp; &nbsp;
+<a href=#toc_inherit_from><font color=blue>          inherit_from                </font></a> &nbsp; &nbsp;
+<a href=#toc_line_width><font color=blue>            line_width                  </font></a> &nbsp; &nbsp;
+<a href=#toc_locking><font color=blue>               locking                     </font></a> &nbsp; &nbsp;
+<a href=#toc_log_line_width><font color=blue>        log_line_width              </font></a> &nbsp; &nbsp;
+<a href=#toc_mailcompress><font color=blue>          mailcompress                </font></a> &nbsp; &nbsp;
+<a href=#toc_mailmethod><font color=blue>            mailmethod                  </font></a> &nbsp; &nbsp;
+<a href=#toc_mailport><font color=blue>              mailport                    </font></a> &nbsp; &nbsp;
+<a href=#toc_mailserver><font color=blue>            mailserver                  </font></a> &nbsp; &nbsp;
+<a href=#toc_mailto><font color=blue>                mailto                      </font></a> &nbsp; &nbsp;
+<a href=#toc_make><font color=blue>                  make                        </font></a> &nbsp; &nbsp;
+<a href=#toc_makeflags><font color=blue>             makeflags                   </font></a> &nbsp; &nbsp;
+<a href=#toc_mean_anyway><font color=blue>           mean_anyway                 </font></a> &nbsp; &nbsp;
+<a href=#toc_minimize_rundirs><font color=blue>      minimize_rundirs            </font></a> &nbsp; &nbsp;
+<a href=#toc_minimize_builddirs><font color=blue>    minimize_builddirs          </font></a> &nbsp; &nbsp;
+<a href=#toc_no_monitor><font color=blue>            no_monitor                  </font></a> &nbsp; &nbsp;
+<a href=#toc_notes_wrap_columns><font color=blue>    notes_wrap_columns          </font></a> &nbsp; &nbsp;
+<a href=#toc_notes_wrap_indent><font color=blue>     notes_wrap_indent           </font></a> &nbsp; &nbsp;
+<a href=#toc_section_specifier_fatal><font color=blue>section_specifier_fatal    </font></a> &nbsp; &nbsp;
+<a href=#toc_sendmail><font color=blue>              sendmail                    </font></a> &nbsp; &nbsp;
+<a href=#toc_srcalt><font color=blue>                srcalt                      </font></a> &nbsp; &nbsp;
+<a href=#toc_sysinfo_program><font color=blue>       sysinfo_program             </font></a> &nbsp; &nbsp;
+<a href=#toc_teeout     ><font color=blue>           teeout                      </font></a> &nbsp; &nbsp;
+<a href=#toc_use_submit_for_speed><font color=blue>  use_submit_for_speed        </font></a> &nbsp; &nbsp;
+</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_III.>
+<a href=#toc_III.><font color=blue>  <big>III. Config file options for specmake</big>    </font></a></td></tr>
+</a>
+
+<tr><td></td><td colspan=4 bgcolor=lightyellow>
+    <a href=#toc_compiler><font color=blue>    CC, CXX, FC, F77           </font></a> &nbsp; &nbsp;
+<br><a href=#toc_ld><font color=blue>          CLD, CXXLD, FLD, F77LD     </font></a> &nbsp; &nbsp;
+<br><a href=#toc_onestep><font color=blue>     ONESTEP                    </font></a> &nbsp; &nbsp;
+<br><a href=#toc_optimize><font color=blue>    OPTIMIZE, COPTIMIZE, CXXOPTIMIZE, FOPTIMIZE, F77OPTIMIZE </font></a> &nbsp; &nbsp;
+<br><a href=#toc_portability><font color=blue> PORTABILITY, CPORTABILITY, CXXPORTABILITY, FPORTABILITY... </font></a> &nbsp; &nbsp;
+<br><a href=#toc_rm_sources><font color=blue>  RM_SOURCES                           </font></a> &nbsp; &nbsp;
+<br><a href=#toc_pass><font color=blue>        PASSn_CFLAGS, PASSn_CXXFLAGS, PASSn_FFLAGS, PASSn_F77FLAGS       </font></a>
+</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_IV.>
+<a href=#toc_IV.     ><font color=blue>   <big>IV. Config file options for the shell</big>  </font></a></td></tr>
+</a>
+
+<tr><td colspan=1></td><td colspan=5 bgcolor=lightyellow>
+<a href=#toc_fdo_pre0><font color=blue>         fdo_pre0         </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_preN><font color=blue>         fdo_preN         </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_make_cleanN><font color=blue>  fdo_make_cleanN  </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_pre_makeN><font color=blue>    fdo_pre_makeN    </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_make_passN><font color=blue>   fdo_make_passN   </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_post_makeN><font color=blue>   fdo_post_makeN   </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_runN><font color=blue>         fdo_runN         </font></a> &nbsp; &nbsp;
+<a href=#toc_fdo_postN><font color=blue>        fdo_postN        </font></a> &nbsp; &nbsp;
+<a href=#toc_submit><font color=blue>           submit           </font></a> &nbsp; &nbsp;
+</td></tr>
+
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_V.>
+<a href=#toc_V.><font color=blue>    <big>V. Config file options for the reader</big> </font></a></td></tr>
+</a>
+
+<tr><td></td><td colspan=4>
+<a href=#toc_V.A.><font color=blue>       A. Pre-defined fields              </font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3 bgcolor=lightyellow>
+<a href=#toc_company_name><font color=blue>     company_name               </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_avail><font color=blue>         hw_avail                   </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_cpu><font color=blue>           hw_cpu                     </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_cpu_mhz><font color=blue>       hw_cpu_mhz                 </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_disk><font color=blue>          hw_disk                    </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_fpu><font color=blue>           hw_fpu                     </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_memory><font color=blue>        hw_memory                  </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_model><font color=blue>         hw_model                   </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_ncpu><font color=blue>          hw_ncpu                    </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_ncpuorder><font color=blue>     hw_ncpuorder               </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_ocache><font color=blue>        hw_ocache                  </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_other><font color=blue>         hw_other                   </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_parallel><font color=blue>      hw_parallel                </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_pcache><font color=blue>        hw_pcache                  </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_scache><font color=blue>        hw_scache                  </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_tcache><font color=blue>        hw_tcache                  </font></a> &nbsp; &nbsp;
+<a href=#toc_hw_vendor><font color=blue>        hw_vendor                  </font></a> &nbsp; &nbsp;
+<a href=#toc_license_num><font color=blue>      license_num                </font></a> &nbsp; &nbsp;
+<a href=#toc_machine_name><font color=blue>     machine_name               </font></a> &nbsp; &nbsp;
+<a href=#toc_prepared_by><font color=blue>      prepared_by                </font></a> &nbsp; &nbsp;
+<a href=#toc_sw_avail><font color=blue>         sw_avail                   </font></a> &nbsp; &nbsp;
+<a href=#toc_sw_compiler><font color=blue>      sw_compiler                </font></a> &nbsp; &nbsp;
+<a href=#toc_sw_file><font color=blue>          sw_file                    </font></a> &nbsp; &nbsp;
+<a href=#toc_sw_os><font color=blue>            sw_os                      </font></a> &nbsp; &nbsp;
+<a href=#toc_sw_state><font color=blue>         sw_state                   </font></a> &nbsp; &nbsp;
+<a href=#toc_test_date><font color=blue>        test_date                  </font></a> &nbsp; &nbsp;
+<a href=#toc_tester_name><font color=blue>      tester_name                </font></a> &nbsp; &nbsp;
+</td></tr>
+
+<tr><td></td><td colspan=4 colspan=3>
+<a href=#toc_V.B.     ><font color=blue>       B. Field scoping and continuation  </font></a></td></tr>
+<tr><td></td><td colspan=4 colspan=3>
+
+<a href=#toc_V.C.     ><font color=blue>       C. Free form notes                 </font></a></td></tr>
+
+<tr><td colspan=2></td><td colspan=3 bgcolor=lightyellow>
+<a href=#toc_notes><font color=blue>            notesNNN                     </font></a>
+</td></tr>
+
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_VI.>
+<a href=#toc_VI.     ><font color=blue>   <big>VI. Files output during a build</big>         </font></a></td></tr>
+</a>
+
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.A.     ><font color=blue>       A. Automatic backup of config files </font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.B.     ><font color=blue>       B. The log file and verbosity levels</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.C.     ><font color=blue>       C. Log file example: Feedback-directed optimization.</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.D.     ><font color=blue>       D. Help, I've got too many logs!    </font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.E.     ><font color=blue>       E. Finding the build directory      </font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.F.     ><font color=blue>       F. Files in the build directory     </font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_VI.G.     ><font color=blue>       G. For more information             </font></a></td></tr>
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_VII.>
+<a href=#toc_VII. ><font color=blue>  <big>VII. Troubleshooting</big>                     </font></a></td></tr>
+</a>
+
+<tr><td>&nbsp;</td></tr>
+
+<tr><td colspan=5>
+<a name=Dtoc_pp>
+<a href=#toc_pp ><font color=blue>   <big>  ?. The config file preprocessor</big>          </font></a></td></tr>
+</a>
+<tr><td></td><td colspan=4>
+<a href=#toc_pp.A><font color=blue>     A. Defining macros</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_pp.B><font color=blue>     B. Un-doing macro definition</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_pp.C><font color=blue>     C. Using macros</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_pp.D><font color=blue>     D. Conditionals</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.D.1.><font color=blue>      1. %ifdef .. %endif</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.D.2.><font color=blue>      2. %ifndef .. %endif</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.D.3.><font color=blue>      3. %if .. %endif</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.D.4.><font color=blue>      4. %else</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.D.5.><font color=blue>      5. %elif</font></a></td></tr>
+<tr><td></td><td colspan=4>
+<a href=#toc_pp.E><font color=blue>     E. Informational directives</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.E.1.><font color=blue>      1. %warning</font></a></td></tr>
+<tr><td colspan=2></td><td colspan=3>
+<a href=#toc_pp.E.2.><font color=blue>      2. %error</font></a></td></tr>
+
+</table>
+
+<hr>
+
+<a name=toc_I. ><h1>I. Introduction</h1></a>
+
+This document assumes that you have already read: 
+<ul>
+<li><a href=readme1st.html>readme1st.html</a> and
+<li><a href=runspec.html>runspec.html</a>
+</ul>
+The <tt>runspec</tt> documents discuss the primary user interface for running SPEC 
+CPU2006; with this document, attention turns more toward how things work inside.</p>
+
+
+<hr width=80%>
+<center><table width=75%><tr><td>
+<i>Note: links to SPEC CPU2006 documents on this web page
+assume that you are reading the page from a directory that
+also contains the other SPEC CPU2006 documents.  If by
+some chance you are reading this web page from a location
+where the links do not work, try accessing the referenced
+documents at one of the following locations:</i>
+<ul>
+<li><a href=http://www.spec.org/cpu2006/Docs/>
+     www.spec.org/cpu2006/Docs/</a>
+<li><i>The </i><tt><big><b>$SPEC/Docs/ </b></big></tt><i> directory on a Unix system where SPEC CPU2006 has been installed.</i>
+<li><i>The </i><tt><big><b>%spec%\Docs\</b></big></tt><i> directory on a Windows system where SPEC CPU2006 has been installed.</i>
+<li><i>The </i><tt><big><b>Docs        </b></big></tt><i> directory on your SPEC CPU2006 distribution CD-ROM.</i>
+</ul>
+</td></tr></table>
+<hr width=75%>
+</center>
+</p></li>
+
+
+<a name=toc_I.A. ><h2>A. What is a config file?  (Background: 
+   benchmark philosophy.)   </h2></a>
+
+   A config file contains:
+<ul>
+      <li>the instructions for building the benchmarks
+      <li>the instructions for running the benchmarks
+      <li>the description of the system under test
+      <li>the key to result reproducibility
+      <li>the repository for all information unique to a vendor/system
+      <li>the guts, the real controls, the gold, the Good Stuff
+      <li>the place where the benchmark philosophy hits the road
+</ul>
+
+   (Readers who just want to get on with the technical description 
+   should skip the remainder of this section; those who are interested
+   in benchmark design philosophy should continue reading.)
+
+   <p>A key decision that must be made by designers of a benchmark suite is 
+   whether to allow the benchmark source code to be changed when the
+   suite is used.  
+   
+   <p>If source code changes are allowed:
+<table border=0>
+<tr><td valign=top><b>&nbsp;+&nbsp;</b> </td>
+    <td>The benchmark can be adapted to the system under test.
+<tr><td valign=top><b>&nbsp;+&nbsp;</b> </td>
+    <td>Portability may be easier.
+<tr><td valign=top><b>&nbsp;&#150;&nbsp;</b> </td>
+    <td>But it may be hard to compare results between systems, unless 
+        some formal audit is done to ensure that comparable work is done. 
+</table>
+
+   <p>If source code changes are not allowed:
+<table border=0>
+<tr><td valign=top><b>&nbsp;+&nbsp;</b> </td>
+    <td>Results may be easier to compare.
+<tr><td valign=top><b>&nbsp;&#150;&nbsp;</b> </td>
+    <td>It may take more time and effort to develop the benchmark, because 
+        portability will have to be built in ahead of time. 
+<tr><td valign=top><b>&nbsp;&#150;&nbsp;</b> </td>
+    <td>Portability may be hard to achieve, at least for real applications.  
+        (Simple loops of 15 lines can port with little effort, and such 
+        benchmarks have their uses.  But real applications are more 
+        complex.)
+</table>
+ 
+   <p>SPEC has chosen not to allow source code changes for the CPU2006 
+   suite, except under very limited circumstances described below.
+   By restricting source code changes, we separate the activity of
+   porting benchmarks (which has a goal of being performance neutral), 
+   from the activity of using the benchmarks (where the goal is not 
+   neutrality, it's Get The Best Score You Can.)  Prior to the first
+   use of CPU2006, SPEC therefore invested substantial effort to port 
+   the suite to as many platforms as practical.  Testing was done on 
+   7 different hardware architectures, 11 versions of Unix (including 
+   4 versions of Linux) and 2 versions of NT.  
+   
+   <p>Are source code changes ever allowed?  Normally, no.  But if you 
+   discover a reason why you believe such a change is required, SPEC 
+   wants to hear about it, and will consider such requests for a 
+   future revision of the suite.  SPEC will normally not approve 
+   publication of CPU2006 results using modified source code, unless 
+   such modifications are unavoidable for the target environment, are 
+   submitted to SPEC, are made available to all users of the suite, 
+   and are formally approved by a vote.
+
+   <p>So, if source code changes are not allowed, but the benchmarks
+   must be compiled in a wide variety of environments, can the users
+   at least write their own Makefiles, and select <tt><b>-D</b></tt> options to
+   select different environments?  The answer to these two questions
+   are "no", and "yes", respectively:
+<ul><li>No, you can't write your own Makefiles.
+<li>But yes, you can select portability options (such as <tt><b>-D</b></tt>).  
+</ul>
+   You do this in the config file, which contains a centralized 
+   collection of all the portability options and optimization options 
+   for all the benchmarks in a CPU2006 suite.  The SPEC tools then 
+   automatically generate the Makefiles for you.
+
+   <p>The config file contains places where you can specify the 
+   characteristics of both your compile time and run time environments.
+   It allows the advanced user to perform detailed manipulation of 
+   Makefile options, but retains all the changes in one place so that
+   they can be examined and reproduced.
+
+   <p>The config file is one of the key ingredients in making results
+   reproducible.  For example, if a customer would like to run the 
+   CPU2006 suite on her own SuperHero Model 4 and discover how close 
+   results are in her environment to the environment used when the 
+   vendor published a CPU2006 result, she should be able to do that 
+   using only 3 ingredients:
+
+<ol>
+        <li>The SPEC CPU2006 CD ordered from SPEC
+
+        <li>The software and hardware as specified in the full disclosure
+          when the vendor submitted the original results
+
+        <li>The config file from the vendor's submission
+</ol>
+
+
+
+<a name=toc_I.B. ><h2>B. What does a config file affect?</h2></a>
+   
+   A config file contains directives that are addressed to four different 
+   consumers: <tt>runspec</tt>, <tt>specmake</tt>, the shell, and the reader of the results:
+
+   
+<a name=toc_I.B.1. ><h3>   1. runspec </h3></a>
+
+      Various aspects of the operation of <tt>runspec</tt> can be set within the
+      config file.  For example, if <tt>michael.cfg</tt> includes the lines:
+
+<pre>   output_format = asc,ps
+   tune          = base
+   reportable    = 1
+   runlist       = fp
+</pre>
+      then the defaults for the <tt>runspec</tt> command would change as specified.  
+      A user who types either of the following two commands would get 
+      precisely the same effect:
+
+<pre>   runspec --config=michael
+   runspec --config=michael --output=asc,ps --tune=base --reportable fp 
+</pre>         
+         
+<a name=toc_I.B.2. ><h3>   2. specmake</h3></a>
+
+      The tool <tt>specmake</tt> is simply gnu make renamed to avoid any possible
+      conflicts with other versions of make that may be on your system.
+      Config file lines such as:
+
+<pre>   CC           = cc
+   CPORTABILITY = -DSPEC_CPU_LP64
+   OPTIMIZE     = -O4
+</pre>
+      are written to the Makefile set that is ultimately used to build 
+      the benchmark, and these lines are interpreted by <tt>specmake</tt>.
+
+
+<a name=toc_I.B.3. ><h3>   3. The shell </h3></a>
+
+      Certain commands are interpreted by the shell, for example: 
+
+<pre>   fdo_pre0     = mkdir /tmp/ahmad; rm -f /tmp/ahmad/* 
+</pre>
+      <tt>Runspec</tt> passes the above command to the shell prior to running
+      a training run for feedback directed optimization, and the
+      shell actually carries out the requested commands.  It is therefore
+      important to peruse a config file you are given before using it.
+      
+
+<a name=toc_I.B.4. ><h3>   4. The reader of the results</h3></a>
+
+      A SPEC CPU2006 result, when submitted to 
+      <a href=http://www.spec.org/>http://www.spec.org/</a>, 
+      is expected to contain all the information needed so that readers
+      can understand exactly what was tested.  Config file lines such
+      as these are addressed to that reader:
+
+<pre>   test_date = Nov-1999
+   hw_avail  = Apr-1999
+   sw_avail  = May-1999
+   notes015  = Note: Feedback directed optimization was not used
+</pre>
+      In addition, the config file itself is available to the reader 
+      at <a href=http://www.spec.org/>http://www.spec.org/</a>, 
+      The config file is presented in its 
+      entirety, with one exception described below under 
+      <a href=#toc_I.C.1.><font color=blue>Comments and whitespace</font></a>. 
+      The reason that the config file is made 
+      available is because it is so important to reproducing results, 
+      as described in the 
+      <a href=#toc_I.A.><font color=blue>Introduction</font></a>.  The 
+      config file is saved on 
+      every run, as a compressed portion of the rawfile.
+
+
+<a name=toc_I.C. ><h2>C. Config file structure </h2></a>
+
+<a name=toc_I.C.1. ><h3> 1. Comments and whitespace</h3></a>
+
+    Comment lines begin with a <tt><b>#</b></tt>, and can be placed anywhere in
+    a config file.  When the config file is saved (as an encoded
+    portion of the rawfile), the comments are included.  But if a 
+    comment line begins with <tt><b>#></b></tt>, it will not be saved in the 
+    rawfile.  Thus you could use <tt><b>#</b></tt> for most of your comments, 
+    and use <tt><b>#></b></tt></b></tt> for proprietary information, such as:
+
+<pre>   #> I didn't use the C++ beta test because of Bob's big back-end bug.
+</pre>
+    Blank lines can be placed anywhere in a config file.
+
+    <p>Spaces within a line are almost always ignored.  Of course,
+    you wouldn't want to spell OPTIMIZE as OPT I MIZE, but you
+    are perfectly welcome to do either of the following:
+
+<pre>   OPTIMIZE=-O2
+   OPTIMIZE   =  -02
+</pre>
+    The one place where spaces are considered significant is 
+    in notes, where the tools assume you are trying to line up
+    your comments in the full disclosure reports.
+
+
+<a name=toc_I.C.2. ><h3> 2. Header section</h3></a>
+   
+    A config file contains the following:
+
+<ul>
+        <li> A header section
+        <li> An arbitrary number of named sections, delimited by 
+          section markers (described below).
+        <li> An MD5 section
+</ul>
+
+    The header section is simply the first section, prior to the
+    first occurence of a named section.
+<p>
+    Most attempts to address <tt>runspec</tt> itself must be done in the header 
+    section.  For example, if you want to set <tt>reportable=1</tt>, you must 
+    do so before any occurrences of section markers. 
+
+    <p>The next several pages are devoted to sections that you name;
+    the MD5 section is explained after that.
+
+
+
+<a name=toc_I.C.3. ><h3> 3. Named Sections</h3></a>
+
+    A "section marker" is a four-part string of the form:
+
+<pre>   benchmark[,benchmark,...]=tuning=extension=machine:
+</pre>
+    These are referred to below as the 4 "section specifiers".
+    The allowed values for the section specifiers are:</p>
+
+<table border=0>
+<tr><td valign=top><tt><b>benchmark:</b></tt>  </td>
+               <td><tt>default</tt>
+               <br> <tt>cpu2006</tt>
+<!-- No 'int' or 'fp' just yet
+               <br> <tt>int</tt>
+               <br> <tt>fp</tt>
+-->
+               <br> Any individual benchmark, such as <tt>452.eprover</tt>
+               <br> Any list of benchmarks, such as <tt>450.soplex,403.gcc</tt></td>
+
+<tr><td valign=top><tt><b>tuning: </b> </tt>  </td>
+               <td> <tt>default</tt>
+               <br> <tt>base</tt>
+               <br> <tt>peak</tt></td>
+
+<tr><td valign=top><tt><b>extension:</b></tt> </td>
+               <td> <tt>default</tt>
+               <br> any arbitrary string, such as "cloyce-genius"</td>
+
+<tr><td valign=top><tt><b>machine:</b>  </tt> </td>
+               <td> <tt>default</tt> (Like extension, but does not affect
+                            the name of the executable produced; you
+                            should probably leave it at default unless you feel
+                            particularly courageous.)</td>
+</table>
+
+    <p>Trailing default sections may be omitted.  Thus all of the following
+    are equivalent:
+
+<pre>   452.eprover=base=default=default:
+   452.eprover=base=default:
+   452.eprover=base:
+</pre>
+    Section markers can be entered in any order.  Section markers can be
+    repeated; material from identical section markers will automatically
+    be consolidated.  That is, you are welcome to start one section, start 
+    a different one, then go back and add more material to the first 
+    section.  But please note that since there is no marker for the 
+    header section, you cannot go back to it. 
+
+
+
+ <a name=toc_I.C.3.a. ><h4> a. Precedence for the benchmark specifier</h4></a>
+
+     By constructing section markers, you specify how you would like 
+     your options applied, with powerful defaulting and over-riding 
+     capabilities.  Let's examine these capabilities by way of examples.
+     We start with a simple config file:
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   OPTIMIZE = -O2
+
+   % <b>runspec --config=tmp | grep swim.f</b>
+   f90 -c -o swim.o            -O2   swim.f
+   %
+</pre>
+
+    The config file above is designed for quick, simple testing: it runs
+    only one benchmark, namely <tt>171.swim</tt>, using the smallest 
+    (<tt>test</tt>) 
+    workload, runs it only once, uses only <tt>base</tt> tuning, outputs only 
+    the text-format (ASCII) report, and displays the build commands to 
+    the screen.  To use it, we issue a <tt>runspec</tt> command, and pipe
+    the output to <tt>grep</tt> to search for the actual generated compile 
+    command.  (Alternatively, on NT, we could use <tt>findstr</tt> on 
+    the generated 
+    log file).  And, indeed, the tuning applied was the expected <tt>-O2</tt>.
+
+    <p>Now consider this example, where a section marker is added that
+    has the first specifier set to <tt>fp</tt>, for the floating point suite:
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   OPTIMIZE = -O2
+
+   fp=default=default=default:
+   OPTIMIZE = -O3
+
+   % <b>runspec --config=tmp | grep swim.f</b>
+   f90 -c -o swim.o            -O3   swim.f
+   %
+</pre>
+
+    The second <tt>OPTIMIZE</tt> command is used above because the reference to
+    the floating point suite is considered to be more specific
+    than the overall default.  
+
+
+    <p>Furthermore, we can add a specifier that mentions <tt>swim</tt> by name:
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   OPTIMIZE = -O2
+
+   fp=default=default=default:
+   OPTIMIZE = -O3
+
+   171.swim=default=default=default:
+   OPTIMIZE = -O4
+
+   % <b>runspec --config=tmp | grep swim.f</b>
+   f90 -c -o swim.o            -O4   swim.f
+   %
+</pre>
+
+    The third <tt>OPTIMIZE</tt> command wins above, because it is included
+    in the section that is considered to be the most specific.  But 
+    what if we had said these in a different order?
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base
+   output_format = asc
+   teeout        = 1
+
+   171.swim=default=default=default:
+   OPTIMIZE = -O4
+
+   default=default=default=default:
+   OPTIMIZE = -O2
+
+   fp=default=default=default:
+   OPTIMIZE = -O3
+
+   % <b>runspec --config=tmp | grep swim.f</b>
+   f90 -c -o swim.o            -O4   swim.f
+   %
+</pre>
+
+    Notice above that the order of entry is not significant; it's the order 
+    of precedence from least specific to most specific.
+
+    <p>Note: when a specifier is listed more than once at the same descriptive 
+    level, the last instance of the specifier is used.  Consider this case:
+
+<pre>   171.swim=default=default=default:
+   OPTIMIZE = -O4
+
+   171.swim=default=default=default:
+   OPTIMIZE = -O3
+</pre>
+
+    The ending value of <tt>OPTIMIZE</tt> for <tt>171.swim</tt> is 
+    <tt>-O3</tt>, not <tt>-O4</tt>.
+
+
+<a name=toc_I.C.3.b. ><h4> b. Precedence for the tuning specifier</h4></a>
+
+    The tuning specifier is the second in the group of four,
+    taking the value "default", "base", or "peak".  Here is an
+    example of its use:
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base,peak
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   FC       = f90
+   F77      = f77
+
+   default=base=default=default:
+   FC       = kf90
+
+   default=peak=default=default:
+   F77      = kf77
+
+   % <b>runspec --config=tmp | grep swim.f | grep swim.o</b>
+   kf90 -c -o swim.o                swim.f
+   kf77 -c -o swim.o                swim.f
+   %
+</pre>
+
+    In the above example, we compile swim twice: once for base 
+    tuning, and once for peak.  Notice that in both cases the 
+    compilers defined by the more specific section markers 
+    have been used, namely kf90 and kf77, rather than the f90 
+    and f77 from default=default=default=default.   
+
+    <p>(The alert reader may ask here "Why does <tt>FC</tt> apply to base and 
+    <tt>F77</tt> apply to peak?"  The reason for this is that in base, the 
+    CPU2006 Run Rules allow only one Fortran compiler, which must 
+    be used for both the benchmarks that use the older Fortran-77 
+    features, and for the benchmarks that use the newer Fortran-90 
+    features.  But for peak tuning your definition of <tt>FC</tt> is used 
+    for source files <tt>*.f90,</tt> and your definition of <tt>F77</tt> is used 
+    for source files <tt>*.f</tt>.)
+
+
+
+<a name=toc_I.C.3.c. ><h4> c. Precedence for the extension specifier</h4></a>
+
+    Now let's examine the third section specifier, extension:
+
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = base
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   LIBS = -lm
+
+   default=default=ev6=default:
+   LIBS = -lm_ev6
+
+   % <b>runspec --config=tmp | grep swim.o</b>
+   f90 -c -o swim.o                swim.f
+   f90         swim.o  -lm   -o swim
+   % <b>runspec --config=tmp --extension=ev6 | grep swim.o</b>
+   f90 -c -o swim.o                swim.f
+   f90         swim.o  -lm_ev6   -o swim
+   %
+
+   % <b>cd $SPEC/benchspec/CPU2006/171.swim/exe</b>
+   % <b>ls -lt | head -3</b>
+   total 3400
+   -rwxr-xr-x   1 john     users      65536 Dec 10 02:47 swim_base.ev6
+   -rwxr-xr-x   1 john     users      49152 Dec 10 02:47 swim_base.none
+   %
+</pre>
+
+    Notice above that two different versions of swim were built 
+    from the same config file, and both executables are present
+    in the exe directory for swim. 
+
+
+<a name=toc_I.C.3.d. ><h4> d. Combining specifier types</h4></a>
+
+    What if more than one section applies to a particular benchmark?
+    Consider this example:
+    
+<pre>   % <b>cat tmp.cfg</b>
+   runlist       = swim
+   size          = test
+   iterations    = 1
+   tune          = peak
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   OPTIMIZE = -O2
+   F77      = f77
+   LIBS     = -lm
+
+   171.swim=default=default=default:
+   OPTIMIZE = -O4
+
+   default=peak=default=default:
+   F77      = kf77
+
+   default=default=ev6=default:
+   LIBS = -lm_ev6
+
+   % <b>runspec --config=tmp --extension=ev6 | grep swim.o</b>
+   kf77 -c -o swim.o            -O4   swim.f
+   kf77     -O4   swim.o  -lm_ev6   -o swim
+   %
+</pre>
+
+    Notice above that all three sections applied: the section specifier
+    for 171.swim, the specifier for peak tuning, and the specifier for
+    extension ev6.  
+
+
+<a name=toc_I.C.3.e. ><h4> e. Precedence among section types</h4></a>
+
+    If sections contradict each other, the order of precedence is:
+
+<pre>
+     highest     benchmark
+                 suite
+                 tuning
+     lowest      extension
+</pre>
+
+    And this order can be demonstrated as follows:
+
+<pre>   % <b>cat tmp.cfg</b>
+   size          = test
+   iterations    = 1
+   output_format = asc
+   teeout        = 1
+
+   default=default=default=default:
+   OPTIMIZE = -O0
+   fp=default=default=default:
+   OPTIMIZE = -O1
+   171.swim=default=default=default:
+   OPTIMIZE = -O3
+   default=peak=default=default:
+   OPTIMIZE = -O4
+   default=default=ev6=default:
+   OPTIMIZE = -O5
+   # The config file ends here.
+
+   % <b>runspec --conf=tmp swim | grep swim.f</b>
+[1]  f90 -c -o swim.o            -O3   swim.f
+   % <b>runspec --conf=tmp --tune=peak swim | grep swim.f</b>
+[2]  f77 -c -o swim.o            -O3   swim.f
+   % <b>runspec --conf=tmp --extension=ev6 swim | grep swim.f</b>
+[3]  f90 -c -o swim.o            -O3   swim.f
+   %
+   % <b>runspec --conf=tmp --tune=base mgrid | grep mgrid.f</b>
+[4]  f90 -c -o mgrid.o            -O1   mgrid.f
+   % <b>runspec --conf=tmp --tune=peak mgrid | grep mgrid.f</b>
+[5]  f77 -c -o mgrid.o            -O1   mgrid.f
+   % <b>runspec --conf=tmp --extension=ev6 mgrid | grep mgrid.f</b>
+[6]  f90 -c -o mgrid.o            -O1   mgrid.f
+   %
+   % <b>runspec --conf=tmp --tune=base gzip | grep gzip.c</b>
+[7]  cc -c -o gzip.o            -O0   gzip.c
+   % <b>runspec --conf=tmp --tune=peak gzip | grep gzip.c</b>
+[8]  cc -c -o gzip.o            -O4   gzip.c
+   % <b>runspec --conf=tmp --extension=ev6 gzip | grep gzip.c</b>
+[9]  cc -c -o gzip.o            -O5   gzip.c
+   % <b>runspec --conf=tmp --tune=peak --extension=ev6 gzip | grep gzip.c</b>
+[10] cc -c -o gzip.o            -O4   gzip.c
+</pre>
+
+    Notice above that the named benchmark always wins: lines [1], [2], and 
+    [3].  If there is no section specifier that names a benchmark, but there 
+    is a section specifier that names a suite, then the suite wins: lines [4],
+    [5], and [6].  If there are no applicable benchmark or suite 
+    specifiers, then tuning or extension can be applied: lines [8] and 
+    [9].  But if both tuning and extension are applied, tuning wins [10].
+
+
+
+<a name=toc_I.C.4. ><h3> 4. MD5</h3></a>
+
+    The final section of your config file is generated automatically
+    by the tools at compile time, and looks something like this:
+
+<pre>   __MD5__
+   168.wupwise=peak=nov14a=default:
+   # Last updated Sun Nov 14 04:49:15 1999
+   optmd5=6cfebb629cf395d958755f68a6c9e05b
+   exemd5=3d51c75d1c97918bf212c4fb47a30003
+
+   183.equake=peak=nov14a=default:
+   # Last updated Sun Nov 14 04:49:22 1999
+   optmd5=f3f0d2022f2be4a9530c000b1e883008
+   exemd5=923a7bfd6f68ccf0d6e49261fa1c2030
+</pre>
+
+    The "MD5" is a checksum that ensures that the binaries referenced
+    in the config file are in fact built using the options described
+    therein.  For example, if you edit the config file to change the
+    optimization level for 255.vortex, the next time the file is used
+    the tools will notice the change and will recompile vortex.
+ 
+    <p>You can optionally disable this behavior, but doing so is strongly 
+    discouraged.  See the sarcastic remarks in the description of 
+    <a href=#toc_check_md5><font color=blue><tt>check_md5</tt></font></a>, below.
+
+    <p>If you would like to see what portions of your config file are 
+    used in computing the MD5 hash, <tt>runspec</tt> with --debug=30 or 
+    higher, and examine the log file.
+
+
+<a name=toc_I.C.5. ><h3> 5. Variable Substitution</h3></a>
+
+    You can do variable substitution using your config file.  But, as 
+    described in the 
+    <a href=#toc_I.B.><font color=blue>Introduction</font></a>, 
+    a config file can affect <tt>runspec</tt> 
+    itself, <tt>specmake</tt>, and the shell.  Therefore, effective use of 
+    variable substitution requires you to be aware of which software
+    is doing the substitution:
+
+<ul>
+      <li>The config file preprocessor does <i>macro</i> substitution, but that
+      looks sufficiently like variable interpolation that it might be
+      confusing.  See the <a href=#toc_pp>preprocessor</a> section
+      for more information.  Macros to be substituted always look something
+      like this: %{macro_name}
+
+      <li>If <tt>runspec</tt> itself does the substitution, it happens both
+      immediately after reading the config file (for variables that don't
+      change during a run) and immediately before executing commands (for
+      values that <b>do</b> change during a run).<br>
+
+      In the first case, variables must be specified as $[variable_name] (i.e.
+      $[F90] ).<br>
+
+      In the second case, perl variable interpolation is used.  The variables
+      substituted usually look something like this: $hw_avail.
+
+      <li>If <tt>runspec</tt> generates an external command which is handed off
+        to your shell (or command interpreter), the variable will be
+        interpreted according to the rules of your shell.  Such a
+        variable might look like this: \$SPEC.
+
+      <li>If the variable is handed off to <tt>specmake</tt>, it is interpreted by
+        the usual rules of gnu make.  Such variables might look like 
+        this: $(FOPTIMIZE).
+</ul>
+
+
+  <a name=toc_I.C.5.a. ><h4> a. By runspec</h4></a>
+
+      <p>Substitution by <tt>runspec</tt> itself happens twice.</p>
+
+      <p>The first time, which happens immediately after the config file is
+      read, replaces only variables of the form $[variable_name].  Any value
+      that's set in the config file and is visible in the scope where the
+      variable is used can be interpolated.  Because of the scoping restriction,
+      if you want to use variable substitution to note your optimization flags,
+      the notes for the individual benchmarks must be in those benchmarks'
+      sections:
+
+<pre>
+400.perlbench=peak=default=default:
+PEAKFLAG=-gofast
+# The following will turn into what you expect
+notes400_1=I use $[PEAKFLAG]
+
+400.perlbench=base=default=default:
+BASEFLAG=-besafe
+# The following will turn into what you expect:
+notes400_1=I use $[BASEFLAG]
+# The following will NOT WORK:
+notes400_2=My brother likes $[PEAKFLAG]
+</pre>
+
+      You can't interpolate variables that don't exist or whose values aren't
+      known when the config file is read:
+<pre>
+403.gcc=default=mar31=default:
+#            My executable name is ''
+notes403_0 = My executable name is '$[baseexe]'
+</pre>
+
+      This doesn't work because the sorting of which extensions, etc to use
+      doesn't happen until after the config file is processed.  In this
+      particular example, it's obvious (to <b>you</b>) what the value should
+      be, but the tools aren't as clever as you are.
+
+      <p>You also can't interpolate variables whose value changes during a
+      run or build:
+
+<pre>
+default=default=default=default:
+#        I executed ''
+notes0 = I executed '$[command]'
+</pre>
+
+      What did you expect?
+
+      <p>Don't worry -- you'll receive a warning if you use a variable that the
+      tools don't know about.  It's up to you to heed them.
+
+      <p>The second round uses perl variable interpolation.  Only 
+      perl scalars (denoted by a leading $) can be interpolated.  For example, 
+      notes001 below uses the log file number (generated by the tools) and 
+      the hardware availability date (which was set directly):
+
+<pre>   % <b>cat tmp.cfg</b>
+   size          = test
+   iterations    = 1
+   output_format = asc
+   teeout        = 1
+   expand_notes  = 1
+   runlist       = swim
+   tune          = base
+   hw_avail      = May-2000
+   notes001      = This run is from log.$lognum with hw_avail $hw_avail
+
+   % <b>runspec -c tmp | grep asc</b>
+   Identifying output formats...asc...config...html...pdf...ps...raw...
+      format: ASCII -> /greg/result/CPU2006.101.asc
+   % <b>grep with /greg/result/CPU2006.101.asc</b>
+      This run is from log.101 with hw_avail May-2000
+</pre>
+
+      In this case, $hw_avail could also have been interpolated in the first
+      round by writing it as '$[hw_avail]'.  In general, for variable
+      interpolation, the earlier the better.<br>
+
+      As another example, let's say you want to go for minimal performance.  
+      You might want to do this with the 'nice' command.  You can say: 
+
+<pre>   submit=nice 20 '$command'
+</pre>
+
+      and the $command gets expanded to whatever would normally be executed 
+      but with 'nice 20' stuck in front of it.
+
+      <p>If you'd like a complete list of the variables that you can use in
+      your commands (relative to the config file you're using), set <tt>runspec</tt>'s 
+      verbosity to 80 or higher (-v 80) and either do a run that causes a 
+      command substitution to happen, or run with expand_notes set to 1.
+
+      <p>To put text immediately after a variable, you need to make it possible 
+      for the parser to see the variable that you want, by using braces:
+
+<pre>   % <b>tail -2 tmp.cfg</b>
+   notes001 =You have done ${lognum}x runs tonight, aren't you tired yet?
+
+   % <b>runspec -c tmp | grep asc</b>
+   Identifying output formats...asc...config...html...pdf...ps...raw...
+      format: ASCII -> /john/result/CPU2006.103.asc
+   % <b>grep done /john/result/CPU2006.103.asc</b>
+      You have done 103x runs tonight, aren't you tired yet?
+</pre>
+
+<a name=toc_I.C.5.a.1.><h5> (1) Example: cleaning files before a training run</h5></a>
+
+          Perhaps a more useful example is this one, which directs the shell to 
+          clean files related to the current executable in the temporary 
+          directory, before a training run for feedback directed optimization:
+    
+<pre>   fdo_pre0     = mkdir /tmp/pb; rm -f /tmp/pb/${baseexe}*
+</pre>
+
+          NOTICE in this example that although the commands are carried out
+          by the shell, the variable substitution is done by <tt>runspec</tt>.
+
+
+<a name=toc_I.C.5.a.2.><h5>(2) Example: submitting to multiple nodes, Compaq Tru64 Unix</h5></a>
+
+          The following lines submit to multiple nodes on a Compaq 
+          AlphaServer SC Series Supercomputer running Tru64 Unix:
+
+<pre>   submit= echo "$command" > dobmk; prun -n 1 sh dobmk
+   command_add_redirect=1
+</pre>
+
+          In this example, the command that actually runs the benchmark is 
+          written to a small file, "dobmk", which is then submitted to a 
+          remote node selected by "prun".  (The parallel run command, prun, 
+          can execute multiple copies of a process, but in this case we have
+          requested just one copy by saying "-n 1".  The SPEC tools will
+          create as many copies as required.)
+
+          <p>The "command_add_redirect" is crucial.  What happens without it?
+
+<pre>   % <b>head -1 $SPEC/config/tmp1.cfg</b>
+   submit= echo "$command" > dobmk; prun -n 1 sh dobmk
+   % <b>runspec --config=tmp1 --size=test -n 1 --rate --users=1 swim</b>
+   ...
+   % <b>cat $SPEC/benchspec/CPU2006/171.swim/run/00000006/dobmk</b>
+   ../00000006/swim_base.none
+</pre>
+
+          Now let's use command_add_redirect, and see how dobmk changes:
+
+<pre>   % <b>diff $SPEC/config/tmp1.cfg $SPEC/config/tmp2.cfg</b>
+   1a2
+   > command_add_redirect=1
+   % <b>runspec --config=tmp2 --size=test -n 1 --rate --users=1 swim</b>
+   ...
+   % <b>cat $SPEC/benchspec/CPU2006/171.swim/run/00000006/dobmk</b>
+   ../00000006/swim_base.none < swim.in > swim.out 2> swim.err
+</pre>
+
+          Notice that with command_add_redirect=1, the substitution for
+          $command includes both the name of the executable and the file
+          assignments for standard in, standard out, and standard error.
+          This is needed because otherwise the files would not be connected 
+          to swim on the remote node.  That is, the former generates [*]:
+
+<pre>   echo "swim_base.none" > dobmk; 
+   prun -n 1 sh dobmk < swim.in > swim.out 2> swim.err
+</pre>
+
+          And the latter generates [*]:
+
+<pre>   echo "swim_base.none < swim.in > swim.out 2> swim.err" > dobmk; 
+   prun -n 1 sh dobmk
+</pre>
+         
+<table><td valign=top>[*]</td><td>The picky reader may wish to 
+              know that the examples were 
+              editted for readability: a line wrap was added, and the 
+              directory string <tt>../00000006/</tt> was omitted.  The 
+              advanced reader may wonder how the above lines were 
+              discovered: for the former, we found out what 
+              <tt>runspec</tt> would generate by going to the run 
+              directory and typing <tt>specinvoke -n</tt>, where 
+              <tt>-n</tt> means dry run; in the latter, we typed 
+              <tt>specinvoke -nr</tt>, where <tt>-r</tt> means that 
+              <tt>$command</tt> already has device redirection.  For 
+              more information on <tt>specinvoke</tt>, see 
+              <a href=utility.html#specinvoke>utility.html</a>.
+              </td></tr></table>
+
+  <a name=toc_I.C.5.b. ><h4> b. By the shell </h4></a>
+
+<a name=toc_I.C.5.b.1.> <h5>(1) Protecting shell variables</h5></a>
+
+          Because perl variables look a lot like shell variables, you need to 
+          specially protect shell variables if you want to prevent perl from
+          trying to interpret them.  Notice what happens with the protected
+          and unprotected versions:
+
+<pre>   % <b>cat tmp.cfg</b>
+   size                 = test
+   iterations           = 1
+   output_format        = asc
+   teeout               = 1
+   expand_notes         = 1
+   runlist              = swim
+   tune                 = base,peak
+   use_submit_for_speed = 1
+
+   default=peak=default=default:
+   submit = echo "home=$HOME; spec=$SPEC;" >/tmp/chan; $command
+
+   default=base=default=default:
+   submit = echo "home=\$HOME; spec=\$SPEC;" > /tmp/nui; $command
+
+   % <b>runspec --config=tmp > /dev/null</b>
+   % <b>cat /tmp/chan</b>
+   home=; spec=;
+   % <b>cat /tmp/nui</b>
+   home=/usr/users/chris; spec=/cpu2006;
+   %
+</pre>
+
+          Please note that, by default, 'submit' is only applied to rate runs.  
+          In this example, we used it for a speed run as well, by setting
+
+<pre>   use_submit_for_speed = 1 
+</pre>
+
+          in the configuration file.
+
+
+<a name=toc_I.C.5.b.2.> <h5>(2) Example: submitting to multiple nodes, SGI Origin 2000</h5></a>
+
+          Here is a more complex example which uses substitution by both 
+          <tt>runspec</tt> and by the shell (line wraps added for readability):
+
+<pre>   submit= 
+      let "MYNUM=$SPECUSERNUM" ; 
+      let "NODE=\$MYNUM/2"; 
+      export NODE=/hw/nodenum/\$NODE; 
+      let "CPU=2*((\$MYNUM+1)/2)-\$MYNUM "; 
+      export CPU; 
+      /usr/sbin/dplace -place \$SPEC/submit.pf -mustrun $command
+</pre>
+
+          <tt>Runspec</tt> substitutes the current user number 
+          for<tt> $SPECUSERNUM</tt>, and
+          then passes the above command to the shell which does the 
+          substitutions for CPU and NODE.  This example originated on an 
+          SGI Origin 2000 system, where there are two CPUs per node.  Suppose 
+          that <tt>runspec</tt> is about to submit the copy for user number 17.  
+          In that case:
+
+<pre>   submit= 
+      let "MYNUM=$SPECUSERNUM" ;             # i.e. 17
+      let "NODE=\$MYNUM/2";                  # So, NODE=8
+      export NODE=/hw/nodenum/\$NODE;        # Now NODE=/hw/nodenum/8
+      let "CPU=2*((\$MYNUM+1)/2)-\$MYNUM ";  # and CPU=1
+      export CPU; 
+      /usr/sbin/dplace                       # So we execute dplace
+        -place \$SPEC/submit.pf              # using $SPEC/submit.pf
+        -mustrun $command                    # and the expected command
+</pre>
+
+          The desired $command is run under the control of submit.pf, with
+          $NODE=/hw/nodenum/8 and $CPU=1.  Here are the contents of the 
+          placement file, submit.pf:
+
+<pre>   memories 1 in topology physical near $NODE
+   threads 1
+   run thread 0 on memory 0 using cpu $CPU
+</pre>
+
+          Two important notes about the above submit command:
+
+<ol>
+           <li><tt>$SPECUSERNUM</tt> must be spelled exactly as it is in the examples 
+              above.  It is a limitation of the tools that saying things 
+              like <tt>${SPECUSERNUM}</tt> just won't work.
+
+           <li> The above example was constructed using the first release of
+              the SPEC CPU2006 suite.  It should still work with the V1.1
+              update, but could probably be simplified.  In V1.0, only the
+              first occurrence of <tt>$SPECUSERNUM</tt> was substituted.  That's why 
+              the example above immediately assigns the result to <tt>MYNUM</tt>, which
+              can then be used repeatedly.
+</ol>
+
+
+
+  <a name=toc_I.C.5.c. ><h4> c. By specmake</h4></a>
+
+      For an example of variable substitution handled by <tt>specmake</tt>, see 
+
+<pre>   $SPEC/Docs/example-advanced.cfg
+   %SPEC%\docs.nt\example-advanced.cfg
+</pre>
+
+      Search that file for LIBS, and note the long comment which provides
+      a walk-through of a complex substitution handled by <tt>specmake</tt>.
+
+  <a name=toc_I.C.5.d. ><h4> d. Limitations on variable substitution</h4></a>
+
+      Once <tt>runspec</tt> hands control over to <tt>specmake</tt> or to the shell, the 
+      results of further substitution are invisible to <tt>runspec</tt>.  For this
+      reason, you can't say:
+
+<pre>   <b>wrong:</b>  MYDIR = /usr/paul/compilers
+      F90   = $(MYDIR)/f90
+      notes001 = compiler: $(F90)
+</pre>
+
+      However, there are a couple of ways to get around this restriction.  The
+      best way for global settings is to use the <a href="toc_pp">preprocessor</a>:
+
+<pre>
+      %define MYDIR /usr/paul/compilers
+      F90 = %{MYDIR}/f90
+      notes001 = compiler: %{MYDIR}/f90
+</pre>
+
+      That leaves a little to be desired, though, doesn't it?  If your
+      FORTRAN-90 compiler is changed to 'f2001', you still need to remember to
+      change it in two places.  You could of course define a whole macro for
+      this:
+
+<pre>
+      %define MYF90 /usr/paul/compilers/f90
+      F90 = %{MYF90}
+      notes001 = compiler: %{MYF90}
+</pre>
+
+      But what if you have a config file where F90 might be set in multiple
+      places, and you really want to know how it was set <strong>right
+      here</strong>.  In that case, use a combination of the preprocessor and
+      variable substitution:
+
+<pre>
+      %define MYDIR /usr/paul/compilers
+      F90 = %{MYDIR}/f2001
+      notes001 = compiler: $[F90]
+</pre>
+
+
+<a name=toc_I.C.6. ><h3> 6. Shell-like "here documents" and continued lines</h3></a>
+
+    Shell-style "here documents" are supported for setting variables to 
+    multi-line values.  Continued lines (with \) are also supported:
+
+<pre>   $ <b>cat tmp2.cfg</b>
+   expand_notes=1
+
+   foo = &lt;&lt;EOT
+   This +
+   is a +
+   test +
+   EOT
+
+   bar = \
+         and +\
+         so  +\
+         is  +\
+         this+\
+   notes01 = $foo
+   notes02 = $bar
+   $ <b>runspec --config=tmp2 --size=test --iterat=1 swim | grep asc</b>
+   Identifying output formats...asc...config...html...pdf...ps...raw...
+      format: ASCII -> /cpu2006/result/CPU2006.024.asc
+   $ <b>grep + ../result/*24.asc</b>
+      This +
+      is a +
+      test +
+            and +
+            so  +
+            is  +
+            this+
+</pre>
+
+
+   Note: although continued lines are supported, they are rarely used.  
+   The more common method of continuation is by appending a number
+   to a field, as described in the section 
+   <a href=#toc_V.B.><font color=blue>"Field scoping and continuation"</font></a>.
+
+
+<a name=toc_I.C.7. ><h3> 7. Included files</h3></a>
+
+    It is possible to include another file in your config file.  A
+    typical use for this feature might be to keep all the software
+    information in the main config file, but to include the 
+    hardware information about the current System Under Test (SUT)
+    in another file.  For example:
+
+<pre>   % <b>cat tmp.cfg</b>
+   sw_compiler = GoFast C/C++ V4.2
+   sw_avail    = Mar-2000
+   include: SUT.inc
+
+   default=default=default=default:
+   OPTIMIZE = -O4
+
+   % <b>cat SUT.inc</b>
+   hw_model = SuperHero IV
+   hw_avail = Feb-2000
+
+   % <b>runspec --config=tmp --iterations=1 --size=test swim</b>
+</pre>
+
+   After the above command is completed, we end up with a report
+   that mentions both hardware and software dates:
+
+<pre>      ... Hardware availability: Feb-2000
+      ... Software availability: Mar-2000
+</pre>
+
+<a name=toc_I.C.8. ><h3> 8. UNsetting a variable with "%undef%"</h3></a>
+
+    It is sometimes desireable to be able to undo the setting of a variable
+    that is defined in a lower-precedence section.  This is easily
+    accomplished using the special value '%undef%':
+
+<pre>   % <b>cat tmp.cfg</b>
+   teeout        = yes
+   action        = build
+
+   default=default=default=default:
+   OPTIMIZE  = -O
+   COPTIMIZE = -gofast
+
+   # For 401.bzip2, don't set any C-specific optimization flags
+   463.mysql=peak=default=default:
+   COPTIMIZE = %undef%
+
+   % <b>runspec --config=tmp --tune=base | grep bzip2.c</b>
+   cc -c -o bzip2.o            -O -gofast  bzip2.c
+   % <b>runspec --config=tmp --tune=peak | grep bzip2.c</b>
+   cc -c -o bzip2.o            -O bzip2.c
+</pre>
+
+   As you can see in the peak compilation, the '-gofast' flag was not present
+   because the setting for COPTIMIZE had been deleted.
+
+<hr>
+
+<a name=toc_II. ><h1>II. Config file options for runspec</h1></a>
+
+This section documents options that control the operation of 
+<tt>runspec</tt> itself.  
+
+
+<a name=toc_II.A. ><h2>A. Options for runspec that can also be used on the command line</h2></a>
+
+   The following items can be specified in a config file, and have the
+   same meaning as if they are specified on the <tt>runspec</tt> command line.
+   Please see <a href=runspec.html>runspec.html</a> 
+   for details.  If an item is specified in
+   both places, the command line wins.
+
+   <p>All of these should be specified in your config file 
+   <a href=#toc_I.C.2.><font color=blue>header section</font></a>,
+   unless the description states that the item can be applied to 
+   individual benchmarks.
+
+<table border=0>
+<tr>
+<td valign=top><b>option</b></td>
+<td valign=top><b>default</b></td>
+<td valign=top><b>Meaning</b></td></tr>
+
+
+
+<tr>
+<a name=toc_action>
+<td valign=top><tt>action</tt></td>
+</a>
+<td valign=top><tt>validate</tt></td>
+<td valign=top>What to do.  
+
+<tr>
+<a name=toc_delay>
+<td valign=top><tt>delay</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Insert a delay of the specified number of seconds before
+                                    and after benchmark execution.  This
+                                    delay does not contribute to the
+                                    measured runtime of the benchmark.
+				    This delay is also not available in
+				    a reportable run.</td></tr></td></tr>
+
+<tr>
+<a name=toc_deletework>
+<td valign=top><tt>deletework</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>If set to 1, always delete existing 
+                                    benchmark working directories.  An
+                                    extra-careful person might want to 
+                                    set this to ensure no unwanted leftovers 
+                                    from previous benchmark runs, but 
+                                    the tools are already trying to enforce 
+                                    that property.</td></tr></td></tr>
+
+<tr>
+<a name=toc_ext>
+<td valign=top><tt>ext</tt></td>
+</a>
+<td valign=top><tt>none</tt></td>
+<td valign=top>Extension for executables created</td></tr>
+    
+<tr>
+<a name=toc_feedback>
+<td valign=top><tt>feedback</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           Normally, feedback is controlled by the
+                                    presence of one or more PASSn options in
+                                    the config file (see the documentation of
+                                    <a href="makevars.txt">make variables</a>).
+                                    When used in the config file, this
+                                    additional control can be used to
+                                    selectively turn feedback off for
+                                    individual benchmarks.  When used on the
+                                    command-line, its effect is of course
+                                    global.  Note: in a base run, all
+                                    benchmarks in a given language must use the
+                                    same settings for feedback.</td></tr>
+
+<tr>
+<a name=toc_ignore_errors>
+<td valign=top><tt>ignore_errors</tt></td>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Ignore certain errors.  Very useful when
+                                    debugging a new compiler and new set of
+                                    options.  </td></tr>
+
+<tr>
+<a name=toc_iterations>
+<td valign=top><tt>iterations</tt></td>
+</a>
+<td valign=top><tt>3</tt></td>
+<td valign=top>Number of iterations to run</td></tr>
+
+<tr>
+<a name=toc_mach>
+<td valign=top><tt>mach</tt></td>
+</a>
+<td valign=top><tt>default&nbsp;&nbsp;</tt></td>
+<td valign=top>Default machine id</td></tr>
+
+<tr>
+<a name=toc_make_no_clobber>
+<td valign=top><tt>make_no_clobber</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Don't delete directory when building 
+                                    executables.  This option should only be 
+                                    used for troubleshooting a problematic 
+                                    compile.  It is against the run rules
+                                    to use it when building binaries for an 
+                                    actual submission.</td></tr>
+
+<tr>
+<a name=toc_max_active_compares>
+<td valign=top><tt>max_active_compares&nbsp;&nbsp;</tt></td>
+</a>
+<td valign=top><tt># users</tt></td>
+<td valign=top>Max number of parallel compares.  Useful 
+                                    when doing large SPECrate runs on a 
+                                    system with lots of CPUs. </td></tr>
+
+<tr>
+<a name=toc_nobuild>
+<td valign=top><tt>nobuild&nbsp;&nbsp;</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Do not attempt to build benchmarks.  Useful to prevent
+                                    attempts to rebuild benchmarks that
+                                    cannot be built. See also <a href=runspec.html>runspec.html</a>
+                                    on <tt>--nobuild</tt>.</td></tr>
+
+<tr>
+<a name=toc_output_format>
+<td valign=top><tt>output_format</tt></td>
+</a>
+<td valign=top><tt>all</tt></td>
+<td valign=top>Format for reports.  Valid options are
+                                    <tt>asc</tt> (ASCII text), <tt>html</tt>, 
+                                    <tt>pdf</tt>, 
+                                    and <tt>ps</tt>.  You 
+                                    might prefer to set this to <tt>asc</tt> 
+                                    if you're
+                                    going to be doing lots of runs, and only
+                                    create the pretty reports at the end of
+                                    the series.  See also <a href=runspec.html>runspec.html</a>
+                                    on <tt>--output_format</tt> 
+                                    and <tt>--rawformat</tt>.</td></tr>
+
+
+<tr>
+<a name=toc_reportable>
+<td valign=top><tt>reportable</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Strictly follow reporting rules.
+                                    You must set <tt>reportable</tt>, in order to 
+                                    generate a valid run suitable for 
+                                    submission to SPEC. </td></tr>
+    
+<tr>
+<a name=toc_rate>
+<td valign=top><tt>rate</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Rate vs Speed  (1=rate, 0=speed)</td></tr>
+    
+<tr>
+<a name=toc_rebuild>
+<td valign=top><tt>rebuild</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>Rebuild binaries even if they exist </td></tr>
+
+<tr>
+<a name=toc_runlist>
+<td valign=top><tt>runlist</tt></td>
+</a>
+<td valign=top><tt>none</tt></td>
+<td valign=top>What benchmarks to run</td></tr>
+
+<tr>
+<a name=toc_setprocgroup>
+<td valign=top><tt>setprocgroup</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>Set the process group.  On Unix-like
+                                    systems, improves the chances that ^C
+                                    gets the whole run, not just one of 
+                                    the children</td></tr>
+
+<tr>
+<a name=toc_size>
+<td valign=top><tt>size</tt></td>
+</a>
+<td valign=top><tt>ref</tt></td>
+<td valign=top>Size of input set.  If you are in the
+                                    early stages of testing a new compiler
+                                    or new set of options, you might set
+                                    this to <tt>test</tt> or <tt>train</tt>.  </td></tr>
+
+<tr>
+<a name=toc_table>
+<td valign=top><tt>table</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>In ASCII reports, include information 
+                                    about each execution of the benchmark.</td></tr>
+
+<tr>
+<a name=toc_tune>
+<td valign=top><tt>tune</tt></td>
+</a>
+<td valign=top><tt>base</tt></td>
+<td valign=top>        default tuning level.  In a reportable run,
+                                    must be either <tt><b>all</b></tt> or 
+                                    <tt><b>base</b></tt>.</td></tr>
+
+<tr>
+<a name=toc_unbuffer>
+<td valign=top><tt>unbuffer</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Unbuffer STDOUT.  For CPU95, there were
+                                    occasional complaints about redundant
+                                    output when a child process would flush
+                                    its buffer.  If similar problems occur
+                                    for CPU2006, try setting this to 1.</td></tr>
+    
+<tr>
+<a name=toc_users>
+<td valign=top><tt>users</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           Number of users. 
+                                    This option can also be used for specific
+                                    benchmarks - e.g. you could decide to
+                                    run 64 copies of all benchmarks except
+                                    gcc, which would run only 63.   For 
+                                    base, the number of copies must be the
+                                    same for all benchmarks, but for peak
+                                    it is allowed to vary.</td></tr>
+
+<tr>
+<a name=toc_verbose>
+<td valign=top><tt>verbose</tt></td>
+</a>
+<td valign=top><tt>5</tt></td>
+<td valign=top>           Verbosity level.  Select level 1 through
+                                    99 to control how much debugging info
+                                    <tt>runspec</tt> prints out.  For more information,
+                                    see the section on 
+                                    the <a href=#toc_VI.B.><font color=blue>log file</font></a>, 
+                                    below.</td></tr>
+</table>
+
+
+<a name=toc_II.B. ><h2>B. Options for runspec that can only be used in a config file</h2></a>
+
+   The following options control the operation of <tt>runspec</tt>, but can
+   not be specified on the command line.  Instead, they must be specified
+   in the config file.
+    
+   <p>All of these should be specified in your config file 
+   <a href=#toc_I.C.2.><font color=blue>header section</font></a>,
+   unless the description states that the item can be applied to 
+   individual benchmarks.
+
+
+<table border=0>
+<tr>
+<td><b>option</b></td><td><b>default</b></td><td><b>Meaning</b></td></tr>
+   
+<tr>
+<a name=toc_backup_config>
+<td valign=top><tt>backup_config</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           When updating the MD5 hashes in the 
+                                    config file, make a backup copy first.
+                                    Highly recommended to defend against
+                                    full-file-system errors, system crashes, 
+                                    or other unfortunate events.</td></tr>
+
+<tr>
+<a name=toc_basepeak>
+<td valign=top><tt>basepeak</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Use base binary and/or base result for
+                                    peak.  If applied to the whole suite (in
+                                    the header section), then only base is
+                                    run, and its results are reported for both
+                                    the base and peak metrics.  If applied to 
+                                    a single benchmark, the same binary will 
+                                    be used for both base and peak runs, and
+                                    the lower of the two medians will be 
+                                    reported for both.</td></tr>
+    
+<tr>
+<a name=toc_check_md5>
+<td valign=top><tt>check_md5</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           <tt>Runspec</tt> uses MD5 hashes to verify that 
+                                    executables match the config file that 
+                                    invokes them, and if they do not, <tt>runspec</tt>
+                                    forces a recompile.  You can turn that
+                                    feature off by setting check_md5=0.<br> 
+                                         <b>WARNING</b>: If you turn this feature 
+                                    off, you effectively say that you are 
+                                    willing to run a benchmark even if you 
+                                    don't know what you did or how you did
+                                    it -- that is, you lack information as 
+                                    to how it was built!  Since SPEC requires 
+                                    that you disclose how you built it, such 
+                                    a run would not be submittable to SPEC.
+                                    Therefore, asking for a reportable run
+                                    via the command-line switch --reportable or
+                                    setting reportable=1 in your config file
+                                    will cause this option to be automatically
+                                    enabled.</td></tr>
+
+<tr>
+<a name=toc_command_add_redirect>
+<td valign=top><tt>command_add_redirect</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>          If set, let the shell do I/O
+                                    redirection.  Otherwise, specinvoke will
+                                    do it itself.</td></tr>
+  
+<tr>
+<a name=toc_difflines>
+<td valign=top><tt>difflines</tt></td>
+</a>
+<td valign=top><tt>10</tt></td>
+<td valign=top>          Number of lines of differences to print
+                                    when comparing results.</td></tr>
+
+<tr>
+<a name=toc_env_vars>
+<td valign=top><tt>env_vars</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Allow environment to be overridden by ENV_*
+                                    For example:
+
+                                        env_vars=1
+                                        164.gzip=default=default=default:
+                                        ENV_FOO=367
+
+                                    will cause the tools to spawn gzip (or 
+                                    anything related, like monitor_prebench)
+                                    with FOO=367</td></tr>
+
+    
+<tr>
+<a name=toc_expand_notes>
+<td valign=top><tt>expand_notes</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           If set, will expand variables in notes.
+                                    This capability is limited because
+                                    notes are NOT processed by <tt>specmake</tt>, so you
+                                    cannot do repeated substitutions. </td></tr>
+
+<tr>
+<a name=toc_ignore_sigint>
+<td valign=top><tt>ignore_sigint</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Ignore SIGINT.  If this is set, <tt>runspec</tt>
+                                    will attempt to ignore you when you press
+                                    ^C.  (It is not clear why one might want
+                                    to set this feature.)</td></tr>
+
+<tr>
+<a name=toc_inherit_from>
+<td valign=top><tt>inherit_from</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>           If set within a benchmark section, allows explicit
+                                    inheritance of settings from another
+                                    benchmark's section.<br>
+                                    For example:
+<pre>
+401.bzip2=default=default=default:
+inherit_from = 405.gzip:default:default:default
+PORTABILITY = -DSPEC_CPU_NEED_LONG_LONG_BADLY
+notes401 = 401.bzip2: $[OPTIMIZE]
+</pre>
+                                    This would cause 401.bzip2=default=default=default
+                                    to have all the settings present in the
+                                    405.gzip=default=default=default section, with the
+                                    exception of 'notes401' and 'PORTABILITY'.<br>
+                                    Note that this does not defeat or short circuit the
+                                    normal implicit inheritance (from default=default=default=default,
+                                    for example).</td></tr>
+
+<tr>
+<a name=toc_line_width>
+<td valign=top><tt>line_width</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           line wrap width for screen</td></tr>
+
+<tr>
+<a name=toc_locking>
+<td valign=top><tt>locking</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           Try to lock files</td></tr>
+
+<tr>
+<a name=toc_log_line_width>
+<td valign=top><tt>log_line_width</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           line wrap width for logfiles.  If your
+                                    editor complains about lines being too
+                                    long when you look at logfiles, try
+                                    setting this to some reasonable value,
+                                    such as 80 or 132.</td></tr>
+
+<tr>
+<a name=toc_mailcompress>
+<td valign=top><tt>mailcompress</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           When using the 'mail' output format, turning
+                                    this on will cause the various report
+                                    attachments to be compressed with
+                                    gzip.</td></tr>
+
+<tr>
+<a name=toc_mailmethod>
+<td valign=top><tt>mailmethod</tt></td>
+</a>
+<td valign=top><tt>smtp</tt></td>
+<td valign=top>           When using the 'mail' output format, this specifies
+                                    the method that should be used to send
+                                    the mail.  On UNIX and UNIX-like systems,
+                                    there are three choices: 'smtp' (communicate
+                                    directly with an SMTP server over the network),
+                                    'mail' (try using mail(1) if available), and
+                                    'sendmail' (try invoking sendmail directly).
+                                    On Windows systems, only 'smtp' is available.
+                                    SMTP is the recommended setting.</td></tr>
+
+<tr>
+<a name=toc_mailport>
+<td valign=top><tt>mailport</tt></td>
+</a>
+<td valign=top><tt>25</tt></td>
+<td valign=top>           When using the 'mail' output format, and when the
+                                    mailmethod is 'smtp', this specifies the port
+                                    to use on the mail server.  The default is
+                                    the standard SMTP port and should not be
+                                    changed.</td></tr>
+
+<tr>
+<a name=toc_mailserver>
+<td valign=top><tt>mailserver</tt></td>
+</a>
+<td valign=top><tt>127.0.0.1</tt></td>
+<td valign=top>           When using the 'mail' output format, and when the
+                                    mailmethod is 'smtp', this specifies the IP
+                                    address or hostname of the mailserver through
+                                    which to send the results.</td></tr>
+
+<tr>
+<a name=toc_mailto>
+<td valign=top><tt>mailto</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>           The address or addresses to which results should be sent
+                                    when using the 'mail' output format.  If
+                                    multiple addresses are specified, they should
+                                    be separated by commas or whitespace.  Each
+                                    address should consist <b>only</b> of the
+                                    name@domain part (i.e. no "full name" type
+                                    info).  The addresses are not checked for
+                                    correct formatting; if a mistake is made,
+                                    the results may be sent to comp.arch.
+                                    If no addresses are specified, no mail will be
+                                    sent.
+                                    </td></tr>
+
+<tr>
+<a name=toc_make>
+<td valign=top><tt>make</tt></td>
+</a>
+<td valign=top><tt>specmake</tt></td>
+<td valign=top>    Name of make executable.  Note that  
+                                    the run rules require use of <tt>specmake</tt> for
+                                    reportable results.  </td></tr>
+
+<tr>
+<a name=toc_makeflags>
+<td valign=top><tt>makeflags</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>          Extra flags for make (such as -j).  Set this to '-j <i>n</i>'
+                                    where <i>n</i> is the number of concurrent processes
+                                    to run during a build.  Omitting <i>n</i> or setting
+                                    it to zero unlimits the number of jobs that will be
+                                    run in parallel.  (Use of -j in conjunction with
+                                    ONESTEP will still result in successful builds, but
+                                    they will be necessarily serialized unless your compiler
+                                    implements the parallelism itself.  <b>Use with care!</b>
+                                    Other flags should be used here only if you are familiar
+                                    with GNU make.</td></tr>
+
+<tr>
+<a name=toc_mean_anyway>
+<td valign=top><tt>mean_anyway</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Calculate mean even if invalid.
+                                    <b>DANGER</b> this will write a mean to all
+                                    reports even if no valid mean can
+                                    be computed (e.g. half the benchmarks
+                                    failed!)  <b>DANGER</b></td></tr>
+
+<tr>
+<a name=toc_minimize_rundirs>
+<td valign=top><tt>minimize_rundirs</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Try to keep working disk size down. 
+                                    Cannot be used in a reportable run.</td></tr>
+    
+<tr>
+<a name=toc_minimize_builddirs>
+<td valign=top><tt>minimize_builddirs</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Try to keep working disk size down 
+                                    during builds</td></tr>
+
+<tr>
+<a name=toc_no_monitor>
+<td valign=top><tt>no_monitor</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>           Exclude the listed workloads from monitoring via
+                                    the monitor_* hooks.</td></tr>
+
+<tr>
+<a name=toc_notes_wrap_columns>
+<td valign=top><tt>notes_wrap_columns</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           When set to a value greater than 0, attempts to
+                                    split notes lines such that they are no
+                                    longer than notes_wrap_columns columns
+				    wide.  Lines are split on whitespace,
+				    and newly created lines are guaranteed
+				    to have at least the same indentation as
+				    the original line.<br>
+				    If a line contains an item that is
+				    longer than notes_wrap_columns, a
+				    warning is logged and the original line
+				    is left unchanged.</td></tr>
+
+<tr>
+<a name=toc_notes_wrap_indent>
+<td valign=top><tt>notes_wrap_indent</tt></td>
+</a>
+<td valign=top><tt>'    '</tt></td>
+<td valign=top>           When line wrapping is enabled (see
+                          <a href=#toc_notes_wrap_columns>notes_wrap_columns</a>
+			  ), this is the string that will be prepended to
+			  newly created lines <b>after</b> the indentation
+			  from the original line is applied.  The default is
+			  four spaces, but it can be set to any arbitrary
+			  string.</td></tr>
+
+<tr>
+<a name=toc_section_specifier_fatal>
+<td valign=top><tt>section_specifier_fatal</tt></td>
+</a>
+<td valign=top><tt>1</tt></td>
+<td valign=top>           While parsing the config file, if a section specifier
+                                    is found that refers to an unknown benchmark
+                                    or benchset, an error is output and the run
+                                    stops.  Set section_specifier_fatal=0 in the
+                                    top-level of your config file to convert this
+                                    error into a warning and allow the run to
+                                    continue.</td></tr>
+
+<tr>
+<a name=toc_sendmail>
+<td valign=top><tt>sendmail</tt></td>
+</a>
+<td valign=top><tt>/usr/sbin/sendmail</tt></td>
+<td valign=top>           When using the 'mail' output format, and when the
+                                    mailmethod is 'sendmail', this specifies the
+                                    location of the sendmail binary.</td></tr>
+
+<tr>
+<a name=toc_srcalt>
+<td valign=top><tt>srcalt</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>          Name of subdirectory under
+                                    &lt;benchmark&gt;/src/src.alt/ from which to
+                                    draw approved source code
+                                    modifications. This should be set only
+				    where required, on a per-benchmark basis.
+                                    Multiple src.alts may be specified; the names
+                                    should be separated by commas.  If the specified
+                                    alternate sources are not for the version of the
+                                    suite in use or if they are corrupt the build
+                                    will fail.
+				    Any use of this feature is automatically
+				    noted in the full disclosure notes.</td></tr>
+
+<tr>
+<a name=toc_sysinfo_program>
+<td valign=top><tt>sysinfo_program</tt></td>
+</a>
+<td valign=top><tt>''</tt></td>
+<td valign=top>          Specifies the name of an executable program or script
+                                    that delivers system configuration information
+                                    about the system under test for use in the
+                                    reports.  Please see the comments in the
+                                    <a href="sample_sysinfo_program">sample program</a>
+                                    for complete details.</td></tr>
+
+<tr>
+<a name=toc_teeout>
+<td valign=top><tt>teeout</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>           Run output [from build] through tee 
+                                    so you can see it on the screen</td></tr>
+    
+<tr>
+<a name=toc_use_submit_for_speed>
+<td valign=top><tt>use_submit_for_speed</tt></td>
+</a>
+<td valign=top><tt>0</tt></td>
+<td valign=top>          If set, use submit commands for speed
+                                    runs as well as rate runs.  Handy for
+                                    running the benchmarks on a simulator, etc.</td></tr>
+</table>
+
+<hr>
+
+<a name=toc_III. ><h1>III. Config file options for specmake</h1></a>
+
+   For a complete list of options that are used by <tt>specmake</tt>, please
+   see $SPEC/Docs/makevars.txt and notice which variables are documented
+   as OK to mention in a config file.
+
+   <p>Here are the commonly used variables:
+
+
+<table border=0>
+
+<tr>
+<a name=toc_compiler>
+<td valign=top><tt>CC</tt></td>
+</a>
+<td valign=top>          How to invoke your C Compiler</td></tr>
+
+<tr>
+<td valign=top><tt>CXX</tt></td>
+<td valign=top>         How to invoke your C++ Compiler</td></tr>
+
+<tr>
+<td valign=top><tt>FC</tt></td>
+<td valign=top>          How to invoke Fortran (the one that handles both .f and .f90) </td></tr>
+
+<tr>
+<td valign=top><tt>F77</tt></td>
+<td valign=top>         How to invoke your Fortran-77 compiler (for .f files only)</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_ld>
+<td valign=top><tt>CLD</tt></td>
+</a>
+<td valign=top>         How to invoke the Linker when compiling C programs</td></tr>
+<tr>
+<td valign=top><tt>CXXLD</tt></td>
+<td valign=top>       How to invoke the Linker when compiling C++ programs</td></tr>
+<tr>
+<td valign=top><tt>FLD</tt></td>
+<td valign=top>         How to invoke the Linker when compiling Fortran programs</td></tr>
+<tr>
+<td valign=top><tt>F77LD</tt></td>
+<td valign=top>       How to invoke the Linker when compiling Fortran-77 programs</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_onestep>
+<td valign=top><tt>ONESTEP</tt></td>
+</a>
+<td valign=top>     If set, build from sources directly to final binary.  
+                See the discussion in rule 2.2.6.13 of <a href=runrules.html>runrules.html</a>
+                </td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_optimize>
+<td valign=top><tt>OPTIMIZE</tt></td>
+</a>
+<td valign=top>    Optimization flags to be applied for all compilers</td></tr>
+
+<tr>
+<td valign=top><tt>COPTIMIZE</tt></td>
+<td valign=top>   Optimization flags to be applied when using your C compiler</td></tr>
+
+<tr>
+<td valign=top><tt>CXXOPTIMIZE</tt></td>
+<td valign=top> Ditto, for C++</td></tr>
+
+<tr>
+<td valign=top><tt>FOPTIMIZE</tt></td>
+<td valign=top>   Ditto, for Fortran</td></tr>
+
+<tr>
+<td valign=top><tt>F77OPTIMIZE</tt></td>
+<td valign=top> Ditto, for F77</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_portability>
+<td valign=top><tt>PORTABILITY</tt></td>
+</a>
+<td valign=top>    Portability flags to be applied no matter what the compiler</td></tr>
+<tr>
+<td valign=top><tt>CPORTABILITY</tt></td>
+<td valign=top>   Portability flags to be applied when using your C compiler</td></tr>
+<tr>
+<td valign=top><tt>CXXPORTABILITY</tt></td>
+<td valign=top> Ditto, for C++</td></tr>
+<tr>
+<td valign=top><tt>FPORTABILITY</tt></td>
+<td valign=top>   Ditto, for Fortran</td></tr>
+<tr>
+<td valign=top><tt>F77PORTABILITY</tt></td>
+<td valign=top> Ditto, for Fortran-77</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_rm_sources>
+<td valign=top><tt>RM_SOURCES</tt></td>
+</a>
+<td valign=top>  Remove a source file.  Should only be used for library
+                substitutions that comply with run rule 2.1.2</td></tr>
+
+<tr><td>&nbsp;</td></tr>
+<tr>
+<a name=toc_pass>
+<td valign=top><tt>PASSn_CFLAGS</tt></td>
+</a>
+<td valign=top>    Flags for pass "n" C compilation when doing profile-
+                    directed feedback.  Typically n is either 1 or 2, for 
+                    the compile done before the training run and the compile 
+                    done after the training run.  Search for the word
+                    "feedback" in <a href=runrules.html>runrules.html</a> 
+                    for more info;
+                    especially rule 2.2.3.  See the feedback examples in
+                    example-medium.cfg and example-advanced.cfg from
+                    $SPEC/Docs/ or %SPEC%\docs.nt\ .</td></tr>
+<tr>
+<td valign=top><tt>PASSn_CXXFLAGS</tt></td>
+<td valign=top>  Ditto, for C++</td></tr>
+<tr>
+<td valign=top><tt>PASSn_FFLAGS</tt></td>
+<td valign=top>    Ditto, for Fortran</td></tr>
+<tr>
+<td valign=top><tt>PASSn_F77FLAGS</tt></td>
+<td valign=top>  Ditto, for Fortran-77</td></tr>
+</table>
+<pre>
+</pre>
+
+   Note that you can also make up your own variable names, which <tt>specmake</tt>
+   will use (and perform substitution on).  For an example of this feature,
+   see $SPEC/Docs/example-advanced.cfg.
+   
+<hr>
+
+<a name=toc_IV. ><h1>IV. Config file options for the shell</h1></a>
+
+The following config file options will cause their contents to be
+executed by the shell (or the Windows/NT command interpreter):
+
+<table border=0>
+<tr>
+<a name=toc_fdo_pre0>
+<td valign=top><tt>fdo_pre0</tt></td>
+</a>
+<td valign=top>        commands to be executed before starting a feedback
+                    directed compilation series </td></tr>
+
+<tr>
+<a name=toc_fdo_preN>
+<td valign=top><tt>fdo_preN</tt></td>
+</a>
+<td valign=top>        commands to be executed before pass N</td></tr>
+
+<tr>
+<a name=toc_fdo_make_cleanN>
+<td valign=top><tt>fdo_make_cleanN</tt></td>
+</a>
+<td valign=top> commands to be executed for cleanup at pass N</td></tr>
+
+<tr>
+<a name=toc_fdo_pre_makeN>
+<td valign=top><tt>fdo_pre_makeN</tt></td>
+</a>
+<td valign=top>   commands to be done prior to Nth compile</td></tr>
+
+<tr>
+<a name=toc_fdo_make_passN>
+<td valign=top><tt>fdo_make_passN</tt></td>
+</a>
+<td valign=top>  commands to actually do the Nth compile</td></tr>
+
+<tr>
+<a name=toc_fdo_post_makeN>
+<td valign=top><tt>fdo_post_makeN</tt></td>
+</a>
+<td valign=top>  commands to be done after the Nth compile</td></tr>
+
+<tr>
+<a name=toc_fdo_runN>
+<td valign=top><tt>fdo_runN</tt></td>
+</a>
+<td valign=top>        commands to be used for Nth training run</td></tr>
+
+<tr>
+<a name=toc_fdo_postN>
+<td valign=top><tt>fdo_postN</tt></td>
+</a>
+<td valign=top>       commands to be done at the end of pass N</td></tr>
+
+<tr>
+<tr>
+<a name=toc_submit>
+<td valign=top><tt>submit</tt></td>
+</a>
+<td valign=top>          commands to be used for distributing jobs across
+                    a multiprocessor system.  See the detailed example  
+                    in the section on 
+                    <a href=#toc_I.C.5. >Variable Substitution</a>, 
+                    above.</td></tr>
+</table>
+
+For an example of one of the fdo_ options, see the "Log file example" later
+in this document.
+
+
+<hr>
+<a name=toc_V. ><h1>V. Config file options for the reader</h1></a>
+
+Whether or not you submit your result to SPEC, you should fully disclose how 
+you achieved the result.  If it requires the installation of the GoFastLinker, 
+you should say so.  By setting the appropriate fields in the config file, you 
+can cause information about the GoFastLinker to appear in all reports.
+
+<a name=toc_V.A. ><h2>A. Pre-defined fields</h2></a>
+
+   Here are the pre-defined fields that you can set:
+
+
+<table border=0>
+<tr>
+<a name=toc_company_name>
+<td valign=top><tt>company_name</tt></td>
+</a>
+<td valign=top>   The company performing the tests.  Will not be printed
+                      in reports unless it differs from the field hw_vendor.</td></tr>
+
+<tr>
+<a name=toc_hw_avail>
+<td valign=top><tt>hw_avail</tt></td>
+</a>
+<td valign=top>       Date hardware first shipped.  If more than one date
+                      applies, use the LATEST one.</td></tr>
+
+<tr>
+<a name=toc_hw_cpu>
+<td valign=top><tt>hw_cpu</tt></td>
+</a>
+<td valign=top>         CPU type</td></tr>
+
+<tr>
+<a name=toc_hw_cpu_mhz>
+<td valign=top><tt>hw_cpu_mhz</tt></td>
+</a>
+<td valign=top>     Speed of the CPUs, in MHz</td></tr>
+
+<tr>
+<a name=toc_hw_disk>
+<td valign=top><tt>hw_disk</tt></td>
+</a>
+<td valign=top>        Disk subsystem</td></tr>
+
+<tr>
+<a name=toc_hw_fpu>
+<td valign=top><tt>hw_fpu</tt></td>
+</a>
+<td valign=top>         Floating point unit</td></tr>
+
+<tr>
+<a name=toc_hw_memory>
+<td valign=top><tt>hw_memory</tt></td>
+</a>
+<td valign=top>      Size of main memory</td></tr>
+
+<tr>
+<a name=toc_hw_model>
+<td valign=top><tt>hw_model</tt></td>
+</a>
+<td valign=top>       Model name </td></tr>
+
+<tr>
+<a name=toc_hw_ncpu>
+<td valign=top><tt>hw_ncpu</tt></td>
+</a>
+<td valign=top>        Number of CPUs configured.  Note that if your system
+                      has the ability to turn CPUs off, for example through 
+                      a firmware setting, then it is acceptable to report 
+                      "1" here if only 1 CPU was enabled on an SMP system.  
+                      But beware -- you need to ensure that your method is 
+                      effective and that you are not silently getting help
+                      from the allegedly turned-off CPUs.</td></tr>
+
+<tr>
+<a name=toc_hw_ncpuorder>
+<td valign=top><tt>hw_ncpuorder</tt></td>
+</a>
+<td valign=top>   Valid number of CPUs orderable for this model.
+                      For example, "2 to 16".</td></tr>
+
+<tr>
+<a name=toc_hw_ocache>
+<td valign=top><tt>hw_ocache</tt></td>
+</a>
+<td valign=top>      4th level or other form of cache</td></tr>
+
+<tr>
+<a name=toc_hw_other>
+<td valign=top><tt>hw_other</tt></td>
+</a>
+<td valign=top>       Any other performance-relevant hardware</td></tr>
+
+<tr>
+<a name=toc_hw_parallel>
+<td valign=top><tt>hw_parallel</tt></td>
+</a>
+<td valign=top>    Were multiple CPUs employed by a parallelizing compiler?
+                      Note that a speed run that uses a parallelizing 
+                      compiler causes a single instance of a benchmark to 
+                      run using multiple CPUs; this is different from a rate 
+                      run, which typically distributes N instances over N CPUs.</td></tr>
+
+<tr>
+<a name=toc_hw_pcache>
+<td valign=top><tt>hw_pcache</tt></td>
+</a>
+<td valign=top>      1st level (primary) cache</td></tr>
+
+<tr>
+<a name=toc_hw_scache>
+<td valign=top><tt>hw_scache</tt></td>
+</a>
+<td valign=top>      2nd level cache</td></tr>
+
+<tr>
+<a name=toc_hw_tcache>
+<td valign=top><tt>hw_tcache</tt></td>
+</a>
+<td valign=top>      3rd level cache</td></tr>
+
+<tr>
+<a name=toc_hw_vendor>
+<td valign=top><tt>hw_vendor</tt></td>
+</a>
+<td valign=top>      Name of manufacturer for hardware</td></tr>
+
+<tr>
+<a name=toc_license_num>
+<td valign=top><tt>license_num</tt></td>
+</a>
+<td valign=top>    Your SPEC license number</td></tr>
+
+<tr>
+<a name=toc_machine_name>
+<td valign=top><tt>machine_name</tt></td>
+</a>
+<td valign=top>   Machine name: not currently used, leave blank</td></tr>
+
+<tr>
+<a name=toc_prepared_by>
+<td valign=top><tt>prepared_by</tt></td>
+</a>
+<td valign=top>    Is never output.  If you wish, you could set this to
+                      your own name, so that the rawfile will be tagged with
+                      your name but not the formal reports. </td></tr>
+
+<tr>
+<a name=toc_sw_avail>
+<td valign=top><tt>sw_avail</tt></td>
+</a>
+<td valign=top>       Availability date for the software used.  If more than
+                      one date, use the LATEST one.</td></tr>
+
+<tr>
+<a name=toc_sw_compiler>
+<td valign=top><tt>sw_compiler</tt></td>
+</a>
+<td valign=top>    Name and version of compiler </td></tr>
+
+<tr>
+<a name=toc_sw_file>
+<td valign=top><tt>sw_file</tt></td>
+</a>
+<td valign=top>        File system (nfs, ufs, etc)</td></tr>
+
+<tr>
+<a name=toc_sw_os>
+<td valign=top><tt>sw_os</tt></td>
+</a>
+<td valign=top>          Operating system name and version</td></tr>
+
+<tr>
+<a name=toc_sw_state>
+<td valign=top><tt>sw_state</tt></td>
+</a>
+<td valign=top>       Multi-user, single-user, default, etc</td></tr>
+
+<tr>
+<a name=toc_test_date>
+<td valign=top><tt>test_date</tt></td>
+</a>
+<td valign=top>      When you ran the tests</td></tr>
+
+<tr>
+<a name=toc_tester_name>
+<td valign=top><tt>tester_name</tt></td>
+</a>
+<td valign=top>    Your employer.  Printed in reports.</td></tr>
+</table>
+
+
+<a name=continue>
+<a name=toc_V.B. ><h2>B. Field scoping and continuation</h2></a>
+</a>
+
+   Note that these fields are scoped by section headers - that is,
+   you can vary them according to the type of run that you are doing.
+   You can also continue any of these fields to another line by appending 
+   a numeral to it.  Here is an example of both these features:
+
+<pre>   default=default=default=default:
+   sw_compiler  = Compaq C X6.2-259-449AT 
+   CC           = cc -v      
+
+   int=default=default=default:  
+   sw_compiler2 = DIGITAL C++ V6.1-029-408B6
+   CXX          = cxx -v
+
+   fp=default=default=default:
+   sw_compiler2 = Compaq Fortran V5.3
+   sw_compiler3 = KAP Fortran V4.2
+   FC           = kf90 -v
+</pre>
+
+   Notice in the above example that the information about the C compiler will 
+   be printed for both integer and floating point runs.  The information about 
+   the C++ compiler will be printed only for integer runs; the information 
+   about Fortran compilers will be printed only for floating point runs.
+
+
+<a name=toc_notes> </a>
+<a name=toc_V.C. ><h2>C. Free form notes</h2></a>
+
+   In addition to the pre-defined fields, you can write as many 
+   free-form notes as you wish.  Start
+   your notes with the characters "notes", and then add numbers and/or
+   underscores.  The notes will be sorted before being printed.  For
+   example:
+
+<pre>   % cat tmp.cfg
+   size                 = test
+   iterations           = 1
+   output_format        = asc
+   teeout               = 1
+   runlist              = swim
+   tune                 = base
+
+   notes01_1 = ++ how
+   notes02   = ++ you?
+   notes01_2 = ++ are
+   notes01   = ++ Alex,
+   notes000  = ++ hi
+
+   default=base=default=default:
+
+   % runspec --config=tmp > /nev/dull
+   % ls -t ../result/*asc | head -1
+   ../result/CPU2006.111.asc
+   % grep ++ ../result/CPU2006.111.asc
+      ++ hi
+      ++ Alex,
+      ++ how
+      ++ are
+      ++ you?
+   %
+</pre>
+
+   You can also use notes to describe software or hardware information
+   with more detail beyond the predefined fields.  For an example of 
+   where this might be useful, see $SPEC/Docs/example-medium.cfg and 
+   search for "patch".
+
+
+<hr>
+
+<a name=toc_VI. ><h1>VI.  Files output during a build</h1></a>
+
+<a name=toc_VI.A. ><h2>A. Automatic backup of config files</h2></a>
+
+   It was mentioned above that the 
+   <a href=#toc_I.C.4.><font color=blue>MD5 section</font></a>
+   of the config file is
+   written automatically by the tools.  Each time your config file is 
+   updated, a backup copy is made.  Thus your config directory may 
+   soon come to look like this:
+
+<pre>   % ls /home/jim/CPU2006/config/tmp.c*
+        tmp.cfg             tmp.cfg.19991210aq  tmp.cfg.19991210j
+        tmp.cfg.19991210    tmp.cfg.19991210ar  tmp.cfg.19991210k
+        tmp.cfg.19991210a   tmp.cfg.19991210as  tmp.cfg.19991210l
+        tmp.cfg.19991210aa  tmp.cfg.19991210at  tmp.cfg.19991210m
+        tmp.cfg.19991210ab  tmp.cfg.19991210au  tmp.cfg.19991210n
+        tmp.cfg.19991210ac  tmp.cfg.19991210av  tmp.cfg.19991210o
+        tmp.cfg.19991210ad  tmp.cfg.19991210aw  tmp.cfg.19991210p
+        tmp.cfg.19991210ae  tmp.cfg.19991210ax  tmp.cfg.19991210q
+        tmp.cfg.19991210af  tmp.cfg.19991210ay  tmp.cfg.19991210r
+        tmp.cfg.19991210ag  tmp.cfg.19991210az  tmp.cfg.19991210s
+        tmp.cfg.19991210ah  tmp.cfg.19991210b   tmp.cfg.19991210t
+        tmp.cfg.19991210ai  tmp.cfg.19991210ba  tmp.cfg.19991210u
+        tmp.cfg.19991210aj  tmp.cfg.19991210c   tmp.cfg.19991210v
+        tmp.cfg.19991210ak  tmp.cfg.19991210d   tmp.cfg.19991210w
+        tmp.cfg.19991210al  tmp.cfg.19991210e   tmp.cfg.19991210x
+        tmp.cfg.19991210am  tmp.cfg.19991210f   tmp.cfg.19991210y
+        tmp.cfg.19991210an  tmp.cfg.19991210g   tmp.cfg.19991210z
+        tmp.cfg.19991210ao  tmp.cfg.19991210h
+        tmp.cfg.19991210ap  tmp.cfg.19991210i
+</pre>
+
+   If this feels like too much clutter, you can disable the backup 
+   mechanism, as described under 
+   <a href=#toc_backup_config><font color=blue>backup_config</font></a>.
+   Note that doing so 
+   may leave you with a risk of losing the config file in case of a 
+   filesystem overflow or system crash.  A better idea may be to 
+   periodically remove the clutter, for example by typing:
+
+<pre>   rm *.cfg.199912*
+</pre>
+
+
+<a name=toc_VI.B. ><h2>B. The log file and verbosity levels</h2></a>
+
+   <tt>$SPEC/result</tt> (Unix) or <tt>%SPEC%\result</tt> (NT) contains 
+   reports and log files.  When 
+   you are doing a build, you will probably 
+   find that you want to pay close attention to the log file.  Depending on 
+   the verbosity level that you have selected, it will contain enormous 
+   amounts of information about how your build went.
+
+   <p>The CPU2006 tool suite provides for varying amounts of output about its 
+   actions during a run.  These levels range from the bare minimum of 
+   output (level 0) to copious streams of information almost certainly 
+   worthless to anyone not developing the tools themselves (level 99).  
+   Note: selecting one output level gives you the output from all lower 
+   levels, which may cause you to wade through more output than you might like.
+
+   <p>The 'level' referred to in the table below is selected either in
+   the config file <a href=#toc_verbose><font color=blue>verbose</font></a> 
+   option or in the runspec command as in '<tt>runspec --verbose <b>n</b></tt>'.
+   
+   <p>Levels higher than 99 are special; they are always output to your log 
+   file.  You can also see them on the screen if you set verbosity to 
+   the specified level minus 100.  For example, the default log level is 
+   3.  This means that on your screen you will get messages at levels 0 
+   through 3, and 100 through 103.  Additionally, in your log file, you'll 
+   find messages at levels 104 through 199.
+<pre>
+</pre>
+
+<table border=0>
+<tr>
+<td><b>Level</b></td>  <td><b>What you get</b></td></tr>
+
+<tr>
+<td valign=top><tt>0</tt></td>
+<td valign=top>        Basic status information, and most errors.  These messages can
+              not be turned off.</td></tr>
+
+<tr>
+<td valign=top><tt>1</tt></td>
+<td valign=top>        List of the benchmarks which will be acted upon.</td></tr>
+
+<tr>
+<td valign=top><tt>2</tt></td>
+<td valign=top>        A list of possible output formats, as well as notification
+              when beginning and ending each phase of operation (build,
+              setup, run, reporting).</td></tr>
+
+<tr>
+<td valign=top><tt>3 (default)   </tt></td>
+<td valign=top>A list of each action performed during each phase of 
+              operation (e.g. "Building 176.gcc", "Setting up 253.perlbmk")</td></tr>
+
+<tr>
+<td valign=top><tt>4</tt></td>
+<td valign=top>        Notification of benchmarks excluded</td></tr>
+
+<tr>
+<td valign=top><tt>10</tt></td>
+<td valign=top>        Information on basepeak operation.</td></tr>
+
+<tr>
+<td valign=top><tt>12</tt></td>
+<td valign=top>        Errors during discovery of benchmarks and output formats.</td></tr>
+
+<tr>
+<td valign=top><tt>24</tt></td>
+<td valign=top>        Notification of additions to and replacements in the list of
+              benchmarks.</td></tr>
+
+<tr>
+<td valign=top><tt>30</tt></td>
+<td valign=top>        A list of options included in the MD5 hash of options used to
+              determine whether or not a given binary needs to be
+              recompiled.</td></tr>
+
+<tr>
+<td valign=top><tt>35</tt></td>
+<td valign=top>        A list of key=value pairs that can be used in command and
+              notes substitutions.</td></tr>
+
+<tr>
+<td valign=top><tt>40</tt></td>
+<td valign=top>        A list of 'submit' commands for each benchmark.</td></tr>
+
+<tr>
+<td valign=top><tt>70</tt></td>
+<td valign=top>        Information on selection of median results.</td></tr>
+
+<tr>
+<td valign=top><tt>99</tt></td>
+<td valign=top>        Gruesome detail of comparing MD5 hashes on files being copied
+              during run directory setup.</td></tr>
+
+<tr>
+<td colspan=2>
+--- Messages at the following levels will always appear in your log files  ---
+</td></tr>
+
+<tr>
+<td valign=top><tt>100</tt></td>
+<td valign=top>        Error message if the 'pdflib' module can't be loaded.</td></tr>
+
+<tr>
+<td valign=top><tt>103</tt></td>
+<td valign=top>        A tally of successes and failures during the run broken down
+              by benchmark.</td></tr>
+
+<tr>
+<td valign=top><tt>106</tt></td>
+<td valign=top>        A list of runtime and calculated ratio for each benchmark run.</td></tr>
+
+<tr>
+<td valign=top><tt>107</tt></td>
+<td valign=top>        Dividers to visually block each phase of the run.</td></tr>
+
+<tr>
+<td valign=top><tt>110</tt></td>
+<td valign=top>        Error messages about writing temporary files in the config
+              file output format.</td></tr>
+
+<tr>
+<td valign=top><tt>120</tt></td>
+<td valign=top>        Messages about which commands are being issued for which
+              benchmarks.</td></tr>
+
+<tr>
+<td valign=top><tt>125</tt></td>
+<td valign=top>        A listing of each individual child processes' start, end, and
+              elapsed times.</td></tr>
+
+<tr>
+<td valign=top><tt>130</tt></td>
+<td valign=top>        A nice header with the time of the runspec invocation and the
+              command line used.</td></tr>
+
+<tr>
+<td valign=top><tt>140</tt></td>
+<td valign=top>        General information about the settings for the current run.</td></tr>
+
+<tr>
+<td valign=top><tt>145</tt></td>
+<td valign=top>        Messages about file comparisons.</td></tr>
+
+<tr>
+<td valign=top><tt>150</tt></td>
+<td valign=top>        List of commands that will be run, and details about the
+              settings used for comparing output files.  Also the contents
+              of the Makefile written.</td></tr>
+
+<tr>
+<td valign=top><tt>155</tt></td>
+<td valign=top>        Start, end, and elapsed times for benchmark run.</td></tr>
+
+<tr>
+<td valign=top><tt>160</tt></td>
+<td valign=top>        Start, end, and elapsed times for benchmark compilation.</td></tr>
+
+<tr>
+<td valign=top><tt>180</tt></td>
+<td valign=top>        stdout and stderr from commands run</td></tr>
+
+<tr>
+<td valign=top><tt>191</tt></td>
+<td valign=top>        Notification of command line used to run specinvoke.</td></tr>
+</table>
+
+
+
+<a name=toc_VI.C. ><h2>C. Log file example: Feedback-directed optimization.</h2></a>
+
+   Let's consider the log file for a compile with feedback-directed 
+   optimization (FDO).  This will serve both as an example of how you 
+   accomplish such a compile and how to interpret a log file.  [Note: this 
+   section uses an actual log file, but white space has been liberally 
+   adjusted, and much extraneous output has been removed.]
+
+   <p>Feedback-directed optimization typically means that we want to compile 
+   a program twice: the first compile creates an image with certain 
+   instrumentation.  Then, we run the program, and data about that run 
+   is collected (a profile).  When the program is re-compiled, the 
+   collected data is used to improve the optimization.
+
+   <p>The log file tells us what is written to the file Makefile.spec, 
+   along with 
+   lots of state information.   It tells us that our config file set 
+   certain options:
+   
+
+<pre>   -----------------------------------
+     Building 197.parser ref base nov14a default
+     Wrote to makefile 
+   '/cpu2006/benchspec/CPU2006/197.parser/run/00000002/Makefile.spec':
+   
+   PASS1_CFLAGS     = -prof_gen_noopt    -prof_dir /tmp/pb
+   PASS2_CFLAGS     = -prof_use_feedback -prof_dir /tmp/pb
+   baseexe          = parser
+   fdo_pre0         = mkdir /tmp/pb; rm -f /tmp/pb/${baseexe}*
+   feedback         = 1
+</pre>
+
+   To tell the tools that we want to use FDO, we simply set 
+  <tt> PASSn_CFLAGS</tt>.  If the tools see any use of <tt>PASSn_xxxxx</tt>, they will 
+   perform multiple compiles.  The particular compiler used in this example
+   expects to be invoked twice: once with <tt>-prof_gen_noopt</tt> and then again
+   with <tt>-prof_use_feedback</tt>.  Note that we have also requested special
+   processing before we start, in the <tt>fdo_pre0</tt> step.  The variable 
+   <tt>${baseexe}</tt> is substituted with the name of the generated executable,
+   minus any extensions or directories:
+
+<pre>   Issuing fdo_pre0 command 'mkdir /tmp/pb; rm -f /tmp/pb/parser* 
+</pre>
+
+   Below, the first compile is done.  Notice that <tt>specmake</tt> is invoked
+   with <tt>FDO=PASS1</tt>, which causes the switches from <tt>PASS1_CFLAGS</tt> 
+   to be used.
+   (If you want to understand exactly how this affects
+   the build, read <tt>$SPEC/benchspec/Makefile.defaults</tt>, along with the
+   document <tt>$SPEC/Docs/makevars.txt</tt>.)
+
+<pre>   Output from fdo_make_pass1 
+      'specmake  FDO=PASS1 build > fdo_make_pass1.out 2> fdo_make_pass1.err':
+   cc -v  -prof_gen_noopt  -prof_dir /tmp/pb  -DSPEC_CPU  -v -arch ev6 
+      -fast analyze-linkage.c and.c build-disjuncts.c extract-links.c ...
+</pre>
+        
+   The next section shows how specinvoke runs the benchmark for the
+   training run, according to the commands in speccmds.cmd.  Specinvoke
+   executes the instrumented parser using the training data set as input.
+   (For more
+   information on specinvoke, see <a href=utility.html#specinvoke>utility.html</a>.)
+   
+<pre>   Training 197.parser
+   Commands to run: 
+   -u /cpu2006/benchspec/CPU2006/197.parser/run/00000002
+   -i train.in -o train.out -e train.err ../00000002/parser 2.1.dict -batch
+
+   Specinvoke: /cpu2006/bin/specinvoke -d 
+      /cpu2006/benchspec/CPU2006/197.parser/run/00000002 
+      -e speccmds.err -o speccmds.out -f speccmds.cmd
+</pre>
+
+   Finally, the compiler is run a second time, this time to use the profile 
+   feedback and build a new executable.  Notice that this time, <tt>specmake</tt>
+   is invoked with <tt>FDO=PASS2</tt>, which is why the compile picks up the
+   <tt>PASS2_CFLAGS</tt>:
+
+<pre>   Output from fdo_make_pass2 
+   'specmake  FDO=PASS2 build > fdo_make_pass2.out 2> fdo_make_pass2.err':
+   cc -v  -prof_use_feedback -prof_dir /tmp/pb -DSPEC_CPU  -v -arch ev6  
+      -fast analyze-linkage.c and.c build-disjuncts.c extract-links.c ...
+
+   Compile for '197.parser' ended at:Thu Dec 16 23:35:48 1999 (945405348)
+   Elapsed compile for '197.parser': 00:02:45 (165)
+
+   Build Complete
+</pre>
+
+   And that's it.  The tools did most of the work; the user simply set
+   <tt>PASS1_CFLAGS</tt>, <tt>PASS2_CFLAGS</tt>, and <tt>fdo_pre0</tt> 
+   in the config file.
+
+
+
+<a name=toc_VI.D. ><h2>D. Help, I've got too many logs!</h2></a>
+
+   If you do a very large number of builds and runs, you may find that 
+   your result directory gets far too cluttered.  If it does, you 
+   should feel free to issue commands such as these on Unix systems:
+
+<pre>   cd $SPEC
+   mv result result_old
+   mkdir result
+</pre>
+
+    On NT, you could say:
+
+<pre>   cd %SPEC%
+   rename result result_old
+   mkdir result
+</pre>
+
+<a name=toc_VI.E. ><h2>E. Finding the build directory</h2></a>
+
+   As described under <a href=runspec.html#disk_usage>
+   "About Disk Usage" in runspec.html</a>, the 
+   CPU2006 tools do the actual builds and runs in numbered run
+   directories.  The benchmark sources are never modified in the
+   src directory.
+
+   <p>The number of the directory used for the build is output
+   at build time:
+<pre>
+Compiling Binaries
+  Building 401.bzip2 ref base macosx_20021113 default: (00000012)
+</pre>
+   That path to the build directory in this case is &lt;benchmark&gt;/run/00000012.
+
+   <p>It's also possible to find the build directory by looking in
+   the list file in the run directory (&lt;benchmark&gt;/run/list).
+   Look for the word "build" in this file.  If more than one build
+   directory is present, you can pipe the output to search for the
+   specific extension that you want.
+
+   <p>For example:
+
+<pre>   F:\cpu2006> <b>cd %SPEC%\benchspec\CPU2006\405.gzip\run</b>
+
+   F:\cpu2006\benchspec\CPU2006\405.gzip\run> <b>findstr build list</b>
+   00000001 dir=F:/cpu2006/benchspec/CPU2006/405.gzip/run/00000001 
+   ext=oct14a lock=0 type=build username=Administrator
+
+   F:\cpu2006\benchspec\CPU2006\405.gzip\run> <b>cd *01</b>
+</pre>
+   
+
+<a name=toc_VI.F. ><h2>F. Files in the build directory</h2></a>
+
+   A variety of files are output to the build directory.  Here are
+   some of the key files which can usefully be examined:
+<p>
+<table border=0>
+<tr>
+<td valign=top><tt>Makefile.spec</tt></td>
+<td valign=top>      The components for make that were generated
+                         for the current config file with the current
+                         set of runspec options </td></tr>
+<tr>
+<tr>
+<td valign=top><tt>options.out</tt></td>
+<td valign=top>        For 1 pass compile: build options summary</td></tr>
+
+<tr>
+<td valign=top><tt>options1.out</tt></td>
+<td valign=top>       For N pass compile: summary of first pass</td></tr>
+
+<tr>
+<td valign=top><tt>options2.out</tt></td>
+<td valign=top>       For N pass compile: summary of second pass</td></tr>
+
+<tr>
+<tr>
+<td valign=top><tt>make.out</tt></td>
+<td valign=top>           For 1 pass compile: detailed commands generated </td></tr>
+
+<tr>
+<td valign=top><tt>fdo_make_pass1.out</tt></td>
+<td valign=top> For N pass compile: detailed commands
+                         generated for 1st pass</td></tr>
+
+<tr>
+<td valign=top><tt>fdo_make_pass2.out</tt></td>
+<td valign=top> For N pass compile: detailed commands
+                         generated for 2nd pass</td></tr>
+
+<tr>
+<td valign=top><tt>*.err</tt></td>
+<td valign=top> The output from standard error corresponding to
+                         the above files.</td></tr>
+</table>
+
+<a name=toc_VI.G. ><h2>G. For more information</h2></a>
+
+   For more information about how the run directories work, see the
+   descriptions of <tt>specinvoke</tt>, <tt>specmake</tt>, and <tt>specdiff</tt> in 
+   <a href=utility.html>utility.html</a>.
+
+<pre>
+</pre><hr>
+
+<a name=toc_VII. ><h1>VII.  Troubleshooting</h1></a>
+
+When something goes wrong with a build, here are some things to check:
+
+<ol>
+<li><p> Are there any obvious clues in the log file?  Search for the 
+   word "Building".  Keep searching until you hit the next benchmark
+   AFTER the one that you are interested in.  Now scroll backward
+   one screenful.</P>
+
+<li><p>Did your desired switches get applied?  Go to the build directory,
+   and look at options*out.</P>
+
+<li><p>Did the tools or your compilers report any errors?  Look in the
+   build directory at *err.</P>
+
+<li><p>What happens if you try the build by hand?  See the section on
+   <tt>specmake</tt> in <a href=utility.html#specmake>utility.html</a>.</P>
+
+<li><p>If an actual run fails, what happens if you invoke the run by hand?
+   See the information about "specinvoke -n" in 
+   <a href=utility.html#specinvoke>utility.html</a></P>
+</ol>
+
+<a name=toc_pp><h1>?.  The config file preprocessor</h1></a>
+
+The CPU2006 tools implement a configuration file macro preprocessor.  It is
+called a macro processor because it allows you to define <i>macros</i>, which
+are brief abbreviations for longer constructs.  If you've ever used the C
+preprocessor, the concepts will be familiar, though the syntax is slightly
+different.
+
+<p>Preprocessor directives begin with the percent (%) character.  This
+character <b>must</b> be the first character on the line.  Any amount of
+spaces or tabs may separate the percent from the directive.
+
+<p>The following are okay:
+<pre>
+%define foo
+%    define bar
+%		undef hello!
+</pre>
+
+<p>The following are <b>not</b> okay:
+<pre>
+# Space in the first column
+ %define foo
+
+# Tab in the first column
+	%define foo
+
+# This isn't CPP!
+#define foo
+</pre>
+
+<a name=toc_pp.A><h2>?.A  Defining macros</h2></a>
+
+The preprocessor is all about macros.  There are no macros defined by default,
+so unless you define some macros, the preprocessor can't do much for you.
+
+<p>Macros can be defined in two ways:
+<ol>
+ <li>On the command line, using the <a href="runspec.html#toc_def">--define</a>
+     switch
+ <li>In the configuration file, using the '%define' preprocessor directive:
+<pre>
+# Define a simple macro
+%define foo bar
+# Now the macro called 'foo' has the value 'bar'
+
+# It's not necessary for a macro to have a value to be useful
+%define baz
+# Now the macro called 'baz' is defined, but it has no value.
+</pre>
+    Note that no quoting is necessary when specifying the names of macros or
+    their values.
+</ol>
+
+Macros defined in both ways are entirely equivalent.  Because ones set on the
+command-line are defined first, it's not possible to use the command line to
+override a macro definition that occurs in the config file itself.  It may
+help to think of a series of '%define' directives, one per --define, as being
+prepended to the config file.
+
+<p>The values assigned to macros do <b>NOT</b> follow the same quoting rules
+as variables in the config file.  In particular, you may <b>NOT</b> use line
+continuation, line appending, or block quotes.  Sorry, CPP junkies.  You may
+have a value of arbitrary length, but in the interests of config file
+readability and maintainability (think of the children), please keep them
+relatively short.
+
+<p>You will receive a warning if a previously-defined macro is re-defined.
+
+<p>Macro names <b>ARE</b> case-sensitive.
+
+<a name=toc_pp.B><h2>?.B  Un-doing macro definition</h2></a>
+
+Sometimes you want to make the preprocessor forget about a macro that you
+taught it.  This is easily accomplished.
+
+<p>Macros can be undefined in two ways:
+<ol>
+ <li>On the command line, using the <a href="runspec.html#toc_und">--undef</a>
+     switch
+ <li>In the configuration file, using the '%undef' preprocessor directive.
+<pre>
+%define foo bar
+# Now the macro called 'foo' has the value 'bar'
+
+%undef foo
+# Now it doesn't
+</pre>
+    Note that no quoting is necessary when specifying the names of macros.
+</ol>
+
+Like <a href=#toc_pp.A>macro definition</a>, the undefinition requests can't
+affect macros set in the config file because those definitions effectively
+happen after the un-definition.  For this reason, command-line undefinition
+is basically useless; it can only un-do macros also set on the command line.<br>
+So why was such a useless ability added to the tools?  The writer likes
+orthogonality.
+
+<a name=toc_pp.C><h2>?.C  Using macros</h2></a>
+
+By now you're probably over that initial euphoric rush that comes from wantonly
+defining and undefining macros, and you're looking for something more.  This
+is it!
+
+<p>When you want to <b>use</b> the value of a macro, you refer to it by name.
+Unfortunately, the syntax for this is not as simple as you might hope.  It's
+not too complicated, though; to have the preprocessor expand the macro 'foo',
+just write
+<pre>
+  %{foo}
+</pre>
+in the place where you'd like it to appear.  Given the following config file
+snippet:
+<pre>
+%define foo Hello!
+%define bar baz
+%define foobar Huh?
+%define foobaz What?
+%define Hello!baz Please don't do this
+</pre>
+Here's a handy table to see the various ways you can reference these values:
+<table align=left border=2>
+<tr align=left><th>Macro reference<th>Value</tr>
+<tr><td>%{foo}      <td>Hello!</tr>
+<tr><td>%{bar}      <td>baz</tr>
+<tr><td>%{foobar}   <td>Huh?</tr>
+<tr><td>%{foobaz}   <td>What?</tr>
+<tr><td>%{Hello!baz}<td>Please don't do this</tr>
+<tr><td colspan=2>Easy, right?  The following is also possible:</tr>
+<tr><td>%{foo%{bar}}<td>What?</tr>
+<tr><td>%{%{foo}%{bar}}<td>Please don't do this</tr>
+</table>
+
+<br clear=all>
+
+<p>Because macro values can only be one line long, it's not possible to use the
+preprocessor to macroize large chunks of your config file at once, as would
+probably be common practice for CPP abusers.
+
+<a name=toc_pp.D><h2>?.D  Conditionals</h2></a>
+
+Defining, undefining, and expanding macros is quite an enjoyable activity
+in an of itself, and can even be useful on occasion.  However, conditionals
+add an entire new dimension to config file processing: the ability to include
+and exclude entire sections of text based on macros and their values.
+
+<a name=toc_pp.D.1. ><h3>   1. %ifdef .. %endif </h3></a>
+
+The %ifdef conditional provides a way to determine whether or not a particular
+macro has been defined.  If the named macro has been defined, the conditional
+is true, and the text to the matching %endif is included in the text of the
+config file as evaluated by runspec.  Note that the matching %endif may not
+necessarily be the <i>next</i> %endif; conditionals may be nested.
+
+Given:
+<pre>
+--- Start of example ---
+%define foo
+%ifdef %{foo}
+This text will be included
+%endif
+
+%ifdef %{bar}
+This text will not be included
+%endif
+--- End of example ---
+</pre>
+
+The preprocessor would produce the following output:
+<pre>
+--- Start of example ---
+This text will be included
+
+--- End of example ---
+</pre>
+
+Note especially the quoting used for the macro names in the conditional; the
+only time macro name quoting may be omitted is when defining or undefining it.
+
+<a name=toc_pp.D.2. ><h3>   2. %ifndef .. %endif </h3></a>
+
+The %ifndef conditional is the converse of <a href=#toc_pp.D.1>%ifdef</a>;
+If the named macro has <b>not</b> been defined, the conditional
+is true, and the text to the matching %endif is included in the text of the
+config file as evaluated by runspec.  Note that the matching %endif may not
+necessarily be the <i>next</i> %endif; conditionals may be nested.
+
+Given a slightly modified version of the example from earlier:
+<pre>
+--- Start of example ---
+%define foo
+%ifndef %{foo}
+Now THIS text will not be included
+%endif
+
+%ifndef %{bar}
+This text WILL be included
+%endif
+--- End of example ---
+</pre>
+
+The preprocessor would produce the following output:
+<pre>
+--- Start of example ---
+
+This text WILL be included
+--- End of example ---
+</pre>
+
+<a name=toc_pp.D.3. ><h3>   3. %if .. %endif </h3></a>
+
+Checking whether or not a macro is defined is quite useful, but it's just
+a subset of the more general conditional facility available.  This general
+form is
+
+<pre>%if <b>expression</b>
+...
+%endif
+</pre>
+
+The expression is evaluated using a subset of the Perl interpreter, so the
+possibilities for testing values are fairly broad.  For example,
+
+<pre>
+%ifdef %{foo}
+...
+%endif
+</pre>
+
+is exactly equivalent to
+
+<pre>
+%if defined(%{foo})
+...
+%endif
+</pre>
+
+Likewise,
+
+<pre>
+%ifndef %{foo}
+...
+%endif
+</pre>
+
+is exactly equivalent to
+
+<pre>
+%if !defined(%{foo})
+...
+%endif
+</pre>
+
+Using the general form, it's possible to string conditionals together:
+
+<pre>
+%if defined(%{foo}) && !defined(%{bar}) || %{baz} == 0
+...
+%endif
+</pre>
+
+If a macro contains a string value, you must supply quotes:
+
+<pre>
+%if '%{foo}' eq 'Hello, Dave.'
+...
+%endif
+</pre>
+
+You may also perform basic math on macro values:
+
+<pre>
+%if %{foo} * 2004 > 3737
+...
+%endif
+</pre>
+
+For the advanced Perl user who wonders, the operations allowed are the
+:base_core and :base_math bundles, with the ability to dereference and
+modify variables disallowed.  See the source code for config.pl
+(eval_pp_conditional subroutine) and Perl's own Opcode documentation for more
+details.
+
+<a name=toc_pp.D.4. ><h3>   4. %else </h3></a>
+
+It's possible to get by without the "else" part of the classic "if .. then ..
+else" trio, but it's not any fun.  It works as you'd expect:
+
+<pre>
+--- Start of example ---
+%define foo
+%ifndef %{foo}
+This text will not be included
+%else
+This text WILL be included (from the else clause)
+%endif
+--- End of example ---
+</pre>
+
+The preprocessor would produce the following output:
+<pre>
+--- Start of example ---
+This text WILL be included (from the else clause)
+--- End of example ---
+</pre>
+
+One %else per conditional construct, please.
+
+<a name=toc_pp.D.5. ><h3>   5. %elif </h3></a>
+
+%elif is another convenience that's been added.  For those not familiar with
+CPP, it's an "else if" construct.  You may have as many of these as you'd like.
+Given:
+
+<pre>
+--- Start of example ---
+%define foo Hello!
+
+%if !defined(%{foo})
+This text will not be included
+%elif defined(%{bar})
+This text won't be included either
+%elif '%{foo}' eq 'Hello!'
+This text WILL be included (from the second elif clause)
+%else
+Alas, the else here is left out as well.
+%endif
+--- End of example ---
+</pre>
+
+The preprocessor would produce the following output:
+<pre>
+--- Start of example ---
+This text WILL be included (from the second elif clause)
+--- End of example ---
+</pre>
+
+<a name=toc_pp.E><h2>?.E  Informational Directives</h2></a>
+
+It's often helpful to be able to warn or abort on certain conditions.  Perhaps
+there's a macro that <i>must</i> be set to a particular value, or maybe it's
+just very highly recommended.
+
+<a name=toc_pp.E.1. ><h3>   1. %warning</h3></a>
+
+%warning does just what you'd expect; when the preprocessor encounters this
+directive, it prints the text following to stderr, along with its location
+within the file being read, and continues on.
+
+<p>Consider:
+<pre>
+%if !defined(%{somewhat_important_macro})
+% warning
+% warning You have not defined somewhat_important_macro!
+% warning
+%endif
+</pre>
+
+When run through the preprocessor, this yields the following output:
+<pre>
+  $ configpp -c warning.cfg
+  runspec v2.20 - Copyright 1999-2003 Standard Performance Evaluation Corporation
+  Loading standard modules.................
+  Loading runspec modules..............
+  Locating benchmarks...found 32 benchmarks in 1 benchset.
+  Locating output formats: asc...config...html...mail...pdf...ps...raw...screen...
+  WARNING: 
+  WARNING: You have not defined somewhat_important_macro!
+  WARNING: 
+  Pre-processed configuration file dump follows:
+  --------------------------------------------------------------------
+  # Invocation command line:
+  # /Users/cloyce/SPEC/cpu2006/bin/configpp --configpp -c warning.cfg
+  ############################################################################
+
+  --------------------------------------------------------------------
+
+  The log for this run is in result/CPU2006.013.log
+
+  runspec finished at Tue Apr  1 08:55:36 2003; 5 total seconds elapsed
+</pre>
+
+The blank warning lines were added to make the warning stand out a little;
+as you can see, it's easy for it to be lost in the rest of the output.
+
+<a name=toc_pp.E.2. ><h3>   2. %error</h3></a>
+
+Like <a href=#toc_pp.E.1>%warning</a>, %error logs an error to stderr and
+the log file.  <b>Un</b>like <a href=#toc_pp.E.1>%warning</a>, though, it
+then aborts the run.
+
+<p>Consider a slightly modified version of the previous example:
+<pre>
+%if !defined(%{REALLY_important_macro})
+% error You have not defined REALLY_important_macro!
+%endif
+</pre>
+
+When run through the preprocessor, this yields the following output:
+<pre>
+  $ configpp -c error.cfg
+  runspec v2.20 - Copyright 1999-2003 Standard Performance Evaluation Corporation
+  Loading standard modules.................
+  Loading runspec modules..............
+  Locating benchmarks...found 32 benchmarks in 1 benchset.
+  Locating output formats: asc...config...html...mail...pdf...ps...raw...screen...
+  ERROR: You have not defined somewhat_important_macro!
+
+  The log for this run is in result/CPU2006.014.log
+
+  runspec finished at Tue Apr  1 09:00:06 2003; 4 total seconds elapsed
+
+  $ echo $?
+  1
+</pre>
+
+The ERROR line also tends to get a little lost in the visual clutter, but
+unlike a warning, it'll be close to the last thing output.  As you can see
+from the output of 'echo $?', runspec has exited with an error code 1.
+
+<hr>
+Copyright (C) 1999-2003 Standard Performance Evaluation Corporation
+All Rights Reserved
+

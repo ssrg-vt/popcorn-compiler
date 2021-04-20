@@ -1,0 +1,560 @@
+INFO: spec_main_live_pretend.c(120): Processing 4 beamsets
+INFO: cmd_ln.c(276): Parsing command line:
+INFO: kbcore.c(95): Initializing core models:
+INFO: logs3.c(99): Initializing logbase: 1.000300e+00 (add table: 1)
+INFO: logs3.c(161): Log-Add table size = 29350
+INFO: feat.c(642): Initializing feature stream to type: '1s_c_d_dd', CMN='current', VARNORM='no', AGC='none'
+INFO: mdef.c(594): Reading model definition: model/hmm/hub4/hub4opensrc.6000.mdef
+INFO: mdef.c(771): 48 CI-phone, 133500 CD-phone, 3 emitstate/phone, 144 CI-sen, 6144 Sen, 32639 Sen-Seq
+INFO: dict.c(358): Reading main dictionary: model/lm/an4/an4.dict
+INFO: dict.c(361): 130 words read
+INFO: dict.c(366): Reading filler dictionary: model/lm/an4/filler.dict
+INFO: dict.c(369): 3 words read
+INFO: lm.c(739): LM read('model/lm/an4/an4.ug.lm.DMP', lw= 9.50, wip= -1188, uw= 0.70)
+INFO: lm.c(553):      107 ug
+INFO: lm.c(583):        1 bigrams [on disk]
+INFO: lm.c(613):        2 bigram prob entries
+INFO: lm.c(696):      107 word strings
+INFO: wid.c(178): 6 LM words not in dictionary; ignored
+INFO: cont_mgau.c(96): Reading mixture gaussian file 'model/hmm/hub4/means'
+INFO: cont_mgau.c(248): 6144 mixture Gaussians, 8 components, 1 streams, veclen 39
+INFO: cont_mgau.c(96): Reading mixture gaussian file 'model/hmm/hub4/variances'
+INFO: cont_mgau.c(248): 6144 mixture Gaussians, 8 components, 1 streams, veclen 39
+INFO: cont_mgau.c(269): Reading mixture weights file 'model/hmm/hub4/mixture_weights'
+INFO: cont_mgau.c(362): Read 6144 x 8 mixture weights
+INFO: cont_mgau.c(378): Removing uninitialized Gaussian densities
+ 6 7 8
+INFO: cont_mgau.c(408): 24 densities removed (3 mixtures removed entirely)
+INFO: cont_mgau.c(416): Applying variance floor
+INFO: cont_mgau.c(428): 0 variance values floored
+INFO: cont_mgau.c(474): Precomputing Mahalanobis distance invariants
+INFO: subvq.c(199): Loading Mixture Gaussian sub-VQ file 'model/hmm/hub4/8gau.6000sen.quant' (vq_eval: 3)
+INFO: subvq.c(259): Original #codebooks(states)/codewords: 6144 x 8
+INFO: subvq.c(260): Subvectors: 3, VQsize: 4096
+INFO: subvq.c(262): SV 0 feature dims(13):   0  1  2  3  4  5  6  7  8  9 10 11 12
+INFO: subvq.c(262): SV 1 feature dims(13):  13 14 15 16 17 18 19 20 21 22 23 24 25
+INFO: subvq.c(262): SV 2 feature dims(13):  26 27 28 29 30 31 32 33 34 35 36 37 38
+INFO: subvq.c(271): Reading subvq 0
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(271): Reading subvq 1
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(271): Reading subvq 2
+INFO: subvq.c(273): Reading codebook
+INFO: subvq.c(293): Reading map
+INFO: subvq.c(103): Precomputing Mahalanobis distance invariants
+INFO: tmat.c(135): Reading HMM transition probability matrices: model/hmm/hub4/transition_matrices
+INFO: tmat.c(217): Read 48 transition matrices of size 3x4
+INFO: dict2pid.c(254): Building PID tables for dictionary
+INFO: dict2pid.c(422): 873 composite states; 324 composite sseq
+INFO: kbcore.c(225): Verifying models consistency:
+INFO: kb.c(197): Building lextrees
+INFO: kb.c(243): Creating Unigram Table
+INFO: kb.c(246): Size of word table after unigram + words in class: 99
+INFO: kb.c(263): Lextrees(3), 1428 nodes(ug)
+INFO: kb.c(291): Lextrees(3), 1 nodes(filler)
+INFO: kb.c(317): Beam= -460509, PBeam= -383758, WBeam= -268630, SVQBeam= -15350
+INFO: kb.c(322): Down Sampling Ratio = 1
+INFO: kb.c(328): Conditional Down Sampling Parameter = 0
+INFO: kb.c(333): GS map would be used for Gaussian Selection? = 1
+INFO: kb.c(336): SVQ would be used as Gaussian Score ?= 0
+INFO: kb.c(339): CI phone beam to prune the number of parent CI phones in CI-base GMM Selection = 939524096
+INFO: kb.c(341): Virtually no CI phone beam is applied now. (ci_pbeam>1000000)
+INFO: kb.c(345): Word-end pruning beam: 939524096
+INFO: kb.c(348): Phoneme look-ahead window size = 1
+INFO: kb.c(353): Phoneme look-ahead beam = -939524096
+INFO: vithist.c(77): Initializing Viterbi-history module
+64000 samples in ./an406-fcaw-b.raw will be decoded in blocks of 2000
+65600 samples in ./an407-fcaw-b.raw will be decoded in blocks of 2000
+52800 samples in ./an408-fcaw-b.raw will be decoded in blocks of 2000
+12800 samples in ./an409-fcaw-b.raw will be decoded in blocks of 2000
+57600 samples in ./an410-fcaw-b.raw will be decoded in blocks of 2000
+INFO: spec_main_live_pretend.c(172): Beam= -460509, PBeam= -460509, WBeam= -230254, SVQBeam= -153503
+INFO: feat.c(971): Feature buffers initialized to 256 vectors
+INFO: cmn_prior.c(72): mean[0]= 12.00, mean[1..12]= 0.0
+
+Backtrace(an406-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   376     0    76    -1189514   -74100   -1 <sil>
+   524    77   125     -680333   -74100   -1 <sil>
+   758   126   162     -536738  -148846    0 T
+   959   163   185     -543175   -74100   -1 <sil>
+  1311   186   200     -229603  -148846    0 N
+  1978   201   284    -1557179   -74100   -1 <sil>
+  2387   285   341    -1032179   -74100   -1 <sil>
+  2784   342   365     -307526  -148846    0 U
+  3153   366   397     -459018   -74100   -1 <sil>
+  3155   398   398           0  -148846    0 </s>
+           0   398    -6535265 -1039984 (Total)
+
+FWDVIT: 'T N U ' (an406-fcaw-b)
+
+FWDXCT: an406-fcaw-b S 0 T -7575249 A -6535265 L -1039984 0 -1189514 -74100 <sil> 77 -680333 -74100 <sil> 126 -536738 -148846 T 163 -543175 -74100 <sil> 186 -229603 -148846 N 201 -1557179 -74100 <sil> 285 -1032179 -74100 <sil> 342 -307526 -148846 U 366 -459018 -74100 <sil> 398
+
+INFO: utt.c(337):  398 frm;  1719 sen, 11839 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    857 hmm,   8 wd/fr, 0.00 CPU 0.00 Clk (an406-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an406-fcaw-b): 16(4)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    31358 bg(),    31346 bo;     1 fills,        1 in mem (50.0%)
+
+Backtrace(an407-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    60     0    32     -501453   -74100   -1 <sil>
+   118    33    48     -220358  -148846    0 E
+   775    49    78     -597198  -148846    0 MAY
+  2929    79   163    -1385327  -148846    0 SIXTEEN
+  3177   164   173     -162459   -74100   -1 <sil>
+  3617   174   225    -1028313  -148846    0 Q
+  3684   226   230      -71051   -74100   -1 <sil>
+  4346   231   272     -511879  -148846    0 Q
+  4616   273   287     -328550   -74100   -1 <sil>
+  4944   288   319     -383200  -148846    0 F
+  5100   320   344     -361665   -74100   -1 <sil>
+  5670   345   385     -782414  -148846    0 SECOND(2)
+  6170   386   410     -406049   -74100   -1 <sil>
+  6176   411   411           0  -148846    0 </s>
+           0   411    -6739916 -1635368 (Total)
+
+FWDVIT: 'E MAY SIXTEEN Q Q F SECOND ' (an407-fcaw-b)
+
+FWDXCT: an407-fcaw-b S 0 T -8375284 A -6739916 L -1635368 0 -501453 -74100 <sil> 33 -220358 -148846 E 49 -597198 -148846 MAY 79 -1385327 -148846 SIXTEEN 164 -162459 -74100 <sil> 174 -1028313 -148846 Q 226 -71051 -74100 <sil> 231 -511879 -148846 Q 273 -328550 -74100 <sil> 288 -383200 -148846 F 320 -361665 -74100 <sil> 345 -782414 -148846 SECOND(2) 386 -406049 -74100 <sil> 411
+
+INFO: utt.c(337):  411 frm;  1836 sen, 13816 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    974 hmm,  15 wd/fr, 0.00 CPU 0.00 Clk (an407-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an407-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    93135 bg(),    93132 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an408-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   110     0    32     -363117   -74100   -1 <sil>
+   289    33    69     -467974  -148846    0 E
+   339    70    75     -111553   -74100   -1 <sil>
+  1875    76   116     -799666  -148846    0 EIGHT
+  2670   117   149     -592348  -148846    0 R
+  3869   150   195     -571872  -148846    0 Z
+  4319   196   233     -525334   -74100   -1 <sil>
+  4660   234   259     -384247  -148846    0 I
+  5044   260   277     -392655   -74100   -1 <sil>
+  6235   278   307     -655708  -148846    0 AREA
+  7293   308   330     -373801   -74100   -1 <sil>
+  7306   331   331           0  -148846    0 </s>
+           0   331    -5238275 -1412422 (Total)
+
+FWDVIT: 'E EIGHT R Z I AREA ' (an408-fcaw-b)
+
+FWDXCT: an408-fcaw-b S 0 T -6650697 A -5238275 L -1412422 0 -363117 -74100 <sil> 33 -467974 -148846 E 70 -111553 -74100 <sil> 76 -799666 -148846 EIGHT 117 -592348 -148846 R 150 -571872 -148846 Z 196 -525334 -74100 <sil> 234 -384247 -148846 I 260 -392655 -74100 <sil> 278 -655708 -148846 AREA 308 -373801 -74100 <sil> 331
+
+INFO: utt.c(337):  331 frm;  2010 sen, 15147 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];   1173 hmm,  22 wd/fr, 0.00 CPU 0.00 Clk (an408-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an408-fcaw-b): 8(2)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):   170973 bg(),   170970 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an409-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   221     0    31     -501435   -74100   -1 <sil>
+   617    32    69     -569206  -148846    0 L
+   751    70    80     -131836   -74100   -1 <sil>
+   753    81    81           0  -148846    0 </s>
+           0    81    -1202477  -445892 (Total)
+
+FWDVIT: 'L ' (an409-fcaw-b)
+
+FWDXCT: an409-fcaw-b S 0 T -1648369 A -1202477 L -445892 0 -501435 -74100 <sil> 32 -569206 -148846 L 70 -131836 -74100 <sil> 81
+
+INFO: utt.c(337):   81 frm;  1950 sen, 14823 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];   1072 hmm,   9 wd/fr, 0.00 CPU 0.00 Clk (an409-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an409-fcaw-b): 8(9)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     6259 bg(),     6256 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an410-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   115     0    32     -381686   -74100   -1 <sil>
+  1014    33    86    -1082038  -148846    0 RUBOUT
+  1486    87   130     -750636   -74100   -1 <sil>
+  1893   131   164     -664817  -148846    0 AND
+  2019   165   172     -156960   -74100   -1 <sil>
+  2303   173   204     -423980  -148846    0 I
+  2520   205   219     -443909   -74100   -1 <sil>
+  3858   220   253     -657000  -148846    0 AND
+  4913   254   289     -650501  -148846    0 N
+  5150   290   301     -194952   -74100   -1 <sil>
+  5744   302   337     -635456  -148846    0 FORTY
+  6276   338   360     -314141   -74100   -1 <sil>
+  6278   361   361           0  -148846    0 </s>
+           0   361    -6356076 -1486522 (Total)
+
+FWDVIT: 'RUBOUT AND I AND N FORTY ' (an410-fcaw-b)
+
+FWDXCT: an410-fcaw-b S 0 T -7842598 A -6356076 L -1486522 0 -381686 -74100 <sil> 33 -1082038 -148846 RUBOUT 87 -750636 -74100 <sil> 131 -664817 -148846 AND 165 -156960 -74100 <sil> 173 -423980 -148846 I 205 -443909 -74100 <sil> 220 -657000 -148846 AND 254 -650501 -148846 N 290 -194952 -74100 <sil> 302 -635456 -148846 FORTY 338 -314141 -74100 <sil> 361
+
+INFO: utt.c(337):  361 frm;  2026 sen, 14839 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];   1175 hmm,  17 wd/fr, 0.00 CPU 0.00 Clk (an410-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an410-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):   137573 bg(),   137569 bo;     0 fills,        1 in mem (50.0%)
+INFO: spec_main_live_pretend.c(172): Beam= -460509, PBeam= -76751, WBeam= -230254, SVQBeam= -15350
+
+Backtrace(an406-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    73     0    38     -228385   -74100   -1 <sil>
+   472    39    90    -1014564  -148846    0 RUBOUT
+   657    91   124     -546479   -74100   -1 <sil>
+   951   125   169     -622636  -148846    0 T
+  1055   170   180     -300884   -74100   -1 <sil>
+  2638   181   249    -1413881  -148846    0 AND
+  3204   250   273     -238787  -148846    0 N
+  3559   274   324     -974146   -74100   -1 <sil>
+  3678   325   340     -293031  -148846    0 E
+  4643   341   390    -1021438  -148846    0 NINETY
+  4716   391   400      -64098   -74100   -1 <sil>
+  4718   401   401           0  -148846    0 </s>
+           0   401    -6718329 -1412422 (Total)
+
+FWDVIT: 'RUBOUT T AND N E NINETY ' (an406-fcaw-b)
+
+FWDXCT: an406-fcaw-b S 0 T -8130751 A -6718329 L -1412422 0 -228385 -74100 <sil> 39 -1014564 -148846 RUBOUT 91 -546479 -74100 <sil> 125 -622636 -148846 T 170 -300884 -74100 <sil> 181 -1413881 -148846 AND 250 -238787 -148846 N 274 -974146 -74100 <sil> 325 -293031 -148846 E 341 -1021438 -148846 NINETY 391 -64098 -74100 <sil> 401
+
+INFO: utt.c(337):  401 frm;   982 sen,  2620 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    623 hmm,  12 wd/fr, 0.00 CPU 0.00 Clk (an406-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an406-fcaw-b): 16(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    52962 bg(),    52957 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an407-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    72     0    32     -434377   -74100   -1 <sil>
+   142    33    54     -391371  -148846    0 E
+   342    55    76     -301218  -148846    0 A(2)
+   959    77   116     -680418   -74100   -1 <sil>
+  1219   117   162     -651831  -148846    0 C
+  1264   163   173     -175138   -74100   -1 <sil>
+  1557   174   225     -865510  -148846    0 Q
+  1588   226   230      -50731   -74100   -1 <sil>
+  1822   231   272     -476120  -148846    0 Q
+  1945   273   287     -284276   -74100   -1 <sil>
+  2069   288   319     -384197  -148846    0 F
+  2136   320   344     -316329   -74100   -1 <sil>
+  2331   345   385     -689258  -148846    0 SECOND(2)
+  2511   386   410     -318540   -74100   -1 <sil>
+  2513   411   411           0  -148846    0 </s>
+           0   411    -6019314 -1709468 (Total)
+
+FWDVIT: 'E A C Q Q F SECOND ' (an407-fcaw-b)
+
+FWDXCT: an407-fcaw-b S 0 T -7728782 A -6019314 L -1709468 0 -434377 -74100 <sil> 33 -391371 -148846 E 55 -301218 -148846 A(2) 77 -680418 -74100 <sil> 117 -651831 -148846 C 163 -175138 -74100 <sil> 174 -865510 -148846 Q 226 -50731 -74100 <sil> 231 -476120 -148846 Q 273 -284276 -74100 <sil> 288 -384197 -148846 F 320 -316329 -74100 <sil> 345 -689258 -148846 SECOND(2) 386 -318540 -74100 <sil> 411
+
+INFO: utt.c(337):  411 frm;   883 sen,  2504 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    509 hmm,   6 wd/fr, 0.00 CPU 0.00 Clk (an407-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an407-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    16772 bg(),    16769 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an408-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    82     0    32     -328085   -74100   -1 <sil>
+   204    33    69     -433877  -148846    0 E
+  1258    70   111     -802996  -148846    0 K
+  1401   112   116      -81371   -74100   -1 <sil>
+  1802   117   149     -549414  -148846    0 R
+  2536   150   196     -515918  -148846    0 Z
+  2830   197   233     -428933   -74100   -1 <sil>
+  3000   234   259     -351213  -148846    0 I
+  3133   260   277     -395510   -74100   -1 <sil>
+  3503   278   307     -603865  -148846    0 AREA
+  3907   308   330     -293233   -74100   -1 <sil>
+  3914   331   331           0  -148846    0 </s>
+           0   331    -4784415 -1412422 (Total)
+
+FWDVIT: 'E K R Z I AREA ' (an408-fcaw-b)
+
+FWDXCT: an408-fcaw-b S 0 T -6196837 A -4784415 L -1412422 0 -328085 -74100 <sil> 33 -433877 -148846 E 70 -802996 -148846 K 112 -81371 -74100 <sil> 117 -549414 -148846 R 150 -515918 -148846 Z 197 -428933 -74100 <sil> 234 -351213 -148846 I 260 -395510 -74100 <sil> 278 -603865 -148846 AREA 308 -293233 -74100 <sil> 331
+
+INFO: utt.c(337):  331 frm;   975 sen,  2681 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    636 hmm,  12 wd/fr, 0.00 CPU 0.00 Clk (an408-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an408-fcaw-b): 8(2)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    44587 bg(),    44584 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an409-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   115     0    31     -418361   -74100   -1 <sil>
+   438    32    69     -570534  -148846    0 L
+   527    70    80     -119031   -74100   -1 <sil>
+   529    81    81           0  -148846    0 </s>
+           0    81    -1107926  -445892 (Total)
+
+FWDVIT: 'L ' (an409-fcaw-b)
+
+FWDXCT: an409-fcaw-b S 0 T -1553818 A -1107926 L -445892 0 -418361 -74100 <sil> 32 -570534 -148846 L 70 -119031 -74100 <sil> 81
+
+INFO: utt.c(337):   81 frm;   986 sen,  2649 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    613 hmm,   7 wd/fr, 0.00 CPU 0.00 Clk (an409-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an409-fcaw-b): 8(9)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     2851 bg(),     2848 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an410-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+   154     0    45     -602692   -74100   -1 <sil>
+   387    46    64     -384624  -148846    0 AND
+   646    65    83     -321022  -148846    0 I
+   939    84   117     -513699   -74100   -1 <sil>
+   962   118   130     -104552   -74100   -1 <sil>
+  1214   131   164     -624987  -148846    0 AND
+  1275   165   172     -147199   -74100   -1 <sil>
+  1392   173   205     -453482  -148846    0 I
+  1476   206   219     -348030   -74100   -1 <sil>
+  1736   220   241     -275818  -148846    0 AND
+  1994   242   260     -485700   -74100   -1 <sil>
+  2514   261   289     -538080  -148846    0 N
+  2731   290   302     -190597   -74100   -1 <sil>
+  3071   303   335     -595537  -148846    0 Y
+  3230   336   360     -332793   -74100   -1 <sil>
+  3232   361   361           0  -148846    0 </s>
+           0   361    -5918812 -1783568 (Total)
+
+FWDVIT: 'AND I AND I AND N Y ' (an410-fcaw-b)
+
+FWDXCT: an410-fcaw-b S 0 T -7702380 A -5918812 L -1783568 0 -602692 -74100 <sil> 46 -384624 -148846 AND 65 -321022 -148846 I 84 -513699 -74100 <sil> 118 -104552 -74100 <sil> 131 -624987 -148846 AND 165 -147199 -74100 <sil> 173 -453482 -148846 I 206 -348030 -74100 <sil> 220 -275818 -148846 AND 242 -485700 -74100 <sil> 261 -538080 -148846 N 290 -190597 -74100 <sil> 303 -595537 -148846 Y 336 -332793 -74100 <sil> 361
+
+INFO: utt.c(337):  361 frm;  1056 sen,  2751 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    715 hmm,   9 wd/fr, 0.00 CPU 0.00 Clk (an410-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an410-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):    41338 bg(),    41333 bo;     0 fills,        1 in mem (50.0%)
+INFO: spec_main_live_pretend.c(172): Beam= -230254, PBeam= -460509, WBeam= -76751, SVQBeam= -153503
+
+Backtrace(an406-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    37     0    38     -226330   -74100   -1 <sil>
+    99    39    90    -1019581  -148846    0 RUBOUT
+   129    91   120     -428592   -74100   -1 <sil>
+   191   121   171     -820490  -148846    0 EIGHTEEN
+   215   172   181     -255250   -74100   -1 <sil>
+   705   182   249    -1388323  -148846    0 AND
+   792   250   273     -180205  -148846    0 N
+   872   274   320     -825363   -74100   -1 <sil>
+   921   321   340     -405008  -148846    0 B
+  1292   341   390     -935629  -148846    0 NINETY
+  1316   391   400      -59450   -74100   -1 <sil>
+  1318   401   401           0  -148846    0 </s>
+           0   401    -6544221 -1412422 (Total)
+
+FWDVIT: 'RUBOUT EIGHTEEN AND N B NINETY ' (an406-fcaw-b)
+
+FWDXCT: an406-fcaw-b S 0 T -7956643 A -6544221 L -1412422 0 -226330 -74100 <sil> 39 -1019581 -148846 RUBOUT 91 -428592 -74100 <sil> 121 -820490 -148846 EIGHTEEN 172 -255250 -74100 <sil> 182 -1388323 -148846 AND 250 -180205 -148846 N 274 -825363 -74100 <sil> 321 -405008 -148846 B 341 -935629 -148846 NINETY 391 -59450 -74100 <sil> 401
+
+INFO: utt.c(337):  401 frm;   819 sen,  5998 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    208 hmm,   3 wd/fr, 0.00 CPU 0.00 Clk (an406-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an406-fcaw-b): 16(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     3095 bg(),     3091 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an407-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -398203   -74100   -1 <sil>
+    50    33    48     -207952  -148846    0 E
+    96    49    78     -527885  -148846    0 MAY
+   232    79   163    -1257696  -148846    0 SIXTEEN
+   253   164   173     -132409   -74100   -1 <sil>
+   302   174   225     -805129  -148846    0 Q
+   307   226   230      -59880   -74100   -1 <sil>
+   345   231   272     -396973  -148846    0 Q
+   362   273   287     -250952   -74100   -1 <sil>
+   399   288   319     -342497  -148846    0 F
+   424   320   344     -307360   -74100   -1 <sil>
+   471   345   385     -653717  -148846    0 SECOND(2)
+   502   386   410     -302654   -74100   -1 <sil>
+   504   411   411           0  -148846    0 </s>
+           0   411    -5643307 -1635368 (Total)
+
+FWDVIT: 'E MAY SIXTEEN Q Q F SECOND ' (an407-fcaw-b)
+
+FWDXCT: an407-fcaw-b S 0 T -7278675 A -5643307 L -1635368 0 -398203 -74100 <sil> 33 -207952 -148846 E 49 -527885 -148846 MAY 79 -1257696 -148846 SIXTEEN 164 -132409 -74100 <sil> 174 -805129 -148846 Q 226 -59880 -74100 <sil> 231 -396973 -148846 Q 273 -250952 -74100 <sil> 288 -342497 -148846 F 320 -307360 -74100 <sil> 345 -653717 -148846 SECOND(2) 386 -302654 -74100 <sil> 411
+
+INFO: utt.c(337):  411 frm;   690 sen,  5236 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    159 hmm,   1 wd/fr, 0.00 CPU 0.00 Clk (an407-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an407-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):      823 bg(),      820 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an408-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -327315   -74100   -1 <sil>
+    69    33    69     -431771  -148846    0 E
+    75    70    75      -82768   -74100   -1 <sil>
+   279    76   121     -837299  -148846    0 EIGHT
+   359   122   147     -393231  -148846    0 R
+   490   148   195     -692314  -148846    0 Z
+   536   196   233     -438419   -74100   -1 <sil>
+   563   234   258     -296942  -148846    0 I
+   600   259   277     -421728   -74100   -1 <sil>
+   712   278   307     -514913  -148846    0 AREA
+   842   308   330     -302486   -74100   -1 <sil>
+   844   331   331           0  -148846    0 </s>
+           0   331    -4739186 -1412422 (Total)
+
+FWDVIT: 'E EIGHT R Z I AREA ' (an408-fcaw-b)
+
+FWDXCT: an408-fcaw-b S 0 T -6151608 A -4739186 L -1412422 0 -327315 -74100 <sil> 33 -431771 -148846 E 70 -82768 -74100 <sil> 76 -837299 -148846 EIGHT 122 -393231 -148846 R 148 -692314 -148846 Z 196 -438419 -74100 <sil> 234 -296942 -148846 I 259 -421728 -74100 <sil> 278 -514913 -148846 AREA 308 -302486 -74100 <sil> 331
+
+INFO: utt.c(337):  331 frm;   883 sen,  6711 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    236 hmm,   3 wd/fr, 0.00 CPU 0.00 Clk (an408-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an408-fcaw-b): 8(2)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     1894 bg(),     1891 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an409-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    30     0    31     -450627   -74100   -1 <sil>
+    65    32    69     -516215  -148846    0 L
+    80    70    80     -124677   -74100   -1 <sil>
+    82    81    81           0  -148846    0 </s>
+           0    81    -1091519  -445892 (Total)
+
+FWDVIT: 'L ' (an409-fcaw-b)
+
+FWDXCT: an409-fcaw-b S 0 T -1537411 A -1091519 L -445892 0 -450627 -74100 <sil> 32 -516215 -148846 L 70 -124677 -74100 <sil> 81
+
+INFO: utt.c(337):   81 frm;   806 sen,  6193 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    178 hmm,   1 wd/fr, 0.00 CPU 0.00 Clk (an409-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an409-fcaw-b): 8(9)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):       93 bg(),       90 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an410-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -328475   -74100   -1 <sil>
+    84    33    86     -938960  -148846    0 RUBOUT
+   118    87   117     -516043   -74100   -1 <sil>
+   131   118   130      -94210   -74100   -1 <sil>
+   193   131   170     -778307  -148846    0 AND
+   262   171   205     -441699  -148846    0 I
+   305   206   219     -365823   -74100   -1 <sil>
+   452   220   253     -572668  -148846    0 AND
+   556   254   289     -552953  -148846    0 N
+   588   290   301     -185699   -74100   -1 <sil>
+   657   302   337     -622901  -148846    0 FORTY
+   719   338   360     -295328   -74100   -1 <sil>
+   721   361   361           0  -148846    0 </s>
+           0   361    -5693066 -1486522 (Total)
+
+FWDVIT: 'RUBOUT AND I AND N FORTY ' (an410-fcaw-b)
+
+FWDXCT: an410-fcaw-b S 0 T -7179588 A -5693066 L -1486522 0 -328475 -74100 <sil> 33 -938960 -148846 RUBOUT 87 -516043 -74100 <sil> 118 -94210 -74100 <sil> 131 -778307 -148846 AND 171 -441699 -148846 I 206 -365823 -74100 <sil> 220 -572668 -148846 AND 254 -552953 -148846 N 290 -185699 -74100 <sil> 302 -622901 -148846 FORTY 338 -295328 -74100 <sil> 361
+
+INFO: utt.c(337):  361 frm;   929 sen,  6843 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    237 hmm,   2 wd/fr, 0.00 CPU 0.00 Clk (an410-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an410-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     1635 bg(),     1631 bo;     0 fills,        1 in mem (50.0%)
+INFO: spec_main_live_pretend.c(172): Beam= -230254, PBeam= -460509, WBeam= -76751, SVQBeam= -15350
+
+Backtrace(an406-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    37     0    38     -222318   -74100   -1 <sil>
+   101    39    90    -1016106  -148846    0 RUBOUT
+   131    91   120     -432684   -74100   -1 <sil>
+   255   121   180    -1208537  -148846    0 EIGHTEEN
+   933   181   249    -1397681  -148846    0 AND
+  1044   250   273     -192074  -148846    0 N
+  1124   274   320     -824820   -74100   -1 <sil>
+  1167   321   340     -405991  -148846    0 B
+  1550   341   390     -980794  -148846    0 NINETY
+  1574   391   400      -61122   -74100   -1 <sil>
+  1576   401   401           0  -148846    0 </s>
+           0   401    -6742127 -1338322 (Total)
+
+FWDVIT: 'RUBOUT EIGHTEEN AND N B NINETY ' (an406-fcaw-b)
+
+FWDXCT: an406-fcaw-b S 0 T -8080449 A -6742127 L -1338322 0 -222318 -74100 <sil> 39 -1016106 -148846 RUBOUT 91 -432684 -74100 <sil> 121 -1208537 -148846 EIGHTEEN 181 -1397681 -148846 AND 250 -192074 -148846 N 274 -824820 -74100 <sil> 321 -405991 -148846 B 341 -980794 -148846 NINETY 391 -61122 -74100 <sil> 401
+
+INFO: utt.c(337):  401 frm;   834 sen,  2365 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    214 hmm,   4 wd/fr, 0.00 CPU 0.00 Clk (an406-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an406-fcaw-b): 16(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     4018 bg(),     4014 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an407-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -396189   -74100   -1 <sil>
+    50    33    48     -207497  -148846    0 E
+    89    49    78     -524549  -148846    0 MAY
+   223    79   163    -1275595  -148846    0 SIXTEEN
+   244   164   173     -132180   -74100   -1 <sil>
+   293   174   225     -820124  -148846    0 Q
+   298   226   230      -60972   -74100   -1 <sil>
+   336   231   272     -377278  -148846    0 Q
+   352   273   287     -249127   -74100   -1 <sil>
+   389   288   319     -345353  -148846    0 F
+   414   320   344     -293298   -74100   -1 <sil>
+   464   345   385     -655762  -148846    0 SECOND(2)
+   503   386   410     -297505   -74100   -1 <sil>
+   505   411   411           0  -148846    0 </s>
+           0   411    -5635429 -1635368 (Total)
+
+FWDVIT: 'E MAY SIXTEEN Q Q F SECOND ' (an407-fcaw-b)
+
+FWDXCT: an407-fcaw-b S 0 T -7270797 A -5635429 L -1635368 0 -396189 -74100 <sil> 33 -207497 -148846 E 49 -524549 -148846 MAY 79 -1275595 -148846 SIXTEEN 164 -132180 -74100 <sil> 174 -820124 -148846 Q 226 -60972 -74100 <sil> 231 -377278 -148846 Q 273 -249127 -74100 <sil> 288 -345353 -148846 F 320 -293298 -74100 <sil> 345 -655762 -148846 SECOND(2) 386 -297505 -74100 <sil> 411
+
+INFO: utt.c(337):  411 frm;   692 sen,  2155 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    163 hmm,   1 wd/fr, 0.00 CPU 0.00 Clk (an407-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an407-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):      813 bg(),      810 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an408-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -324261   -74100   -1 <sil>
+    69    33    69     -432917  -148846    0 E
+   269    70   111     -780138  -148846    0 K
+   280   112   116      -68509   -74100   -1 <sil>
+   347   117   147     -492805  -148846    0 R
+   493   148   195     -704818  -148846    0 Z
+   546   196   233     -439261   -74100   -1 <sil>
+   572   234   259     -334249  -148846    0 I
+   609   260   278     -392731   -74100   -1 <sil>
+   710   279   307     -533769  -148846    0 AREA
+   892   308   330     -312132   -74100   -1 <sil>
+   894   331   331           0  -148846    0 </s>
+           0   331    -4815590 -1412422 (Total)
+
+FWDVIT: 'E K R Z I AREA ' (an408-fcaw-b)
+
+FWDXCT: an408-fcaw-b S 0 T -6228012 A -4815590 L -1412422 0 -324261 -74100 <sil> 33 -432917 -148846 E 70 -780138 -148846 K 112 -68509 -74100 <sil> 117 -492805 -148846 R 148 -704818 -148846 Z 196 -439261 -74100 <sil> 234 -334249 -148846 I 260 -392731 -74100 <sil> 279 -533769 -148846 AREA 308 -312132 -74100 <sil> 331
+
+INFO: utt.c(337):  331 frm;   875 sen,  2501 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    231 hmm,   3 wd/fr, 0.00 CPU 0.00 Clk (an408-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an408-fcaw-b): 8(2)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     1947 bg(),     1944 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an409-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    30     0    31     -449278   -74100   -1 <sil>
+    71    32    69     -542542  -148846    0 L
+    89    70    80     -120762   -74100   -1 <sil>
+    91    81    81           0  -148846    0 </s>
+           0    81    -1112582  -445892 (Total)
+
+FWDVIT: 'L ' (an409-fcaw-b)
+
+FWDXCT: an409-fcaw-b S 0 T -1558474 A -1112582 L -445892 0 -449278 -74100 <sil> 32 -542542 -148846 L 70 -120762 -74100 <sil> 81
+
+INFO: utt.c(337):   81 frm;   831 sen,  2417 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    186 hmm,   1 wd/fr, 0.00 CPU 0.00 Clk (an409-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an409-fcaw-b): 8(9)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):      115 bg(),      112 bo;     0 fills,        1 in mem (50.0%)
+
+Backtrace(an410-fcaw-b)
+ LatID  SFrm  EFrm        AScr     LScr Type
+    31     0    32     -328341   -74100   -1 <sil>
+    87    33    86     -938889  -148846    0 RUBOUT
+   121    87   117     -514227   -74100   -1 <sil>
+   134   118   130      -95943   -74100   -1 <sil>
+   189   131   169     -754188  -148846    0 AND
+   261   170   205     -462457  -148846    0 I
+   303   206   219     -367137   -74100   -1 <sil>
+   427   220   253     -577948  -148846    0 AND
+   538   254   289     -681233  -148846    0 TEN
+   566   290   301     -174598   -74100   -1 <sil>
+   662   302   337     -646584  -148846    0 FORTY
+   747   338   360     -301023   -74100   -1 <sil>
+   749   361   361           0  -148846    0 </s>
+           0   361    -5842568 -1486522 (Total)
+
+FWDVIT: 'RUBOUT AND I AND TEN FORTY ' (an410-fcaw-b)
+
+FWDXCT: an410-fcaw-b S 0 T -7329090 A -5842568 L -1486522 0 -328341 -74100 <sil> 33 -938889 -148846 RUBOUT 87 -514227 -74100 <sil> 118 -95943 -74100 <sil> 131 -754188 -148846 AND 170 -462457 -148846 I 206 -367137 -74100 <sil> 220 -577948 -148846 AND 254 -681233 -148846 TEN 290 -174598 -74100 <sil> 302 -646584 -148846 FORTY 338 -301023 -74100 <sil> 361
+
+INFO: utt.c(337):  361 frm;   934 sen,  2576 gau/fr, Sen 0.00 CPU 0.00 Clk [Ovrhd 0.00 CPU 0.00 Clk];    246 hmm,   2 wd/fr, 0.00 CPU 0.00 Clk (an410-fcaw-b)
+INFO: utt.c(375): HMMHist[0..0](an410-fcaw-b): 13(3)
+INFO: lm.c(823):         0 tg(),         0 tgcache,        0 bo;     0 fills,        0 in mem (0.0%)
+INFO: lm.c(826):     2246 bg(),     2242 bo;     0 fills,        1 in mem (50.0%)
+INFO: live.c(354): SUMMARY:  6337 fr;  1128 sen, 6260 gau/fr, 0.00 xCPU [0.00 xOvrhd];  517 hmm/fr, 7 wd/fr, 0.00 xCPU;  
