@@ -1,0 +1,1 @@
+/usr/local/popcorn/bin/clang -c -o nabmd.o -DSPEC -DSPEC_OMP -DSPEC_OPENMP -DNDEBUG -DNOREDUCE -DNOPERFLIB    -O3 -xSSE4.2  -ipo1 -openmp -ansi_alias -mcmodel=medium -shared-intel                nabmd.c

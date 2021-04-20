@@ -1,0 +1,19 @@
+
+# These are the build dependencies
+
+$(addsuffix $(OBJ), $(basename sff.c)): sff.c nab.h defreal.h nabtypes.h memutil.h eff.c intersect.c gbsa.c debug.h
+$(addsuffix $(OBJ), $(basename molio.c)): molio.c nab.h defreal.h nabtypes.h
+$(addsuffix $(OBJ), $(basename errormsg.c)): errormsg.c errormsg.h
+$(addsuffix $(OBJ), $(basename prm.c)): prm.c nab.h defreal.h nabtypes.h errormsg.h
+$(addsuffix $(OBJ), $(basename nblist.c)): nblist.c defreal.h
+$(addsuffix $(OBJ), $(basename molutil.c)): molutil.c nab.h defreal.h nabtypes.h errormsg.h memutil.h
+$(addsuffix $(OBJ), $(basename nabmd.c)): nabmd.c nabcode.h
+$(addsuffix $(OBJ), $(basename chirvol.c)): chirvol.c nab.h defreal.h nabtypes.h
+$(addsuffix $(OBJ), $(basename memutil.c)): memutil.c nab.h defreal.h nabtypes.h
+$(addsuffix $(OBJ), $(basename binpos.c)): binpos.c memutil.h
+$(addsuffix $(OBJ), $(basename select_atoms.c)): select_atoms.c nab.h defreal.h nabtypes.h
+$(addsuffix $(OBJ), $(basename database.c)): database.c database.h
+$(addsuffix $(OBJ), $(basename traceback.c)): traceback.c errormsg.h
+$(addsuffix $(OBJ), $(basename rand2.c)): rand2.c defreal.h
+$(addsuffix $(OBJ), $(basename reslib.c)): reslib.c nab.h defreal.h nabtypes.h errormsg.h memutil.h chirvol.h database.h
+# End dependencies

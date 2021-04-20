@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<!DOCTYPE flagsdescription SYSTEM
+       "http://www.spec.org/dtd/cpuflags2.dtd">
+
+<!-- This file defines portability flags that may be used when compiling
+     352.nab.
+
+  Copyright 2012 Standard Performance Evaluation Corporation
+
+  $Revision: 356 $
+  $Date: 2012-06-26 13:55:55 -0400 (Tue, 26 Jun 2012) $
+-->
+<flagsdescription>
+
+<filename>352.nab.flags</filename>
+<title>352.nab Approved Portability Flags</title>
+
+<header>
+<![CDATA[
+<p>This is the complete set of approved portability flags for 352.nab.</p>
+]]>
+</header>
+
+<flag name="DNOPERFLIB" class="mandatory">
+Tells benchmark not to use perflib.  Must be set for SPEC run and is set
+in object.pm.
+</flag>
+
+<flag name="DNOREDUCE" class="mandatory">
+Setting this macro will cause vector reduction with OpenMP to be single-
+threaded (as it is when using MPI and ScaLAPACK).  Set in object.pm for 
+valid SPEC run.
+</flag>
+
+<flag name="DSPEC_NO_SYS_ERRNO_H" class="portability">
+Set if you need to deal with alternate location of errno.h include.
+</flag>
+
+<flag name="DDATABASE_H" class="forbidden">
+Guard flag for include file database.h, do not change.
+</flag>
+
+<flag name="DDOCK" class="forbidden">
+Guard around include of ssf2.c file, do not change.
+</flag>
+
+<flag name="DEGB_OMP_FLUSH" class="forbidden">
+Used for program synchronization, not allowed to be changed.
+</flag>
+
+<flag name="DFALSE" class="forbidden">
+Sets the value of false, do not change.
+</flag>
+
+<flag name="DHEAP_SORT_PAIRS" class="forbidden">
+Tells the code to use heapsort_pairs, do not change.
+</flag>
+
+<flag name="DLINT" class="forbidden">
+Setting this value removes code, not allowed.
+</flag>
+
+<flag name="DLOGARITHMIC_REDUCTION" class="forbidden">
+Tells the code to use logarithmic reduction, not allowed to
+be set.
+</flag>
+
+<flag name="DMMCIF" class="forbidden">
+Guard around include of cifparse.h, do not change.
+</flag>
+
+<flag name="DMME_LOGARITHMIC_REDUCTION" class="forbidden">
+Tells the code to use logarithmic reduction, not allowed to
+be set.
+</flag>
+
+<flag name="DMME_OMP_FLUSH" class="forbidden">
+Used for program synchronization, not allowed to be changed.
+</flag>
+
+<flag name="DMORT" class="forbidden">
+Alternate definition of function, not allowed to be changed.
+</flag>
+
+<flag name="DMPI" class="forbidden">
+This is to use with MPI, not allowed.
+</flag>
+
+<flag name="DNAB_DOUBLE_PRECISION" class="forbidden">
+Used for double precision version of benchmark. Must not be set.
+</flag>
+
+<flag name="DNOPAR" class="forbidden">
+Causes parallel execution to be avoided, must not be set.
+</flag>
+
+<flag name="UNOPERFLIB" class="forbidden">
+Tells benchmark not to use perflib.  Must not be unset for SPEC run.
+</flag>
+
+<flag name="UNOREDUCE" class="forbidden">
+Setting this macro will cause vector reduction with OpenMP to be single-
+threaded (as it is when using MPI and ScaLAPACK).  NOREDUCE is required
+for valid SPEC run, do not unset.
+</flag>
+
+<flag name="DOPENMP" class="forbidden">
+We use SPEC_OMP, which is set by default, so don't use OPENMP for
+valid SPEC run.
+</flag>
+
+<flag name="DPI" class="forbidden">
+Sets the value of PI in the code, do not change.
+</flag>
+
+<flag name="DPRINT_14PAIRS" class="forbidden">
+Debug printing of data, do not set for SPEC runs.
+</flag>
+
+<flag name="DPRINT_DERIV" class="forbidden">
+This is a debug print controller, not to be used for nomral runs.
+</flag>
+
+<flag name="DPRINT_EPHI" class="forbidden">
+This is a debug print controller, not to be used for normal runs.
+</flag>
+
+<flag name="DSCALAPACK" class="forbidden">
+This is to use with SCALAPACK, not allowed.
+</flag>
+
+<flag name="DSORT_ATOM_NUMBERS" class="forbidden">
+Tells the code how to sort atoms, must not be changed for SPEC runs.
+</flag>
+
+<flag name="DSPEC_DEBUG" class="forbidden">
+Allows for SPEC debug information, not for valid runs.
+</flag>
+
+<flag name="DTRUE" class="forbidden">
+Sets the value of true, do not change.
+</flag>
+
+<flag name="D__NABCODE_H__" class="forbidden">
+Guard for nabcode.h include file, do not change.
+</flag>
+
+<flag name="D__NABTYPES_H__" class="forbidden">
+Guard for nabtypes.h include file, do not change.
+</flag>
+
+<flag name="D__NAB__" class="forbidden">
+Guard for nab.h include file, do not change.
+</flag>
+
+<flag name="D__cplusplus" class="forbidden">
+System define of C++ syntax rules needed.
+</flag>
+
+<flag name="D_regexp_h" class="forbidden">
+Guard around inline include file of defines in regexp.c file, do not 
+change.
+</flag>
+
+</flagsdescription>

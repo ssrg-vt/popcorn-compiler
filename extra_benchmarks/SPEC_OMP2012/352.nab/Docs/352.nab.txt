@@ -1,0 +1,85 @@
+                                    352.nab
+                       SPEC OMP2012 Benchmark Description
+
+Benchmark Name
+
+   352.nab
+
+   --------------------------------------------------------------------------
+
+Benchmark Author
+
+   Russ Brown et al
+
+   --------------------------------------------------------------------------
+
+Benchmark Program General Category
+
+   Molecular Modeling
+
+   --------------------------------------------------------------------------
+
+Benchmark Description
+
+   352.nab is based on Nucleic Acid Builder (NAB), which is a molecular
+   modeling application that performs the types of floating point intensive
+   calculations that occur commonly in life science computation. The
+   calculations range from relatively unstructured "molecular dynamics" to
+   relatively structured linear algebra.
+
+   --------------------------------------------------------------------------
+
+Input Description
+
+   352.nab's input consists molecules with varying numbers of atoms.
+   Most of these inputs were culled from the Brookhaven Protein Data Bank at
+   [1]http://www.rcsb.org. They were processed into the format required by
+   nab.
+
+   The input to the program is the directory to use and a random seed. The
+   directory will contain the molecular topology (from .pdb file) and a
+   molecular force field (from .prm file). The reference data set 1ea0 has
+   44794 atoms, the test data set hkrdenq has 124 atoms and the train data
+   sets aminos has 327 atoms and gcn4 has 1957 atoms.
+
+   --------------------------------------------------------------------------
+
+Output Description
+
+   The output is a report of the calculated energies at the various
+   iterations counts.
+
+   --------------------------------------------------------------------------
+
+Programming Language
+
+   ANSI C
+
+   --------------------------------------------------------------------------
+
+Known portability issues
+
+   You need an OpenMP-compliant compiler and run-time libraries.
+
+   --------------------------------------------------------------------------
+
+References
+
+     * The Case Group at Rutgers: [2]http://www.casegroup.rutgers.edu
+     * The Brookhaven Protein Data Bank: [3]http://www.rcsb.org
+     * T. Macke and D.A. Case. Modeling unusual nucleic acid structures. In
+       Molecular Modeling of Nucleic Acids, N.B. Leontes and J. SantaLucia,
+       Jr., eds. (Washington, DC: American Chemical Society, 1998), pp.
+       379-393. [4]DOI
+
+   --------------------------------------------------------------------------
+
+   Last updated: $Date: 2012-06-29 14:01:56 -0400 (Fri, 29 Jun 2012) $
+
+References
+
+   Visible links
+   1. http://www.rcsb.org/
+   2. http://www.casegroup.rutgers.edu/
+   3. http://www.rcsb.org/
+   4. http://dx.doi.org/10.1021/bk-1998-0682.ch024

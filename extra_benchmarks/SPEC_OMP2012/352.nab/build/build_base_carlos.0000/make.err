@@ -1,0 +1,4 @@
+clang-3.7: error: unknown argument: '-shared-intel'
+clang-3.7: error: language not recognized: 'SSE4.2'
+clang-3.7: warning: nabmd.c: 'linker' input unused
+specmake: *** [nabmd.o] Error 1

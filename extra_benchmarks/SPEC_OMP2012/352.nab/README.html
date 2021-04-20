@@ -1,0 +1,94 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252">
+<title>352.nab: SPEC OMP2012 Benchmark Description</title>
+<meta name="generator" content="Cloyce+VIM 6.2">
+<meta name="revision" content="$Id: 352.nab.html 381 2012-06-29 18:01:56Z BrianWhitney $">
+</head>
+
+<body>
+<div style="text-align: center">
+<h1>352.nab<br>
+SPEC OMP2012 Benchmark Description</h1>
+</div>
+ 
+<h2>Benchmark Name</h2>
+<p>352.nab</p>
+<hr>
+
+<h2>Benchmark Author</h2>
+<p>Russ Brown et al</p>
+<hr>
+
+<h2>Benchmark Program General Category</h2>
+<p>Molecular Modeling</p>
+<hr>
+ 
+<h2>Benchmark Description</h2>
+<p>352.nab is based on Nucleic Acid Builder (NAB), which is a molecular
+modeling application that performs the types of floating point intensive
+calculations that occur commonly in life science computation.  The calculations
+range from relatively unstructured "molecular dynamics" to relatively
+structured linear algebra.</p>
+
+<hr>
+
+<h2>Input Description</h2>
+<p>352.nab's input consists molecules with varying numbers of atoms.<br>
+Most of these inputs were culled from the Brookhaven Protein Data Bank at <a href="http://www.rcsb.org/">http://www.rcsb.org</a>.
+They were processed into the format required by nab.</p>
+
+<p>
+The input to the program is the directory to use and a random seed.
+The directory will contain the molecular topology (from .pdb file) and
+a molecular force field (from .prm file).
+The reference data set 
+1ea0 has 44794 atoms,
+the 
+test data set
+hkrdenq has
+124 atoms and
+the train data sets
+aminos has
+327 atoms and
+gcn4 has
+1957 atoms.
+</p>
+<hr>
+
+<h2>Output Description</h2>
+<p>
+The output is a report of the calculated energies at the
+various iterations counts.
+</p>
+
+<hr>
+
+<h2>Programming Language</h2>
+<p>ANSI C</p>
+
+<hr>
+
+<h2>Known portability issues</h2>
+<p>You need an OpenMP-compliant compiler and run-time libraries.</p>
+
+<hr>
+
+<h2>References</h2>
+<ul>
+<li>The Case Group at Rutgers: <a href="http://www.casegroup.rutgers.edu/">http://www.casegroup.rutgers.edu</a></li>
+<li>The Brookhaven Protein Data Bank: <a href="http://www.rcsb.org/">http://www.rcsb.org</a></li>
+<li>
+T. Macke and D.A. Case. Modeling unusual nucleic acid structures. In 
+Molecular Modeling of Nucleic Acids, N.B. Leontes and J. SantaLucia, 
+Jr., eds. (Washington, DC: American Chemical Society, 1998), pp. 
+379-393. 
+<a href="http://dx.doi.org/10.1021/bk-1998-0682.ch024">DOI</a>
+</li>
+</ul>
+
+<hr>
+<p>Last updated: $Date: 2012-06-29 14:01:56 -0400 (Fri, 29 Jun 2012) $</p>
+
+
+</body></html>

@@ -1,0 +1,6 @@
+rm -rf *.o  aminos.out gcn4.out
+find . \( -name \*.o -o -name '*.fppized.f*' -o -name '*.i' -o -name '*.mod' \) -print | xargs rm -rf
+rm -rf nabmd
+rm -rf nabmd.exe
+rm -rf core
+rm -rf 
