@@ -17,12 +17,12 @@
 global_info_t ALIGN_PAGE popcorn_global;
 node_info_t ALIGN_PAGE popcorn_node[MAX_POPCORN_NODES];
 
-#define DEBUG_IRREGULAR
+//#define DEBUG_IRREGULAR
 #ifdef DEBUG_IRREGULAR
 #define IRR_DEBUG( ...) fprintf(stderr, __VA_ARGS__)
 #endif
 
-#define DEBUG_CSR
+//#define DEBUG_CSR
 #ifdef DEBUG_CSR
 #define CSR_DEBUG( ...) fprintf(stderr, __VA_ARGS__)
 #endif
@@ -1395,7 +1395,7 @@ inline float time_weighted_average(float cur, float prev, bool first)
 
 #define MAX( a, b ) ((a) > (b) ? (a) : (b))
 
-static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr, int het_irregular)
+static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
 {
   bool leader, calc_csr = true;
   size_t i, max_idx;
@@ -1410,12 +1410,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr, in
   popcorn_get_page_faults(&sent, &recv);
   popcorn_global.page_faults[nid] = sent - popcorn_node[nid].page_faults;
 
-  if (!het_irregular){
-    leader = select_leader_synchronous(&popcorn_global.sync,&popcorn_global.bar,false, NULL);
-  }
-  else {
-    leader = get_global_leader(nid,gomp_thread());
-  }
+  leader = select_leader_synchronous(&popcorn_global.sync,&popcorn_global.bar,false, NULL);
 
   struct gomp_thread *thr = gomp_thread();
 
@@ -1434,8 +1429,8 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr, in
     {
       if(csr->uspf <= 100.0)
       {
-   	    IRR_DEBUG("T.%d [Node %d]> Reached max probes (uspf %f) (%s)\n",
-		    id,nid,csr->uspf, __func__);
+    IRR_DEBUG("T.%d [Node %d]> Reached max probes (uspf %f) (%s)\n",
+    id,nid,csr->uspf, __func__);
         /* It's not worth it -- use only the preferred node.  Note that we
            still need to set up the CSR for the remaining iterations in this
            work-sharing region.  Also set the global core speed rating, as
@@ -1521,13 +1516,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr, in
 
     hierarchy_leader_cleanup(&popcorn_global.sync);
   }
-  
   gomp_team_barrier_wait_nospin(&popcorn_global.bar);
-
-  /* Printing the CSR might give us some insights on the degree of irregularity */
-  
-  CSR_DEBUG("T.%d [Node %d]> CSR is now %d:%d (%s)\n",
-     id,nid,csr->core_speed_rating[0],csr->core_speed_rating[1], __func__);
 }
 
 typedef enum {
@@ -1760,20 +1749,19 @@ inline void init_statistics_het(int nid)
   popcorn_node[nid].page_faults = 0;
 }
 
-/*
-  //TODO Remove Find fast via vim: zzz
-*/
 bool hierarchy_next_hetprobe_irregular(int nid,
                              const void *ident,
                              long *start,
                              long *end)
 {
+  static int im_leading = 2;
   bool leader, ret, func_ret, waited, probe_again = false;
   struct gomp_thread *thr = gomp_thread(), *nthr;
   struct gomp_work_share *ws = thr->ts.work_share;
   struct timespec probe_end;
   workshare_csr_t *csr = NULL;
-  int used_percentage, id = thr->ts.team_id, i;
+  int used_percentage, id = thr->ts.team_id;
+  static int i;
   size_t start_id = popcorn_node[nid].ns.ts.team_id;
 
   msg_static_trip(id,nid,thr->ts.static_trip);
@@ -1804,18 +1792,18 @@ bool hierarchy_next_hetprobe_irregular(int nid,
 
     /* Add this thread's elapsed time to the workshare */
     clock_gettime(CLOCK_MONOTONIC, &probe_end);
-
     __atomic_add_fetch(&popcorn_node[nid].workshare_time,
                        ELAPSED(thr->probe_start, probe_end) / 1000,
                        MEMMODEL_ACQ_REL);
 
-    leader = get_local_leader(nid,thr);
-
+    if (im_leading == 2)
+    leader = select_leader_synchronous(&popcorn_node[nid].sync,&popcorn_node[nid].bar,
+                                       false, NULL);
     if(leader)
     {
-      IRR_DEBUG("T.%d [Node %d]> It's leading. (%s)\n",id,nid, __func__);
+      im_leading = 1;
       csr = &global_csr;
-      calc_het_probe_workshare(nid, false, csr,1);
+      calc_het_probe_workshare(nid, false, csr);
       waited = init_workshare_from_splits_irreg(nid, csr, ws,thr); 
 
       if (waited)
@@ -1834,9 +1822,8 @@ bool hierarchy_next_hetprobe_irregular(int nid,
       }
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
-    else
-    {
-      IRR_DEBUG("T.%d [Node %d]> It's not leading. (%s)\n",id,nid, __func__);
+    else {
+      im_leading = 0;
     }
     gomp_team_barrier_wait(&popcorn_node[nid].bar);
 
@@ -1865,20 +1852,23 @@ try_again:
     if (gomp_global_icv.use_pctg_hetprobe) {
 
       used_percentage = (popcorn_global.total_irr_done * 100)/popcorn_global.total_irr;
- 
       IRR_DEBUG("T.%d [Node %d]> Iters=%d/%d (%d%%) last probe was on %d%%\n",
-    		   id,nid,popcorn_global.total_irr_done,popcorn_global.total_irr,
-    		   used_percentage,popcorn_global.last_probe);
+           id,nid,popcorn_global.total_irr_done,popcorn_global.total_irr,
+           used_percentage,popcorn_global.last_probe);
 
       /* Have we reached or even passed a re-probing period? */
       if ((used_percentage-popcorn_global.last_probe)>=gomp_global_icv.irr_percentage && 
           used_percentage < 100)
-     	{
-    		  probe_again = true;
-    	}
+      {
+          probe_again = true;
+      }
     } 
 
-    leader = get_local_leader(nid,thr);
+    if (im_leading) leader = 1;
+    else leader = 0;
+    //leader = select_leader_synchronous(&popcorn_node[nid].sync,
+    //                                   &popcorn_node[nid].bar,
+    //                                  false, NULL);  
 
     /* Should we go back to a probing period? */ 
     /* TODO Future work: Set this value when user-defined or heuristic triggers. 
@@ -1887,8 +1877,6 @@ try_again:
 
       if (leader)
       {
-        IRR_DEBUG("T.%d [Node %d]> It's leading in probe_again. (%s)\n",id,nid, __func__);
-
        /*  Three cases: 
         0. The threads are stopped at the other side (This node was the absolute favorite)
         and so we must restart their leader first, and provide them with probing work on 
@@ -1897,7 +1885,7 @@ try_again:
         The alternatives are two variations, in both the other node has work too, and hence
         it will come here for more until empty.
         1. If empty (but not done), we must stop it before leaving and repeat case 0. 
-	      Future work.
+        Future work.
         2. If not empty by now, the leader will have to wait for it to refill.  
 
         In any case we must restart the statistics of the other threads, and unless the
@@ -1907,21 +1895,18 @@ try_again:
         ret = gomp_team_barrier_wait_cancel(&popcorn_global.bar_irregular);
 
         if (!ret){ 
-        	/* CASE 1/2. */
-       		if (sync_reprobing(nid,thr,ws)){
-               		popcorn_global.last_probe = used_percentage;
-       		}
+          /* CASE 1/2. */
+          if (sync_reprobing(nid,thr,ws)){
+                  popcorn_global.last_probe = used_percentage;
+          }
         }
         else { /* CASE 0. The leader at the other node was sleeping. */ 
-  		      regenerate_global_work(nid,thr,ws);
-          	popcorn_global.last_probe = used_percentage;
+            regenerate_global_work(nid,thr,ws);
+            popcorn_global.last_probe = used_percentage;
         }
         /* Restart metrics */ 
         init_statistics_het(nid);
         hierarchy_leader_cleanup(&popcorn_node[nid].sync);
-      }
-      else {
-        IRR_DEBUG("T.%d [Node %d]> It's not leading in probe_again. (%s)\n",id,nid, __func__);
       }
       gomp_team_barrier_wait(&popcorn_node[nid].bar);
       func_ret = assign_probing_work(nid,thr,ws,start,end,false);
@@ -1932,17 +1917,17 @@ try_again:
       /* They should only receive a portion of what they should be given so they come
          for more (Enabling re-probing).
       */
-    	if (leader) {
-          get_next_work_fraction(nid,ws,thr);
-          hierarchy_leader_cleanup(&popcorn_node[nid].sync);
-    	}
-    	gomp_team_barrier_wait(&popcorn_node[nid].bar);
-	    func_ret = hierarchy_next_dynamic(nid, start, end);
+      if (leader) {
+              get_next_work_fraction(nid,ws,thr);
+              hierarchy_leader_cleanup(&popcorn_node[nid].sync);
+      }
+      gomp_team_barrier_wait(&popcorn_node[nid].bar);
+      func_ret = hierarchy_next_dynamic(nid, start, end);
 
-	   /* Is this thread done too soon? */
-	   // Edge cases - TODO Future work: One done too soon.
+     /* Is this thread done too soon? */
+     // Edge cases - TODO Future work: One done too soon.
 
-    	fix_jumps(nid,start,end,thr,false);
+      fix_jumps(nid,start,end,thr,false);
     } 
   }
 
@@ -1987,7 +1972,7 @@ bool hierarchy_next_hetprobe(int nid,
 #else
       csr = &global_csr;
 #endif
-      calc_het_probe_workshare(nid, false, csr,0);
+      calc_het_probe_workshare(nid, false, csr);
       init_workshare_from_splits(nid, csr, ws);
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
@@ -2046,7 +2031,7 @@ bool hierarchy_next_hetprobe_ull(int nid,
 #else
       csr = &global_csr;
 #endif
-      calc_het_probe_workshare(nid, true, csr,0);
+      calc_het_probe_workshare(nid, true, csr);
       init_workshare_from_splits_ull(nid, csr, ws);
       hierarchy_leader_cleanup(&popcorn_node[nid].sync);
     }
