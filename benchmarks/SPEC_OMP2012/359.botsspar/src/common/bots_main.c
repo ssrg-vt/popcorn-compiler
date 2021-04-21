@@ -83,6 +83,8 @@ int    bots_number_of_tasks = 0;
  * Application dependent info
  */
 
+#define BOTS_APP_SELF_TIMING
+
 #ifndef BOTS_APP_NAME
 #error "Application name must be defined (#define BOTS_APP_NAME)"
 #endif
@@ -508,7 +510,8 @@ main(int argc, char* argv[])
       bots_sequential_flag = 1;
       KERNEL_SEQ_INIT;
 #ifdef BOTS_APP_SELF_TIMING
-      bots_time_sequential = KERNEL_SEQ_CALL;
+      KERNEL_SEQ_CALL;
+      // bots_time_sequential = KERNEL_SEQ_CALL; Compilation issues
 #else
       bots_t_start = bots_usecs();
       KERNEL_SEQ_CALL;
@@ -521,7 +524,8 @@ main(int argc, char* argv[])
 
    KERNEL_INIT;
 #ifdef BOTS_APP_SELF_TIMING
-   bots_time_program = KERNEL_CALL;
+   KERNEL_CALL;
+   // bots_time_sequential = KERNEL_CALL; Compilation issues
 #else
    bots_t_start = bots_usecs();
    KERNEL_CALL;

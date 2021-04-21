@@ -217,10 +217,13 @@ void sparselu_par_call(float **BENCH)
 {
    int ii, jj, kk;
 
-   bots_message("Computing SparseLU Factorization (%dx%d matrix with %dx%d blocks) ",
-           bots_arg_size,bots_arg_size,bots_arg_size_1,bots_arg_size_1);
-#pragma omp parallel
-#pragma omp single nowait
+   //bots_message("Computing SparseLU Factorization (%dx%d matrix with %dx%d blocks) ",
+     //      bots_arg_size,bots_arg_size,bots_arg_size_1,bots_arg_size_1);
+
+   printf("Computing SparseLU Factorization (%dx%d matrix with %dx%d blocks) ",
+       bots_arg_size,bots_arg_size,bots_arg_size_1,bots_arg_size_1);
+
+#pragma omp for schedule(runtime)
    for (kk=0; kk<bots_arg_size; kk++) 
    {
       lu0(BENCH[kk*bots_arg_size+kk]);
@@ -234,7 +237,6 @@ void sparselu_par_call(float **BENCH)
          {
             bdiv (BENCH[kk*bots_arg_size+kk], BENCH[ii*bots_arg_size+kk]);
          }
-
       for (ii=kk+1; ii<bots_arg_size; ii++)
          if (BENCH[ii*bots_arg_size+kk] != NULL)
             for (jj=kk+1; jj<bots_arg_size; jj++)
@@ -243,10 +245,19 @@ void sparselu_par_call(float **BENCH)
                      if (BENCH[ii*bots_arg_size+jj]==NULL) BENCH[ii*bots_arg_size+jj] = allocate_clean_block();
                      bmod(BENCH[ii*bots_arg_size+kk], BENCH[kk*bots_arg_size+jj], BENCH[ii*bots_arg_size+jj]);
                }
+      if (kk == bots_arg_size - 1){
+   	bots_message(" completed!\n");
+	#ifdef KERNEL_CHECK
+	/* spec, for call to check routine    if (bots_check_flag) { */
+     	bots_result = KERNEL_CHECK;
+	/* spec  }  */
+	#endif
+   	bots_print_results();
+	exit(0);
+      } 
    }
    bots_message(" completed!\n");
 }
-
 
 void sparselu_seq_call(float **BENCH)
 {
