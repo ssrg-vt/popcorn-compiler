@@ -155,9 +155,9 @@ CSTR_T *mergeAlignment(BSTR_T *B, int maxReports, int minSeparation) {
 #endif
 
   /* Everything else is done on a per-thread basis in this parallel region. */
-  
+printf("Starting omp region at line 158 (%s)\n",__func__);  
 #if defined(SPEC_OMP)
-#pragma omp parallel \
+#pragma omp for schedule(runtime) \
   firstprivate(maxReports, minSeparation) \
   private(tempScores, tempStartsI, tempStartsJ, tempEndsI, tempEndsJ, \
           tempSeqsI, tempSeqsJ, sequences, threadNum, numThreads, numReports, \

@@ -24,6 +24,7 @@
 
 double getSeconds( void )
 {
+#define SPEC
 #if !defined(SPEC)
 
 #ifdef HR_TIME

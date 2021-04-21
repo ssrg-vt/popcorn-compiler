@@ -888,9 +888,9 @@ int nbond(int *lpears, int *upears, int **pearlist, int N14,
        */
 
 #if defined(SPEC_OMP) || (!defined(SPEC) && defined(OPENMP))
-#pragma omp for schedule(runtime)
+#pragma omp for schedule(static)
 #endif
-      for (i = 0; i < prm->Natom - 1; i++) {
+      for (i = 0; i < (prm->Natom - 1); i++) { 
 
 #if defined(MPI) || defined(SCALAPACK)
          if (!myroc(i, blocksize, numthreads, threadnum))
@@ -1736,7 +1736,7 @@ REAL_T egb(INT_T * lpears, INT_T * upears, INT_T ** pearlist,
        */
 
 #if defined(SPEC_OMP) || (!defined(SPEC) && defined(OPENMP))
-#pragma omp for schedule(runtime)
+#pragma omp for schedule(static)
 #endif
       for (i = 0; i < prm->Natom; i++) {
 
@@ -1996,7 +1996,7 @@ REAL_T egb(INT_T * lpears, INT_T * upears, INT_T ** pearlist,
        */
 
 #if defined(SPEC_OMP) || (!defined(SPEC) && defined(OPENMP))
-#pragma omp for schedule(runtime)
+#pragma omp for schedule(static)
 #endif
       for (i = 0; i < prm->Natom; i++) {
 
@@ -2629,7 +2629,8 @@ REAL_T egb(INT_T * lpears, INT_T * upears, INT_T ** pearlist,
     */
 
    if (maxthreads > 1) {
-#pragma omp parallel for private(i, j) schedule(runtime)
+     
+#pragma omp parallel for private(i, j) schedule(static)
      for (j = 0; j < prm->Natom; j++) {
        for (i = 1; i < numcopies; i++) {
 	 sumdeijda[j] += sumdeijda[prm->Natom * i + j];
@@ -2733,7 +2734,7 @@ REAL_T egb(INT_T * lpears, INT_T * upears, INT_T ** pearlist,
        */
 
 #if defined(SPEC_OMP) || (!defined(SPEC) && defined(OPENMP))
-#pragma omp for schedule(runtime)
+#pragma omp for schedule(static)
 #endif
       for (i = 0; i < prm->Natom; i++) {
 
@@ -3681,7 +3682,7 @@ REAL_T mme34(REAL_T * x, REAL_T * f, int *iter)
     */
 
    if (maxthreads > 1) {
-#pragma omp parallel for private(i, j) schedule(runtime)
+#pragma omp parallel for private(i, j) schedule(static)
      for (j = 0; j < goff; j++) {
        for (i = 1; i < maxthreads; i++) {
 	 f[j] += grad[goff * i + j];

@@ -782,7 +782,7 @@ void checkpoint(char *fname, int natom, REAL_T * x, int iter)
  * are immediately above.
  */
 
-#include "eff.c"
+#include "eff.h"
 #define DOCK
 #if !defined(DOCK) && !defined(NOPERFLIB)
 #  include "sff2.c"

@@ -1,0 +1,86 @@
+                                  359.botsspar
+                    SPEC OMP2012 Benchmark Description File
+
+   --------------------------------------------------------------------------
+
+Benchmark Name
+
+   359.botsspar
+
+   --------------------------------------------------------------------------
+
+Benchmark Author
+
+   Nanos Group, Barcelona Supercomputing Centre
+
+   Contact: Alex Duran (alex@bsc.es)
+
+   --------------------------------------------------------------------------
+
+Benchmark Program General Category
+
+   Sparse LU
+
+   --------------------------------------------------------------------------
+
+Benchmark Description
+
+   An LU matrix factorization over sparse matrices is computed. A first level
+   matrix is composed by pointers to small submatrices that may not be
+   allocated. Due to the sparseness of the matrix, a lot of imbalance exists.
+   Matrix size and submatrix size can be set at execution time. While a
+   dynamic schedule can reduce the imbalance, a solution with task-based
+   parallelism seems to obtain better results. In each of the sparseLU
+   phases, a task is created for each block of the matrix that is not empty.
+
+   --------------------------------------------------------------------------
+
+Input Description
+
+   The program takes two input size n and m from the command line and
+   generates a sparse matrix with those sizes. The reference data set is 120
+   and 501, the train data set is 100 and 25, and the test data set is 50 and
+   25.
+
+  Benchmarking
+
+   For benchmarking purposes, where the SPEC tools are used to validate the
+   solution, the computed results are only stored.
+
+   --------------------------------------------------------------------------
+
+Output Description
+
+   A portion of the solved matrix is produced.
+
+   --------------------------------------------------------------------------
+
+Programming Language
+
+   ANSI C
+
+   --------------------------------------------------------------------------
+
+Known portability issues
+
+   None
+
+   --------------------------------------------------------------------------
+
+Reference
+
+   [1]A. Duran, X. Teruel, R. Ferrer, X. Martorell and E. Ayguad*: Barcelona
+   OpenMP Tasks Suite: A Set of Benchmarks Targeting the Exploitation of Task
+   Parallelism in OpenMP , in: Proceedings of ICPP-2009, The 38th
+   International Conference on Parallel Processing, Copyright 2009 The
+   Institute of Electrical and Electronics Engineers, Inc. [2]DOI
+
+   --------------------------------------------------------------------------
+
+   Last Updated: March 15, 2012
+
+References
+
+   Visible links
+   1. BOTS_article.pdf
+   2. http://dx.doi.org/10.1109/ICPP.2009.64

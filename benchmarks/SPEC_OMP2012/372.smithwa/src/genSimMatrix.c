@@ -100,7 +100,6 @@ SIMMATRIX_T *genSimMatrix(int exact, int similar, int dissimilar,
   };
 
   /* Allocate a similarity matrix structure for return. */
-
   if ( (simMatrix = (SIMMATRIX_T *)malloc( sizeof(SIMMATRIX_T) ) ) == NULL ) {
     printf("genSimMatrix: cannot allocate simMatrix\n");
 #ifdef MPI

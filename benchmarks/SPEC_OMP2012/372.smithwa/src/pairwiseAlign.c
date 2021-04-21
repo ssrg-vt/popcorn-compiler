@@ -391,7 +391,8 @@ ASTR_T *pairwiseAlign(SEQDATA_T *seqData, SIMMATRIX_T *simMatrix,
    */
 
 #if defined(SPEC_OMP)
-#pragma omp parallel \
+printf("Starting omp region at line 394 (%s)\n",__func__);  
+#pragma omp for schedule(runtime) \
   firstprivate(llMinScore, maxReports, matchLimit, minSeparation) \
   private (i, j, k, r, m, n, sortReports, report, worst, index, best, \
            goodEndsI, goodEndsJ, gapFirst, gapExtend, iBeg, iEnd, jBeg, jEnd, \
