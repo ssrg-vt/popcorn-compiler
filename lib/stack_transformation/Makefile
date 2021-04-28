@@ -14,7 +14,7 @@ SRC   := src
 UTILS := utils
 
 CC     := $(POPCORN)/bin/clang
-CFLAGS := -g -Wall -D_GNU_SOURCE -popcorn-alignment -Wno-unused-function
+CFLAGS := -g -Wall -fPIC -DPIC -D_GNU_SOURCE -popcorn-alignment -Wno-unused-function
 
 AR  := ar
 LOC := -I$(INC) -I$(COMMON)/include

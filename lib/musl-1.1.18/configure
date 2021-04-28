@@ -562,8 +562,10 @@ fi
 # by default. If so, we don't need to compile separate object files
 # for libc.a and libc.so.
 if trycppif __PIC__ "$CFLAGS_C99FSE $CPPFLAGS $CFLAGS" ; then
+echo DEFAULT IS WITH PIC
 pic_default=yes
 else
+echo DEFAULT IS NOT WITH PIC
 pic_default=no
 fi
 

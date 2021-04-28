@@ -40,7 +40,7 @@ class Linker:
 					# FIXME: We rely on this super coarse-grain alignment
 					# to have the sections start at the same offset on each
 					# architecture -> there is probably a more intelligent way
-					output_buffer.append(section + "\t: ALIGN(0x100000)\n")
+					output_buffer.append(section + "\t: ALIGN(0x1000)\n")
 					output_buffer.append("{\n")
 
 					# FIXME: sometimes the linker fills the start of some
