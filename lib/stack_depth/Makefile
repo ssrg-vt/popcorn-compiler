@@ -4,7 +4,7 @@ BIN   := libstack-depth.a
 BUILD := build
 
 CXX      := g++
-CXXFLAGS := -O3 -Wall -std=c++11
+CXXFLAGS := -O3 -fPIC -DPIC -Wall -std=c++11
 
 HDR := $(shell ls *.h)
 SRC := $(shell ls *.cpp)

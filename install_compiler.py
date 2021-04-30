@@ -487,7 +487,7 @@ def install_musl(base_path, install_path, target, num_threads):
                      '--enable-wrapper=all',
                      '--disable-shared',
                      'CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-linux-gnu -popcorn-libc"' \
+                     'CFLAGS="-target {}-linux-gnu -popcorn-libc -fPIC -DPIC"' \
                      .format(target),
                      'KERVER="{}"'.format(kernel_arg)])
     print(args)
@@ -825,7 +825,7 @@ def install_libelf(base_path, install_path, target, num_threads):
     print("Configuring libelf ({})...".format(target))
     compiler = os.path.join(target_install_path, 'bin', 'musl-clang')
     args = ' '.join(['CC={}'.format(compiler),
-                     'CFLAGS="-O3 -popcorn-alignment"',
+                     'CFLAGS="-O3 -fPIC -DPIC -popcorn-alignment"',
                      'LDFLAGS="-static"',
                      './configure',
                      '--build={}-linux-gnu'.format(platform.machine()),
@@ -875,7 +875,7 @@ def install_libopenpop(base_path, install_path, target, first_target, num_thread
     lib_dir = os.path.join(target_install_path, 'lib')
 
     args = ' '.join(['CC={}/bin/clang'.format(install_path),
-                     'CFLAGS="-target {}-popcorn-linux-gnu -O2 -g -Wall -fno-common ' \
+                     'CFLAGS="-target {}-popcorn-linux-gnu -fPIC -O2 -g -Wall -fno-common ' \
                              '-nostdinc -isystem {} ' \
                              '-popcorn-metadata ' \
                              '-popcorn-target={}-linux-gnu"' \

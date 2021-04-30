@@ -5,7 +5,7 @@ POPCORN_X86     := $(POPCORN)/x86_64
 
 # Although we disable IR optimizations, use -O3 to get backend optimizations
 CC         := $(POPCORN)/bin/clang
-CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -c -g -popcorn-alignment \
+CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -fPIC -c -g -popcorn-alignment \
               -Wno-unused-variable -D_GNU_SOURCE -mllvm -no-sm-warn
 OPT_LEVEL  := -O3
 ifneq ($(findstring env_select,$(type)),)
