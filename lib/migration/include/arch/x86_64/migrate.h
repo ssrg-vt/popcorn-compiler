@@ -71,14 +71,14 @@
       } \
       else \
       { \
-        asm volatile ("movq $1f, %0;" \
+        asm volatile( "leaq .Lmigrate(%%rip), %%rdi;" \
                       "movl %2, %%edi;" \
                       "movq %3, %%rsi;" \
                       "movq %4, %%rsp;" \
                       "movq %5, %%rbp;" \
                       "movl %6, %%eax;" \
                       "syscall;" \
-                      "1: movl %%eax, %1;" \
+		      ".Lmigrate: movl %%eax, %1;" \
                       : /* Outputs */ \
                       "=m"(data.post_syscall), "=g"(err) \
                       : /* Inputs */ \

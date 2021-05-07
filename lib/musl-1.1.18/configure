@@ -568,7 +568,7 @@ else
 echo DEFAULT IS NOT WITH PIC
 pic_default=no
 fi
-
+pic_default=yes
 # Reduce space lost to padding for alignment purposes by sorting data
 # objects according to their alignment reqirements. This approximates
 # optimal packing.
