@@ -41,3 +41,17 @@ Also the libmigrate code is on its way to being fully patched so that it uses
 position independent solutions within the inline ASM. One patch has been added
 and another one is required.
 
+
+-- 5/10/2021
+
+Replaced crt1.o with rcrt1.o (again) only this time figured out what's causing the crash.
+The rcrt1.o is initialization code for static PIE's that must patch the various sections
+in the dynamic segment which is writable in old binaries and read-only in newer ELF binaries--
+It should be read-only for security purposes, but we have to mark it writable so that rcrt1.o
+can perform relocations. We must modify the code in rcrt1.o so that it mprotect()'s the segment
+as read-only after it performs relocations.
+
+LDFLAGS: -Bsymbolic -shared
+ [OR]
+LDFLAGS: -static -pie -no-dynamic-linker
+
