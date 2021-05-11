@@ -1,4 +1,6 @@
+#include <elf.h>
 #include <stddef.h>
+#include <sys/mman.h>
 #include "dynlink.h"
 
 #ifndef START
@@ -140,8 +142,38 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 		size_t *rel_addr = (void *)(base + rel[0]);
 		*rel_addr = base + rel[2];
 	}
-#endif
+#if POPCORN_ASLR
+	/*
+	 * If popcorn ASLR is enabled, then this code will serve to mark
+	 * PT_LOAD[2] as read-only, because we require it is writable to
+	 * fixup certain relocations up until this point in the rcrt1.o
+	 * initialization code. For security we mark it to read-only
+	 * after we are done with the relocations above.
+	 */
+	int j;
+	uint8_t *mem;
+	mem  = (uint8_t *)base;
+	Elf64_Ehdr *ehdr = (Elf64_Ehdr *)mem;
+	Elf64_Phdr *phdr = (Elf64_Phdr *)&mem[ehdr->e_phoff];
 
+	for (j = 0; j < ehdr->e_phnum; j++) {
+		if (phdr[j].p_type == PT_LOAD && phdr[j].p_flags == (PF_R|PF_X)) {
+			if (phdr[j + 1].p_type == PT_LOAD &&
+			    phdr[j + 1].p_flags == PF_R) {
+#if __x86_64__
+				unsigned long scn = 10;
+				int prot = PROT_READ;
+				size_t len = phdr[i + 1].p_memsz + 4095 & ~4095;
+				unsigned long addr = phdr[i + 1].p_vaddr & ~4095;
+
+				__asm__ ("syscall" : "=D"(addr), "=S"(len), "=d"(prot), "=a"(scn));
+#endif
+				break;	
+			}
+		}
+	}
+#endif
+#endif
 	stage2_func dls2;
 	GETFUNCSYM(&dls2, __dls2, base+dyn[DT_PLTGOT]);
 	dls2((void *)base, sp);
