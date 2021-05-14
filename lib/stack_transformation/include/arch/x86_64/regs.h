@@ -105,7 +105,7 @@ struct regset_x86_64
 #define GET_REG32( var, reg ) GET_REG( var, reg, "l" )
 #define GET_REG64( var, reg ) GET_REG( var, reg, "q" )
 
-#define SET_REG( var, reg, size ) asm volatile("mov"size" %0, %%"reg : : "m" (var) : reg )
+#define SET_REGregs_src( var, reg, size ) asm volatile("mov"size" %0, %%"reg : : "m" (var) : reg )
 #define SET_REG8( var, reg ) SET_REG( var, reg, "b" )
 #define SET_REG16( var, reg ) SET_REG( var, reg, "s" )
 #define SET_REG32( var, reg ) SET_REG( var, reg, "l" )
@@ -147,10 +147,17 @@ struct regset_x86_64
 #define SET_R15( var ) SET_REG64( var, "r15" )
 
 /*
- * The instruction pointer is a little weird because you can't read it
- * directly.  The assembler replaces "$." with the address of the instruction.
- */
+ * NOTE: This version of GET_RIP is not suitable for creating
+ * PIE binaries, because it creates a sign-extension relocation
+ * that isn't compatible. Since we need PIE for ASLR we must
+ * use a PIC compatible version of the macro.
+ *
 #define GET_RIP( var ) asm volatile("movq $., %0" : "=g" (var) )
+ *
+ * The following version is suitable for linking into a PIE
+ * binary
+ */
+#define GET_RIP(in) asm volatile("leaq 0x0(%%rip), %0" : "=g"(in))
 
 /*
  * The only way to set the IP is through control flow operations.

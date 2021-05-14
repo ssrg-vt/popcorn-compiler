@@ -7,7 +7,7 @@
 ###############################################################################
 
 # FIXME directory of Popcorn compiler installation
-POPCORN := /home/elfmaster/build.4-23
+POPCORN := /home/elfmaster/build-vanilla
 
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := $(shell dirname \
@@ -107,7 +107,7 @@ X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
 #                                 Recipes                                     #
 ###############################################################################
 
-all: post_process patch_code
+all: patch_code post_process
 ir: $(IR)
 
 check: $(ARM64_ALIGNED) $(X86_64_ALIGNED)
