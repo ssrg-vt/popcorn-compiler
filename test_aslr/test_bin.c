@@ -14,6 +14,6 @@ main (int argc, char *argv[])
   printf ("remote: tid = %d\n", gettid());
   
   migrate(0, NULL, NULL);
-
+  pause();
   return 0;
 }

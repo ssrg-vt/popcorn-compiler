@@ -7,7 +7,7 @@
 ###############################################################################
 
 # FIXME directory of Popcorn compiler installation
-POPCORN := /home/elfmaster/build-vanilla
+POPCORN := /home/elfmaster/build.4-23
 
 # FIXME directory of libgcc & libgcc_eh for aarch64 compiler
 ARM64_LIBGCC := $(shell dirname \
@@ -33,9 +33,9 @@ HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
 IR := $(SRC:.c=.ll)
 
 # Linker
-LD      := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-ld
-ARM64_LD := $(POPCORN)/bin/aarch64-popcorn-linux-gnu-ld
-LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -no-dynamic-linker -static -pie
+LD      := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-ld.gold
+ARM64_LD := $(POPCORN)/bin/aarch64-popcorn-linux-gnu-ld.gold
+LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -shared -Bsymbolic
 LIBS    := /lib/rcrt1.o \
            /lib/libc.a \
            /lib/libmigrate.a \

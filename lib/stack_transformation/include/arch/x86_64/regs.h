@@ -155,10 +155,14 @@ struct regset_x86_64
 #define GET_RIP( var ) asm volatile("movq $., %0" : "=g" (var) )
  *
  * The following version is suitable for linking into a PIE
- * binary
+ * binary, but is causing a strange compilation error
  */
-#define GET_RIP(in) asm volatile("leaq 0x0(%%rip), %0" : "=g"(in))
-
+//#define GET_RIP(in) asm volatile("leaq (%%rip), %0" : "=g"(in))
+ /* For now we use this:
+  */
+#define GET_RIP(in) asm volatile("call get_rip          \n" \
+                                 "get_rip:              \n" \
+                                 "pop %0                \n" : "=g"(in));
 /*
  * The only way to set the IP is through control flow operations.
  */

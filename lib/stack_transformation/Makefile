@@ -5,7 +5,8 @@
 VER_MAJ := 0
 VER_MIN := 8
 
-POPCORN := /home/elfmaster/build-vanilla
+#POPCORN := /usr/local/popcorn
+POPCORN := /home/elfmaster/build.4-23
 COMMON  := $(shell readlink -f ../../common)
 
 BUILD := build

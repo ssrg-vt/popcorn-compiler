@@ -9,6 +9,8 @@
 #include <sys/mman.h>
 #include <elf.h>
 
+#define ELF_PAGEALIGN(_v, _a) (((_v) + _a - 1) & ~(_a - 1))
+
 int main(int argc, char **argv)
 {
 	uint8_t *mem;
@@ -36,13 +38,28 @@ int main(int argc, char **argv)
 		perror("mmap");
 		exit(EXIT_FAILURE);
 	}
+	int count = 0;
+	uint64_t last_memsz, last_vaddr, last_offset;
 	ehdr = (Elf64_Ehdr *)mem;
 	phdr = (Elf64_Phdr *)&mem[ehdr->e_phoff];
 	for (i = 0; i < ehdr->e_phnum; i++) {
-		if (phdr->p_type == PT_LOAD) {
-			if (phdr->p_flags == PF_R)
-				phdr->p_flags |= PF_W;
+		if (phdr->p_type == PT_LOAD && count == 0) {
+			phdr->p_offset = 0;
+			phdr->p_vaddr = phdr->p_paddr = 0;
+			last_memsz = phdr->p_memsz;
+			last_vaddr = phdr->p_vaddr;
+			last_offset = phdr->p_offset;
+			count++;
+		} else if (phdr->p_type == PT_LOAD) {
+			phdr->p_offset = ELF_PAGEALIGN(last_offset + last_memsz, 0x1000);
+			printf("Set p_offset: %#lx\n", phdr->p_offset);
+			phdr->p_vaddr = phdr->p_paddr = phdr->p_offset;
+			last_memsz = phdr->p_memsz;
+			last_offset = phdr->p_offset;
+			last_vaddr = phdr->p_vaddr;
 		}
+		if (phdr->p_type == PT_LOAD && (phdr->p_flags & PF_R))
+			phdr->p_flags |= PF_W;
 		phdr++;
 	}
 
