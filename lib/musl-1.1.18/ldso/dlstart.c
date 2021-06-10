@@ -108,9 +108,36 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 		size_t phnum = aux[AT_PHNUM];
 		size_t phentsize = aux[AT_PHENT];
 		Phdr *ph = (void *)aux[AT_PHDR];
+		int c = 0;
+		int interp_exists = 0;
+		int popcorn_aslr = 0;
+		size_t first_load_addr;
+		/*
+		 * For our somewhat obscure purposes, and since we
+		 * can't yet get the initial ELF hdr, we can deduce
+		 * that this is a "Popcorn PIE" binary if it has no
+		 * PT_INTERP, a base PT_LOAD address greater than 0,
+		 * and a PT_DYNAMIC segment.
+		 */
+		for (i=0; i < phnum; i++) {
+			if (ph[i].p_type == PT_LOAD && c == 0) {
+				first_load_addr = ph[i].p_vaddr;
+				c++;
+			} else if (ph[i].p_type == PT_INTERP) {
+				interp_exists = 1;
+			} else if (ph[i].p_type == PT_DYNAMIC) {
+				if (first_load_addr > 0 && interp_exists == 0) {
+					popcorn_aslr = 1;
+				}
+			}
+		}
 		for (i=phnum; i--; ph = (void *)((char *)ph + phentsize)) {
 			if (ph->p_type == PT_DYNAMIC) {
-				base = (size_t)dynv - ph->p_vaddr;
+				if (popcorn_aslr > 0) {
+					base = (size_t)dynv - (ph->p_vaddr - first_load_addr);
+				} else {
+					base = (size_t)dynv - ph->p_vaddr;
+				}
 				break;
 			}
 		}

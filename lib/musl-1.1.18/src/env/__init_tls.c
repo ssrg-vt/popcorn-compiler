@@ -77,15 +77,46 @@ extern const size_t _DYNAMIC[];
 static void static_init_tls(size_t *aux)
 {
 	unsigned char *p;
-	size_t n;
+	size_t n, i, c;
+	size_t phnum = aux[AT_PHNUM];
 	Phdr *phdr, *tls_phdr=0;
 	size_t base = 0;
+	size_t first_load_vaddr = 0;
 	void *mem;
-
+	int nonzero_base = 0;
+	int popcorn_aslr = 0;
+	int interp_exists = 0;
+	/*
+	 * Is this a popcorn PIE binary? We check to see if it's an ET_DYN that
+	 * has a base address greater than 0, with no PT_INTERP segment.  In
+	 * the future we could add a PT_NOTE entry that tells us instead. Or
+	 * better yet patch the gold linker to create our PIE binaries
+	 * correctly :)
+	 */
+	for (i = 0, c = 0, phdr = (void *)aux[AT_PHDR]; i < phnum; i++) {
+		if (phdr[i].p_type == PT_LOAD && c == 0) {
+			first_load_vaddr = phdr[i].p_vaddr;
+			if (phdr[i].p_vaddr > 0) {
+				nonzero_base = 1;
+			}
+			c++;
+		} else if (phdr[i].p_type == PT_INTERP) {
+			interp_exists = 1;
+		} else if (phdr[i].p_type == PT_DYNAMIC) {
+			if (nonzero_base > 0 && interp_exists == 0) {
+				popcorn_aslr = 1;
+			}
+		}
+	}
 	for (p=(void *)aux[AT_PHDR],n=aux[AT_PHNUM]; n; n--,p+=aux[AT_PHENT]) {
 		phdr = (void *)p;
-		if (phdr->p_type == PT_PHDR)
-			base = aux[AT_PHDR] - phdr->p_vaddr;
+		if (phdr->p_type == PT_PHDR) {
+			if (popcorn_aslr > 0) {
+				base = aux[AT_PHDR] & ~4095;
+			} else {
+				base = aux[AT_PHDR] - phdr->p_vaddr;
+			}
+		}
 		if (phdr->p_type == PT_DYNAMIC && _DYNAMIC)
 			base = (size_t)_DYNAMIC - phdr->p_vaddr;
 		if (phdr->p_type == PT_TLS)
@@ -93,7 +124,12 @@ static void static_init_tls(size_t *aux)
 	}
 
 	if (tls_phdr) {
-		main_tls.image = (void *)(base + tls_phdr->p_vaddr);
+		if (popcorn_aslr > 0) {
+			main_tls.image =
+			    (void *)(base + (tls_phdr->p_vaddr - first_load_vaddr));
+		} else {
+			main_tls.image = (void *)(base + tls_phdr->p_vaddr);
+		}
 		main_tls.len = tls_phdr->p_filesz;
 		main_tls.size = tls_phdr->p_memsz;
 		main_tls.align = tls_phdr->p_align;

@@ -117,3 +117,4 @@ modification approach as outlined in my paper if we need to.
 Paper here: https://www.leviathansecurity.com/blog/aslr-protection-for-statically-linked-executables
 
 
+
