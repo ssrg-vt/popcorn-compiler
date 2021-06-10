@@ -97,6 +97,7 @@ void __st_userspace_ctor(void)
     return;
   }
 
+  printf("BOUNDS.high: %p\n", bounds.high);
   /* Prepare libELF. */
   if(elf_version(EV_CURRENT) == EV_NONE)
   {

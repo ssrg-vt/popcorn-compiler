@@ -16,9 +16,7 @@ int main(int argc, char **argv)
 	uint8_t *mem;
 	struct stat st;
 	int fd;
-	Elf64_Ehdr *ehdr;
-	Elf64_Phdr *phdr;
-	int i;
+	int i, j;
 
 	if (argc < 2) {
 		fprintf(stderr, "Usage: %s <elfbin>\n", argv[0]);
@@ -38,31 +36,78 @@ int main(int argc, char **argv)
 		perror("mmap");
 		exit(EXIT_FAILURE);
 	}
+
+	Elf64_Dyn *dyn = NULL;
+	Elf64_Phdr *phdr;
+	Elf64_Shdr *shdr;
+	Elf64_Ehdr *ehdr;
+
 	int count = 0;
-	uint64_t last_memsz, last_vaddr, last_offset;
+	size_t dsize;
+	uint64_t base;
 	ehdr = (Elf64_Ehdr *)mem;
 	phdr = (Elf64_Phdr *)&mem[ehdr->e_phoff];
+	shdr = (Elf64_Shdr *)&mem[ehdr->e_shoff];
+
 	for (i = 0; i < ehdr->e_phnum; i++) {
 		if (phdr->p_type == PT_LOAD && count == 0) {
-			phdr->p_offset = 0;
-			phdr->p_vaddr = phdr->p_paddr = 0;
-			last_memsz = phdr->p_memsz;
-			last_vaddr = phdr->p_vaddr;
-			last_offset = phdr->p_offset;
+			printf("Base: %#lx\n", phdr->p_vaddr);
+			base = phdr->p_vaddr;
 			count++;
-		} else if (phdr->p_type == PT_LOAD) {
-			phdr->p_offset = ELF_PAGEALIGN(last_offset + last_memsz, 0x1000);
-			printf("Set p_offset: %#lx\n", phdr->p_offset);
-			phdr->p_vaddr = phdr->p_paddr = phdr->p_offset;
-			last_memsz = phdr->p_memsz;
-			last_offset = phdr->p_offset;
-			last_vaddr = phdr->p_vaddr;
 		}
-		if (phdr->p_type == PT_LOAD && (phdr->p_flags & PF_R))
-			phdr->p_flags |= PF_W;
+		if (phdr->p_type == PT_DYNAMIC) {
+			dyn = (Elf64_Dyn *)&mem[phdr->p_offset];
+			dsize = phdr->p_filesz;
+			break;
+		}
 		phdr++;
 	}
-
+	for (i = 0; i < dsize / sizeof(Elf64_Dyn); i++) {
+		switch(dyn[i].d_tag) {
+		case DT_PLTGOT:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_RELA:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_SYMTAB:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_STRTAB:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_GNU_HASH:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_INIT:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_FINI:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_INIT_ARRAY:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_FINI_ARRAY:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		}
+	}
+	char *StringTable = (char *)&mem[shdr[ehdr->e_shstrndx].sh_offset];
+	Elf64_Rela *rela;
+	for (i = 0; i < ehdr->e_shnum; i++) {
+		if (strcmp(&StringTable[shdr[i].sh_name], ".rela.dyn") != 0)
+			continue;
+		printf("Found .rela.dyn section\n");
+		printf("Patching relocation entries with updated r_offset's\n");
+		rela = (Elf64_Rela *)&mem[shdr[i].sh_offset];
+		for (j = 0; j < shdr[i].sh_size / shdr[i].sh_entsize; j++) {
+			printf("Changing %#lx to %#lx\n", rela[j].r_offset,
+			    rela[j].r_offset - base);
+			rela[j].r_offset -= base;
+			rela[j].r_addend -= base;
+		}
+	}
 	msync(mem, st.st_size, MS_SYNC);
 	munmap(mem, st.st_size);
 	exit(EXIT_SUCCESS);
