@@ -102,6 +102,8 @@ int main(int argc, char **argv)
 		printf("Patching relocation entries with updated r_offset's\n");
 		rela = (Elf64_Rela *)&mem[shdr[i].sh_offset];
 		for (j = 0; j < shdr[i].sh_size / shdr[i].sh_entsize; j++) {
+			if (ELF64_R_TYPE(rela[j].r_info) == R_X86_64_DTPMOD64)
+				continue;
 			printf("Changing %#lx to %#lx\n", rela[j].r_offset,
 			    rela[j].r_offset - base);
 			rela[j].r_offset -= base;
