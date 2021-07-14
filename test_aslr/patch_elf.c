@@ -91,6 +91,12 @@ int main(int argc, char **argv)
 		case DT_FINI_ARRAY:
 			dyn[i].d_un.d_ptr -= base;
 			break;
+		case DT_TLSDESC_PLT:
+			dyn[i].d_un.d_ptr -= base;
+			break;
+		case DT_TLSDESC_GOT:
+			dyn[i].d_un.d_ptr -= base;
+			break;
 		}
 	}
 	char *StringTable = (char *)&mem[shdr[ehdr->e_shstrndx].sh_offset];
@@ -102,8 +108,16 @@ int main(int argc, char **argv)
 		printf("Patching relocation entries with updated r_offset's\n");
 		rela = (Elf64_Rela *)&mem[shdr[i].sh_offset];
 		for (j = 0; j < shdr[i].sh_size / shdr[i].sh_entsize; j++) {
-			if (ELF64_R_TYPE(rela[j].r_info) == R_X86_64_DTPMOD64)
-				continue;
+			if (ehdr->e_machine == EM_X86_64) {
+				if (ELF64_R_TYPE(rela[j].r_info) == R_X86_64_DTPMOD64)
+					continue;
+			} else if (ehdr->e_machine == EM_AARCH64) {
+				if (ELF64_R_TYPE(rela[j].r_info) == R_AARCH64_TLSDESC) {
+					rela[j].r_offset -= base;
+					rela[j].r_addend -= base;
+					continue;
+				}
+			}
 			printf("Changing %#lx to %#lx\n", rela[j].r_offset,
 			    rela[j].r_offset - base);
 			rela[j].r_offset -= base;
