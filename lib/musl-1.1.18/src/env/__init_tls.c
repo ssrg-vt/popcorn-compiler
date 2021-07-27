@@ -30,7 +30,7 @@ static struct builtin_tls {
 
 static struct tls_module main_tls;
 
-void *__copy_tls(unsigned char *mem)
+void *__copy_tls(unsigned char *mem, void **tls_block)
 {
 	pthread_t td;
 	struct tls_module *p;
@@ -47,6 +47,10 @@ void *__copy_tls(unsigned char *mem)
 	for (i=1, p=libc.tls_head; p; i++, p=p->next) {
 		dtv[i] = mem + p->offset;
 		memcpy(dtv[i], p->image, p->len);
+		/*
+		 * The TLS block address
+		 */
+	//	tlsdesc_relocs.tls_block = dtv[1];
 	}
 #else
 	dtv = (void **)mem;
@@ -86,6 +90,8 @@ static void static_init_tls(size_t *aux)
 	int nonzero_base = 0;
 	int popcorn_aslr = 0;
 	int interp_exists = 0;
+	void *tls_block = NULL;
+
 	/*
 	 * Is this a popcorn PIE binary? We check to see if it's an ET_DYN that
 	 * has a base address greater than 0, with no PT_INTERP segment.  In
@@ -168,7 +174,7 @@ static void static_init_tls(size_t *aux)
 	}
 
 	/* Failure to initialize thread pointer is always fatal. */
-	if (__init_tp(__copy_tls(mem)) < 0)
+	if (__init_tp(__copy_tls(mem, &tls_block)) < 0)
 		a_crash();
 }
 

@@ -26,7 +26,7 @@ APP_DIR := $(shell pwd)
 # Compiler
 CC         := $(POPCORN)/bin/clang
 CXX        := $(POPCORN)/bin/clang++
-CFLAGS     := -O0 -Wall -nostdinc -fPIC -g -ftls-model=initial-exec
+CFLAGS     := -O0 -Wall -nostdinc -fPIC -g -ftls-model=local-exec
 HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
               -ftls-model=initial-exec
 

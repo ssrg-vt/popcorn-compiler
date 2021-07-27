@@ -1,3 +1,17 @@
+/*
+ * This tool is basically a hack to overcome the limitations
+ * of the Gold linker, which creates ELF executables that are
+ * PIE, but cannot make a PIE executable with a base address
+ * of 0, which is necessary for runtime randomization to work
+ * properly with various relocations.
+ * This tool adjusts the pointers/addresses in the dynamic segment
+ * and in the relocation entries to the values that they would
+ * be if the binary did have a base address of 0. The kernel relocates
+ * the binary to a random address, and the musl-libc initialization
+ * code is then able to apply relative relocations, as well as
+ * TLSDESC relocations (As needed in aarch64).
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +78,9 @@ int main(int argc, char **argv)
 	}
 	for (i = 0; i < dsize / sizeof(Elf64_Dyn); i++) {
 		switch(dyn[i].d_tag) {
+		case DT_JMPREL:
+			dyn[i].d_un.d_ptr -= base;
+			break;
 		case DT_PLTGOT:
 			dyn[i].d_un.d_ptr -= base;
 			break;
@@ -124,6 +141,24 @@ int main(int argc, char **argv)
 			rela[j].r_addend -= base;
 		}
 	}
+	if (ehdr->e_machine != EM_AARCH64)
+		goto done;
+	for (i = 0; i < ehdr->e_shnum; i++) {
+		if (strcmp(&StringTable[shdr[i].sh_name], ".rela.plt") != 0)
+			continue;
+		printf("Found rela.plt section\n");
+		printf("Patching relocation entries\n");
+		rela = (Elf64_Rela *)&mem[shdr[i].sh_offset];
+		for (j = 0; j < shdr[i].sh_size / shdr[i].sh_entsize; j++) {
+			if (ELF64_R_TYPE(rela[j].r_info) == R_AARCH64_TLSDESC) {
+				printf("Changing %#lx to %#lx\n", rela[j].r_offset,
+				    rela[j].r_offset - base);
+				rela[j].r_offset -= base;
+				continue;
+			}
+		}
+	}
+done:
 	msync(mem, st.st_size, MS_SYNC);
 	munmap(mem, st.st_size);
 	exit(EXIT_SUCCESS);

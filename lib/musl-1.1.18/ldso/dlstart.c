@@ -1,6 +1,9 @@
 #include <elf.h>
 #include <stddef.h>
 #include <sys/mman.h>
+#include <stdio.h>
+#include <malloc.h>
+#include <stdlib.h>
 #include "dynlink.h"
 
 #ifndef START
@@ -22,9 +25,11 @@
 __attribute__((__visibility__("hidden")))
 void _dlstart_c(size_t *sp, size_t *dynv)
 {
+	struct tlsdesc_relocs tlsdesc_relocs;
 	size_t i, aux[AUX_CNT], dyn[DYN_CNT];
-	size_t *rel, rel_size, base;
-
+	size_t *rel, *relstart, rel_size, base;
+	int found_tls = 0;
+	Elf64_Sym *symtab = NULL;
 	int argc = *sp;
 	char **argv = (void *)(sp+1);
 
@@ -34,8 +39,10 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 	for (i=0; i<AUX_CNT; i++) aux[i] = 0;
 	for (i=0; auxv[i]; i+=2) if (auxv[i]<AUX_CNT)
 		aux[auxv[i]] = auxv[i+1];
+	dprintf(1, "Inside _dlstart_c()\n");
 
 #if DL_FDPIC
+	dprintf(1, "FDPIC is enabled\n");
 	struct fdpic_loadseg *segs, fakeseg;
 	size_t j;
 	if (dynv) {
@@ -157,51 +164,53 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 	rel = (void *)(base+dyn[DT_REL]);
 	rel_size = dyn[DT_RELSZ];
 	for (; rel_size; rel+=2, rel_size-=2*sizeof(size_t)) {
-		if (!IS_RELATIVE(rel[1], 0)) continue;
+		if (IS_RELATIVE(rel[1], 0)) 
+			continue;
 		size_t *rel_addr = (void *)(base + rel[0]);
 		*rel_addr += base;
 	}
 
 	rel = (void *)(base+dyn[DT_RELA]);
+#ifdef POPCORN_DEBUG
+	dprintf(1, "Parsing relocation table at %p\n", rel);
+#endif
 	rel_size = dyn[DT_RELASZ];
 	for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
-		if (!IS_RELATIVE(rel[1], 0)) continue;
-		size_t *rel_addr = (void *)(base + rel[0]);
-		*rel_addr = base + rel[2];
+		if (IS_RELATIVE(rel[1], 0)) {
+			dprintf(1, "Fixing up relative relocation\n");
+			size_t *rel_addr = (void *)(base + rel[0]);
+			*rel_addr = base + rel[2];
+		}
 	}
-#if POPCORN_ASLR
-	/*
-	 * If popcorn ASLR is enabled, then this code will serve to mark
-	 * PT_LOAD[2] as read-only, because we require it is writable to
-	 * fixup certain relocations up until this point in the rcrt1.o
-	 * initialization code. For security we mark it to read-only
-	 * after we are done with the relocations above.
-	 */
-	int j;
-	uint8_t *mem;
-	mem  = (uint8_t *)base;
-	Elf64_Ehdr *ehdr = (Elf64_Ehdr *)mem;
-	Elf64_Phdr *phdr = (Elf64_Phdr *)&mem[ehdr->e_phoff];
 
-	for (j = 0; j < ehdr->e_phnum; j++) {
-		if (phdr[j].p_type == PT_LOAD && phdr[j].p_flags == (PF_R|PF_X)) {
-			if (phdr[j + 1].p_type == PT_LOAD &&
-			    phdr[j + 1].p_flags == PF_R) {
-#if __x86_64__
-				unsigned long scn = 10;
-				int prot = PROT_READ;
-				size_t len = phdr[i + 1].p_memsz + 4095 & ~4095;
-				unsigned long addr = phdr[i + 1].p_vaddr & ~4095;
-
-				__asm__ ("syscall" : "=D"(addr), "=S"(len), "=d"(prot), "=a"(scn));
+	relstart = rel = (void *)(base+dyn[DT_JMPREL]);
+	symtab = (void *)(base+dyn[DT_SYMTAB]);
+#ifdef POPCORN_DEBUG
+	dprintf(1, "relstart: %p\n", rel);
+	dprintf(1, "relsize: %d\n", dyn[DT_RELASZ]);
 #endif
-				break;	
-			}
+	rel_size = 7 * sizeof(Elf64_Rela);
+	for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
+		if (R_TYPE(rel[1]) == REL_TLSDESC && found_tls == 0) {
+		/*
+		 * SUPPORT FOR TLSDESC RELOCATIONS ON STATIC-PIE BINARIES
+		 * (CURRENTLY ONLY NEEDED ON THE ARM SIDE). Global data
+		 * for containing relocation and symbol data which must
+		 * be parsed later on.
+		 */
+#ifdef POPCORN_DEBUG
+			dprintf(1, "Setting TLSDESC metadata\n");
+#endif
+			tlsdesc_relocs.rel = relstart;
+			tlsdesc_relocs.rel_size = rel_size;
+			tlsdesc_relocs.base = base;
+			tlsdesc_relocs.symtab = symtab;
+			found_tls = 1;
 		}
 	}
 #endif
-#endif
 	stage2_func dls2;
 	GETFUNCSYM(&dls2, __dls2, base+dyn[DT_PLTGOT]);
-	dls2((void *)base, sp);
+	dprintf(1, "Calling dls2 %p\n", dls2);
+	dls2((void *)base, sp, &tlsdesc_relocs);
 }

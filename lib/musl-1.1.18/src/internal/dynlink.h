@@ -21,6 +21,14 @@ typedef Elf64_Sym Sym;
 #define R_INFO ELF64_R_INFO
 #endif
 
+struct tlsdesc_relocs {
+        size_t *rel;
+        size_t rel_size;
+        size_t base;
+        Elf64_Sym *symtab;
+        void *tls_block;
+};
+
 /* These enum constants provide unmatchable default values for
  * any relocation type the arch does not use. */
 enum {
@@ -92,7 +100,7 @@ struct fdpic_dummy_loadmap {
 #define AUX_CNT 32
 #define DYN_CNT 32
 
-typedef void (*stage2_func)(unsigned char *, size_t *);
+typedef void (*stage2_func)(unsigned char *, size_t *, struct tlsdesc_relocs *);
 typedef _Noreturn void (*stage3_func)(size_t *);
 
 #endif

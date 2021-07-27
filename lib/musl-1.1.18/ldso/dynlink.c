@@ -97,7 +97,7 @@ struct symdef {
 
 int __init_tp(void *);
 void __init_libc(char **, char *);
-void *__copy_tls(unsigned char *);
+void *__copy_tls(unsigned char *, void **);
 
 __attribute__((__visibility__("hidden")))
 const char *__libc_get_version(void);
@@ -1369,7 +1369,7 @@ static void update_tls_size()
  * replaced later due to copy relocations in the main program. */
 
 __attribute__((__visibility__("hidden")))
-void __dls2(unsigned char *base, size_t *sp)
+void __dls2(unsigned char *base, size_t *sp, struct tlsdesc_relocs *tlsdesc_relocs)
 {
 	if (DL_FDPIC) {
 		void *p1 = (void *)sp[-2];
@@ -1460,7 +1460,7 @@ _Noreturn void __dls3(size_t *sp)
 	 * thread pointer at runtime. */
 	libc.tls_size = sizeof builtin_tls;
 	libc.tls_align = tls_align;
-	if (__init_tp(__copy_tls((void *)builtin_tls)) < 0) {
+	if (__init_tp(__copy_tls((void *)builtin_tls, NULL)) < 0) {
 		a_crash();
 	}
 
@@ -1652,7 +1652,7 @@ _Noreturn void __dls3(size_t *sp)
 				argv[0], libc.tls_size);
 			_exit(127);
 		}
-		if (__init_tp(__copy_tls(initial_tls)) < 0) {
+		if (__init_tp(__copy_tls(initial_tls, NULL)) < 0) {
 			a_crash();
 		}
 	} else {
@@ -1662,7 +1662,7 @@ _Noreturn void __dls3(size_t *sp)
 		 * builtin_tls so that __copy_tls will use the same layout
 		 * as it did for before. Then check, just to be safe. */
 		libc.tls_size = sizeof builtin_tls;
-		if (__copy_tls((void*)builtin_tls) != self) a_crash();
+		if (__copy_tls((void*)builtin_tls, NULL) != self) a_crash();
 		libc.tls_size = tmp_tls_size;
 	}
 	static_tls_cnt = tls_cnt;
