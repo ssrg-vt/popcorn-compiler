@@ -15,6 +15,8 @@ ret_t init_elf_bin(const char *bin_fn, bin **b_ptr)
 {
 	ret_t ret = SUCCESS;
 	bin *b;
+	size_t i, nphdr;
+	GElf_Phdr phdr;
 
 	if(!b_ptr || !bin_fn) return INVALID_ARGUMENT;
   *b_ptr = NULL;
@@ -56,7 +58,26 @@ ret_t init_elf_bin(const char *bin_fn, bin **b_ptr)
 		ret = LAYOUT_CONTROL_FAILED;
 		goto close_elf;
 	}
-
+	
+	if (elf_getphdrnum(b->e, &nphdr) == -1)
+	{
+		ret = INVALID_ELF;
+		goto close_elf;
+	}
+	for (i = 0; i < nphdr; i++)
+	{
+		if (gelf_getphdr(b->e, i, &phdr) != &phdr) 
+		{
+			ret = -1;
+			goto close_elf;
+		}
+		if (phdr.p_offset == 0 && phdr.p_type == PT_LOAD)
+		{
+			printf("Setting b->base_address: %#lx\n", phdr.p_vaddr);
+			b->base_address = phdr.p_vaddr;
+			break;
+		}
+	}
 	*b_ptr = b;
 	goto return_val;
 

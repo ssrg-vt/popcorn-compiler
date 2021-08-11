@@ -145,6 +145,7 @@ int st_rewrite_stack(st_handle handle_src,
   /* Rewrite outer-most frame. */
   ST_INFO("--> Rewriting outermost frame <--\n");
 
+  printf("destination site addr: %#lx\n", NEXT_ACT(dest).site.addr);
   set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
   pop_frame_funcentry(dest);
 

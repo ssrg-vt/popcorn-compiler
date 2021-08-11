@@ -90,6 +90,7 @@ ret_t update_function_addr(bin *b, const char *sec)
    */
   for(i = 0; i < num_records; i++)
   {
+    ua[i].addr = ua[i].addr - b->base_address;
     ua[i].unwind_offset = cur_offset;
     cur_offset += ua[i].num_unwind;
   }
@@ -255,7 +256,8 @@ create_call_site_metadata(bin *b, uint64_t start_id,
         sites[cur].id = site_record->id;
       else
         sites[cur].id = start_id++;
-      sites[cur].addr = fr->func_addr + site_record->offset;
+      sites[cur].addr = (fr->func_addr - b->base_address) + site_record->offset;
+      printf("Set address to %#lx\n", sites[cur].addr);
       sites[cur].frame_size = cfa_correction(b->arch, fr->stack_size);
       sites[cur].num_unwind = fr->num_unwind;
       sites[cur].num_live = site_record->num_locations;
@@ -264,8 +266,11 @@ create_call_site_metadata(bin *b, uint64_t start_id,
       sites[cur].arch_live_offset = arch_num;
 
       /* Find unwinding information offset */
-      ua = get_func_unwind_data(sites[cur].addr, num_addrs, addrs);
-      if(!ua) return false;
+      ua = get_func_unwind_data(sites[cur].addr + b->base_address, num_addrs, addrs);
+      if(!ua) {
+	      printf("get_func_unwind_data failed\n");
+	      return false;
+      }
       sites[cur].unwind_offset = ua->unwind_offset;
 
       /* Copy live value location records to new section */

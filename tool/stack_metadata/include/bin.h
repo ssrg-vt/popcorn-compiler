@@ -20,6 +20,7 @@ typedef struct bin {
   uint16_t arch;
   int fd;
   Elf *e;
+  uint64_t base_address;
 } bin;
 
 /**

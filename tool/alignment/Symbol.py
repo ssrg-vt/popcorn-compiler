@@ -9,6 +9,7 @@ from Arch import Arch
 from Globals import er
 
 def symbolObjectFileSanityCheck(obj):
+        print obj
         reLib = "^(.+\.a)\((.+\.l?o)\)"
 	reObj = "^(.+\.o)"				# or an object file
 	if (not re.match(reLib, obj)) and (not re.match(reObj, obj)):

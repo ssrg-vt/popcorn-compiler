@@ -42,41 +42,44 @@ void __init_libc(char **envp, char *pn, struct tlsdesc_relocs *tlsdesc_relocs)
 
 	__init_tls(aux);
 
-	/*
-	 * Now that TLS is initialized we can apply TLS based relocations
-	 * that the dynamic linker would normally do. If these type of
-	 * relocations apply then tlsdesc_relocs.rel != NULL
-	 */
-	size_t rel_size = tlsdesc_relocs->rel_size;
-	size_t *rel = tlsdesc_relocs->rel;
-	size_t *reloc_addr;
-	size_t sym_index;
-	size_t tls_val;
-	size_t addend;
-	Elf64_Sym *symtab = tlsdesc_relocs->symtab;
-	Elf64_Sym *sym;
+	if (tlsdesc_relocs != NULL) {
+		/*
+	 	 * Now that TLS is initialized we can apply TLS based relocations
+	 	 * that the dynamic linker would normally do. If these type of
+	 	 * relocations apply then tlsdesc_relocs.rel != NULL
+	 	 */
+
+		size_t rel_size = tlsdesc_relocs->rel_size;
+		size_t *rel = tlsdesc_relocs->rel;
+		size_t *reloc_addr;
+		size_t sym_index;
+		size_t tls_val;
+		size_t addend;
+		Elf64_Sym *symtab = tlsdesc_relocs->symtab;
+		Elf64_Sym *sym;
 #ifdef POPCORN_DEBUG
-	dprintf(1, "Checking relocations at %p\n", rel);
-	dprintf(1, "Relocation table size: %d\n", rel_size);
-	dprintf(1, "Symbol table: %p\n", symtab);
+		dprintf(1, "Checking relocations at %p\n", rel);
+		dprintf(1, "Relocation table size: %d\n", rel_size);
+		dprintf(1, "Symbol table: %p\n", symtab);
 #endif
-	for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
-		if (R_TYPE(rel[1]) == REL_TLSDESC) {
+		for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
+			if (R_TYPE(rel[1]) == REL_TLSDESC) {
 #ifdef POPCORN_DEBUG
-			dprintf(1, "Found TLSDESC relocation\n");
+				dprintf(1, "Found TLSDESC relocation\n");
 #endif
-			size_t addr = tlsdesc_relocs->base + rel[0];
-			reloc_addr = (size_t *)addr;
-			sym_index = R_SYM(rel[1]);
-			sym = &symtab[sym_index];
-			tls_val = sym->st_value;
-			addend = rel[3];
+				size_t addr = tlsdesc_relocs->base + rel[0];
+				reloc_addr = (size_t *)addr;
+				sym_index = R_SYM(rel[1]);
+				sym = &symtab[sym_index];
+				tls_val = sym->st_value;
+				addend = rel[3];
 #ifdef POPCORN_DEBUG
-			dprintf(1, "Setting addend: %zu\n", addend);
-			dprintf(1, "Setting resolver to %#lx\n", &__tlsdesc_static);
+				dprintf(1, "Setting addend: %zu\n", addend);
+				dprintf(1, "Setting resolver to %#lx\n", &__tlsdesc_static);
 #endif
-			reloc_addr[0] = (size_t)__tlsdesc_static;
-			reloc_addr[1] = tls_val + (uint64_t)tlsdesc_relocs->tls_block;
+				reloc_addr[0] = (size_t)__tlsdesc_static;
+				reloc_addr[1] = tls_val + (uint64_t)tlsdesc_relocs->tls_block;
+			}
 		}
 	}
 
