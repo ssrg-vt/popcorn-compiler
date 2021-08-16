@@ -151,7 +151,7 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 			}
 		}
 	}
-	__popcorn_text_base = (void *)base;
+	//__popcorn_text_base = (void *)base;
 
 	/* MIPS uses an ugly packed form for GOT relocations. Since we
 	 * can't make function calls yet and the code is tiny anyway,
@@ -182,6 +182,7 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 		if (IS_RELATIVE(rel[1], 0)) {
 			dprintf(1, "Fixing up relative relocation\n");
 			size_t *rel_addr = (void *)(base + rel[0]);
+			dprintf(1, "%p = %p\n", rel_addr, (void *)(base + rel[2]));
 			*rel_addr = base + rel[2];
 		}
 	}
@@ -211,6 +212,8 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 			found_tls = 1;
 		}
 	}
+	__popcorn_text_base = (void *)base;
+
 #endif
 	stage2_func dls2;
 	GETFUNCSYM(&dls2, __dls2, base+dyn[DT_PLTGOT]);
