@@ -72,12 +72,24 @@ st_handle st_init(const char* fn)
   TIMER_START(st_init);
   ST_INFO("Initializing handle for '%s'\n", fn);
 
-  if(!(handle = (st_handle)MALLOC(sizeof(struct _st_handle)))) goto return_null;
+  if(!(handle = (st_handle)MALLOC(sizeof(struct _st_handle))))
+  {
+	  printf("MALLOC failed in st_init\n");
+	  goto return_null;
+  }
   handle->fn = fn;
 
   /* Initialize libelf data */
-  if((handle->fd = open(fn, O_RDONLY, 0)) < 0) goto free_handle;
-  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL))) goto close_file;
+  if((handle->fd = open(fn, O_RDONLY, 0)) < 0)
+  {
+	  printf("st_init: open %s failed\n", fn);
+	  goto free_handle;
+  }
+  if(!(handle->elf = elf_begin(handle->fd, ELF_C_READ, NULL)))
+  {
+	  printf("st_init: elf_begin failed\n");
+	  goto close_file;
+  }
 
   /* Get architecture-specific information */
   if(!(ehdr = elf64_getehdr(handle->elf))) goto close_elf;

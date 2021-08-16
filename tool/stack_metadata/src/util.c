@@ -217,6 +217,7 @@ const unwind_addr *get_func_unwind_data(uint64_t addr,
   long max = num - 1;
   long mid;
 
+  printf("get_func_unwind_data called!\n");
   while(max >= min)
   {
     mid = (max + min) / 2;
@@ -224,16 +225,16 @@ const unwind_addr *get_func_unwind_data(uint64_t addr,
     // Corner case: mid == last record, this is always a stopping condition
     if(mid == num - 1)
     {
+	printf("Comparing %#lx and %#lx\n", addrs[mid].addr, addr);
       if(addrs[mid].addr <= addr)
         return &addrs[mid];
       else break;
     }
-
+    printf("Comparing %#lx and %#lx\n", addrs[mid].addr, addr);
     if(IN_RANGE(mid, addr)) return &addrs[mid];
     else if(addr > addrs[mid].addr) min = mid + 1;
     else max = mid - 1;
   }
-
   return NULL;
 }
 

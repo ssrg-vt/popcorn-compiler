@@ -33,7 +33,7 @@
 #define STRINGIFY( x ) #x
 #define STR( x ) STRINGIFY( x )
 
-#ifdef _PER_LOG_OPEN
+//#ifdef _PER_LOG_OPEN
 /*
  * Open & close files for each print call to work around limitations in
  * Popcorn's file I/O.
@@ -41,12 +41,13 @@
 #define OPEN_LOG_FILE	__log = fopen(LOG_FILE, "a")
 #define CLOSE_LOG_FILE	fclose(__log)
 #define CLOSE_GLOBAL_LOG_FILE
+/*
 #else
 #define OPEN_LOG_FILE
 #define CLOSE_LOG_FILE
 #define CLOSE_GLOBAL_LOG_FILE fclose(__log)
 #endif
-
+*/
 #ifdef _LOG
 # define ST_ERR( code, str, ... ) \
   { \

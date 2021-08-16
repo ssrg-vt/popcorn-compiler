@@ -141,7 +141,7 @@ void __st_userspace_ctor(void)
   }
   x86_64_handle = st_init(x86_64_fn);
   if(x86_64_handle) alloc_x86_64_fn = true;
-  else { ST_WARN("could not initialize x86-64 handle\n"); }
+  else { printf("could not initialize x86-64 handle\n"); ST_WARN("could not initialize x86-64 handle\n"); }
 }
 
 /*
@@ -223,16 +223,19 @@ int st_userspace_rewrite(void* sp,
 {
   st_handle src_handle, dest_handle;
 
+  printf("st_userspace_rewrite executing\n");
   switch(src_arch)
   {
   case ARCH_AARCH64: src_handle = aarch64_handle; break;
   case ARCH_POWERPC64: src_handle = powerpc64_handle; break;
   case ARCH_X86_64: src_handle = x86_64_handle; break;
-  default: ST_WARN("Unsupported source architecture!\n"); return 1;
+  default: ST_WARN("Unsupported source architecture!\n");
+	   printf("Unsupported source architecture\n"); return 1;
   }
 
   if(!src_handle)
   {
+    printf("could not load rewriting info for source\n");
     ST_WARN("Could not load rewriting information for source!\n");
     return 1;
   }
@@ -242,15 +245,18 @@ int st_userspace_rewrite(void* sp,
   case ARCH_AARCH64: dest_handle = aarch64_handle; break;
   case ARCH_POWERPC64: dest_handle = powerpc64_handle; break;
   case ARCH_X86_64: dest_handle = x86_64_handle; break;
-  default: ST_WARN("Unsupported destination architecture!\n"); return 1;
+  default:
+	printf("unsupported dest architecture\n");
+	ST_WARN("Unsupported destination architecture!\n"); return 1;
   }
 
   if(!dest_handle)
   {
     ST_WARN("Could not rewriting information for destination!\n");
+    printf("Could not rewrite info for dest\n");
     return 1;
   }
-
+  printf("Calling userspace_rewrite_internal\n");
   return userspace_rewrite_internal(sp, src_regs, dest_regs,
                                     src_handle, dest_handle);
 }

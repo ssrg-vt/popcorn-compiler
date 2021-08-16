@@ -50,12 +50,17 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
   locs = ctx->handle->unwind_locs;
   unwind_start = ctx->acts[act - 1].site.unwind_offset;
   unwind_end = unwind_start + ctx->acts[act - 1].site.num_unwind;
-
+  printf("num_unwind: %d\n", ctx->acts[act - 1].site.num_unwind);
+  printf("unwind_start: %d\n", unwind_start); 
+  printf("unwind_end: %d\n", unwind_end);
+ // unwind_end = unwind_end > 37 ? 37 : unwind_end;
   for(i = unwind_start; i < unwind_end; i++)
   {
     saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[i].offset;
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
+    printf("Callee-saved[%d]: %u at FBP + %d (%p)\n",
+	    i, locs[i].reg, locs[i].offset, saved_loc);
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
     bitmap_set(ctx->acts[act - 1].callee_saved, locs[i].reg);

@@ -277,6 +277,7 @@ void set_return_address(rewrite_context ctx, void* retaddr)
  */
 void set_return_address_funcentry(rewrite_context ctx, void* retaddr)
 {
+  printf("set_return_address_funcentry(%p)\n", retaddr);
   ASSERT(retaddr, "invalid return address\n");
   if(REGOPS(ctx)->has_ra_reg)
     REGOPS(ctx)->set_ra_reg(ACT(ctx).regs, retaddr);

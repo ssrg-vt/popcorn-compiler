@@ -192,7 +192,7 @@ static uint16_t reg_size_x86_64(uint16_t reg)
 static void* reg_x86_64(void* regset, uint16_t reg)
 {
   struct regset_x86_64* cur = (struct regset_x86_64*)regset;
-
+  printf("reg_x86_64: reg: %d\n", reg);
   switch(reg)
   {
   case RAX: return &cur->rax;

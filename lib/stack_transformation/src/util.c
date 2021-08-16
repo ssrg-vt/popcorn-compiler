@@ -109,6 +109,8 @@ const void* get_section_data(Elf* e, const char* sec)
   return data->d_buf;
 }
 
+extern void *__popcorn_text_base;
+
 /*
  * Search through call site entries for the specified return address.
  */
@@ -119,19 +121,20 @@ bool get_site_by_addr(st_handle handle, void* ret_addr, call_site* cs)
   long max = (handle->sites_count - 1);
   long mid;
   uint64_t retaddr = (uint64_t)ret_addr;
+  int i;
 
   TIMER_FG_START(get_site_by_addr);
   ASSERT(cs, "invalid arguments to get_site_by_addr()\n");
-
+  printf("BASE: %p\n", __popcorn_text_base);
   while(max >= min)
   {
     mid = (max + min) / 2;
-    if(handle->sites_addr[mid].addr == retaddr) {
+    if((handle->sites_addr[mid].addr + (uint64_t)__popcorn_text_base) == retaddr) {
       *cs = handle->sites_addr[mid];
       found = true;
       break;
     }
-    else if(retaddr > handle->sites_addr[mid].addr)
+    else if(retaddr > handle->sites_addr[mid].addr + (uint64_t)__popcorn_text_base)
       min = mid + 1;
     else
       max = mid - 1;
@@ -174,8 +177,8 @@ bool get_site_by_id(st_handle handle, uint64_t csid, call_site* cs)
 
 /* Check if an address is within the range of a function unwinding record */
 #define IN_RANGE( idx, _addr ) \
-  (handle->unwind_addrs[idx].addr <= _addr && \
-   _addr < handle->unwind_addrs[idx + 1].addr)
+  ((handle->unwind_addrs[idx].addr + __popcorn_text_base) <= _addr && \
+   _addr < (handle->unwind_addrs[idx + 1].addr + __popcorn_text_base))
 
 /*
  * Search through unwinding information addresses for the specified address.
@@ -188,6 +191,8 @@ bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
   long mid;
   uint64_t addr_int = (uint64_t)addr;
 
+
+  printf("get_unwind_offset_by_addr called\n");
   TIMER_FG_START(get_unwind_offset_by_addr);
   ASSERT(meta, "invalid arguments to get_unwind_offset_by_addr()\n");
 
@@ -198,31 +203,37 @@ bool get_unwind_offset_by_addr(st_handle handle, void* addr, unwind_addr* meta)
     // Corner case: mid == last record, this is always a stopping condition
     if(mid == handle->unwind_addr_count - 1)
     {
-      if(handle->unwind_addrs[mid].addr <= addr_int)
+      printf("Comparing addr: %#lx to %#lx\n", handle->unwind_addrs[mid].addr + __popcorn_text_base,
+          addr_int);
+      if((handle->unwind_addrs[mid].addr + (uint64_t)__popcorn_text_base) <= addr_int)
       {
-        ST_WARN("cannot check range of last record (0x%lx = record %ld?)\n",
+        printf("cannot check range of last record (0x%lx = record %ld?)\n",
                 addr_int, mid);
         *meta = handle->unwind_addrs[mid];
         found = true;
       }
       break;
     }
-
+    printf("Checking if %#lx is in range\n", addr_int);
     if(IN_RANGE(mid, addr_int))
     {
+      printf("%#lx is in range!\n", addr_int);
       *meta = handle->unwind_addrs[mid];
       found = true;
       break;
     }
-    else if(addr_int > handle->unwind_addrs[mid].addr)
+    else if(addr_int > (handle->unwind_addrs[mid].addr + (uint64_t)__popcorn_text_base))
       min = mid + 1;
     else
       max = mid - 1;
   }
 
-  if(found)
-    ST_INFO("Address of enclosing function: 0x%lx (%d)\n", meta->addr, mid);
-
+  if(found) {
+    ST_INFO("Address of enclosing function: 0x%lx (%d)\n",
+	meta->addr + (uint64_t)__popcorn_text_base, mid);
+    printf("Address of enclosing function: 0x%lx (%d)\n",
+	meta->addr + (uint64_t)__popcorn_text_base, mid);
+  }
   TIMER_FG_STOP(get_unwind_offset_by_addr);
   return found;
 }
@@ -235,6 +246,9 @@ void* get_function_address(st_handle handle, void* pc)
   unwind_addr entry;
 
   if(!get_unwind_offset_by_addr(handle, pc, &entry)) return NULL;
-  else return (void*)entry.addr;
+  else {
+	  printf("get_function_address: returning %#lx\n", entry.addr + __popcorn_text_base);
+	  return (void *)(entry.addr + __popcorn_text_base);
+  }
 }
 

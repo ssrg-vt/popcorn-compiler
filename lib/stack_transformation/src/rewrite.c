@@ -93,6 +93,7 @@ static void rewrite_frame(rewrite_context src, rewrite_context dest);
 // Perform stack transformation
 ///////////////////////////////////////////////////////////////////////////////
 
+extern void *__popcorn_text_base;
 /*
  * Perform stack transformation in its entirety, from source to destination.
  */
@@ -145,8 +146,8 @@ int st_rewrite_stack(st_handle handle_src,
   /* Rewrite outer-most frame. */
   ST_INFO("--> Rewriting outermost frame <--\n");
 
-  printf("destination site addr: %#lx\n", NEXT_ACT(dest).site.addr);
-  set_return_address_funcentry(dest, (void*)NEXT_ACT(dest).site.addr);
+  printf("destination site addr: %#lx\n", NEXT_ACT(dest).site.addr + __popcorn_text_base);
+  set_return_address_funcentry(dest, (void*)(NEXT_ACT(dest).site.addr + __popcorn_text_base));
   pop_frame_funcentry(dest);
 
   /* Rewrite rest of frames. */
@@ -154,7 +155,7 @@ int st_rewrite_stack(st_handle handle_src,
   {
     ST_INFO("--> Rewriting frame %d <--\n", src->act);
 
-    set_return_address(dest, (void*)NEXT_ACT(dest).site.addr);
+    set_return_address(dest, (void*)(NEXT_ACT(dest).site.addr + __popcorn_text_base));
     rewrite_frame(src, dest);
     saved_fbp = get_savedfbp_loc(dest);
     ASSERT(saved_fbp, "invalid saved frame pointer location\n");

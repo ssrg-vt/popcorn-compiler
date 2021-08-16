@@ -22,6 +22,8 @@
 	*(fp) = static_func_ptr; } while(0)
 #endif
 
+void *__popcorn_text_base = NULL;
+
 __attribute__((__visibility__("hidden")))
 void _dlstart_c(size_t *sp, size_t *dynv)
 {
@@ -149,6 +151,7 @@ void _dlstart_c(size_t *sp, size_t *dynv)
 			}
 		}
 	}
+	__popcorn_text_base = (void *)base;
 
 	/* MIPS uses an ugly packed form for GOT relocations. Since we
 	 * can't make function calls yet and the code is tiny anyway,
