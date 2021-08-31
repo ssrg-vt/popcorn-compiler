@@ -128,12 +128,6 @@ int main(int argc, char **argv)
 			if (ehdr->e_machine == EM_X86_64) {
 				if (ELF64_R_TYPE(rela[j].r_info) == R_X86_64_DTPMOD64)
 					continue;
-			} else if (ehdr->e_machine == EM_AARCH64) {
-				if (ELF64_R_TYPE(rela[j].r_info) == R_AARCH64_TLSDESC) {
-					rela[j].r_offset -= base;
-					rela[j].r_addend -= base;
-					continue;
-				}
 			}
 			printf("Changing %#lx to %#lx\n", rela[j].r_offset,
 			    rela[j].r_offset - base);
@@ -154,6 +148,7 @@ int main(int argc, char **argv)
 				printf("Changing %#lx to %#lx\n", rela[j].r_offset,
 				    rela[j].r_offset - base);
 				rela[j].r_offset -= base;
+				printf("Addend: %#lx\n", rela[j].r_addend);
 				continue;
 			}
 		}

@@ -50,7 +50,8 @@ void *__copy_tls(unsigned char *mem, void **tls_block)
 		/*
 		 * The TLS block address
 		 */
-	//	tlsdesc_relocs.tls_block = dtv[1];
+		*tls_block = dtv[1];
+		dprintf(1, "Setting tlsdesc_relocs.tls_block: to dtv[1]: %p\n", *tls_block);
 	}
 #else
 	dtv = (void **)mem;
@@ -78,7 +79,7 @@ typedef Elf64_Phdr Phdr;
 __attribute__((__weak__, __visibility__("hidden")))
 extern const size_t _DYNAMIC[];
 
-static void static_init_tls(size_t *aux)
+static void static_init_tls(size_t *aux, void **tls_block)
 {
 	unsigned char *p;
 	size_t n, i, c;
@@ -90,7 +91,6 @@ static void static_init_tls(size_t *aux)
 	int nonzero_base = 0;
 	int popcorn_aslr = 0;
 	int interp_exists = 0;
-	void *tls_block = NULL;
 
 	/*
 	 * Is this a popcorn PIE binary? We check to see if it's an ET_DYN that
@@ -174,8 +174,9 @@ static void static_init_tls(size_t *aux)
 	}
 
 	/* Failure to initialize thread pointer is always fatal. */
-	if (__init_tp(__copy_tls(mem, &tls_block)) < 0)
+	if (__init_tp(__copy_tls(mem, tls_block)) < 0)
 		a_crash();
+	dprintf(1, "tls_block: %p\n", *tls_block);
 }
 
 weak_alias(static_init_tls, __init_tls);

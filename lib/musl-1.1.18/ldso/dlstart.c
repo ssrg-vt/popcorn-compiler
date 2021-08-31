@@ -11,7 +11,7 @@
 #endif
 
 #define SHARED
-
+#define POPCORN_DEBUG 1
 #include "crt_arch.h"
 
 #ifndef GETFUNCSYM

@@ -79,6 +79,7 @@ st_handle st_init(const char* fn)
   }
   handle->fn = fn;
 
+  printf("open: %s\n", fn);
   /* Initialize libelf data */
   if((handle->fd = open(fn, O_RDONLY, 0)) < 0)
   {
@@ -176,6 +177,8 @@ st_handle st_init(const char* fn)
   if(!(handle->regops = get_regops(handle->arch))) goto close_elf;
   if(!(handle->props = get_properties(handle->arch))) goto close_elf;
 
+  printf("regops: %p\n", handle->regops);
+  printf("regops->sp: %p\n", handle->regops->sp);
   TIMER_STOP(st_init);
 
   return handle;

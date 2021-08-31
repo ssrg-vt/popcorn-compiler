@@ -106,7 +106,9 @@ static void regset_clone_aarch64(const void* src, void* dest)
 static void regset_copyin_aarch64(void* in, const void* out)
 {
   struct regset_aarch64* cur = (struct regset_aarch64*)in;
-  *cur = *(struct regset_aarch64*)out;
+ // *cur = *(struct regset_aarch64 *)out
+ printf("Copying from %p to %p\n", out, in);
+ memcpy(in, out, sizeof(struct regset_aarch64));
 }
 
 static void regset_copyout_aarch64(const void* in, void* out)

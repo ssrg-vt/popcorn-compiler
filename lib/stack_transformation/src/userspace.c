@@ -112,6 +112,7 @@ void __st_userspace_ctor(void)
    * 2. Check if application has overridden file name symbols (defined above)
    * 3. Add architecture suffixes to current binary name (defined by libc)
    */
+  printf("calling st_init aarch64\n");
   if(getenv(ENV_AARCH64_BIN)) aarch64_handle = st_init(getenv(ENV_AARCH64_BIN));
   else if(aarch64_fn) aarch64_handle = st_init(aarch64_fn);
   else {
@@ -122,6 +123,7 @@ void __st_userspace_ctor(void)
   if(aarch64_handle) alloc_aarch64_fn = true;
   else { ST_WARN("could not initialize aarch64 handle\n"); }
 
+  printf("Calling st_init powerpc\n");
   if(getenv(ENV_POWERPC64_BIN))
     powerpc64_handle = st_init(getenv(ENV_POWERPC64_BIN));
   else if(powerpc64_fn) powerpc64_handle = st_init(powerpc64_fn);
@@ -133,6 +135,7 @@ void __st_userspace_ctor(void)
   if(powerpc64_handle) alloc_powerpc64_fn = true;
   else { ST_WARN("could not initialize powerpc64 handle\n"); }
 
+  printf("Calling st_init x86_64\n");
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
@@ -226,9 +229,13 @@ int st_userspace_rewrite(void* sp,
   printf("st_userspace_rewrite executing\n");
   switch(src_arch)
   {
-  case ARCH_AARCH64: src_handle = aarch64_handle; break;
-  case ARCH_POWERPC64: src_handle = powerpc64_handle; break;
-  case ARCH_X86_64: src_handle = x86_64_handle; break;
+  case ARCH_AARCH64:
+	 printf("SRC_ARCH: aarch64\n");
+	 src_handle = aarch64_handle; break;
+  case ARCH_POWERPC64:
+	printf("SRC_ARCH: POWERPC\n"); src_handle = powerpc64_handle; break;
+  case ARCH_X86_64: 
+	printf("SRC_ARCH: x86_64\n"); src_handle = x86_64_handle; break;
   default: ST_WARN("Unsupported source architecture!\n");
 	   printf("Unsupported source architecture\n"); return 1;
   }
@@ -256,7 +263,7 @@ int st_userspace_rewrite(void* sp,
     printf("Could not rewrite info for dest\n");
     return 1;
   }
-  printf("Calling userspace_rewrite_internal\n");
+  printf("Calling userspace_rewrite_internal, src_handle: %p\n", src_handle);
   return userspace_rewrite_internal(sp, src_regs, dest_regs,
                                     src_handle, dest_handle);
 }
@@ -468,6 +475,7 @@ static int userspace_rewrite_internal(void* sp,
   cur_stack = (sp >= stack_b) ? stack_a : stack_b;
   new_stack = (sp >= stack_b) ? stack_b : stack_a;
   ST_INFO("On stack %p, rewriting to %p\n", cur_stack, new_stack);
+  printf("Calling st_rewrite_internal, src_handle: %p\n", src_handle);
   if(st_rewrite_stack(src_handle, src_regs, cur_stack,
                       dest_handle, dest_regs, new_stack))
   {

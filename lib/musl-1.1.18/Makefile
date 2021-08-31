@@ -99,11 +99,15 @@ obj/include/bits/alltypes.h: $(srcdir)/arch/$(ARCH)/bits/alltypes.h.in $(srcdir)
 
 obj/include/bits/syscall.h: $(srcdir)/arch/$(ARCH)/bits/syscall.h.in
 ifeq ($(KERVER),POPCORN_4_4)
+	echo "Using kernel 4_4"
+	sleep 3
 	cp $< $@
 	cat $(srcdir)/arch/$(ARCH)/bits/popcorn-4_4.in >> $@
 	sed -n -e s/__NR_/SYS_/p < $< >> $@
 	sed -n -e s/__NR_/SYS_/p < $(srcdir)/arch/$(ARCH)/bits/popcorn-4_4.in >> $@
 else ifeq ($(KERVER),POPCORN_5_2)
+	echo "Using kernel 5_2"
+	sleep 3
 	cp $< $@
 	cat $(srcdir)/arch/$(ARCH)/bits/popcorn-5_2.in >> $@
 	sed -n -e s/__NR_/SYS_/p < $< >> $@

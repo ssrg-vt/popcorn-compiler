@@ -8,7 +8,6 @@ main (int argc, char *argv[])
   int i;
 
   printf ("origin: tid = %d\n", gettid());
-  sleep(5);
   migrate(1, NULL, NULL);
 
   printf ("remote: tid = %d\n", gettid());

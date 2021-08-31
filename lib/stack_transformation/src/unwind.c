@@ -142,10 +142,21 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
  */
 void bootstrap_first_frame(rewrite_context ctx, void* regset)
 {
+  printf("Inside of bootstrap_first_frame: ctx->handle\n", ctx->handle);
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
-  setup_callee_saved_bits(ctx, 0);
+ // setup_callee_saved_bits(ctx, 0);
+  
+  printf("1. ctx: %p\n", ctx);
+  printf("1. ctx->handle: %p\n", ctx->handle);
+  printf("1. ctx->regset_pool: %p\n", ctx->regset_pool);
   ctx->acts[0].regs = ctx->regset_pool;
-  REGOPS(ctx)->regset_copyin(ctx->acts[0].regs, regset);
+  printf("calling REGOPS(ctx)->regset_copyin: %p\n", REGOPS(ctx)->regset_copyin);
+  printf("regset: %p\n", regset);
+  printf("ctx->acts[0].regs: %p\n", ctx->acts[0].regs);
+  printf("sizeof regs: %d\n", sizeof(ctx->acts[0].regs));
+  REGOPS(ctx)->regset_copyin(ctx->regset_pool, regset);
+  printf("2. ctx: %p\n", ctx);
+  printf("2. ctx->handle: %p\n", ctx->handle);
 }
 
 /*
