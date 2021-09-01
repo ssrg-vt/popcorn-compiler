@@ -137,6 +137,7 @@ int st_rewrite_stack(st_handle handle_src,
   ST_INFO("--> Unwinding source stack to find live activations <--\n");
 
   /* Unwind source stack to determine destination stack size. */
+  printf("Calling unwind_and_size\n");
   unwind_and_size(src, dest);
 
   // Note: the following code is brittle -- it has to happen in this *exact*
@@ -228,55 +229,31 @@ static rewrite_context init_src_context(st_handle handle,
 
   printf("TEXTBASE: %p\n", __popcorn_text_base);
   TIMER_START(init_src_context);
-  printf("Inside init_src_context: arch: %s\n", arch_name(handle->arch));
 #if _TLS_IMPL == COMPILER_TLS
-  printf("TLS_IMPL == COMPILER_TLS\n");
-  printf("src_ctx: %#lx\n", &src_ctx);
   ctx = &src_ctx;
   ctx->regset_pool = src_regs;
   ctx->callee_saved_pool = src_callee;
   printf("Set ctx\n");
 #else
-  printf("TLS_IMPL != COMPILER_TLS\n");
-  printf("Calling MALLOC\n");
   ctx = (rewrite_context)MALLOC(sizeof(struct rewrite_context));
 #endif
   ctx->handle = handle;
-  printf("ctx: %p\n", ctx);
-  printf("ctx->handle: %p\n", ctx->handle);
-  printf("ctx->handle->regops: %p\n", ctx->handle->regops);
   ctx->num_acts = 1;
   ctx->act = 0;
   ctx->regs = regset;
   ctx->stack_base = sp_base;
 
 #if _TLS_IMPL != COMPILER_TLS
-  printf("Calling init_data_pools\n");
   init_data_pools(ctx);
 #endif
-  printf("2. ctx->handle: %p\n", ctx->handle);
-  printf("2. ctx->handle->regops: %p\n", ctx->handle->regops);
-  printf("Calling list_init\n");
   list_init(fixup, &ctx->stack_pointers);
-  printf("3. ctx: %p\n", ctx);
-  printf("3. ctx->handle: %p\n", ctx->handle);
-  printf("3. ctx->handle->regops: %p\n", ctx->handle->regops);
-  printf("ctx->acts[0].regs: %p\n", ctx->acts[0].regs);
-  printf("Calling bootstrap_first_frame\n");
   bootstrap_first_frame(ctx, regset); // Sets up initial register set
-  printf("Successfully called bootstrap_first_frame and returned\n");
-  printf("4. ctx->handle: %p\n", ctx->handle);
-  printf("4. ctx->handle->regops: %p\n", ctx->handle->regops);
-  printf("Attempting to call REGOPS(ctx)->sp: %p\n", REGOPS(ctx)->sp);
   ctx->stack = REGOPS(ctx)->sp(ACT(ctx).regs);
   ASSERT(ctx->stack, "invalid stack pointer\n");
-  printf("Calling get_site_by_addr\n");
   /*
    * Find the initial call site and set up the outermost frame's CFA in
    * preparation for unwinding the stack.
    */
-  printf("Calling get_site_by_addr with: pc: %#lx site: %#lx\n",
-      REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site);
  
   // Note: we need both the SP & call site information to set up CFA
   if(!get_site_by_addr(handle, REGOPS(ctx)->pc(ACT(ctx).regs), &ACT(ctx).site)) {
@@ -285,7 +262,6 @@ static rewrite_context init_src_context(st_handle handle,
     printf("Could not get source call information for outermost frame "
            "(PC address=%p)\n", REGOPS(ctx)->pc(ACT(ctx).regs));
   }
-  printf("Calling calculate_cfa\n");
   ACT(ctx).cfa = calculate_cfa(ctx, 0);
 
   TIMER_STOP(init_src_context);

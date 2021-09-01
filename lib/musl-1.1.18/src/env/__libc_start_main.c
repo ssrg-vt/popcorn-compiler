@@ -57,32 +57,16 @@ void __init_libc(char **envp, char *pn, struct tlsdesc_relocs *tlsdesc_relocs)
 		size_t addend;
 		Elf64_Sym *symtab = tlsdesc_relocs->symtab;
 		Elf64_Sym *sym;
-		dprintf(1, "Checking relocations at %p\n", rel);
-		dprintf(1, "Relocation table size: %d\n", rel_size);
-		dprintf(1, "Symbol table: %p\n", symtab);
 		for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
 			if (R_TYPE(rel[1]) == REL_TLSDESC) {
-				dprintf(1, "Found TLSDESC relocation\n");
 				size_t addr = tlsdesc_relocs->base + rel[0];
-				dprintf(1, "Applying relocation to: %#lx\n", addr);
 				reloc_addr = (size_t *)addr;
-				dprintf(1, "r_info: %u\n", rel[1]);
 				sym_index = R_SYM(rel[1]);
-				dprintf(1, "For symbol idx: %d\n", sym_index);
 				sym = &symtab[sym_index];
 				tls_val = sym->st_value;
-				dprintf(1, "And symbol value: %d\n", sym->st_value);
 				addend = rel[2];
-				dprintf(1, "Setting addend: %#lx\n", addend);
-				dprintf(1, "Setting resolver to %#lx\n", &__tlsdesc_static);
-				dprintf(1, "Setting 2nd entry: %p\n", tls_val + addend +
-				    (uint64_t)tlsdesc_relocs->tls_block);
-				dprintf(1, "tls_block: %p\n", tlsdesc_relocs->tls_block);
 				reloc_addr[0] = (size_t)__tlsdesc_static;
-				reloc_addr[1] = (size_t)addend;
-				dprintf(1, "reloc_addr[0]: %p reloc_addr[1]: %p\n",
-				    reloc_addr[0], reloc_addr[1]);
-				//reloc_addr[1] = tls_val + addend + (uint64_t)tlsdesc_relocs->tls_block;
+				reloc_addr[1] = (size_t)tls_val + addend;
 			}
 		}
 	}

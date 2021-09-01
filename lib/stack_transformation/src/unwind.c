@@ -50,17 +50,11 @@ static inline void restore_callee_saved_regs(rewrite_context ctx, int act)
   locs = ctx->handle->unwind_locs;
   unwind_start = ctx->acts[act - 1].site.unwind_offset;
   unwind_end = unwind_start + ctx->acts[act - 1].site.num_unwind;
-  printf("num_unwind: %d\n", ctx->acts[act - 1].site.num_unwind);
-  printf("unwind_start: %d\n", unwind_start); 
-  printf("unwind_end: %d\n", unwind_end);
- // unwind_end = unwind_end > 37 ? 37 : unwind_end;
   for(i = unwind_start; i < unwind_end; i++)
   {
     saved_loc = REGOPS(ctx)->fbp(ctx->acts[act - 1].regs) + locs[i].offset;
     ST_INFO("Callee-saved: %u at FBP + %d (%p)\n",
             locs[i].reg, locs[i].offset, saved_loc);
-    printf("Callee-saved[%d]: %u at FBP + %d (%p)\n",
-	    i, locs[i].reg, locs[i].offset, saved_loc);
     memcpy(REGOPS(ctx)->reg(ctx->acts[act].regs, locs[i].reg), saved_loc,
            PROPS(ctx)->callee_reg_size(locs[i].reg));
     bitmap_set(ctx->acts[act - 1].callee_saved, locs[i].reg);
@@ -142,21 +136,10 @@ inline void* calculate_cfa(rewrite_context ctx, int act)
  */
 void bootstrap_first_frame(rewrite_context ctx, void* regset)
 {
-  printf("Inside of bootstrap_first_frame: ctx->handle\n", ctx->handle);
   ASSERT(ctx->act == 0, "Can only bootstrap outermost frame\n");
- // setup_callee_saved_bits(ctx, 0);
-  
-  printf("1. ctx: %p\n", ctx);
-  printf("1. ctx->handle: %p\n", ctx->handle);
-  printf("1. ctx->regset_pool: %p\n", ctx->regset_pool);
+  setup_callee_saved_bits(ctx, 0);
   ctx->acts[0].regs = ctx->regset_pool;
-  printf("calling REGOPS(ctx)->regset_copyin: %p\n", REGOPS(ctx)->regset_copyin);
-  printf("regset: %p\n", regset);
-  printf("ctx->acts[0].regs: %p\n", ctx->acts[0].regs);
-  printf("sizeof regs: %d\n", sizeof(ctx->acts[0].regs));
   REGOPS(ctx)->regset_copyin(ctx->regset_pool, regset);
-  printf("2. ctx: %p\n", ctx);
-  printf("2. ctx->handle: %p\n", ctx->handle);
 }
 
 /*
