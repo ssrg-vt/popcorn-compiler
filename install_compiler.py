@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 from __future__ import print_function
 
@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib
+import urllib.request
 
 #================================================
 # GLOBALS
@@ -30,13 +30,12 @@ llvm_targets = {
     'x86_64' : 'X86'
 }
 
-# LLVM 3.7.1 SVN URL
-llvm_url = 'http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_371/final'
-llvm_revision = '320332'
-# Clang SVN URL
-clang_url = 'http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_371/final'
-# Binutils 2.27 URL
-binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.27.tar.bz2'
+# LLVM 3.7.1 GitHub URL
+llvm_url = 'https://github.com/llvm/llvm-project.git'
+llvm_version = 3.7
+
+# Binutils 2.32 URL
+binutils_url = 'http://ftp.gnu.org/gnu/binutils/binutils-2.32.tar.bz2'
 
 #================================================
 # ARGUMENT PARSING
@@ -184,7 +183,7 @@ def postprocess_args(args):
         args.libelf_install = True
         args.libopenpop_install = False
         args.stacktransform_install = True
-        args.migration_install = False
+        args.migration_install = True
         args.stackdepth_install = True
         args.tools_install = True
         args.utils_install = True
@@ -204,7 +203,7 @@ def warn_stupid(args):
 def _check_for_prerequisite(prereq):
     try:
         out = subprocess.check_output([prereq, '--version'],
-                                      stderr=subprocess.STDOUT)
+                                      stderr=subprocess.STDOUT).decode("utf-8")
     except Exception:
         print('{} not found!'.format(prereq))
         return None
@@ -219,7 +218,7 @@ def check_for_prerequisites(args):
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
     for target in args.install_targets:
         gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
-    other_prerequisites = ['flex', 'bison', 'svn', 'cmake', 'make', 'zip']
+    other_prerequisites = ['flex', 'bison', 'git', 'cmake', 'make', 'zip']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -263,7 +262,7 @@ def get_cmd_output(name, cmd, ins=None, use_shell=False):
 def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
     llvm_download_path = os.path.join(install_path, 'src', 'llvm')
-    clang_download_path = os.path.join(llvm_download_path, 'tools', 'clang')
+    clang_download_path = os.path.join(llvm_download_path, 'clang')
 
     patch_base = os.path.join(base_path, 'patches', 'llvm')
     llvm_patch_path = os.path.join(patch_base, 'llvm-3.7.1.patch')
@@ -279,22 +278,16 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     # DOWNLOAD LLVM
     #=====================================================
     print('Downloading LLVM source...')
-    args = ['svn', 'co', llvm_url, llvm_download_path, '-r', llvm_revision]
+    run_cmd('create install_path', ['mkdir', '-p', install_path + '/src'])
+    args = ['git', 'clone', '--depth', '1','-b','release/3.7.x', llvm_url, llvm_download_path]
     run_cmd('download LLVM source', args)
-
-    #=====================================================
-    # DOWNLOAD CLANG
-    #=====================================================
-    print('Downloading Clang source...')
-    args = ['svn', 'co', clang_url, clang_download_path, '-r', llvm_revision]
-    run_cmd('download Clang source', args)
 
     #=====================================================
     # PATCH LLVM
     #=====================================================
     with open(llvm_patch_path, 'r') as patch_file:
         print('Patching LLVM...')
-        args = ['patch', '-p0', '-d', llvm_download_path]
+        args = ['patch', '-p0', '-d', llvm_download_path+'/llvm']
         run_cmd('patch LLVM', args, patch_file)
 
     #=====================================================
@@ -306,10 +299,18 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
         run_cmd('patch Clang', args, patch_file)
 
     #=====================================================
+    # LLVM-3.7's build system needs clang inside llvm/tools
+    #=====================================================
+    if llvm_version == 3.7:
+        clang_src = os.path.join(llvm_download_path, 'clang')
+        clang_dst = os.path.join(llvm_download_path, 'llvm', 'tools')
+        shutil.move(clang_src, clang_dst)
+
+    #=====================================================
     # BUILD AND INSTALL LLVM
     #=====================================================
     cur_dir = os.getcwd()
-    os.chdir(llvm_download_path)
+    os.chdir(llvm_download_path+'/llvm')
     os.mkdir('build')
     os.chdir('build')
 
@@ -317,6 +318,10 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     args = ['cmake'] + cmake_flags + ['..']
     run_cmd('run CMake', args)
 
+    if llvm_version > 3.7:
+        print('Installing LLVM headers...')
+        args = ['make', '-j', str(num_threads), 'install-llvm-headers']
+        run_cmd('run Make headers', args)
 
     print('Running Make...')
     args = ['make', '-j', str(num_threads)]
@@ -328,7 +333,7 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
 
 def install_binutils(base_path, install_path, num_threads):
 
-    binutils_install_path = os.path.join(install_path, 'src', 'binutils-2.27')
+    binutils_install_path = os.path.join(install_path, 'src', 'binutils-2.32')
 
     patch_path = os.path.join(base_path, 'patches', 'binutils-gold',
                               'binutils-2.27-gold.patch')
@@ -343,10 +348,14 @@ def install_binutils(base_path, install_path, num_threads):
     #=====================================================
     # DOWNLOAD BINUTILS
     #=====================================================
-    print('Downloading binutils source...')
     try:
-        urllib.urlretrieve(binutils_url, 'binutils-2.27.tar.bz2')
-        with tarfile.open('binutils-2.27.tar.bz2', 'r:bz2') as f:
+        if not os.path.exists('binutils-2.32.tar.bz2'):
+            print('Downloading binutils source...')
+            urllib.request.urlretrieve(binutils_url, 'binutils-2.32.tar.bz2')
+        else:
+            print("Local cache found.")
+        with tarfile.open('binutils-2.32.tar.bz2', 'r:bz2') as f:
+            print('Extracting binutils source...')
             f.extractall(path=os.path.join(install_path, 'src'))
     except Exception as e:
         print('Could not download/extract binutils source ({})!'.format(e))
@@ -549,9 +558,9 @@ def install_migration(base_path, install_path, num_threads, libmigration_type,
         elif enable_libmigration_timing:
             flags += 'timing'
         args += [flags]
-    run_cmd('make libopenpop', args)
+    run_cmd('make libmigration', args)
     args += ['install']
-    run_cmd('install libopenpop', args)
+    run_cmd('install libmigration', args)
 
     os.chdir(cur_dir)
 
