@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -89,7 +90,7 @@ __init_migrate_testing(void)
     end_riscv64 = (void *)strtoll(end, NULL, 16);
     if(start_riscv64 && end_riscv64)
       pthread_key_create(&num_migrated_riscv64, NULL);
-  }  
+  }
 #else
   start = getenv(env_start_x86_64);
   end = getenv(env_end_x86_64);
@@ -461,3 +462,5 @@ int dummy (int argc, char **argv, char **environ)
 //{
 //  __libc_start_main_popcorn(dummy, 0, NULL, NULL);
 //}
+
+
