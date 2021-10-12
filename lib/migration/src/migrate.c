@@ -403,6 +403,8 @@ void check_migrate(void (*callback)(void *), void *callback_data)
 {
 	static int cnt = 0;
   int nid = do_migrate(__builtin_return_address(0));
+	if (nid == 1)
+		printf("I’m goin to migrate to node 1\n");
   if (nid >= 0 && nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
 	if (nid == 1) {
