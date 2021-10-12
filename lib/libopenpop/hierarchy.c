@@ -236,7 +236,7 @@ void hierarchy_init_thread(int nid)
 // Barriers
 ///////////////////////////////////////////////////////////////////////////////
 
-void hierarchy_hybrid_barrier(int nid)
+void hierarchy_hybrid_barrier(int nid, const char *desc)
 {
   bool leader;
 
@@ -251,7 +251,7 @@ void hierarchy_hybrid_barrier(int nid)
   gomp_team_barrier_wait(&popcorn_node[nid].bar);
 }
 
-bool hierarchy_hybrid_cancel_barrier(int nid)
+bool hierarchy_hybrid_cancel_barrier(int nid, const char *desc)
 {
   bool ret = false, leader;
 
@@ -276,7 +276,7 @@ bool hierarchy_hybrid_cancel_barrier(int nid)
    the per-node barrier.  Note that this function *requires* the main thread
    to call hierarchy_init_node() upon starting the next section, as we leave
    the per-node barrier in an inconsistent state to avoid race conditions. */
-void hierarchy_hybrid_barrier_final(int nid)
+void hierarchy_hybrid_barrier_final(int nid, const char *desc)
 {
   bool leader;
 
@@ -835,7 +835,7 @@ void hierarchy_init_statistics(int nid)
 
 static workshare_csr_t dummy_csr;
 
-void hierarchy_log_statistics(int nid, const char *ident)
+void hierarchy_log_statistics(int nid, const void *ident)
 {
   struct gomp_thread *thr = gomp_thread();
   struct timespec region_end;
@@ -1286,7 +1286,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
       /* Calculate core speed ratings based on ratio of each nodes' probe time
          to the minimum time. Also, accumulate page faults from all nodes. */
       csr->scaled_thread_range = 0.0;
-      scale = 1.0 / ((float)min / (float)max);
+      scale = 1.0 / ((float)min / (float)popcorn_global.workshare_time[max_idx]);
       for(i = 0; i < MAX_POPCORN_NODES; i++)
       {
         cur_elapsed = popcorn_global.workshare_time[i];
@@ -1297,7 +1297,7 @@ static void calc_het_probe_workshare(int nid, bool ull, workshare_csr_t *csr)
           csr->core_speed_rating[i] =
             time_weighted_average(cur_rating,
                                   csr->core_speed_rating[i],
-                                  csr->trips == 0);
+                                  csr->trips);
           csr->scaled_thread_range += csr->core_speed_rating[i] *
                                       popcorn_global.threads_per_node[i];
         }

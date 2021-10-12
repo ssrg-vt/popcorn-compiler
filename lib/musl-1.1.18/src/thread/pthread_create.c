@@ -113,7 +113,7 @@ _Noreturn void __pthread_exit(void *result)
 		__unmapself(self->map_base, self->map_size);
 	}
 
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+#if defined __aarch64__ || defined __powerpc64__ || defined __riscv64__ || defined __x86_64__
 	/* TODO Popcorn: we can't rely on the kernel's process-shared futex operation
 	   to wake threads waiting for us via pthread_join(). Explicitly clear tid, futex
 	   wake any waiters and call exit. */
@@ -201,7 +201,7 @@ int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict att
 	unsigned flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
 		| CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
 		| CLONE_PARENT_SETTID | CLONE_DETACHED;
-#if !defined __aarch64__ && !defined __powerpc64__ && !defined __x86_64__
+#if !defined __aarch64__ && !defined __powerpc64__ && !defined __riscv64__ && !defined __x86_64__
 	flags |= CLONE_CHILD_CLEARTID;
 #endif
 	int do_sched = 0;

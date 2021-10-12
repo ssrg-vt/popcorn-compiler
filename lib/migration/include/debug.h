@@ -7,6 +7,7 @@
 
 #include <arch/aarch64/regs.h>
 #include <arch/powerpc64/regs.h>
+#include <arch/riscv64/regs.h>
 #include <arch/x86_64/regs.h>
 
 /*
@@ -32,6 +33,15 @@ void dump_regs_aarch64(const struct regset_aarch64 *regset, const char *log);
  */
 void dump_regs_powerpc64(const struct regset_powerpc64 *regset,
                          const char *log);
+
+/*
+ * Dump a RISCV64 register set to a file.
+ *
+ * @param regset a register set pointer
+ * @param log the name of the file which to dump the contents
+ */
+void dump_regs_riscv64(const struct regset_riscv64 *regset,
+		       const char *log);
 
 /*
  * Dump an x86-64 register set to a file.

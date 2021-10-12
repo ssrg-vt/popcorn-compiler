@@ -4,6 +4,24 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stack_transform.h>
+/*
+ * Popcorn scheduler imports
+ */
+#include <stdlib.h>
+#include <libgen.h>
+#include <errno.h>
+#include <getopt.h>
+#include <sys/syscall.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+/*
+ * End Popcorn scheduler imports
+ */
 #include "platform.h"
 #include "migrate.h"
 #include "config.h"
@@ -11,6 +29,19 @@
 #include "internal.h"
 #include "mapping.h"
 #include "debug.h"
+
+/*
+ * Popcorn scheduler 
+ */
+#define POPCORN_X86 "10.0.0.16" /* TODO - change it according to your setup */
+#define POPCORN_RISCV "10.0.0.217" /* TODO - change it according to your setup */
+#define PORT "3490"  /* the port users will be connecting to */
+#define BACKLOG 128  /* how many pending connections (applications) queue will hold */
+#define MAXDATASIZE 128 /* msg size */
+
+/*
+ * End Popcorn scheduler
+ */
 
 #if _SIG_MIGRATION == 1
 #include "trigger.h"
@@ -32,6 +63,8 @@ static const char *env_start_aarch64 = "AARCH64_MIGRATE_START";
 static const char *env_end_aarch64 = "AARCH64_MIGRATE_END";
 static const char *env_start_powerpc64 = "POWERPC64_MIGRATE_START";
 static const char *env_end_powerpc64 = "POWERPC64_MIGRATE_END";
+static const char *env_start_riscv64 = "RISCV64_MIGRATE_START";
+static const char *env_end_riscv64 = "RISCV64_MIGRATE_END";
 static const char *env_start_x86_64 = "X86_64_MIGRATE_START";
 static const char *env_end_x86_64 = "X86_64_MIGRATE_END";
 
@@ -40,12 +73,15 @@ static void *start_aarch64 = NULL;
 static void *end_aarch64 = NULL;
 static void *start_powerpc64 = NULL;
 static void *end_powerpc64 = NULL;
+static void *start_riscv64 = NULL;
+static void *end_riscv64 = NULL;
 static void *start_x86_64 = NULL;
 static void *end_x86_64 = NULL;
 
 /* TLS keys indicating if the thread has previously migrated */
 static pthread_key_t num_migrated_aarch64 = 0;
 static pthread_key_t num_migrated_powerpc64 = 0;
+static pthread_key_t num_migrated_riscv64 = 0;
 static pthread_key_t num_migrated_x86_64 = 0;
 
 /* Read environment variables to setup migration points. */
@@ -74,6 +110,16 @@ __init_migrate_testing(void)
     end_powerpc64 = (void *)strtoll(end, NULL, 16);
     if(start_powerpc64 && end_powerpc64)
       pthread_key_create(&num_migrated_powerpc64, NULL);
+  }
+#elif defined(__riscv64__)
+  start = getenv(env_start_riscv64);
+  end = getenv(env_end_riscv64);
+  if(start && end)
+  {
+    start_riscv64 = (void *)strtoll(start, NULL, 16);
+    end_riscv64 = (void *)strtoll(end, NULL, 16);
+    if(start_riscv64 && end_riscv64)
+      pthread_key_create(&num_migrated_riscv64, NULL);
   }
 #else
   start = getenv(env_start_x86_64);
@@ -106,6 +152,13 @@ static inline int do_migrate(void *addr)
   if(start_powerpc64 && !pthread_getspecific(num_migrated_powerpc64)) {
     if(start_powerpc64 <= addr && addr < end_powerpc64) {
       pthread_setspecific(num_migrated_powerpc64, (void *)1);
+      retval = 1;
+    }
+  }
+#elif defined(__riscv64__)
+  if(start_riscv64 && !pthread_getspecific(num_migrated_riscv64)) {
+    if(start_riscv64 <= addr && addr < end_riscv64) {
+      pthread_setspecific(num_migrated_riscv64, (void *)1);
       retval = 1;
     }
   }
@@ -198,6 +251,7 @@ static inline void *get_thread_pointer(void *raw_tls, enum arch dest)
   {
   case ARCH_AARCH64: return raw_tls - 16;
   case ARCH_POWERPC64: return raw_tls + 0x7000; // <- TODO verify
+  case ARCH_RISCV64: return raw_tls + 16;
   case ARCH_X86_64: return raw_tls - MUSL_PTHREAD_DESCRIPTOR_SIZE;
   default: assert(0 && "Unsupported architecture!"); return NULL;
   }
@@ -213,7 +267,7 @@ get_call_site() { return __builtin_return_address(0); };
 void
 __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 {
-  int err;
+  volatile int err;
   struct shim_data data;
   struct shim_data *data_ptr;
 #if _CLEAN_CRASH == 1
@@ -222,7 +276,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 
   if(!node_available(nid))
   {
-    fprintf(stderr, "Destination node is not available!\n");
+    fprintf(stderr, "Destination node (%d) is not available!\n", nid);
     return;
   }
 
@@ -234,6 +288,7 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
     union {
        struct regset_aarch64 aarch;
        struct regset_powerpc64 powerpc;
+       struct regset_riscv64 riscv;
        struct regset_x86_64 x86;
     } regs_src, regs_dst;
 #if _TIME_REWRITE == 1
@@ -260,29 +315,37 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
 
       switch(dst_arch) {
       case ARCH_AARCH64:
-        regs_dst.aarch.pc = __migrate_fixup_aarch64;
-        sp = (unsigned long)regs_dst.aarch.sp;
-        bp = (unsigned long)regs_dst.aarch.x[29];
+	regs_dst.aarch.pc = __migrate_fixup_aarch64;
+	sp = (unsigned long)regs_dst.aarch.sp;
+	bp = (unsigned long)regs_dst.aarch.x[29];
 #if _LOG == 1
-        dump_regs_aarch64(&regs_dst.aarch, LOG_FILE);
+	dump_regs_aarch64(&regs_dst.aarch, LOG_FILE);
 #endif
-        break;
+	break;
       case ARCH_POWERPC64:
-        regs_dst.powerpc.pc = __migrate_fixup_powerpc64;
-        sp = (unsigned long)regs_dst.powerpc.r[1];
-        bp = (unsigned long)regs_dst.powerpc.r[31];
+	regs_dst.powerpc.pc = __migrate_fixup_powerpc64;
+	sp = (unsigned long)regs_dst.powerpc.r[1];
+	bp = (unsigned long)regs_dst.powerpc.r[31];
 #if _LOG == 1
-        dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE);
+	dump_regs_powerpc64(&regs_dst.powerpc, LOG_FILE);
 #endif
-        break;
+	break;
+      case ARCH_RISCV64:
+	regs_dst.riscv.pc = __migrate_fixup_riscv64;
+	sp = (unsigned long)regs_dst.riscv.x[2];
+	bp = (unsigned long)regs_dst.riscv.x[8];
+#if _LOG == 1
+	dump_regs_riscv64(&regs_dst.riscv, LOG_FILE);
+#endif
+	break;
       case ARCH_X86_64:
-        regs_dst.x86.rip = __migrate_fixup_x86_64;
-        sp = (unsigned long)regs_dst.x86.rsp;
-        bp = (unsigned long)regs_dst.x86.rbp;
+	regs_dst.x86.rip = __migrate_fixup_x86_64;
+	sp = (unsigned long)regs_dst.x86.rsp;
+	bp = (unsigned long)regs_dst.x86.rbp;
 #if _LOG == 1
-        dump_regs_x86_64(&regs_dst.x86, LOG_FILE);
+	dump_regs_x86_64(&regs_dst.x86, LOG_FILE);
 #endif
-        break;
+	break;
       default: assert(0 && "Unsupported architecture!");
       }
 
@@ -308,9 +371,9 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
       MIGRATE(err);
       if(err)
       {
-        perror("Could not migrate to node");
-        pthread_set_migrate_args(NULL);
-        return;
+	perror("Could not migrate to node");
+	pthread_set_migrate_args(NULL);
+	return;
       }
       data_ptr = pthread_get_migrate_args();
     }
@@ -334,12 +397,22 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
   pthread_set_migrate_args(NULL);
 }
 
+extern void __register_migrate_sighandler();
 /* Check if we should migrate, and invoke migration. */
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
+	static int cnt = 0;
   int nid = do_migrate(__builtin_return_address(0));
   if (nid >= 0 && nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
+	if (nid == 1) {
+     if (!cnt) {
+       cnt++;
+       printf("I have migrated. Remote node cannot see this line since no tty\n");
+       __register_migrate_sighandler();
+     }
+	}
+
 }
 
 /* Invoke migration to a particular node if we're not already there. */
@@ -351,11 +424,132 @@ void migrate(int nid, void (*callback)(void *), void *callback_data)
 
 /* Invoke migration to a particular node according to a thread schedule. */
 void migrate_schedule(size_t region,
-                      int popcorn_tid,
-                      void (*callback)(void *),
-                      void *callback_data)
+		      int popcorn_tid,
+		      void (*callback)(void *),
+		      void *callback_data)
 {
   int nid = get_node_mapping(region, popcorn_tid);
   if (nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
+}
+
+/*
+ * Code to support remote scheduling of Popcorn process
+ */
+
+int per_app_migration_flag = 0;
+
+/***
+ * Compile: gcc -o popcorn_sched_client_test popcorn_sched_client_test.c
+ */
+
+
+/* Sigal handler */
+void do_work1(int sig_id)
+{
+  if (!per_app_migration_flag){
+    per_app_migration_flag = 1;
+    kill(-35, getpid());
+  }
+  else{
+    per_app_migration_flag = 0;
+    kill(-35, getpid());
+  }
+  printf("\t ->%s(): got signal from Popcorn server sig_id %d set flag to %d\n",
+                    __func__, sig_id, per_app_migration_flag);
+}
+
+
+/***
+ * type - 0: start 1: end
+ * Put this function at the begining/end of your main so that
+ * your application can talk w/ Popcorn scheduer.
+ *
+ * e.g.,
+ *  void main() {
+ *    popcorn_client(0);
+ *    (your app code ....)
+ *    popcorn_client(1);
+ *  }
+ *
+ */
+extern const char *__progname;
+int popcorn_client(int type)
+{
+  int sockfd, rv;
+  struct addrinfo hints, *servinfo, *p;
+
+  /* Register signal handlers when starting a process */
+  /* Signal handler should take care of migration */
+  if (!type) {
+    printf("My ppid %d pid %d\n", getppid(), getpid());
+    signal(SIGUSR1, do_work1);
+  }
+
+  //int numbytes;
+  //char s[INET6_ADDRSTRLEN];
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  if ((rv = getaddrinfo(POPCORN_X86, PORT, &hints, &servinfo)) != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+    return 1;
+  }
+  for (p = servinfo; p != NULL; p = p->ai_next) {
+    if ((sockfd = socket(p->ai_family, p->ai_socktype,
+            p->ai_protocol)) == -1) {
+        perror("client: socket");
+        continue;
+    }
+
+    if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+        perror("client: connect");
+        close(sockfd);
+        continue;
+    }
+
+    break;
+  }
+  if (p == NULL) {
+    fprintf(stderr, "client: failed to connect\n");
+    return 2;
+  }
+
+  freeaddrinfo(servinfo); // all done with this structure
+  char out_going[MAXDATASIZE];
+  switch(type){
+    /*  case 0: I'm at the beginning of the program
+      case 1: I'm at the end of the program
+      case TODO: I'm before migration
+      case TODO: I'm after migration */
+    case 0:
+    {
+      snprintf(out_going, MAXDATASIZE, "%s %d",
+           //__progname + (strlen(__progname)-1),
+           __progname,
+           getpid());
+      break;
+    }
+    case 1:
+    {
+      snprintf(out_going, MAXDATASIZE, "%s %d",
+           "END",
+           getpid());
+      break;
+    }
+    default:
+    {
+      fprintf(stderr, "server received wrong type %d \n", type);
+      return 2;
+    }
+  }
+  printf("\tdbg - out_going \"%s\" ->\n", out_going);
+  if(send(sockfd, out_going, strlen(out_going), 0) == -1) {
+        perror("send");
+  }
+  close(sockfd);
+
+
+  return 0;
 }

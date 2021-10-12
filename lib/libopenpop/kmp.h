@@ -8,9 +8,6 @@
  * Copyright Rob Lyerly, SSRG, VT, 2017
  */
 
-#ifndef _KMP_H
-#define _KMP_H
-
 #include <stdint.h>
 
 /* Source location & generation information for OpenMP constructs. */
@@ -81,6 +78,3 @@ typedef struct __kmp_data {
   int32_t *mtid;
   void *data;
 } __kmp_data_t;
-
-#endif /* _KMP_H */
-

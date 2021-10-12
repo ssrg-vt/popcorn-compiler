@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <assert.h>
 #include "config.h"
+#include <fcntl.h>
 
 #if _SIG_MIGRATION == 1
 
@@ -74,9 +75,22 @@ void clear_migrate_flag()
  */
 static void __migrate_sighandler(int sig, siginfo_t *info, void *args)
 {
+	int sz;
+
+	int fd = open("./foo.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+	{
+    fprintf(stderr,"Error in creating file");
+		//perror("r1");
+    //exit(1);
+	}
+
   // Avoid accidentally triggering this again, which can screw up calculating
   // migration response time.
-  if(__migrate_flag >= 0) return;
+	fprintf(stderr, "Entered signal handler");
+	//sz = write(fd, "Entered Signal Handler\n");
+
+  //if(__migrate_flag >= 0) return;
 
 #if _TIME_RESPONSE_DELAY == 1
   TIMESTAMP(start);
@@ -90,15 +104,26 @@ static void __migrate_sighandler(int sig, siginfo_t *info, void *args)
   // Tell the OS we're requesting this thread migrate.
   // TODO in the real version, the OS should *know* that the thread is to be
   // migrated and does not need to be told.
-  if(syscall(SYS_propose_migration, 0, 1))
-    perror("Could not propose the migration destination for the thread");
+  if(syscall(SYS_propose_migration, 0, 1)){
+		printf("Could not propose the migration destination for the thread");
+		fprintf(stderr, "Could not propose the migration destination for the thread");
+		//sz = write(fd, "Could not propose the migration destination for the thread\n");
+    //perror("Could not propose the migration destination for the thread");
+	}
+	else{
+		printf("Proposed the migration destination for the thread");
+		fprintf(stderr, "Proposed the migration destination for the thread");
+		//sz = write(fd, "Proposed the migration destination for the thread\n");
+ 		//perror("Proposed the migration destination for the thread");
+	}
+	close(fd);
 }
 
 /*
  * Register a signal handler to be called when the OS wants a thread to migrate
  * to a new architecture.  
  */
-static void __attribute__((constructor)) __register_migrate_sighandler()
+void __attribute__((constructor)) __register_migrate_sighandler()
 {
   struct sigaction sa;
   sa.sa_handler = NULL;
@@ -106,8 +131,10 @@ static void __attribute__((constructor)) __register_migrate_sighandler()
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_SIGINFO;
   sa.sa_restorer = NULL;
-  if(sigaction(MIGRATE_SIGNAL, &sa, NULL))
+  if(sigaction(MIGRATE_SIGNAL, &sa, NULL)){
     perror("Could not register migration trigger signal handler");
+		printf("Could not register migration trigger signal handler");
+	}
 }
 
 #endif /* _SIG_MIGRATION */

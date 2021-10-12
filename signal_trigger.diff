@@ -1,0 +1,14 @@
+diff --git a/install_compiler.py b/install_compiler.py
+index dc420f2..2e4bfef 100755
+--- a/install_compiler.py
++++ b/install_compiler.py
+@@ -180,7 +180,7 @@ def setup_argument_parsing():
+     build_opts.add_argument("--libmigration-type",
+                         help="Choose configuration for libmigration " + \
+                              "(see INSTALL for more details)",
+-                        choices=['env_select', 'native', 'debug'],
++                        choices=['env_select', 'native', 'debug', 'signal_trigger'],
+                         dest="libmigration_type")
+     build_opts.add_argument("--enable-libmigration-timing",
+                         help="Turn on timing in migration library",
+

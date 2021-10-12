@@ -3,6 +3,7 @@ Part of the code responsible for the generation of the linker scripts
 """
 from Arch import Arch
 import Globals
+import re
 
 class Linker:
 
@@ -57,7 +58,6 @@ class Linker:
 
 					# iterate over symbols to add:
 					for symbol in symbolsList[section]:
-
 						# First add padding before if needed
 						if not symbol.getReference(archEnum):
 							padding_before = symbol.getPaddingBefore(archEnum)
@@ -74,7 +74,7 @@ class Linker:
 								"); /* align for " + symbol.getName() + " */\n")
 
 							output_buffer.append("\t\"" +
-							symbol.getObjectFile(archEnum) + "\"(" +
+							getObjectFileFromSymbol(symbol, archEnum) + "\"(" +
 							symbol.getName() + "); /* size " +
 							hex(symbol.getSize(archEnum)) +	" */\n")
 
@@ -99,3 +99,18 @@ class Linker:
 			with open(arch.getLinkerScript(), "w") as f:
 				for line in output_buffer:
 					f.write(line)
+
+def getObjectFileFromSymbol(symbol, archEnum):
+	# When specifying individual object files inside library
+	# archives, LD.BFD expects the form 'Library:ObjectFile',
+	# rather than Library(ObjectFile).
+	file = symbol.getObjectFile(archEnum)
+	
+	reLib = "^(.+\.a)\((.+\.o)\)" # To check if it comes from an archive
+	lib = re.match(reLib, file)
+
+	if (not lib):
+	        return file
+	
+	#print (lib.group(1) + ":" + lib.group(2))
+	return lib.group(1) + ":" + lib.group(2)
