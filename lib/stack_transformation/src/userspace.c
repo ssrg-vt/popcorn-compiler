@@ -23,6 +23,7 @@
 
 static st_handle aarch64_handle = NULL;
 static st_handle powerpc64_handle = NULL;
+static st_handle riscv64_handle = NULL;
 static st_handle x86_64_handle = NULL;
 #if _TLS_IMPL == COMPILER_TLS
 static __thread stack_bounds bounds = { .high = NULL, .low = NULL };
@@ -81,6 +82,8 @@ char* __attribute__((weak)) aarch64_fn = NULL;
 static bool alloc_aarch64_fn = false;
 char* __attribute__((weak)) powerpc64_fn = NULL;
 static bool alloc_powerpc64_fn = false;
+char* __attribute__((weak)) riscv64_fn = NULL;
+static bool alloc_riscv64_fn = false;
 char* __attribute__((weak)) x86_64_fn = NULL;
 static bool alloc_x86_64_fn = false;
 
@@ -133,6 +136,16 @@ void __st_userspace_ctor(void)
   if(powerpc64_handle) alloc_powerpc64_fn = true;
   else { ST_WARN("could not initialize powerpc64 handle\n"); }
 
+  if(getenv(ENV_RISCV64_BIN)) riscv64_handle = st_init(getenv(ENV_RISCV64_BIN));
+  else if(riscv64_fn) riscv64_handle = st_init(riscv64_fn);
+  else {
+    riscv64_fn = (char*)MALLOC(sizeof(char) * BUF_SIZE);
+    snprintf(riscv64_fn, BUF_SIZE, "%s_riscv64", __progname);
+  }
+  riscv64_handle = st_init(riscv64_fn);
+  if(riscv64_handle) alloc_riscv64_fn = true;
+  else { ST_WARN("could not initialize riscv64 handle\n"); }
+
   if(getenv(ENV_X86_64_BIN)) x86_64_handle = st_init(getenv(ENV_X86_64_BIN));
   else if(x86_64_fn) x86_64_handle = st_init(x86_64_fn);
   else {
@@ -159,6 +172,12 @@ void __st_userspace_dtor(void)
   {
     st_destroy(powerpc64_handle);
     if(alloc_powerpc64_fn) free(powerpc64_fn);
+  }
+
+  if(riscv64_handle)
+  {
+    st_destroy(riscv64_handle);
+    if(alloc_riscv64_fn) free(riscv64_fn);
   }
 
   if(x86_64_handle)
@@ -202,6 +221,8 @@ stack_bounds get_stack_bounds()
   asm volatile("mov %0, sp" : "=r"(cur_stack) ::);
 #elif defined __powerpc64__
   asm volatile("mr %0, 1" : "=r"(cur_stack) ::);
+#elif __riscv64__
+  asm volatile("mv %0, sp" : "=r"(cur_stack) ::);
 #elif defined __x86_64__
   asm volatile("movq %%rsp, %0" : "=g"(cur_stack) ::);
 #endif
@@ -227,6 +248,7 @@ int st_userspace_rewrite(void* sp,
   {
   case ARCH_AARCH64: src_handle = aarch64_handle; break;
   case ARCH_POWERPC64: src_handle = powerpc64_handle; break;
+  case ARCH_RISCV64: src_handle = riscv64_handle; break;
   case ARCH_X86_64: src_handle = x86_64_handle; break;
   default: ST_WARN("Unsupported source architecture!\n"); return 1;
   }
@@ -241,6 +263,7 @@ int st_userspace_rewrite(void* sp,
   {
   case ARCH_AARCH64: dest_handle = aarch64_handle; break;
   case ARCH_POWERPC64: dest_handle = powerpc64_handle; break;
+  case ARCH_RISCV64: dest_handle = riscv64_handle; break;
   case ARCH_X86_64: dest_handle = x86_64_handle; break;
   default: ST_WARN("Unsupported destination architecture!\n"); return 1;
   }
@@ -302,6 +325,11 @@ static bool prep_stack(void)
                  "mr 1, %0;"
                  "ld 29, 0(1);"
                  "mr 1, 28" : : "r" (bounds.low) : "r28", "r29");
+#elif __riscv64__
+    asm volatile("mv t1, sp;"
+                 "mv sp, %0;"
+                 "ld t2, 0(sp);"
+                 "mv sp, t1" : : "r" (bounds.low) : "t1", "t2");
 #elif defined(__x86_64__)
     asm volatile("mov %%rsp, %%r14;"
                  "mov %0, %%rsp;"

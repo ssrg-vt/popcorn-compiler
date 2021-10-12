@@ -13,6 +13,7 @@
 #include "write.h"
 #include "util.h"
 #include "het_bin.h"
+#include "gelf.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Configuration
@@ -86,6 +87,28 @@ static void parse_args(int argc, char **argv)
            file, section_name, start_id);
 }
 
+static ret_t populate_entsize(bin *b)
+{
+  Elf64_Shdr *shdr;
+  Elf_Scn *scn;
+
+  if(!(scn = get_section_by_name(b->e, ".stack_transform.unwind")))
+    return FIND_SECTION_FAILED;
+  if(!(shdr = elf64_getshdr(scn)))
+    return READ_ELF_FAILED;
+  if (shdr->sh_entsize == 0)
+    shdr->sh_entsize = SECTION_UNWIND_SIZE;
+
+  if(!(scn = get_section_by_name(b->e, ".stack_transform.unwind_arange")))
+    return FIND_SECTION_FAILED;
+  if(!(shdr = elf64_getshdr(scn)))
+    return READ_ELF_FAILED;
+  if (shdr->sh_entsize == 0)
+    shdr->sh_entsize = SECTION_UNWIND_ADDR_SIZE;
+
+  return SUCCESS;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Driver
 ///////////////////////////////////////////////////////////////////////////////
@@ -110,6 +133,10 @@ int main(int argc, char **argv)
   if((ret = init_stackmap(b, &sm, &num_sm)))
     die("could not read stack map section", ret);
 
+  /* Populate the entsize of the UNWIND and UNWIND_ADDR sections. */
+  if((ret = populate_entsize(b)))
+    die("could not update unwind section entsize", ret);
+  
   /* Sort the unwind address range section */
   if((ret = update_function_addr(b, unwind_addr_name)))
     die("could not sort unwind address range section", ret);

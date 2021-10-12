@@ -73,7 +73,7 @@ __BSS__		/* marker for the BSS section insertion */
   . = ALIGN(32 / 8);
   __end__ = . ;
   _end = .; PROVIDE (end = .);
-  . = DATA_SEGMENT_END (.);
+  /* . = DATA_SEGMENT_END (.); */
   .eh_frame_hdr : { *(.eh_frame_hdr) }
   
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table

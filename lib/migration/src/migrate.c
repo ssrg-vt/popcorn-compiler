@@ -334,12 +334,18 @@ __migrate_shim_internal(int nid, void (*callback)(void *), void *callback_data)
   pthread_set_migrate_args(NULL);
 }
 
+extern void __attribute__((constructor)) __register_migrate_sighandler();
+//extern void __register_migrate_sighandler();
 /* Check if we should migrate, and invoke migration. */
 void check_migrate(void (*callback)(void *), void *callback_data)
 {
   int nid = do_migrate(__builtin_return_address(0));
   if (nid >= 0 && nid != popcorn_getnid())
     __migrate_shim_internal(nid, callback, callback_data);
+  if (nid != -1) {
+  	printf("I have migrated. Remote node cannot see this line since no tty\n");
+	__register_migrate_sighandler();
+  }
 }
 
 /* Invoke migration to a particular node if we're not already there. */

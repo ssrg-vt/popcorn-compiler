@@ -1,6 +1,7 @@
 POPCORN         := /usr/local/popcorn
 POPCORN_ARM     := $(POPCORN)/aarch64
 POPCORN_POWERPC := $(POPCORN)/powerpc64
+POPCORN_RISCV   := $(POPCORN)/riscv64
 POPCORN_X86     := $(POPCORN)/x86_64
 
 # Although we disable IR optimizations, use -O3 to get backend optimizations
@@ -29,24 +30,28 @@ CFLAGS     += -D_SIG_MIGRATION=1
 endif
 CFLAGS_ARM     := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_POWERPC := $(CFLAGS) -target powerpc64le-linux-gnu
+CFLAGS_RISCV   := $(CFLAGS) -target riscv64-linux-gnu -march=rv64g
 CFLAGS_X86     := $(CFLAGS) -target x86_64-linux-gnu
 
 COMMON      := $(shell readlink -f ../../common/include)
 INC         := -I./include -I$(COMMON)
 INC_ARM     := $(INC) -I$(POPCORN_ARM)/include
 INC_POWERPC := $(INC) -I$(POPCORN_POWERPC)/include
+INC_RISCV   := $(INC) -I$(POPCORN_RISCV)/include
 INC_X86     := $(INC) -I$(POPCORN_X86)/include
 
 OPT       := $(POPCORN)/bin/opt
-OPT_FLAGS := $(OPT_LEVEL) -disable-loop-vectorization \
+OPT_FLAGS := $(OPT_LEVEL) \
              -disable-slp-vectorization -insert-stackmaps \
              -no-live-vals
 
 AS_ARM           := aarch64-linux-gnu-as
 AS_POWERPC       := powerpc64le-linux-gnu-as
+AS_RISCV         := riscv64-linux-gnu-as
 AS_X86           := x86_64-linux-gnu-as
 AS_FLAGS_ARM     := --defsym __aarch64__=1
 AS_FLAGS_POWERPC := --defsym __powerpc64__=1
+AS_FLAGS_RISCV   := --defsym __riscv64__=1
 AS_FLAGS_X86     := --defsym __x86_64__=1
 
 AR      := ar
@@ -59,24 +64,28 @@ ASM := $(shell find -iname "migrate_*.s")
 BUILD         := build
 BUILD_ARM     := $(BUILD)/aarch64
 BUILD_POWERPC := $(BUILD)/powerpc64
+BUILD_RISCV   := $(BUILD)/riscv64
 BUILD_X86     := $(BUILD)/x86_64
 
 HDR_ARM     := $(HDR) $(shell ls include/arch/aarch64/*.h)
 HDR_POWERPC := $(HDR) $(shell ls include/arch/powerpc64/*.h)
+HDR_RISCV   := $(HDR) $(shell ls include/arch/riscv64/*.h)
 HDR_X86     := $(HDR) $(shell ls include/arch/x86_64/*.h)
 
 OBJ         := $(SRC:.c=.o) $(ASM:.s=.o)
 OBJ_ARM     := $(subst src,$(BUILD_ARM),$(OBJ))
 OBJ_POWERPC := $(subst src,$(BUILD_POWERPC),$(OBJ))
+OBJ_RISCV   := $(subst src,$(BUILD_RISCV),$(OBJ))
 OBJ_X86     := $(subst src,$(BUILD_X86),$(OBJ))
 
 LIB         := libmigrate.a
 LIB_ARM     := $(BUILD_ARM)/$(LIB)
 LIB_POWERPC := $(BUILD_POWERPC)/$(LIB)
+LIB_RISCV   := $(BUILD_RISCV)/$(LIB)
 LIB_X86     := $(BUILD_X86)/$(LIB)
 
-# $(LIB_POWERPC)
-all: $(LIB_ARM) $(LIB_X86)
+# $(LIB_POWERPC) $(LIB_ARM)
+all: $(LIB_ARM) $(LIB_RISCV) $(LIB_X86)
 
 %/.dir:
 	@echo " [MKDIR] $*"
@@ -103,7 +112,9 @@ $(BUILD_POWERPC)/arch/x86_64/%.o: src/arch/x86_64/%.s
 
 $(OBJ_POWERPC): $(BUILD_POWERPC)/.dir $(BUILD_POWERPC)/arch/aarch64/.dir \
 		 $(BUILD_POWERPC)/arch/powerpc64/.dir \
+		 $(BUILD_POWERPC)/arch/riscv64/.dir \
 		 $(BUILD_POWERPC)/arch/x86_64/.dir
+
 $(LIB_POWERPC): $(HDR_POWERPC) $(OBJ_POWERPC)
 	@echo " [AR] $(LIB_POWERPC)"
 	@rm -f $(LIB_POWERPC)
@@ -111,65 +122,115 @@ $(LIB_POWERPC): $(HDR_POWERPC) $(OBJ_POWERPC)
 
 $(BUILD_ARM)/%.o: src/%.c $(HDR_ARM)
 	@echo " [CC] $< (aarch64)"
-	@$(CC) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC) $(CFLAGS_ARM) -o $@ $@.bc
+	$(CC) $(CFLAGS_ARM) $(INC_ARM) -emit-llvm -o $@.bc $<
+	$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
+	$(CC) $(CFLAGS_ARM) -o $@ $@.bc
 
 $(BUILD_ARM)/arch/aarch64/%.o: src/arch/aarch64/%.s
 	@echo " [AS] $< (aarch64)"
-	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+	$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
 
 $(BUILD_ARM)/arch/powerpc64/%.o: src/arch/powerpc64/%.s
 	@echo " [AS] $< (aarch64)"
-	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+	$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+
+$(BUILD_ARM)/arch/riscv64/%.o: src/arch/riscv64/%.s
+	@echo " [AS] $< (aarch64)"
+	$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
 
 $(BUILD_ARM)/arch/x86_64/%.o: src/arch/x86_64/%.s
 	@echo " [AS] $< (aarch64)"
-	@$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
+	$(AS_ARM) $(AS_FLAGS_ARM) -o $@ $<
 
 $(OBJ_ARM): $(BUILD_ARM)/.dir $(BUILD_ARM)/arch/aarch64/.dir \
-	     $(BUILD_ARM)/arch/powerpc64/.dir $(BUILD_ARM)/arch/x86_64/.dir
+	     $(BUILD_ARM)/arch/powerpc64/.dir \
+	     $(BUILD_ARM)/arch/riscv64/.dir \
+	     $(BUILD_ARM)/arch/x86_64/.dir
 $(LIB_ARM): $(HDR_ARM) $(OBJ_ARM)
 	@echo " [AR] $(LIB_ARM)"
-	@rm -f $(LIB_ARM)
-	@$(AR) $(ARFLAGS) $(LIB_ARM) $(OBJ_ARM) &> /dev/null
+	rm -f $(LIB_ARM)
+	$(AR) $(ARFLAGS) $(LIB_ARM) $(OBJ_ARM) &> /dev/null
+
+$(BUILD_RISCV)/%.o: src/%.c $(HDR_RISCV)
+	@echo " [CC] $< (riscv64)"
+	$(CC) $(CFLAGS_RISCV) $(INC_RISCV) -emit-llvm -o $@.bc $<
+	$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
+	$(CC) $(CFLAGS_RISCV) -o $@ $@.bc
+
+$(BUILD_RISCV)/arch/aarch64/%.o: src/arch/aarch64/%.s
+	@echo " [AS] $< (riscv64)"
+	$(AS_RISCV) $(AS_FLAGS_RISCV) -o $@ $<
+
+$(BUILD_RISCV)/arch/powerpc64/%.o: src/arch/powerpc64/%.s
+	@echo " [AS] $< (riscv64)"
+	$(AS_RISCV) $(AS_FLAGS_RISCV) -o $@ $<
+
+$(BUILD_RISCV)/arch/riscv64/%.o: src/arch/riscv64/%.s
+	@echo " [AS] $< (riscv64)"
+	$(AS_RISCV) $(AS_FLAGS_RISCV) -o $@ $<
+
+$(BUILD_RISCV)/arch/x86_64/%.o: src/arch/x86_64/%.s
+	@echo " [AS] $< (riscv64)"
+	$(AS_RISCV) $(AS_FLAGS_RISCV) -o $@ $<
+
+$(OBJ_RISCV): $(BUILD_RISCV)/.dir $(BUILD_RISCV)/arch/aarch64/.dir \
+	     $(BUILD_RISCV)/arch/powerpc64/.dir \
+	     $(BUILD_RISCV)/arch/riscv64/.dir \
+	     $(BUILD_RISCV)/arch/x86_64/.dir
+$(LIB_RISCV): $(HDR_RISCV) $(OBJ_RISCV)
+	@echo " [AR] $(LIB_RISCV)"
+	rm -f $(LIB_RISCV)
+	$(AR) $(ARFLAGS) $(LIB_RISCV) $(OBJ_RISCV) &> /dev/null
 
 $(BUILD_X86)/%.o: src/%.c $(HDR_X86)
 	@echo " [CC] $< (x86-64)"
-	@$(CC) $(CFLAGS_X86) $(INC_X86) -emit-llvm -o $@.bc $<
-	@$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
-	@$(CC) $(CFLAGS_X86) -o $@ $@.bc
+	$(CC) $(CFLAGS_X86) $(INC_X86) -emit-llvm -o $@.bc $<
+	$(OPT) $(OPT_FLAGS) -o $@.bc $@.bc
+	$(CC) $(CFLAGS_X86) -o $@ $@.bc
 
 $(BUILD_X86)/arch/aarch64/%.o: src/arch/aarch64/%.s $(BUILD_X86)/arch/aarch64/.dir
 	@echo " [AS] $< (x86-64)"
-	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+	$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(BUILD_X86)/arch/powerpc64/%.o: src/arch/powerpc64/%.s $(BUILD_X86)/arch/powerpc64/.dir
 	@echo " [AS] $< (x86-64)"
-	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+	$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+
+$(BUILD_X86)/arch/riscv64/%.o: src/arch/riscv64/%.s $(BUILD_X86)/arch/riscv64/.dir
+	@echo " [AS] $< (x86-64)"
+	$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(BUILD_X86)/arch/x86_64/%.o: src/arch/x86_64/%.s $(BUILD_X86)/arch/x86_64/.dir
 	@echo " [AS] $< (x86-64)"
-	@$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
+	$(AS_X86) $(AS_FLAGS_X86) -o $@ $<
 
 $(OBJ_X86): $(BUILD_X86)/.dir $(BUILD_X86)/arch/aarch64/.dir \
-	     $(BUILD_X86)/arch/powerpc64/.dir $(BUILD_X86)/arch/x86_64/.dir
+	     $(BUILD_X86)/arch/powerpc64/.dir \
+	     $(BUILD_X86)/arch/riscv64/.dir \
+	     $(BUILD_X86)/arch/x86_64/.dir
 $(LIB_X86): $(HDR_X86) $(OBJ_X86)
 	@echo " [AR] $(LIB_X86)"
-	@rm -f $(LIB_X86)
-	@$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
+	rm -f $(LIB_X86)
+	$(AR) $(ARFLAGS) $(LIB_X86) $(OBJ_X86) &> /dev/null
 
-# $(LIB_POWERPC)
+#$(LIB_POWERPC): $(LIB_ARM)
 #	@echo " [INSTALL] $(LIB_POWERPC) to $(POPCORN_POWERPC)/lib"
 #	@cp $(LIB_POWERPC) $(POPCORN_POWERPC)/lib
 #	@cp include/migrate.h $(POPCORN_POWERPC)/include
-install: $(LIB_ARM) $(LIB_X86)
-	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
-	@cp $(LIB_ARM) $(POPCORN_ARM)/lib
-	@cp include/migrate.h $(POPCORN_ARM)/include
+#	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
+#	cp $(LIB_ARM) $(POPCORN_ARM)/lib
+#	cp include/migrate.h $(POPCORN_ARM)/include
+
+install: $(LIB_RISCV) $(LIB_X86) $(LIB_ARM)
+	@echo " [INSTALL] $(LIB_RISCV) to $(POPCORN_RISCV)/lib"
+	cp $(LIB_RISCV) $(POPCORN_RISCV)/lib
+	cp include/migrate.h $(POPCORN_RISCV)/include
 	@echo " [INSTALL] $(LIB_X86) to $(POPCORN_X86)/lib"
-	@cp $(LIB_X86) $(POPCORN_X86)/lib
-	@cp include/migrate.h $(POPCORN_X86)/include
+	cp $(LIB_X86) $(POPCORN_X86)/lib
+	cp include/migrate.h $(POPCORN_X86)/include
+	@echo " [INSTALL] $(LIB_ARM) to $(POPCORN_ARM)/lib"
+	cp $(LIB_ARM) $(POPCORN_ARM)/lib
+	cp include/migrate.h $(POPCORN_ARM)/include
 
 clean:
 	@echo " [RM] $(BUILD)"

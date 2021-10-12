@@ -99,7 +99,7 @@ void dump_regs_powerpc64(const struct regset_powerpc64 *regset,
 
   for(i = 0; i < 32; i++)
   {
-    if(i == 1) fprintf(stream, "Stack pointer / ");
+    if(i == 2) fprintf(stream, "Stack pointer / ");
     else if(i == 2) fprintf(stream, "Table-of-contents pointer / ");
     else if(i == 13) fprintf(stream, "Frame-base pointer / ");
     fprintf(stream, "R%lu: %ld / %lu / %lx\n", i,
@@ -110,6 +110,40 @@ void dump_regs_powerpc64(const struct regset_powerpc64 *regset,
     fprintf(stream, "F%lu: %lx\n", i, regset->f[i]);
 
   fclose(stream);
+}
+
+void dump_regs_riscv64(const struct regset_riscv64 *regset, const char *log)
+{
+  size_t i;
+  FILE *stream;
+
+  assert(regset && "Invalid regset");
+  if(log)
+  {
+    stream = fopen(log, "a");
+    if(!stream) return;
+  }
+  else stream = stderr;
+
+  fprintf(stream, "Register set located @ %p\n", regset);
+  fprintf(stream, "Program counter: %p\n", regset->pc);
+  fprintf(stream, "Stack pointer: %lx\n", regset->x[2]);
+
+  for(i = 0; i < 32; i++)
+  {
+    if(i == 8) fprintf(stream, "Frame pointer / ");
+    else if(i == 1) fprintf(stream, "Link register / ");
+    fprintf(stream, "X%lu: %ld / %lu / %lx\n", i,
+            regset->x[i], regset->x[i], regset->x[i]);
+  }
+
+  for(i = 0; i < 32; i++)
+  {
+    uint64_t f = regset->f[i];
+    fprintf(stream, "f%lu: %lx\n", i, f);
+  }
+
+  fflush(stream);
 }
 
 void dump_regs_x86_64(const struct regset_x86_64 *regset, const char *log)
@@ -178,6 +212,8 @@ void dump_regs(const void *regset, const char *log)
   dump_regs_aarch64(regset, log);
 #elif defined __powerpc64__
   dump_regs_powerpc64(regset, log);
+#elif defined __riscv64__
+  dump_regs_riscv64(regset, log);
 #else /* x86_64 */
   dump_regs_x86_64(regset, log);
 #endif

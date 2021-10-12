@@ -10,7 +10,7 @@
 
 #define GET_LOCAL_REGSET(regset) \
     READ_REGS_X86_64(regset.x86); \
-    regset.x86.rip = get_call_site()
+    regset.x86.rip = get_call_site();
 
 /* Get pointer to start of thread local storage region */
 #define GET_TLS_POINTER \

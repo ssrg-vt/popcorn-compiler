@@ -3,7 +3,7 @@
 #include "platform.h"
 #include "arch.h"
 
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+#if defined __aarch64__ || defined __powerpc64__ || defined __riscv64__ || defined __x86_64__
 
 int popcorn_getnid() {
   struct popcorn_thread_status status;
@@ -45,8 +45,8 @@ int popcorn_getnodeinfo(int *origin,
   } while(0);
 
 int popcorn_getnid() { RETURN_ERROR }
-int popcorn_getthreadinfo(struct popcorn_thread_status *) { RETURN ERROR }
-int popcorn_getnodeinfo(int *, struct popcorn_node_status *) { RETURN_ERROR }
+int popcorn_getthreadinfo(struct popcorn_thread_status *a) { RETURN_ERROR }
+int popcorn_getnodeinfo(int *a, struct popcorn_node_status *b) { RETURN_ERROR }
 
 #endif
 

@@ -15,6 +15,8 @@
 #include "arch/aarch64/regs.h"
 #include "arch/powerpc64/internal.h"
 #include "arch/powerpc64/regs.h"
+#include "arch/riscv64/internal.h"
+#include "arch/riscv64/regs.h"
 #include "arch/x86_64/internal.h"
 #include "arch/x86_64/regs.h"
 
@@ -23,11 +25,13 @@
 /* Largest register set size  */
 #define MAX_REGSET_SIZE MAX(sizeof(struct regset_aarch64), \
                         MAX(sizeof(struct regset_powerpc64), \
-                            sizeof(struct regset_x86_64)))
+                        MAX(sizeof(struct regset_riscv64), \
+                            sizeof(struct regset_x86_64))))
 
 /* Largest bitmap size */
 #define MAX_CALLEE_SIZE MAX(bitmap_size(AARCH64_NUM_REGS), \
                         MAX(bitmap_size(POWERPC64_NUM_REGS), \
-                            bitmap_size(X86_64_NUM_REGS)))
+                        MAX(bitmap_size(RISCV64_NUM_REGS), \
+                            bitmap_size(X86_64_NUM_REGS))))
 
 #endif

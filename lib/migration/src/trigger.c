@@ -98,7 +98,7 @@ static void __migrate_sighandler(int sig, siginfo_t *info, void *args)
  * Register a signal handler to be called when the OS wants a thread to migrate
  * to a new architecture.  
  */
-static void __attribute__((constructor)) __register_migrate_sighandler()
+void __attribute__((constructor)) __register_migrate_sighandler()
 {
   struct sigaction sa;
   sa.sa_handler = NULL;

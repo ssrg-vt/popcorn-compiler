@@ -1,0 +1,218 @@
+###############################################################################
+#                                                                             #
+#                                  FIXME's                                    #
+#                                                                             #
+#   Fill in these variables with system & application-specific information.   #
+#                                                                             #
+###############################################################################
+
+# FIXME directory of Popcorn compiler installation
+POPCORN := /usr/local/popcorn
+
+# FIXME directory of libgcc & libgcc_eh for riscv64 compiler
+RISCV64_LIBGCC := $(shell dirname \
+                $(shell riscv64-linux-gnu-gcc -print-libgcc-file-name))
+
+# FIXME name of the generated executable
+BIN := test
+
+# FIXME specify source files
+SRC := $(shell ls *.c)
+
+APP_DIR := $(shell pwd)
+
+###############################################################################
+#                  Compiler toolchain & command-line flags                    #
+###############################################################################
+
+# Compiler
+CC         := $(POPCORN)/bin/clang
+CXX        := $(POPCORN)/bin/clang++
+CFLAGS     := -O0 -Wall -nostdinc -g
+HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
+              -ftls-model=initial-exec
+
+IR := $(SRC:.c=.ll)
+
+# Linker
+LD      := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-ld.bfd
+RISCV64_LD := $(POPCORN)/bin/riscv64-popcorn-linux-gnu-ld.bfd
+LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
+LIBS    := /lib/crt1.o \
+           /lib/libc.a \
+           /lib/libmigrate.a \
+           /lib/libstack-transform.a \
+           /lib/libelf.a \
+           /lib/libpthread.a \
+           /lib/libc.a \
+           /lib/libm.a
+LIBGCC  := --start-group -lgcc -lgcc_eh --end-group
+
+# Alignment
+ALIGN          := $(POPCORN)/bin/pyalign
+
+# Post-processing & checking
+POST_PROCESS   := $(POPCORN)/bin/gen-stackinfo
+COMPRESS       := $(POPCORN)/bin/compress
+ALIGN_CHECK    := $(POPCORN)/bin/check-align.py
+STACKMAP_CHECK := $(POPCORN)/bin/check-stackmaps
+
+###########
+# Riscv64 #
+###########
+
+# Locations
+RISCV64_POPCORN := $(POPCORN)/riscv64
+RISCV64_BUILD   := build_riscv64
+
+# Generated files
+RISCV64_ALIGNED     := $(BIN)_riscv64
+RISCV64_VANILLA     := $(RISCV64_BUILD)/$(RISCV64_ALIGNED)
+RISCV64_OBJ         := $(SRC:.c=_riscv64.o)
+RISCV64_MAP         := $(RISCV64_BUILD)/map.txt
+RISCV64_LD_SCRIPT   := $(RISCV64_BUILD)/aligned_linker_script_riscv.x
+RISCV64_ALIGNED_MAP := $(RISCV64_BUILD)/aligned_map.txt
+
+# Flags
+RISCV64_TARGET  := riscv64-linux-gnu
+RISCV64_INC     := -isystem $(RISCV64_POPCORN)/include
+RISCV64_LDFLAGS := -m elf64lriscv -L$(RISCV64_POPCORN)/lib -L$(RISCV64_LIBGCC) \
+                 $(addprefix $(RISCV64_POPCORN),$(LIBS)) $(LIBGCC)
+
+##########
+# x86-64 #
+##########
+
+# Locations
+X86_64_POPCORN  := $(POPCORN)/x86_64
+X86_64_BUILD    := build_x86-64
+X86_64_SD_BUILD := sd_x86-64
+
+# Generated files
+X86_64_ALIGNED     := $(BIN)_x86-64
+X86_64_VANILLA     := $(X86_64_BUILD)/$(X86_64_ALIGNED)
+X86_64_OBJ         := $(SRC:.c=_x86_64.o)
+X86_64_MAP         := $(X86_64_BUILD)/map.txt
+X86_64_SD          := $(X86_64_SD_BUILD)/$(X86_64_ALIGNED)
+X86_64_SD_OBJ      := $(addprefix $(X86_64_SD_BUILD)/,$(SRC:.c=.o))
+X86_64_LD_SCRIPT   := $(X86_64_BUILD)/aligned_linker_script_x86.x
+X86_64_ALIGNED_MAP := $(X86_64_BUILD)/aligned_map.txt
+
+# Flags
+X86_64_TARGET  := x86_64-linux-gnu
+X86_64_INC     := -isystem $(X86_64_POPCORN)/include
+X86_64_LDFLAGS := -m elf_x86_64 -L$(X86_64_POPCORN)/lib \
+                  $(addprefix $(X86_64_POPCORN),$(LIBS)) \
+                  --start-group --end-group
+
+###############################################################################
+#                                 Recipes                                     #
+###############################################################################
+
+all: post_process
+
+ir: $(IR)
+
+check: $(RISCV64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking stackmaps for $^"
+	$(STACKMAP_CHECK) -a $(RISCV64_ALIGNED) -x $(X86_64_ALIGNED)
+	@echo " [CHECK] Checking alignment for $^"
+	$(ALIGN_CHECK) $(RISCV64_ALIGNED) $(X86_64_ALIGNED)
+
+post_process: $(RISCV64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [POST_PROCESS] $^"
+	$(POST_PROCESS) -f $(RISCV64_ALIGNED)
+	$(POST_PROCESS) -f $(X86_64_ALIGNED)
+	riscv64-linux-gnu-objdump -D $(RISCV64_ALIGNED) > r.s
+	x86_64-linux-gnu-objdump -D $(X86_64_ALIGNED) > x.s
+
+compress: $(RISCV64_ALIGNED) $(X86_64_ALIGNED)
+	@echo " [COMPRESS] $(RISCV64_ALIGNED)"
+	@$(COMPRESS) -f $(RISCV64_ALIGNED)
+	@echo " [COMPRESS] $(X86_64_ALIGNED)"
+	@$(COMPRESS) -f $(X86_64_ALIGNED)
+
+stack-depth: $(X86_64_SD)
+
+aligned: $(RISCV64_ALIGNED) $(X86_64_ALIGNED)
+aligned-riscv64: $(RISCV64_ALIGNED)
+aligned-x86-64: $(X86_64_ALIGNED)
+
+vanilla: $(RISCV64_VANILLA) $(X86_64_VANILLA)
+vanilla-riscv64: $(RISCV64_VANILLA)
+vanilla-x86-64: $(X86_64_VANILLA)
+
+clean:
+	@echo " [CLEAN] $(RISCV64_ALIGNED) $(RISCV64_BUILD) $(X86_64_ALIGNED) \
+		$(X86_64_BUILD) $(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) \
+		$(RISCV64_LD_SCRIPT) $(ALIGN_WORKDIR) *.ll *.o"
+	@rm -rf $(RISCV64_ALIGNED) $(RISCV64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) \
+		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(RISCV64_LD_SCRIPT) *.ll *.o
+
+%.dir:
+	@echo " [MKDIR] $*"
+	@mkdir -p $*
+	@touch $@
+
+##########
+# Common #
+##########
+
+%.ll: %.c
+	@echo " [IR] $<"
+	@$(CC) $(HET_CFLAGS) -S -emit-llvm $(RISCV64_INC) -o $@ $<
+
+###########
+# Riscv64 #
+###########
+
+%_riscv64.o: %.c
+	@echo " [CC] $<"
+	$(CC) $(HET_CFLAGS) -c $(RISCV64_INC) -o $(<:.c=.o) $<
+
+$(RISCV64_VANILLA): $(RISCV64_BUILD)/.dir $(RISCV64_OBJ)
+	@echo " [LD] $@ (vanilla)"
+	@$(RISCV64_LD) -o $@ $(RISCV64_OBJ) $(LDFLAGS) $(RISCV64_LDFLAGS) -Map $(RISCV64_MAP)
+
+$(RISCV64_LD_SCRIPT): $(RISCV64_VANILLA) $(X86_64_VANILLA) 
+	@echo " [ALIGN] $@"
+	$(ALIGN) --compiler-inst $(POPCORN) \
+		--x86-bin $(X86_64_VANILLA) --riscv-bin $(RISCV64_VANILLA) \
+		--x86-map $(X86_64_MAP) --riscv-map $(RISCV64_MAP) \
+		--output-x86-ls $(X86_64_LD_SCRIPT)	--output-riscv-ls $(RISCV64_LD_SCRIPT)
+
+$(RISCV64_ALIGNED): $(RISCV64_LD_SCRIPT)
+	@echo " [LD] $@ (aligned)"
+	@$(RISCV64_LD) -o $@ $(RISCV64_OBJ) $(LDFLAGS) $(RISCV64_LDFLAGS) -Map \
+		$(RISCV64_ALIGNED_MAP) -T $<
+
+##########
+# x86-64 #
+##########
+
+%_x86_64.o: %_riscv64.o
+
+$(X86_64_VANILLA): $(X86_64_BUILD)/.dir $(X86_64_OBJ)
+	@echo " [LD] $@ (vanilla)"
+	@$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) -Map $(X86_64_MAP)
+
+$(X86_64_LD_SCRIPT): $(RISCV64_LD_SCRIPT)
+	@echo " [ALIGN] $@"
+
+$(X86_64_ALIGNED): $(X86_64_LD_SCRIPT)
+	@echo " [LD] $@ (aligned)"
+	$(LD) -o $@ $(X86_64_OBJ) $(LDFLAGS) $(X86_64_LDFLAGS) \
+		-Map $(X86_64_ALIGNED_MAP) -T $<
+
+# Stack-depth builds
+$(X86_64_SD_BUILD)/%.o: %.c
+	@echo " [CC (x86-64)] $< (stack depth)"
+	@$(CC) -target $(X86_64_TARGET) $(CFLAGS) -finstrument-functions -c $(X86_64_INC) -o $@ $<
+
+$(X86_64_SD): $(X86_64_SD_BUILD)/.dir $(X86_64_SD_OBJ)
+	@echo " [LD] $@ (stack depth)"
+	@$(CXX) -static -L$(POPCORN)/lib -o $@ $(X86_64_SD_OBJ) -lstack-depth
+
+.PHONY: all post_process compress stack-depth clean \
+        aligned aligned-riscv64 aligned-x86-64 \
+        vanilla vanilla-riscv64 vanilla-x86-64

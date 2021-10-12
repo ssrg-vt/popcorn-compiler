@@ -105,7 +105,7 @@ static void static_init_tls(size_t *aux)
 		& (main_tls.align-1);
 	if (main_tls.align < MIN_TLS_ALIGN) main_tls.align = MIN_TLS_ALIGN;
 #ifndef TLS_ABOVE_TP
-#if defined __aarch64__ || defined __powerpc64__ || defined __x86_64__
+#if defined __aarch64__ || defined __powerpc64__ || defined __riscv64__ || defined __x86_64__
 #error Popcorn: all TLS must be *above* the stack pointer!
 #endif
 	main_tls.offset = main_tls.size;
