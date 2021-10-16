@@ -92,7 +92,7 @@ cp *.json ../Xar-Trek-BIN
 fi
 
 # Copy the XCLBIN file to the shceduler server folder
-cp KNL_HW*.txt ~/Pop_Scheduler/popcorn-scheduler
+cp *.xclbin ~/Pop_Scheduler/popcorn-scheduler
 
 
 
