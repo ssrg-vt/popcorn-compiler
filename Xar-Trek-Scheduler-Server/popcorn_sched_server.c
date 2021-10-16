@@ -381,7 +381,8 @@ int i;
   
  
 // Get number of HW kernels on the XCLBIN file
-   strcpy(cmd,"xbutil query|grep -E '\\s*CU\\[\\s*.+\\]:.+:'|cut -f2 -d:|wc -l" );
+//   strcpy(cmd,"xbutil query|grep -E '\\s*CU\\[\\s*.+\\]:.+:'|cut -f2 -d:|wc -l" );
+   strcpy(cmd,"xclbinutil --info --input *.xclbin | grep 'Kernel:' | cut -f2 -d:|wc -l" );
 // printf("CMD= %s\n", cmd);
    fp = popen(cmd,"r");
    fscanf(fp,"%s", cmd);
@@ -392,7 +393,8 @@ int i;
 
 
    for(i = 1; i <= kernel_qt; i++) {
-   strcpy(cmd,"xbutil query|grep -E '\\s*CU\\[\\s*.+\\]:.+:'|cut -f2 -d:|head -" );
+//   strcpy(cmd,"xbutil query|grep -E '\\s*CU\\[\\s*.+\\]:.+:'|cut -f2 -d:|head -" );
+   strcpy(cmd,"xclbinutil --info --input *.xclbin | grep 'Kernel:' | cut -f2 -d:|head -" );
 // printf("CMD1= %s\n", cmd);
    
 // itoa(i,cmd_str,10);
@@ -491,7 +493,7 @@ int i;
         perror("sigaction");
         exit(1);
     }
-    puts("Popcorn_server: waiting for connections...\n");
+    puts("Xar-Trek Scheduler Server: waiting for connections...\n");
 
 
   timer2 = start_timer(1, time_handler2, TIMER_PERIODIC, NULL);
