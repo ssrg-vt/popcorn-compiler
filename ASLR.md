@@ -402,12 +402,14 @@ to adjust these values.
 TLS (Thread local storage) is obviously very significant to our work since we
 are dealing with threads. The TLS in Popcorn binaries typically works by
 accessing the %fs:0x0 segment register to acquire the TLS block address, which
-is then computed with a given offset to a TLS variable. This type of TLS access
-is referred to as the 'local-exec' model. As it turns out, when we build our
-Popcorn binary as PIE (Position independent executable) a totally different TLS
-model is used, referred to as 'local-dynamic'. Furthermore the underlying
-mechanics for this TLS model are almost completely different on x86_64 vs.
-aarch64.
+is then computed with a given offset to a TLS variable. The compiler is able
+to generate 4 TLS code models: 'local-exec/global-exec' are typically reserved
+for standard ET_EXEC type executables. 'local-dynamic/global-dynamic' are
+reserved for ET_DYN executable's and shared libraries. Popcorn binaries
+must be ET_DYN executables to work with ASLR, so we are getting code generated for
+the 'local-dynamic/global-dynamic' TLS model. Specifically 'local-dynamic' TLS model.
+Local-dynamic and global-dynamic only differ in that one is ideal for static executable,
+while the other is ideal for executables with dynamic linking.
 
 Let's take a look at the x86_64 TLS code for a regular Popcorn static executable.
 ```
@@ -425,7 +427,7 @@ Now let us take a look at the corresponding TLS code within our static PIE
 version of the Popcorn binary.
 
 ```
-50660f:       48 8d 3d c2 ab 4f 00    lea    0x4fabc2(%rip),%rdi        # a011d8 <_DYNAMIC+0x1a8>
+  50660f:       48 8d 3d c2 ab 4f 00    lea    0x4fabc2(%rip),%rdi        # a011d8 <_DYNAMIC+0x1a8>
   506616:       e8 5d d7 ff ff          callq  503d78 <__tls_get_addr>
   50661b:       48 8b 80 00 10 00 00    mov    0x1000(%rax),%rax
   506622:       48 83 f8 00             cmp    $0x0,%rax
@@ -434,7 +436,546 @@ version of the Popcorn binary.
 ```
 
 
+Initially this local-dynamic TLS model was crashing at the line:
 
+```
+  50661b:       48 8b 80 00 10 00 00    mov    0x1000(%rax),%rax
+```
 
+And the debugger revealed the crash was caused by dereferencing the
+address value `$1` stored within `%rax`. There was a bug in musl-libc
+that prevented `__get_tls_addr` from returning the correct address
+to the TLS block. Let's take a look at our patch which gives an ample
+explanation for it's purpose:
+
+```
+@@ -8,8 +8,38 @@ void *__tls_get_new(tls_mod_off_t *);
+ void *__tls_get_addr(tls_mod_off_t *v)
+ {
+        pthread_t self = __pthread_self();
+-       if (v[0]<=(size_t)self->dtv[0])
+-               return (char *)self->dtv[v[0]]+v[1]+DTP_OFFSET;
++       if (v[0]<=(size_t)self->dtv[0]) {
++               /*
++                * BUGFIX explained. I ran into a TLS bug that was
++                * triggered by the fact that our compile and link
++                * options force use to use the LDTLS model. Usually
++                * when musl-libc is making static-pie binaries it
++                * still uses the IE/LD TLS model. In our case we
++                * are building things differently and our -shared
++                * linker option tells us to use the LDTLS model
++                * which assumes that there is going to be a dynamic
++                * linker. Our Popcorn binaries do not have a dynamic
++                * linker since they are of a custom static-pie variety.
++                * 
++                * Original code:
++                * return (char *)self->dtv[v[0]]+v[1]+DTP_OFFSET;
++                *
++                * which does not work. If v[0] is 0, and self->dtv[0]
++                * is 1 (indicating tls_cnt of 1), then that code is
++                * going to return an incorrect TLS block address.
++                * The TLS block address is located in dtv[1 ... N]
++                * dtv[0] always holds the 'gen' or TLS count used
++                * for deferred dtv resizing. Now it's possible that
++                * there is suppose to be a relocation to plug certain
++                * vlues into v[0] and v[1] which are entries that exist
++                * at the end of _DYNAMIC right before the GOT.
++                *
++                * For the case of Popcorn there will never be more than
++                * a single TLS block because we are using a statically
++                * linked executable. The following works.
++                */
++                 return (char *)self->dtv[1]+DTP_OFFSET;
++       }
+        return __tls_get_new(v);
+ }
+ 
+```
+
+Not long after this patch was applied the aarch64 binaries proved to still crash,
+whereas the x86_64 binaries were fixed. A quick look at the relocation tables for
+aarch64 binaries showed a type of relocation called TLSDESC.
+
+```
+Relocation section '.rela.plt' at offset 0x15f18 contains 7 entries:
+  Offset          Info           Type           Sym. Value    Sym. Name + Addend
+000000611390  000000000407 R_AARCH64_TLSDESC                    1000
+0000006113a0  000000000407 R_AARCH64_TLSDESC                    1010
+0000006113b0  000000000407 R_AARCH64_TLSDESC                    c060
+0000006113c0  000000000407 R_AARCH64_TLSDESC                    6e060
+0000006113d0  000000000407 R_AARCH64_TLSDESC                    70060
+0000006113e0  000000000407 R_AARCH64_TLSDESC                    7b0b0
+0000006113f0  000000000407 R_AARCH64_TLSDESC                    dd0b0
+```
+
+It turns out that in order to support TLS on the ARM side, we had to add in
+support for TLSDESC relocation types. This type of relocation is only present
+because the linker assumes that our binary is dynamically linked because we
+have built it like a shared library in order to make it PIE. As it turns out
+adding in support for TLSDESC relocations is somewhat tricky when there is no
+dynamic linker. The initialization code in musl-libc must be soley responsible
+for applying these relocations at runtime.
+
+With a fair amount of reverse engineering effort I realized that there lived
+two tags in the dynamic segment which represent data necessary for TLSDESC
+relocations to work.
+
+`DT_TLSDESC_PLT` and `DT_TLSDESC_GOT`
+
+A quick call to `readelf -d <binary>` will show these values. One represents
+the part of the PLT reserved for TLSDESC-RESOLVER entries. The other one represents
+the part of the GOT where the address/arg pair for the TLS resolvers is stored.
+Our patch_elf utility patches various dynamic segment entries already to adjust
+their absolute addresses to offsets. We do the same thing for TLSDESC_PLT and
+TLSDESC_GOT.
+
+```
+                case DT_TLSDESC_PLT:
+                        dyn[i].d_un.d_ptr -= base;
+                        break;
+                case DT_TLSDESC_GOT:
+                        dyn[i].d_un.d_ptr -= base;
+                        break;
+```
+
+A patch was applied to musl-libc that handles TLSDESC relocations. musl-libc
+did already support TLSDESC relocations for dynamically linked executables, but
+not for static PIE executables, in which case it is a bit trickier to employ.
+
+```
+--- a/lib/musl-1.1.18/crt/crt1.c
++++ b/lib/musl-1.1.18/crt/crt1.c
+@@ -8,11 +8,11 @@ int main();
+ void _init() __attribute__((weak));
+ void _fini() __attribute__((weak));
+ _Noreturn int __libc_start_main(int (*)(), int, char **,
+-       void (*)(), void(*)(), void(*)());
++       void *, void (*)(), void(*)(), void(*)());
+ 
+ void _start_c(long *p)
+ {
+        int argc = p[0];
+        char **argv = (void *)(p+1);
+-       __libc_start_main(main, argc, argv, _init, _fini, 0);
++       __libc_start_main(main, argc, argv, 0,  _init, _fini, 0);
+```
+
+```
+diff --git a/lib/musl-1.1.18/crt/rcrt1.c b/lib/musl-1.1.18/crt/rcrt1.c
+index be017153..827af161 100644
+--- a/lib/musl-1.1.18/crt/rcrt1.c
++++ b/lib/musl-1.1.18/crt/rcrt1.c
+@@ -6,10 +6,11 @@ int main();
+ void _init() __attribute__((weak));
+ void _fini() __attribute__((weak));
+ _Noreturn int __libc_start_main(int (*)(), int, char **,
+-       void (*)(), void(*)(), void(*)());
++       struct tlsdesc_relocs *tls_relocs, void (*)(), void(*)(), void(*)());
+ 
+ __attribute__((__visibility__("hidden")))
+-_Noreturn void __dls2(unsigned char *base, size_t *sp)
++_Noreturn void __dls2(unsigned char *base, size_t *sp, struct tlsdesc_relocs *tls_relocs)
+ {
+-       __libc_start_main(main, *sp, (void *)(sp+1), _init, _fini, 0);
++       dprintf(1, "In __dls2() tls_relocs->rel: %p\n", tls_relocs->rel);
++       __libc_start_main(main, *sp, (void *)(sp+1), tls_relocs, _init, _fini, 0);
+ }
+```
+
+```
+diff --git a/lib/musl-1.1.18/ldso/dlstart.c b/lib/musl-1.1.18/ldso/dlstart.c
+index b72439a1..e7f6fa0a 100644
+--- a/lib/musl-1.1.18/ldso/dlstart.c
++++ b/lib/musl-1.1.18/ldso/dlstart.c
+@@ -1,6 +1,9 @@
+ #include <elf.h>
+ #include <stddef.h>
+ #include <sys/mman.h>
++#include <stdio.h>
++#include <malloc.h>
++#include <stdlib.h>
+ #include "dynlink.h"
+ 
+ #ifndef START
+@@ -8,7 +11,7 @@
+ #endif
+ 
+ #define SHARED
+-
++#define POPCORN_DEBUG 1
+ #include "crt_arch.h"
+ 
+ #ifndef GETFUNCSYM
+@@ -19,12 +22,16 @@
+        *(fp) = static_func_ptr; } while(0)
+ #endif
+ 
++void *__popcorn_text_base = NULL;
++
+ __attribute__((__visibility__("hidden")))
+ void _dlstart_c(size_t *sp, size_t *dynv)
+ {
++       struct tlsdesc_relocs tlsdesc_relocs;
+        size_t i, aux[AUX_CNT], dyn[DYN_CNT];
+-       size_t *rel, rel_size, base;
+-
++       size_t *rel, *relstart, rel_size, base;
++       int found_tls = 0;
++       Elf64_Sym *symtab = NULL;
+        int argc = *sp;
+        char **argv = (void *)(sp+1);
+ 
+@@ -34,8 +41,10 @@ void _dlstart_c(size_t *sp, size_t *dynv)
+        for (i=0; i<AUX_CNT; i++) aux[i] = 0;
+        for (i=0; auxv[i]; i+=2) if (auxv[i]<AUX_CNT)
+                aux[auxv[i]] = auxv[i+1];
++       dprintf(1, "Inside _dlstart_c()\n");
+ 
+ #if DL_FDPIC
++       dprintf(1, "FDPIC is enabled\n");
+        struct fdpic_loadseg *segs, fakeseg;
+        size_t j;
+        if (dynv) {
+@@ -142,6 +151,7 @@ void _dlstart_c(size_t *sp, size_t *dynv)
+                        }
+                }
+        }
++       //__popcorn_text_base = (void *)base;
+ 
+        /* MIPS uses an ugly packed form for GOT relocations. Since we
+         * can't make function calls yet and the code is tiny anyway,
+@@ -157,51 +167,56 @@ void _dlstart_c(size_t *sp, size_t *dynv)
+        rel = (void *)(base+dyn[DT_REL]);
+        rel_size = dyn[DT_RELSZ];
+        for (; rel_size; rel+=2, rel_size-=2*sizeof(size_t)) {
+-               if (!IS_RELATIVE(rel[1], 0)) continue;
++               if (IS_RELATIVE(rel[1], 0)) 
++                       continue;
+                size_t *rel_addr = (void *)(base + rel[0]);
+		*rel_addr += base;
+        }
+ 
+        rel = (void *)(base+dyn[DT_RELA]);
++#ifdef POPCORN_DEBUG
++       dprintf(1, "Parsing relocation table at %p\n", rel);
++#endif
+        rel_size = dyn[DT_RELASZ];
+        for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
+-               if (!IS_RELATIVE(rel[1], 0)) continue;
+-               size_t *rel_addr = (void *)(base + rel[0]);
+-               *rel_addr = base + rel[2];
++               if (IS_RELATIVE(rel[1], 0)) {
++                       dprintf(1, "Fixing up relative relocation\n");
++                       size_t *rel_addr = (void *)(base + rel[0]);
++                       dprintf(1, "%p = %p\n", rel_addr, (void *)(base + rel[2]));
++                       *rel_addr = base + rel[2];
++               }
+        }
+-#if POPCORN_ASLR
+-       /*
+-        * If popcorn ASLR is enabled, then this code will serve to mark
+-        * PT_LOAD[2] as read-only, because we require it is writable to
+-        * fixup certain relocations up until this point in the rcrt1.o
+-        * initialization code. For security we mark it to read-only
+-        * after we are done with the relocations above.
+-        */
+-       int j;
+-       uint8_t *mem;
+-       mem  = (uint8_t *)base;
+-       Elf64_Ehdr *ehdr = (Elf64_Ehdr *)mem;
+-       Elf64_Phdr *phdr = (Elf64_Phdr *)&mem[ehdr->e_phoff];
+-
+-       for (j = 0; j < ehdr->e_phnum; j++) {
+-               if (phdr[j].p_type == PT_LOAD && phdr[j].p_flags == (PF_R|PF_X)) {
+-                       if (phdr[j + 1].p_type == PT_LOAD &&
+-                           phdr[j + 1].p_flags == PF_R) {
+-#if __x86_64__
+-                               unsigned long scn = 10;
+-                               int prot = PROT_READ;
+-                               size_t len = phdr[i + 1].p_memsz + 4095 & ~4095;
+-                               unsigned long addr = phdr[i + 1].p_vaddr & ~4095;
+-
+-                               __asm__ ("syscall" : "=D"(addr), "=S"(len), "=d"(prot), "=a"(scn));
++
++       relstart = rel = (void *)(base+dyn[DT_JMPREL]);
++       symtab = (void *)(base+dyn[DT_SYMTAB]);
++#ifdef POPCORN_DEBUG
++       dprintf(1, "relstart: %p\n", rel);
++       dprintf(1, "relsize: %d\n", dyn[DT_RELASZ]);
+ #endif
+-                               break;  
+-                       }
++       rel_size = 7 * sizeof(Elf64_Rela);
++       for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
++               if (R_TYPE(rel[1]) == REL_TLSDESC && found_tls == 0) {
++               /*
++                * SUPPORT FOR TLSDESC RELOCATIONS ON STATIC-PIE BINARIES
++                * (CURRENTLY ONLY NEEDED ON THE ARM SIDE). Global data
++                * for containing relocation and symbol data which must
++                * be parsed later on.
++                */
++#ifdef POPCORN_DEBUG
++                       dprintf(1, "Setting TLSDESC metadata\n");
++#endif
++                       tlsdesc_relocs.rel = relstart;
++                       tlsdesc_relocs.rel_size = rel_size;
++                       tlsdesc_relocs.base = base;
++                       tlsdesc_relocs.symtab = symtab;
++                       found_tls = 1;
+                }
+        }
+-#endif
++       __popcorn_text_base = (void *)base;
++
+ #endif
+        stage2_func dls2;
+        GETFUNCSYM(&dls2, __dls2, base+dyn[DT_PLTGOT]);
+-       dls2((void *)base, sp);
++       dprintf(1, "Calling dls2 %p\n", dls2);
++       dls2((void *)base, sp, &tlsdesc_relocs);
+ }
+diff --git a/lib/musl-1.1.18/ldso/dynlink.c b/lib/musl-1.1.18/ldso/dynlink.c
+index 35a90aef..d45387fe 100644
+--- a/lib/musl-1.1.18/ldso/dynlink.c
++++ b/lib/musl-1.1.18/ldso/dynlink.c
+@@ -97,7 +97,7 @@ struct symdef {
+ 
+ int __init_tp(void *);
+ void __init_libc(char **, char *);
+-void *__copy_tls(unsigned char *);
++void *__copy_tls(unsigned char *, void **);
+ 
+ __attribute__((__visibility__("hidden")))
+ const char *__libc_get_version(void);
+@@ -1369,7 +1369,7 @@ static void update_tls_size()
+  * replaced later due to copy relocations in the main program. */
+ 
+ __attribute__((__visibility__("hidden")))
+-void __dls2(unsigned char *base, size_t *sp)
++void __dls2(unsigned char *base, size_t *sp, struct tlsdesc_relocs *tlsdesc_relocs)
+ {
+        if (DL_FDPIC) {
+                void *p1 = (void *)sp[-2];
+@@ -1460,7 +1460,7 @@ _Noreturn void __dls3(size_t *sp)
+         * thread pointer at runtime. */
+        libc.tls_size = sizeof builtin_tls;
+        libc.tls_align = tls_align;
+-       if (__init_tp(__copy_tls((void *)builtin_tls)) < 0) {
++       if (__init_tp(__copy_tls((void *)builtin_tls, NULL)) < 0) {
+                a_crash();
+        }
+ 
+@@ -1652,7 +1652,7 @@ _Noreturn void __dls3(size_t *sp)
+                                argv[0], libc.tls_size);
+                        _exit(127);
+                }
+-               if (__init_tp(__copy_tls(initial_tls)) < 0) {
++               if (__init_tp(__copy_tls(initial_tls, NULL)) < 0) {
+                        a_crash();
+                }
+        } else {
+@@ -1662,7 +1662,7 @@ _Noreturn void __dls3(size_t *sp)
+                 * builtin_tls so that __copy_tls will use the same layout
+                 * as it did for before. Then check, just to be safe. */
+                libc.tls_size = sizeof builtin_tls;
+-               if (__copy_tls((void*)builtin_tls) != self) a_crash();
++               if (__copy_tls((void*)builtin_tls, NULL) != self) a_crash();
+                libc.tls_size = tmp_tls_size;
+        }
+        static_tls_cnt = tls_cnt;
+diff --git a/lib/musl-1.1.18/src/env/__init_tls.c b/lib/musl-1.1.18/src/env/__init_tls.c
+index 6f07c9e9..31da4d22 100644
+--- a/lib/musl-1.1.18/src/env/__init_tls.c
++++ b/lib/musl-1.1.18/src/env/__init_tls.c
+@@ -30,7 +30,7 @@ static struct builtin_tls {
+ 
+ static struct tls_module main_tls;
+ 
+-void *__copy_tls(unsigned char *mem)
++void *__copy_tls(unsigned char *mem, void **tls_block)
+ {
+        pthread_t td;
+        struct tls_module *p;
+@@ -47,6 +47,11 @@ void *__copy_tls(unsigned char *mem)
+        for (i=1, p=libc.tls_head; p; i++, p=p->next) {
+                dtv[i] = mem + p->offset;
+                memcpy(dtv[i], p->image, p->len);
++               /*
++                * The TLS block address
++                */
++               *tls_block = dtv[1];
++               dprintf(1, "Setting tlsdesc_relocs.tls_block: to dtv[1]: %p\n", *tls_block);
+        }
+ #else
+        dtv = (void **)mem;
+@@ -74,7 +79,7 @@ typedef Elf64_Phdr Phdr;
+ __attribute__((__weak__, __visibility__("hidden")))
+ extern const size_t _DYNAMIC[];
+ 
+-static void static_init_tls(size_t *aux)
++static void static_init_tls(size_t *aux, void **tls_block)
+ {
+        unsigned char *p;
+        size_t n, i, c;
+@@ -86,6 +91,7 @@ static void static_init_tls(size_t *aux)
+        int nonzero_base = 0;
+        int popcorn_aslr = 0;
+        int interp_exists = 0;
++
+        /*
+         * Is this a popcorn PIE binary? We check to see if it's an ET_DYN that
+         * has a base address greater than 0, with no PT_INTERP segment.  In
+@@ -168,8 +174,9 @@ static void static_init_tls(size_t *aux)
+        }
+ 
+        /* Failure to initialize thread pointer is always fatal. */
+-       if (__init_tp(__copy_tls(mem)) < 0)
++       if (__init_tp(__copy_tls(mem, tls_block)) < 0)
+                a_crash();
++       dprintf(1, "tls_block: %p\n", *tls_block);
+ }
+ 
+ weak_alias(static_init_tls, __init_tls);
+diff --git a/lib/musl-1.1.18/src/env/__libc_start_main.c b/lib/musl-1.1.18/src/env/__libc_start_main.c
+index 4e8a78bf..74ed5017 100644
+--- a/lib/musl-1.1.18/src/env/__libc_start_main.c
++++ b/lib/musl-1.1.18/src/env/__libc_start_main.c
+@@ -6,7 +6,9 @@
+ #include "atomic.h"
+ #include "libc.h"
+ 
+-void __init_tls(size_t *);
++#include "dynlink.h" /* For struct tlsdesc_relocs */
++
++void __init_tls(size_t *, void **);
+ 
+ static void dummy(void) {}
+ weak_alias(dummy, _init);
+@@ -17,15 +19,18 @@ extern void (*const __init_array_start)(void), (*const __init_array_end)(void);
+ static void dummy1(void *p) {}
+ weak_alias(dummy1, __init_ssp);
+ 
+-#define AUX_CNT 38
++#define AUX_COUNT 38
++
++__attribute__((__visibility__("hidden")))
++size_t __tlsdesc_static();
+ 
+-void __init_libc(char **envp, char *pn)
++void __init_libc(char **envp, char *pn, struct tlsdesc_relocs *tlsdesc_relocs)
+ {
+-       size_t i, *auxv, aux[AUX_CNT] = { 0 };
++       size_t i, *auxv, aux[AUX_COUNT] = { 0 };
+        __environ = envp;
+        for (i=0; envp[i]; i++);
+        libc.auxv = auxv = (void *)(envp+i+1);
+-       for (i=0; auxv[i]; i+=2) if (auxv[i]<AUX_CNT) aux[auxv[i]] = auxv[i+1];
++       for (i=0; auxv[i]; i+=2) if (auxv[i]<AUX_COUNT) aux[auxv[i]] = auxv[i+1];
+        __hwcap = aux[AT_HWCAP];
+        __sysinfo = aux[AT_SYSINFO];
+        libc.page_size = aux[AT_PAGESZ];
+@@ -35,7 +40,53 @@ void __init_libc(char **envp, char *pn)
+        __progname = __progname_full = pn;
+        for (i=0; pn[i]; i++) if (pn[i]=='/') __progname = pn+i+1;
+ 
+-       __init_tls(aux);
++       __init_tls(aux, &tlsdesc_relocs->tls_block);
++
++       if (tlsdesc_relocs != NULL) {
++               /*
++                * Now that TLS is initialized we can apply TLS based relocations
++                * that the dynamic linker would normally do. If these type of
++                * relocations apply then tlsdesc_relocs.rel != NULL
++                */
++
++               size_t rel_size = tlsdesc_relocs->rel_size;
++               size_t *rel = tlsdesc_relocs->rel;
++               size_t *reloc_addr;
++               size_t sym_index;
++               size_t tls_val;
++               size_t addend;
++               Elf64_Sym *symtab = tlsdesc_relocs->symtab;
++               Elf64_Sym *sym;
++               dprintf(1, "Checking relocations at %p\n", rel);
++               dprintf(1, "Relocation table size: %d\n", rel_size);
++               dprintf(1, "Symbol table: %p\n", symtab);
++               for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
++                       if (R_TYPE(rel[1]) == REL_TLSDESC) {
++                               dprintf(1, "Found TLSDESC relocation\n");
++                               size_t addr = tlsdesc_relocs->base + rel[0];
++                               dprintf(1, "Applying relocation to: %#lx\n", addr);
++                               reloc_addr = (size_t *)addr;
++                               dprintf(1, "r_info: %u\n", rel[1]);
++                               sym_index = R_SYM(rel[1]);
++                               dprintf(1, "For symbol idx: %d\n", sym_index);
++                               sym = &symtab[sym_index];
++                               tls_val = sym->st_value;
++                               dprintf(1, "And symbol value: %d\n", sym->st_value);
++                               addend = rel[2];
++                               dprintf(1, "Setting addend: %#lx\n", addend);
++                               dprintf(1, "Setting resolver to %#lx\n", &__tlsdesc_static);
++                               dprintf(1, "Setting 2nd entry: %p\n", tls_val + addend +
++                                   (uint64_t)tlsdesc_relocs->tls_block);
++                               dprintf(1, "tls_block: %p\n", tlsdesc_relocs->tls_block);
++                               reloc_addr[0] = (size_t)__tlsdesc_static;
++                               reloc_addr[1] = (size_t)addend;
++                               dprintf(1, "reloc_addr[0]: %p reloc_addr[1]: %p\n",
++                                   reloc_addr[0], reloc_addr[1]);
++                               //reloc_addr[1] = tls_val + addend + (uint64_t)tlsdesc_relocs->tls_block;
++                       }
++               }
++       }
++
+        __init_ssp((void *)aux[AT_RANDOM]);
+ 
+        if (aux[AT_UID]==aux[AT_EUID] && aux[AT_GID]==aux[AT_EGID]
+@@ -66,12 +117,13 @@ weak_alias(libc_start_init, __libc_start_init);
+ /* Store the highest stack address dedicated to function activations. */
+ void *__popcorn_stack_base = NULL;
+ 
+-int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
++int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv,
++    struct tlsdesc_relocs *tls_relocs)
+ {
+        char **envp = argv+argc+1;
+        __popcorn_stack_base = argv;
+ 
+-       __init_libc(envp, argv[0]);
++       __init_libc(envp, argv[0], tls_relocs);
+        __libc_start_init();
+ 
+        /* Pass control to the application */
+diff --git a/lib/musl-1.1.18/src/internal/dynlink.h b/lib/musl-1.1.18/src/internal/dynlink.h
+index 5717627a..d66cde06 100644
+--- a/lib/musl-1.1.18/src/internal/dynlink.h
++++ b/lib/musl-1.1.18/src/internal/dynlink.h
+@@ -21,6 +21,14 @@ typedef Elf64_Sym Sym;
+ #define R_INFO ELF64_R_INFO
+ #endif
+ 
++struct tlsdesc_relocs {
++        size_t *rel;
++        size_t rel_size;
++        size_t base;
++        Elf64_Sym *symtab;
++        void *tls_block;
++};
++
+ /* These enum constants provide unmatchable default values for
+  * any relocation type the arch does not use. */
+ enum {
+@@ -92,7 +100,7 @@ struct fdpic_dummy_loadmap {
+ #define AUX_CNT 32
+ #define DYN_CNT 32
+ 
+-typedef void (*stage2_func)(unsigned char *, size_t *);
++typedef void (*stage2_func)(unsigned char *, size_t *, struct tlsdesc_relocs *);
+ typedef _Noreturn void (*stage3_func)(size_t *);
+
+```
+
+The implementation details of my TLSDESC patch were guided by a combination of
+discovery (reverse engineering) and a specification that I found here:
+https://www.fsfla.org/~lxoliva/writeups/TLS/RFC-TLSDESC-ARM.txt
 
 
