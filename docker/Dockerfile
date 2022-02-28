@@ -21,4 +21,9 @@ WORKDIR /code
 RUN git clone https://github.com/ssrg-vt/popcorn-compiler -b main --depth 1
 
 WORKDIR /code/popcorn-compiler
-RUN ./install_compiler.py --install-all --with-popcorn-kernel-5_2 && rm -rf /usr/local/popcorn/src
+RUN ./install_compiler.py --install-all --with-popcorn-kernel-5_2 \
+  --libmigration-type=signal_trigger && rm -rf /usr/local/popcorn/src
+
+## Use signal 35 to trigger the migration
+## kill -35 $(pidof <popcorn bin>)
+#RUN ./install_compiler.py --install-migration --with-popcorn-kernel-5_2 --libmigration-type=signal_trigger
