@@ -26,8 +26,6 @@ supported_targets = ['aarch64', 'x86_64']
 # LLVM names for targets
 llvm_targets = {
     'aarch64' : 'AArch64',
-    'powerpc64' : 'PowerPC',
-    'powerpc64le' : 'PowerPC',
     'x86_64' : 'X86'
 }
 
@@ -92,7 +90,7 @@ def setup_argument_parsing():
                         dest="base_path")
     config_opts.add_argument("--install-path",
                         help="Install path of Popcorn compiler",
-                        default="/usr/local/popcorn",
+                        default="/usr/local/stack_pop",
                         dest="install_path")
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",

@@ -1,4 +1,4 @@
-POPCORN         := /usr/local/popcorn
+POPCORN         := /usr/local/stack_pop
 POPCORN_ARM     := $(POPCORN)/aarch64
 POPCORN_POWERPC := $(POPCORN)/powerpc64
 POPCORN_X86     := $(POPCORN)/x86_64
@@ -8,24 +8,9 @@ CC         := $(POPCORN)/bin/clang
 CFLAGS     := -O0 -mllvm -optimize-regalloc -Wall -c -g -popcorn-alignment \
               -Wno-unused-variable -D_GNU_SOURCE -mllvm -no-sm-warn
 OPT_LEVEL  := -O3
-ifneq ($(findstring env_select,$(type)),)
-CFLAGS     += -D_ENV_SELECT_MIGRATE=1
-endif
-ifneq ($(findstring native,$(type)),)
-CFLAGS     += -D_NATIVE=1
-endif
 ifneq ($(findstring debug,$(type)),)
 CFLAGS     += -D_DEBUG=1
 OPT_LEVEL  :=
-endif
-ifneq ($(findstring nocleancrash,$(type)),)
-CFLAGS     += -D_CLEAN_CRASH=0
-endif
-ifneq ($(findstring timing,$(type)),)
-CFLAGS     += -D_TIME_REWRITE=1 -D_TIME_RESPONSE_DELAY=1
-endif
-ifneq ($(findstring signal_trigger,$(type)),)
-CFLAGS     += -D_SIG_MIGRATION=1
 endif
 CFLAGS_ARM     := $(CFLAGS) -target aarch64-linux-gnu
 CFLAGS_POWERPC := $(CFLAGS) -target powerpc64le-linux-gnu
@@ -58,18 +43,19 @@ ARFLAGS := -cq
 
 HDR := $(shell ls include/*.h)
 SRC := $(shell ls src/*.c)
-ASM := $(shell find -iname "migrate_*.s")
+ASM := $(shell find -iname "migrate_*.s") #no need
 
 BUILD         := build
 BUILD_ARM     := $(BUILD)/aarch64
 BUILD_POWERPC := $(BUILD)/powerpc64
 BUILD_X86     := $(BUILD)/x86_64
 
+#no need
 HDR_ARM     := $(HDR) $(shell ls include/arch/aarch64/*.h)
 HDR_POWERPC := $(HDR) $(shell ls include/arch/powerpc64/*.h)
 HDR_X86     := $(HDR) $(shell ls include/arch/x86_64/*.h)
 
-OBJ         := $(SRC:.c=.o) $(ASM:.s=.o)
+OBJ         := $(SRC:.c=.o) #$(ASM:.s=.o)
 OBJ_ARM     := $(subst src,$(BUILD_ARM),$(OBJ))
 OBJ_POWERPC := $(subst src,$(BUILD_POWERPC),$(OBJ))
 OBJ_X86     := $(subst src,$(BUILD_X86),$(OBJ))
