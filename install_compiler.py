@@ -111,12 +111,12 @@ def setup_argument_parsing():
     process_opts.add_argument("--install-llvm-clang",
                         help="Install LLVM and Clang",
                         action="store_true",
-                        dest="llvm_clang_install")
+                        dest="llvm_clang_install") #yes
 
     process_opts.add_argument("--install-binutils",
                         help="Install binutils",
                         action="store_true",
-                        dest="binutils_install")
+                        dest="binutils_install") #yes
 
     process_opts.add_argument("--install-gcc-glibc",
                         help="Install GCC and GLIBC",
@@ -126,11 +126,11 @@ def setup_argument_parsing():
     process_opts.add_argument("--install-musl",
                         help="Install musl-libc",
                         action="store_true",
-                        dest="musl_install")
+                        dest="musl_install") #yes
     process_opts.add_argument("--install-libelf",
                         help="Install libelf",
                         action="store_true",
-                        dest="libelf_install")
+                        dest="libelf_install") #yes
     process_opts.add_argument("--install-libopenpop",
                         help="Install libopenpop, Popcorn's OpenMP runtime",
                         action="store_true",
@@ -142,7 +142,7 @@ def setup_argument_parsing():
     process_opts.add_argument("--install-migration",
                         help="Install migration library",
                         action="store_true",
-                        dest="migration_install")
+                        dest="migration_install") #yes, modified
     process_opts.add_argument("--install-stack-depth",
                         help="Install application call information library",
                         action="store_true",
@@ -151,12 +151,12 @@ def setup_argument_parsing():
     process_opts.add_argument("--install-tools",
                         help="Install compiler tools",
                         action="store_true",
-                        dest="tools_install")
+                        dest="tools_install") #yes
 
     process_opts.add_argument("--install-utils",
                         help="Install utility scripts",
                         action="store_true",
-                        dest="utils_install")
+                        dest="utils_install") #yes
 
     process_opts.add_argument("--install-namespace",
                         help="Install namespace tools (deprecated)",
@@ -235,9 +235,9 @@ def postprocess_args(args):
         args.musl_install = True
         args.libelf_install = True
         args.libopenpop_install = False
-        args.stacktransform_install = True
+        args.stacktransform_install = False
         args.migration_install = True
-        args.stackdepth_install = True
+        args.stackdepth_install = False
         args.tools_install = True
         args.utils_install = True
 

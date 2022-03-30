@@ -10,23 +10,6 @@ extern "C" {
 #endif
 
 /**
- * Trap function used withing check_migrate.
- */
-#if defined(__x86_64__)
-__inline__ void trap(void)
-{
-    __asm__ volatile("int $0x03");
-}
-#elif defined(__aarch64__)
-__inline__ void trap(void)
-{
-    __asm__ volatile(".inst 0xd4200000");
-}
-#else
-# error Unknown/unsupported architecture!
-#endif
-
-/**
  * Check if thread should migrate, and if so, invoke migration.  The optional
  * callback function will be invoked before execution resumes on destination
  * architecture.
