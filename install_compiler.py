@@ -90,7 +90,7 @@ def setup_argument_parsing():
                         dest="base_path")
     config_opts.add_argument("--install-path",
                         help="Install path of Popcorn compiler",
-                        default="/usr/local/stack_pop",
+                        default="/usr/local/popcorn",
                         dest="install_path")
     config_opts.add_argument("--threads",
                         help="Number of threads to build compiler with",

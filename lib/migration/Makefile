@@ -1,4 +1,4 @@
-POPCORN         := /usr/local/stack_pop
+POPCORN         := /usr/local/popcorn
 POPCORN_ARM     := $(POPCORN)/aarch64
 POPCORN_POWERPC := $(POPCORN)/powerpc64
 POPCORN_X86     := $(POPCORN)/x86_64

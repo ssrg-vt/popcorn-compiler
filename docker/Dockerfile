@@ -18,7 +18,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
 RUN apt-get install -y python-minimal 
 
 WORKDIR /code
-RUN git clone https://github.com/ssrg-vt/popcorn-compiler -b main --depth 1
+RUN git clone https://github.com/ssrg-vt/popcorn-compiler -b stack_pop --depth 1
 
 WORKDIR /code/popcorn-compiler
 RUN ./install_compiler.py --install-all --with-popcorn-kernel-5_2 && rm -rf /usr/local/popcorn/src
