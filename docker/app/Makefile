@@ -40,7 +40,6 @@ LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/libc.a \
            /lib/libmigrate.a \
-           /lib/libstack-transform.a \
            /lib/libelf.a \
            /lib/libpthread.a \
            /lib/libc.a \
