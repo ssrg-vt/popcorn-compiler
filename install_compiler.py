@@ -1008,8 +1008,9 @@ def install_utils(base_path, install_path, num_threads):
     # COPY SCRIPTS
     #=====================================================
     print("Copying util/scripts to {}/bin...".format(install_path))
-    for item in os.listdir('./util/scripts'):
-        s = os.path.join('./util', 'scripts', item)
+    scripts_dir = os.path.join(base_path, 'util', 'scripts')
+    for item in os.listdir(scripts_dir):
+        s = os.path.join(scripts_dir, item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
         if item != 'README':
             shutil.copy(s, d)
