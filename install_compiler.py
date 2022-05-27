@@ -1001,7 +1001,7 @@ def install_utils(base_path, install_path, num_threads):
 
     tmp = install_path.replace('/', '\/')
     sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' " \
-              "./util/Makefile.template".format(tmp)
+              "{}/util/Makefile.template".format(tmp, base_path)
     run_cmd('update Makefile template', sed_cmd, use_shell=True)
 
     #=====================================================
