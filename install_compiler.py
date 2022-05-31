@@ -45,7 +45,7 @@ if (cross_dir is None):
 cross_path = os.path.dirname(os.path.dirname(cross_dir))
 
 # Popcorn kernel version. Needed to adjust Musl system calls.
-kernel_version = 4.4
+kernel_version = 5.2
 
 # LLVM URL
 llvm_url = 'https://github.com/llvm/llvm-project.git'
