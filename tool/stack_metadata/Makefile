@@ -6,12 +6,12 @@ CHECK		:= check-stackmaps
 COMPRESS	:= compress
 
 POPCORN        := /usr/local/popcorn
-POPCORN_X86_64 := $(POPCORN)/x86_64
+POPCORN_ARCH	 := $(POPCORN)/$(shell uname -m)
 COMMON         := $(shell readlink -f ../../common)
 
 CC		:= gcc
 CFLAGS		:= -O3 -g -Wall -Iinclude -I$(COMMON)/include \
-		   -specs $(POPCORN_X86_64)/lib/musl-gcc.specs
+		   -specs $(POPCORN_ARCH)/lib/musl-gcc.specs
 LDFLAGS	:= -static
 LIB    	:= -lelf
 
