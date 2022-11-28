@@ -333,6 +333,11 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     llvm_patch_path = os.path.join(patch_base,
                                    'llvm-{}.patch'.format(llvm_version))
 
+    cmake_cxx_flags = ['-Wno-deprecated-copy',
+                       '-Wno-pessimizing-move',
+                       '-Wno-redundant-move',
+                       '-Wno-init-list-lifetime']
+
     if llvm_version == 3.7:
         cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
                        '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
@@ -344,6 +349,8 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
                        '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
                        '-DCMAKE_BUILD_TYPE=Debug',
                        '-DLLVM_ENABLE_RTTI=ON',
+                       '-DCMAKE_CXX_STANDARD=17',
+                       '-DCMAKE_CXX_FLAGS={}'.format(' '.join(cmake_cxx_flags)),
                        '-DBUILD_SHARED_LIBS=ON',
                        '-DLLVM_EXTERNAL_PROJECTS="clang;"',
                        '-DLLVM_EXTERNAL_CLANG_SOURCE_DIR={}'
