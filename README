@@ -137,10 +137,11 @@ but may require installing alternate packages and some extra hacking.  It is
   - On Ubuntu 16.04 & higher, x86-64, install the following packages:
       build-essential
       gcc-aarch64-linux-gnu
-+ flex & bison (x86-64 only), needed by binutils
++ flex, bison and texinfo (x86-64 only), needed by binutils
   - On Ubuntu 16.04 & higher, x86-64, install the following packages:
       flex
       bison
+      texinfo (for makeinfo)
 + Python, v2.7 and v3
   - v2 is needed for the installation script and the alignment tool
   - v3 is needed for scripts in util/scripts

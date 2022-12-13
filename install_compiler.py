@@ -276,7 +276,7 @@ def check_for_prerequisites(args):
     gcc_prerequisites = ['x86_64-linux-gnu-g++']
     for target in args.install_targets:
         gcc_prerequisites.append('{}-linux-gnu-gcc'.format(target))
-    other_prerequisites = ['flex', 'bison', 'git', 'cmake', 'make', 'zip']
+    other_prerequisites = ['flex', 'bison', 'git', 'cmake', 'make', 'zip', 'makeinfo']
 
     for prereq in gcc_prerequisites:
         out = _check_for_prerequisite(prereq)
@@ -333,6 +333,11 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
     llvm_patch_path = os.path.join(patch_base,
                                    'llvm-{}.patch'.format(llvm_version))
 
+    cmake_cxx_flags = ['-Wno-deprecated-copy',
+                       '-Wno-pessimizing-move',
+                       '-Wno-redundant-move',
+                       '-Wno-init-list-lifetime']
+
     if llvm_version == 3.7:
         cmake_flags = ['-DCMAKE_INSTALL_PREFIX={}'.format(install_path),
                        '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
@@ -344,6 +349,8 @@ def install_clang_llvm(base_path, install_path, num_threads, llvm_targets):
                        '-DLLVM_TARGETS_TO_BUILD={}'.format(llvm_targets),
                        '-DCMAKE_BUILD_TYPE=Debug',
                        '-DLLVM_ENABLE_RTTI=ON',
+                       '-DCMAKE_CXX_STANDARD=17',
+                       '-DCMAKE_CXX_FLAGS={}'.format(' '.join(cmake_cxx_flags)),
                        '-DBUILD_SHARED_LIBS=ON',
                        '-DLLVM_EXTERNAL_PROJECTS="clang;"',
                        '-DLLVM_EXTERNAL_CLANG_SOURCE_DIR={}'
@@ -1001,15 +1008,16 @@ def install_utils(base_path, install_path, num_threads):
 
     tmp = install_path.replace('/', '\/')
     sed_cmd = "sed -i -e 's/^POPCORN := .*/POPCORN := {}/g' " \
-              "./util/Makefile.template".format(tmp)
+              "{}/util/Makefile.template".format(tmp, base_path)
     run_cmd('update Makefile template', sed_cmd, use_shell=True)
 
     #=====================================================
     # COPY SCRIPTS
     #=====================================================
     print("Copying util/scripts to {}/bin...".format(install_path))
-    for item in os.listdir('./util/scripts'):
-        s = os.path.join('./util', 'scripts', item)
+    scripts_dir = os.path.join(base_path, 'util', 'scripts')
+    for item in os.listdir(scripts_dir):
+        s = os.path.join(scripts_dir, item)
         d = os.path.join(os.path.join(install_path, 'bin'), item)
         if item != 'README':
             shutil.copy(s, d)
