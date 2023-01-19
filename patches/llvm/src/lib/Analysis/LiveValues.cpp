@@ -345,6 +345,7 @@ void LiveValues::propagateValues(const LoopNestingTree &loopNest,
                                  LiveVals &liveOut)
 {
   std::set<const Value *> liveLoop, phiDefined;
+  const llvm::BasicBlock * succ;
 
   /* Iterate over all loop nodes. */
   for(LoopNestingTree::loop_iterator loop = loopNest.loop_begin();
@@ -371,6 +372,17 @@ void LiveValues::propagateValues(const LoopNestingTree &loopNest,
       }
     }
 
+    /* Needs-review: In case of loops with single self successor (infinite loop)
+    * propagate liveIn to liveOut.
+    */
+    succ = (*loop)->getSingleSuccessor();
+    if(succ == *loop) {
+      LLVM_DEBUG(errs() << "Non-exiting loop, with live value:\n");
+      for (auto live : liveIn[succ]) {
+        LLVM_DEBUG(errs() << "\t" << live->getName() << "\n");
+        liveOut[succ].insert(live);
+      }
+    }
     liveLoop.clear();
   }
 }
