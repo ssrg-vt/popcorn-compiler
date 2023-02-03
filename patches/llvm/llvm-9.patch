@@ -8300,10 +8300,10 @@ index dd5d6251414..eca3b23de3b 100644
    SyntheticCountsUtils.cpp
 diff --git a/llvm/lib/Analysis/LiveValues.cpp b/llvm/lib/Analysis/LiveValues.cpp
 new file mode 100644
-index 00000000000..1b562800cdc
+index 0000000..628cce0
 --- /dev/null
-+++ b/llvm/lib/Analysis/LiveValues.cpp
-@@ -0,0 +1,385 @@
++++ b/install/src/llvm/llvm/lib/Analysis/LiveValues.cpp
+@@ -0,0 +1,397 @@
 +#include "llvm/Analysis/LiveValues.h"
 +#include "llvm/IR/Metadata.h"
 +#include "llvm/IR/Instructions.h"
@@ -8651,7 +8651,8 @@ index 00000000000..1b562800cdc
 +                                 LiveVals &liveOut)
 +{
 +  std::set<const Value *> liveLoop, phiDefined;
-+
++  const llvm::BasicBlock * succ;
++  
 +  /* Iterate over all loop nodes. */
 +  for(LoopNestingTree::loop_iterator loop = loopNest.loop_begin();
 +      loop != loopNest.loop_end();
@@ -8677,6 +8678,17 @@ index 00000000000..1b562800cdc
 +      }
 +    }
 +
++    /* Needs-review: In case of loops with single self successor (infinite loop)
++    * propagate liveIn to liveOut.
++    */
++    succ = (*loop)->getSingleSuccessor();
++    if(succ == *loop) {
++      LLVM_DEBUG(errs() << "Non-exiting loop, with live value:\n");
++      for (auto live : liveIn[succ]) {
++        LLVM_DEBUG(errs() << "\t" << live->getName() << "\n");
++        liveOut[succ].insert(live);
++      }
++    }
 +    liveLoop.clear();
 +  }
 +}
