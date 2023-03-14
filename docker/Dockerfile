@@ -21,4 +21,4 @@ WORKDIR /code
 RUN git clone https://github.com/ssrg-vt/popcorn-compiler -b stack_pop --depth 1
 
 WORKDIR /code/popcorn-compiler
-RUN ./install_compiler.py --install-all --with-popcorn-kernel-5_2 && rm -rf /usr/local/popcorn/src
+RUN ./install_compiler.py --install-all && rm -rf /usr/local/popcorn/src

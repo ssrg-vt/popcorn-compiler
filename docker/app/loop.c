@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 	pid_main = getpid();
 	printf("pid on x86 node %d.\n", pid_main);
 
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < 1000; i++) {
 		func1(i);
 	}
 	return 0;
