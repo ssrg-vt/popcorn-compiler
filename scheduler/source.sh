@@ -2,8 +2,13 @@
 
 #Useful functions and env variables
 
-export HERMIT_BOARD_NAMES="potato0 potato1 potato2"
-export HERMIT_INSTALL_FOLDER="$HOME/hermit-popcorn/"
+#export HERMIT_BOARD_NAMES="libre@10.1.1.41"
+#export HERMIT_BOARD_NAMES="sandeep@10.1.1.209"
+#export HERMIT_BOARD_NAMES="sandeep@10.1.1.222"
+#export HERMIT_BOARD_NAMES="sandeep@10.1.1.196"
+export HERMIT_BOARD_NAMES="sandeep@10.1.1.222 sandeep@10.1.1.209 sandeep@10.1.1.196"
+#export HERMIT_INSTALL_FOLDER="$HOME/hermit-popcorn/"
+export HERMIT_INSTALL_FOLDER="$HOME/Scheduler_hermit-popcorn/"
 export HERMIT_EXPERIMENTS_DIR="/tmp/hermit-scheduler/"
 export PROXY_BIN_ARM="$HERMIT_INSTALL_FOLDER/aarch64-hermit/bin/proxy"
 	
@@ -28,7 +33,7 @@ function prepare_applications()
 		mkdir -p bins/$d
 		cp $dir/prog_*aligned bins/$d/
 	done
-	other_app="blackscholes  dhrystone linpack whetstone phoenix-kmeans phoenix-pca"
+	other_app="microbench blackscholes  dhrystone linpack whetstone phoenix-kmeans phoenix-pca"
 	for d in $other_app 
 	do
 		dir=$APP_FOLDER/$d
@@ -84,8 +89,8 @@ function __copy_proxy()
 
 function __mount_tmpfs_remote()
 {
-	ssh libre@$board mkdir -p $HERMIT_EXPERIMENTS_DIR	
-	ssh -t libre@$board "$remote_mnt_cmd"
+	ssh $board mkdir -p $HERMIT_EXPERIMENTS_DIR	
+	ssh -t $board "$remote_mnt_cmd"
 }
 
 function prepare_board()

@@ -15,7 +15,8 @@ DEBUG = True
 
 # Path Configurations
 SCHEDULER_FOLDER = os.getcwd()
-HERMIT_INSTALL_FOLDER = "%s/hermit-popcorn/" % os.path.expanduser("~")
+#HERMIT_INSTALL_FOLDER = "%s/hermit-popcorn/" % os.path.expanduser("~")
+HERMIT_INSTALL_FOLDER = "/home/hermit/Scheduler_hermit-popcorn/"
 PROXY_BIN_X86 = os.path.join(HERMIT_INSTALL_FOLDER, "x86_64-host/bin/proxy")
 PROXY_BIN_ARM = os.path.join(HERMIT_INSTALL_FOLDER, "aarch64-hermit/bin/proxy")
 BIN_FOLDER = os.path.join(SCHEDULER_FOLDER, "bins")
@@ -32,11 +33,16 @@ def get_env(var, default):
 EXPERIMENTS_DIR = get_env("HERMIT_EXPERIMENTS_DIR", "/tmp/hermit-scheduler/")
 
 # Machine Configurations
-BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "potato")
+#BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "libre@10.1.1.41")
+#BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "sandeep@10.1.1.209")
+#BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "sandeep@10.1.1.222")
+#BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "sandeep@10.1.1.196")
+BOARD_NAMES = get_env("HERMIT_BOARD_NAMES", "sandeep@10.1.1.222 sandeep@10.1.1.209 sandeep@10.1.1.196")
 BOARD_MEMORY = int(get_env("HERMIT_BOARD_MEMORY", (1 * (2**30))))  # 1GB (not 2GB due the double copy...)
-BOARD_NB_CORES = int(get_env("HERMIT_BOARD_NB_CORE", 4))
+BOARD_NB_CORES = int(get_env("HERMIT_BOARD_NB_CORE", 1))
 SERVER_NB_CORES = int(get_env("HERMIT_SERVER_NB_CORE", 4))
 ONDEMAND_MIGRATION = int(get_env("HERMIT_ON_DEMANDE_MIGRATION", 0))
+#ONDEMAND_MIGRATION = 0
 SERVER_IP= get_env("HERMIT_SERVER_IP", socket.getfqdn())
 SERVER_PORT_BASE= int(get_env("HERMIT_SERVER_PORT_BASE", 5050))
 
@@ -47,7 +53,16 @@ started = 0
 migrated = 0
 terminated_local = 0
 terminated_remote = 0
-
+conn_cnt = 7080
+serv1 = 1
+serv2 = 1
+serv3 = 1
+serv4 = 1
+serv5 = 1
+serv6 = 1
+serv7 = 1
+serv8 = 1
+serv9 = 1
 # Global variables (see init() function)
 # Time of the experiment
 timer = -1
@@ -157,7 +172,7 @@ class RApp:
     MEMORY_USAGE_FILE = ".memory"
     HW_COUNTER_FILE = ".counter"
 
-    def __init__(self, name, rid, dst_dir, proc, port):
+    def __init__(self, name, rid, dst_dir, proc, port, memdis_port):
         self.name = name
         self.rid = rid
         self.dst_dir = dst_dir
@@ -170,6 +185,29 @@ class RApp:
         self.migration_score = -1
         self.machine=None
         self.port=port #server_port
+	self.memdis_port=memdis_port
+
+    def reset_memdis_port(self):
+        global serv1, serv2, serv3, serv4, serv5, serv6, serv7, serv8, serv9
+	if self.memdis_port==7080:
+	    serv1=1
+	elif self.memdis_port==7081:
+	    serv2=1
+	elif self.memdis_port==7082:
+	    serv3=1
+	elif self.memdis_port==7083:
+	    serv4=1
+	elif self.memdis_port==7084:
+	    serv5=1
+	elif self.memdis_port==7085:
+	    serv6=1
+	elif self.memdis_port==7086:
+	    serv7=1
+	elif self.memdis_port==7087:
+	    serv8=1
+	else:
+	    serv9=1	
+	self.memdis_port=0
 
     def _update_proc(self, proc):
         self.proc = proc
@@ -181,7 +219,7 @@ class RApp:
         f = open(path, "w")
         HW_COUNTER_PERIOD = 1000  # in ms
         log("starting perf on", self.dst_dir, self.pid)
-        self.monitor = subprocess.Popen(["perf",
+        self.monitor = subprocess.Popen(["sudo", "perf",
                                          "kvm",
                                          "stat",
                                          "-x|",
@@ -301,9 +339,10 @@ class RApp:
         memory_usage = self.get_memory_usage()
         log("perf results", processor_usage)
         log("memory usage", memory_usage)
-        if processor_usage == -1 or memory_usage == -1:  # wait until metrics are found
+        if processor_usage == -1:
             return -1
-        return processor_usage + (memory_usage / 2**20)  # memory usage in MB
+        return processor_usage 
+	#+ (memory_usage / 2**20)  # memory usage in MB
 
     def get_migration_score(self, update=True):
         if update:
@@ -363,16 +402,18 @@ def remote_terminated(pid):
     global terminated_remote
     terminated_remote += 1
     boards.remove_proc(migrated_app[pid])
+    RApp.reset_memdis_port(migrated_app[pid])
     __terminated(pid, migrated_app, "remote")
 
 
 def get_extra_env(resume, port):
     env = dict()
     env["HERMIT_ISLE"] = "uhyve"
-    env["HERMIT_MEM"] = "2G"
+    env["HERMIT_MEM"] = "10G"
+    env["HERMIT_MEM_ARM"] = "1550M"
     env["HERMIT_CPUS"] = "1"
     env["HERMIT_VERBOSE"] = "0"
-    env["HERMIT_MIGTEST"] = "0"
+    env["HERMIT_MIGTEST"] = "4700" #Sandeep: Required for correct functionality
     env["HERMIT_MIGRATE_RESUME"] = str(int(resume))
     env["HERMIT_DEBUG"] = "0"
     env["HERMIT_NODE_ID"] = "0"
@@ -386,9 +427,11 @@ def get_extra_env(resume, port):
     return env
 
 
-def get_extra_env_str(resume, port):
+def get_extra_env_str(resume, port, memdis_port):
     env = get_extra_env(resume, port)
     env_str = ""
+    env["HERMIT_MEMDIS_PORT"] = str(memdis_port)
+
     for k, v in env.items():
         env_str += k + '=' + v + ' '
     return env_str
@@ -396,7 +439,37 @@ def get_extra_env_str(resume, port):
     
 
 def __migrate(pid, board):
+    global serv1, serv2, serv3, serv4, serv5, serv6, serv7, serv8, serv9
+
     proc = running_app[pid]
+
+    if serv1 == 1:
+	proc.memdis_port = 7080
+	serv1 = 0
+    elif serv2 == 1:
+	proc.memdis_port = 7081
+	serv2 = 0
+    elif serv3 == 1:
+	proc.memdis_port = 7082
+	serv3 = 0
+    elif serv4 == 1:
+	proc.memdis_port = 7083
+	serv4 = 0
+    elif serv5 == 1:
+	proc.memdis_port = 7084
+	serv5 = 0
+    elif serv6 == 1:
+	proc.memdis_port = 7085
+	serv6 = 0
+    elif serv7 == 1:
+	proc.memdis_port = 7086
+	serv7 = 0
+    elif serv8 == 1:
+	proc.memdis_port = 7087
+	serv8 = 0
+    else:
+	proc.memdis_port = 7088
+	serv9 = 0
 
     # Start checkpoint: send signal
     try:
@@ -421,6 +494,7 @@ def __migrate(pid, board):
     # Send files: copy the whole repository
     dst_dir = proc.dst_dir
     port = proc.port
+    memdis_port = proc.memdis_port
     ret=subprocess.call(["rsync", "-zr", dst_dir, board.name +
                      ":" + EXPERIMENTS_DIR], stdout=f, stderr=f)
 
@@ -429,7 +503,13 @@ def __migrate(pid, board):
     # Run remotly
     ssh_args = ""
     ssh_args += "cd " + dst_dir + "; "
-    ssh_args += get_extra_env_str(True, port) + " ~/proxy ./prog_aarch64_aligned"
+#    ssh_args += get_extra_env_str(True, port, memdis_port) +  "HERMIT_MEM=480M ~/proxy ./prog_aarch64_aligned" # For CustomMG
+#    ssh_args += get_extra_env_str(True, port, memdis_port) +  "HERMIT_MEM=475M ~/proxy ./prog_aarch64_aligned" # For PageRank
+    #ssh_args += get_extra_env_str(True, port, memdis_port) +  "HERMIT_MEM=240M ~/proxy ./prog_aarch64_aligned" # For CG
+#    ssh_args += get_extra_env_str(True, port, memdis_port) +  "HERMIT_MEM=1500M ~/proxy ./prog_aarch64_aligned" # For MemDisRand 
+    ssh_args += get_extra_env_str(True, port, memdis_port) +  "HERMIT_MEM=500M ~/proxy ./prog_aarch64_aligned"  # For MicroLRU
+#    env["HERMIT_MEMDIS_PORT"] = str(memdis_port)
+
     # ssh_args+="echo $!;" #print pid: may be needed if we want to migrate back
     # ssh_args+="wait" #wait for the process to finishes
     new_proc = subprocess.Popen(
@@ -538,6 +618,7 @@ def run_app(app):
     dst_dir = os.path.join(EXPERIMENTS_DIR, app + str(app_count))
     shutil.copytree(src_dir, dst_dir, symlinks=False, ignore=None)
 
+    memdis_port=0
     ### Start application
     port=port_allocator.get_id()
     os.chdir(dst_dir)
@@ -549,13 +630,14 @@ def run_app(app):
     except BaseException:
         log("no argument file")
     f = open("output.txt", "w")
+    e = open("error.txt", "w")
     proc = subprocess.Popen([PROXY_BIN_X86,
                              "prog_x86-64_aligned", args],
                             env=ori_env.update(extra_env),
-                            stdout=f,
-                            stderr=f)  # TODO:check error
+			    stdout=f,
+			    stderr=f)
     # Register application
-    running_app[proc.pid] = RApp(app, app_count, dst_dir, proc, port)
+    running_app[proc.pid] = RApp(app, app_count, dst_dir, proc, port, memdis_port)
     log("running applications", running_app)
     log_action("Started", dst_dir)
     started += 1
@@ -572,6 +654,8 @@ def print_report():
     print("Migrated applications", migrated)
     print("Terminated (local) applications", terminated_local)
     print("Terminated (remote) applications", terminated_remote)
+    terminated_total = terminated_remote+terminated_local
+    print("Terminated (total) applications", terminated_total)
     print("Ending at time", end)
     print("Total time is:", end - start_time)
 
@@ -625,7 +709,6 @@ def init():
     #   - check that EXPERIMENTS_DIR exist in all machines (tmpfs)
     log("NB_CORE_BOARD", BOARD_NB_CORES)
     log("NB_CORE_SERVER", SERVER_NB_CORES)
-    log("Default Environ", get_extra_env_str(False, SERVER_PORT_BASE))
     # Time of the experiment
     timer = int(sys.argv[2])
     # list of applications. example: "ep ep". all application must be in
