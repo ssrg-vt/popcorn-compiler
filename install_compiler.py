@@ -31,7 +31,7 @@ binutils_git_url = 'https://github.com/ssrg-vt/binutils.git'
 binutils_git_branch = 'hermit-popcorn-master'
 
 hermit_git_url = 'https://github.com/ssrg-vt/HermitCore'
-hermit_git_branch = 'hermit-popcorn-master'
+hermit_git_branch = 'netswap'
 
 newlib_git_url = 'https://github.com/ssrg-vt/newlib'
 newlib_git_branch = 'hermit-popcorn-master'

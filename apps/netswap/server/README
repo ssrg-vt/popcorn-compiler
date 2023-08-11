@@ -1,0 +1,9 @@
+Compile:
+	gcc server.c -o server_<PORT>
+
+Multiple Netswap Remote Daemons(NRD):
+	To start multiple NRD, launch multiple server applications.
+	To launch multiple servers, modify the PORT macro in server.c and compile.
+
+- Run the server in a while loop for scheduler testing. Otherwise the server will go offline and subsequent clients would not establish connection.
+- We used port numbers from 7080 to 7088 in the scheduler. So use the same port numbers for testing with scheduler.

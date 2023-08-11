@@ -1,0 +1,5 @@
+To modify the memory demand change the SLOTS macro.
+
+Example:
+	#define SLOTS 64 // 1GB
+
